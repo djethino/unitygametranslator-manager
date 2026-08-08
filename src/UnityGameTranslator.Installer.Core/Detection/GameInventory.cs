@@ -1,0 +1,225 @@
+using UnityGameTranslator.Installer.Core.Api;
+using UnityGameTranslator.Installer.Core.Model;
+using UnityGameTranslator.Installer.Core.Platform;
+
+namespace UnityGameTranslator.Installer.Core.Detection;
+
+/// <summary>
+/// The one entry point that turns "a machine" into "here are your games and what I would do
+/// with each of them".
+///
+/// Everything above this — CLI today, GUI tomorrow — only renders what this produces. Keeping
+/// the decisions here rather than in the front-end is what lets the CLI be a real test harness
+/// for the GUI instead of a separate, slightly different implementation.
+/// </summary>
+public sealed class GameInventory
+{
+    private readonly IPlatform _platform;
+    private readonly LoaderCatalogDocument _catalog;
+    private readonly CatalogApiClient? _api;
+
+    public GameInventory(IPlatform platform, LoaderCatalogDocument catalog, CatalogApiClient? api = null)
+    {
+        _platform = platform;
+        _catalog = catalog;
+        _api = api;
+    }
+
+    /// <summary>Every Unity game we can find, Steam first because it is the richest source.</summary>
+    public List<GameInstall> ScanAll()
+    {
+        var games = new List<GameInstall>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void Add(GameInstall game)
+        {
+            if (seen.Add(Path.GetFullPath(game.Path))) games.Add(game);
+        }
+
+        foreach (var game in new SteamScanner(_platform).Scan()) Add(game);
+        foreach (var game in new StoreScanner(_platform).Scan()) Add(game);
+
+        return games;
+    }
+
+    /// <summary>Probes one folder the user pointed at directly.</summary>
+    public GameInstall? ScanFolder(string folder)
+    {
+        var game = UnityGameProbe.Probe(folder, null, GameStore.Manual);
+        if (game is null) return null;
+
+        ModdabilityProbe.Evaluate(game);
+        return game;
+    }
+
+    /// <summary>
+    /// Everything known about one game: installed loader, local translation, online catalog,
+    /// what we would install and why, and what stands in the way.
+    /// </summary>
+    public async Task<GameReport> BuildReportAsync(GameInstall game, bool offline = false,
+                                                   CancellationToken ct = default)
+    {
+        var report = new GameReport { Game = game };
+
+        report.InstalledLoader = LoaderProbe.Detect(game.Path, _catalog);
+
+        var descriptor = ResolveDescriptor(report, game);
+        if (descriptor is not null)
+        {
+            report.LocalTranslation = LocalTranslationProbe.Read(game.Path, descriptor);
+            report.InstalledPluginVersion = LocalTranslationProbe.ReadInstalledPluginVersion(game.Path, descriptor);
+            report.PluginBuildId = ResolvePluginBuild(descriptor, game.Runtime);
+            CollectRequirements(report, descriptor, game);
+        }
+
+        if (!game.IsModdable)
+        {
+            report.Blockers.Add(ModdabilityProbe.Explain(game));
+        }
+
+        if (!offline && game.SteamAppId is not null && _api is not null)
+        {
+            report.OnlineTranslations = await _api.SearchBySteamIdAsync(game.SteamAppId, ct)
+                                                  .ConfigureAwait(false);
+
+            // "No translation exists" and "the search failed" look identical to a user, and
+            // only one of them is our problem. Keep them apart.
+            report.OnlineSearchError = _api.LastError;
+
+            // Same lineage as the local file? Then it is not something to offer, it is the
+            // thing the user already runs — and the only question is whether it moved online.
+            if (report.LocalTranslation?.Uuid is { Length: > 0 } localUuid)
+            {
+                report.MatchingOnline = report.OnlineTranslations.FirstOrDefault(
+                    t => string.Equals(t.Uuid, localUuid, StringComparison.OrdinalIgnoreCase));
+            }
+        }
+
+        return report;
+    }
+
+    /// <summary>
+    /// Which loader we work with: the one already installed, or the recommendation.
+    /// An installed loader always wins — it is not ours to replace, and swapping it would break
+    /// every other mod the player has.
+    /// </summary>
+    private LoaderDescriptor? ResolveDescriptor(GameReport report, GameInstall game)
+    {
+        if (report.InstalledLoader is not null)
+        {
+            var installed = _catalog.Loaders.FirstOrDefault(l => l.Id == report.InstalledLoader.Id);
+            if (installed is not null)
+            {
+                report.RecommendedLoader = installed;
+                report.RecommendationReason =
+                    $"{installed.Display} is already installed — the plugin is simply added to it.";
+                return installed;
+            }
+        }
+
+        var candidates = _catalog.Loaders
+            .Where(l => l.SupportsRuntime(game.Runtime))
+            .Where(l => FindAsset(l, game) is not null)
+            .OrderByDescending(l => l.Preference)
+            .ToList();
+
+        if (candidates.Count == 0)
+        {
+            report.RecommendationReason = game.Runtime == UnityRuntime.Unknown
+                ? "No recommendation: the scripting backend could not be identified."
+                : $"No loader in the catalog supports {Describe(game.Runtime)} on this system.";
+            return null;
+        }
+
+        var best = candidates[0];
+        report.RecommendedLoader = best;
+
+        var alternatives = candidates.Skip(1).Select(l => l.Display).ToList();
+        report.RecommendationReason = alternatives.Count > 0
+            ? $"This game is {Describe(game.Runtime)} — {best.Display} recommended (also possible: {string.Join(", ", alternatives)})."
+            : $"This game is {Describe(game.Runtime)} — {best.Display} is the only option.";
+
+        return best;
+    }
+
+    /// <summary>
+    /// The archive matching this OS and architecture. Under Proton we deliberately pick the
+    /// Windows build: the game is a Windows binary, so the loader must be one too.
+    /// </summary>
+    public LoaderAsset? FindAsset(LoaderDescriptor descriptor, GameInstall game)
+    {
+        var os = game.RunsUnderProton ? "windows" : _platform.OsId;
+
+        var arch = game.Architecture != GameArchitecture.Unknown
+            ? game.Architecture
+            : _platform.HostArchitecture;
+
+        var wanted = arch switch
+        {
+            GameArchitecture.X86 => "x86",
+            GameArchitecture.X64 => "x64",
+            GameArchitecture.Arm64 => "arm64",
+            _ => "x64",
+        };
+
+        return descriptor.Assets.FirstOrDefault(a =>
+                   a.Os == os && (a.Arch == wanted || a.Arch == "universal"))
+               ?? descriptor.Assets.FirstOrDefault(a => a.Os == os && a.Arch == "universal");
+    }
+
+    private string? ResolvePluginBuild(LoaderDescriptor descriptor, UnityRuntime runtime)
+    {
+        var key = $"{descriptor.Id}:{(runtime == UnityRuntime.Il2Cpp ? "il2cpp" : "mono")}";
+        return _catalog.PluginBuilds.TryGetValue(key, out var asset) ? asset : null;
+    }
+
+    private void CollectRequirements(GameReport report, LoaderDescriptor descriptor, GameInstall game)
+    {
+        foreach (var warning in descriptor.Warnings) report.Warnings.Add(warning);
+
+        // A required desktop runtime we can prove is missing is a blocker, not a warning: the
+        // game would fail at launch and the user would blame the mod.
+        if (!string.IsNullOrEmpty(descriptor.Requires.DotnetDesktop)
+            && game.Runtime == UnityRuntime.Il2Cpp)
+        {
+            var present = _platform.HasDotnetDesktopRuntime(descriptor.Requires.DotnetDesktop);
+            if (present == false)
+            {
+                report.Blockers.Add(
+                    $"{descriptor.Display} needs the .NET {descriptor.Requires.DotnetDesktop} " +
+                    "Desktop Runtime, which is not installed. The game would fail to start.");
+            }
+            else if (present is null)
+            {
+                report.Warnings.Add(
+                    $"{descriptor.Display} needs the .NET {descriptor.Requires.DotnetDesktop} " +
+                    "Desktop Runtime; we could not verify it on this system.");
+            }
+        }
+
+        if (_platform.NeedsDllOverride(game) && descriptor.ProtonDllOverride is not null)
+        {
+            report.Warnings.Add(
+                $"Runs through Proton: Steam launch options must contain " +
+                $"WINEDLLOVERRIDES=\"{descriptor.ProtonDllOverride}=n,b\" %command% " +
+                "or the loader is never injected.");
+        }
+
+        // Only relevant when we would actually download the loader. An already-installed loader
+        // is never re-downloaded, so demanding a checksum for it would block an install that
+        // touches nothing but our own plugin.
+        if (report.InstalledLoader is null && FindAsset(descriptor, game) is { Sha256: "" })
+        {
+            report.Blockers.Add(
+                $"No verified checksum for the {descriptor.Display} download — refusing to " +
+                "install an archive we cannot check.");
+        }
+    }
+
+    private static string Describe(UnityRuntime runtime) => runtime switch
+    {
+        UnityRuntime.Mono => "Mono",
+        UnityRuntime.Il2Cpp => "IL2CPP",
+        _ => "of an unknown type",
+    };
+}

@@ -1,0 +1,111 @@
+# UnityGameTranslator Installer
+
+Finds the Unity games on your machine, tells you what each one needs, and sets up
+[UnityGameTranslator](https://github.com/djethino/unitygametranslator) on it — mod loader
+included — without touching anything that was already there.
+
+> **Status: in development.** Detection works and is tested against real games. Installing,
+> updating and uninstalling are being built.
+
+## Why
+
+Installing the mod by hand means knowing whether your game is Mono or IL2CPP, picking the right
+mod loader, choosing one of five builds, and extracting it into the right folder. That is a fair
+amount to ask of someone who just wants to play in their own language.
+
+This tool answers those questions for you, and it can also tell you something no other installer
+can: **whether the community has already translated this game**.
+
+## What it does
+
+- Finds Unity games from Steam, Epic, GOG, and plain folders
+- Identifies the scripting backend (Mono / IL2CPP), the Unity version and the architecture
+- Detects a mod loader that is already installed — and never replaces it
+- Warns you, and refuses, when a game ships an anti-cheat
+- Shows the community translations available for that game, and whether you already have one
+- Installs the loader and the matching plugin build, keeping your settings and translations
+- Uninstalls exactly what it installed, and nothing else
+
+## What it does not do
+
+- Manage other people's mods — this is not a mod manager
+- Host anything: every download comes from the official source, checksum verified
+- Collect anything: no telemetry, no accounts, no identifiers. If something goes wrong,
+  `diagnose` prints a report *you* choose to share
+
+## Install
+
+Download the single executable for your system and run it. There is nothing to install — and if
+you want to keep it around, it offers to install itself properly.
+
+> **Windows SmartScreen** will warn you: the executable is not signed with a paid certificate.
+> You can verify the download against the published `.sha256`, and the whole source is here.
+
+## Command line
+
+The same engine, without the interface. Useful for support and for scripting.
+
+```
+ugt-installer scan [--all]        List the Unity games found on this machine
+ugt-installer report <game>       Everything known about one game
+ugt-installer catalog             Show the loader catalog and where it came from
+ugt-installer diagnose            Printable report, safe to paste into an issue
+```
+
+Add `--offline` to any command to skip every network call.
+
+## Supported systems
+
+| System | Status |
+|---|---|
+| Windows | Supported |
+| Linux / SteamOS (Steam Deck) | Supported, including games running through Proton |
+| macOS | Not yet. Only Mono games could ever work — IL2CPP modding is not possible there |
+
+## The loader catalog
+
+Nothing about a mod loader's on-disk layout is hardcoded. It all lives in
+[`catalog/loaders.json`](catalog/loaders.json), which the tool fetches at runtime.
+
+That is deliberate: BepInEx and MelonLoader have both changed their layout more than once, and a
+tool that cannot update itself would break for everyone on the same day. This way, a layout
+change is fixed by editing one file — every installed copy picks it up.
+
+The catalog is read from GitHub first, our website as a mirror, then a local cache, then the copy
+built into the binary. GitHub comes first on purpose: serving it ourselves would put an IP in our
+logs on every launch, and we have no reason to hold that.
+
+## Building
+
+Requires the .NET 8 SDK.
+
+```bash
+dotnet build -c Release
+dotnet run --project src/UnityGameTranslator.Installer.Cli -- scan
+```
+
+## Project layout
+
+```
+src/
+├── UnityGameTranslator.Installer.Core/   Everything: detection, catalog, install, receipts
+│   ├── Platform/                         The only OS-specific code (IPlatform + adapters)
+│   ├── Detection/                        Games, runtimes, Unity versions, loaders, anti-cheat
+│   ├── Catalog/                          Loader catalog, fetched and cached
+│   ├── Api/                              Read-only, anonymous calls to the community site
+│   └── Model/                            Shared types
+├── UnityGameTranslator.Installer.Cli/    Command line front-end
+└── UnityGameTranslator.Installer.Gui/    Graphical front-end (Avalonia)
+```
+
+Same shape as the mod: one shared trunk holding all the logic, thin adapters for what genuinely
+differs. The command line is not a lesser version of the interface — it is how the logic gets
+tested against real game folders.
+
+## License
+
+AGPL-3.0. See [LICENSE](LICENSE) and [LICENSING.md](LICENSING.md).
+
+Third-party components are listed in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md). This
+tool downloads BepInEx and MelonLoader from their official releases; it does not redistribute
+them.

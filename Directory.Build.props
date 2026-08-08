@@ -1,0 +1,51 @@
+<Project>
+  <PropertyGroup>
+    <Version>0.1.0</Version>
+
+    <!-- Where the loader catalog is fetched from, in this order.
+         GitHub first on purpose: fetching it from our own site would put an IP in our
+         server logs on every launch, and we have no reason to hold that. -->
+    <CatalogPrimaryUrl>https://raw.githubusercontent.com/djethino/unitygametranslator-installer/main/catalog/loaders.json</CatalogPrimaryUrl>
+    <CatalogMirrorUrl>https://unitygametranslator.asymptomatikgames.com/catalog/loaders.json</CatalogMirrorUrl>
+
+    <!-- UnityGameTranslator services (same values as the mod's Directory.Build.props) -->
+    <ApiBaseUrl>https://unitygametranslator.asymptomatikgames.com/api/v1</ApiBaseUrl>
+    <WebsiteBaseUrl>https://unitygametranslator.asymptomatikgames.com</WebsiteBaseUrl>
+
+    <!-- Where mod releases are published -->
+    <ModReleasesApi>https://api.github.com/repos/djethino/unitygametranslator/releases</ModReleasesApi>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <!-- Generate BuildInfo.g.cs so URLs and version live in exactly one place -->
+  <Target Name="GenerateBuildInfo" BeforeTargets="CoreCompile">
+    <PropertyGroup>
+      <BuildInfoContent>
+namespace UnityGameTranslator.Installer {
+    internal static class BuildInfo {
+        public const string Version = "$(Version)"%3B
+        public const string CatalogPrimaryUrl = "$(CatalogPrimaryUrl)"%3B
+        public const string CatalogMirrorUrl = "$(CatalogMirrorUrl)"%3B
+        public const string ApiBaseUrl = "$(ApiBaseUrl)"%3B
+        public const string WebsiteBaseUrl = "$(WebsiteBaseUrl)"%3B
+        public const string ModReleasesApi = "$(ModReleasesApi)"%3B
+    }
+}
+      </BuildInfoContent>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(IntermediateOutputPath)BuildInfo.g.cs"
+                      Lines="$(BuildInfoContent)"
+                      Overwrite="true" />
+    <ItemGroup>
+      <Compile Include="$(IntermediateOutputPath)BuildInfo.g.cs" />
+    </ItemGroup>
+  </Target>
+</Project>

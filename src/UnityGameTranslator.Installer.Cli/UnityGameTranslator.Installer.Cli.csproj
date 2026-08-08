@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>UnityGameTranslator.Installer.Cli</RootNamespace>
+    <AssemblyName>ugt-installer</AssemblyName>
+
+    <!-- Self-contained single file: the point is that a user downloads one thing and it runs.
+         Requiring a .NET runtime install would reintroduce exactly the friction this tool
+         exists to remove — and on SteamOS the root filesystem is read-only anyway. -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+
+    <!-- Trimming stays off: the JSON layer uses reflection, and a trimmed build that silently
+         drops a converter would fail at the worst possible moment. -->
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\UnityGameTranslator.Installer.Core\UnityGameTranslator.Installer.Core.csproj" />
+  </ItemGroup>
+
+</Project>

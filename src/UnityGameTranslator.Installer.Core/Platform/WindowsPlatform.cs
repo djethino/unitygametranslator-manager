@@ -57,44 +57,23 @@ public sealed class WindowsPlatform : IPlatform
         foreach (var gog in GogRoots())
             yield return new GameRootHint(gog, GameStore.Gog);
 
-        foreach (var folder in ConventionalGameFolders())
-            yield return new GameRootHint(folder, GameStore.Manual);
-    }
-
-    /// <summary>
-    /// Games installed outside any launcher. Found by walking the drives that exist on this
-    /// machine and looking for the handful of folder names people actually use — never from a
-    /// list of hardcoded paths, which would work on one machine and no other.
-    /// </summary>
-    private static IEnumerable<string> ConventionalGameFolders()
-    {
-        string[] names = { "Games", "Jeux", "GOG Games", "Epic Games" };
-
-        DriveInfo[] drives;
-        try { drives = DriveInfo.GetDrives(); }
-        catch { yield break; }
-
-        foreach (var drive in drives)
+        // Launchers' own default install locations. These hold games even when the launcher's
+        // manifests are missing or the launcher itself has been uninstalled.
+        //
+        // Nothing beyond these is guessed. Scanning every drive for folders named "Games" was
+        // tried and removed: such a folder is someone's personal way of organising a library,
+        // not a convention, and a tool that assumes it is right on one machine and wrong on the
+        // next. Anything else the user adds explicitly, and it is remembered (see CustomFolders).
+        foreach (var baseFolder in new[]
+                 {
+                     Environment.SpecialFolder.ProgramFiles,
+                     Environment.SpecialFolder.ProgramFilesX86,
+                 })
         {
-            bool usable;
-            try { usable = drive.IsReady && drive.DriveType is DriveType.Fixed or DriveType.Removable; }
-            catch { continue; }
-            if (!usable) continue;
-
-            foreach (var name in names)
-            {
-                var path = Path.Combine(drive.RootDirectory.FullName, name);
-                if (Directory.Exists(path)) yield return path;
-            }
-        }
-
-        // Launchers' own default locations, which hold games even when their manifests are gone.
-        foreach (var baseFolder in new[] { Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86 })
-        {
-            foreach (var name in new[] { "Epic Games", "GOG Galaxy\\Games" })
+            foreach (var name in new[] { "Epic Games", @"GOG Galaxy\Games" })
             {
                 var path = Path.Combine(Env(baseFolder), name);
-                if (Directory.Exists(path)) yield return path;
+                if (Directory.Exists(path)) yield return new GameRootHint(path, GameStore.Manual);
             }
         }
     }

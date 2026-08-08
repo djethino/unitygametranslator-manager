@@ -38,6 +38,7 @@ public partial class MainWindow : Window
         SearchBox.TextChanged += (_, _) => RefreshList();
         RescanButton.Click += async (_, _) => await ScanAsync();
         AddFolderButton.Click += async (_, _) => await AddFolderAsync();
+        FoldersButton.Click += async (_, _) => await ManageFoldersAsync();
         GameList.SelectionChanged += async (_, _) => await ShowSelectedAsync();
 
         Loaded += async (_, _) => await ScanAsync();
@@ -80,26 +81,113 @@ public partial class MainWindow : Window
         var path = folders.FirstOrDefault()?.TryGetLocalPath();
         if (path is null) return;
 
-        var game = _inventory.ScanFolder(path);
-        if (game is null)
+        // Remember it, so the next run finds it without asking again — and so it can be shown
+        // and taken back out. A folder added and then invisible is a folder the user cannot
+        // manage.
+        _inventory.Folders.Add(path);
+
+        // The folder may hold one game or a whole library; scanning covers both.
+        var found = StoreScanner
+            .ScanFolder(Path.GetFullPath(path), GameStore.Manual, maxDepth: 2)
+            .ToList();
+
+        if (found.Count == 0)
         {
-            Status("That folder does not hold a Unity game.");
+            Status($"No Unity game found in {path}. The folder was still added to your list.");
+            RefreshList();
             return;
         }
 
-        // Adding a game we already know would leave two rows pointing at the same folder.
-        if (_games.Any(g => string.Equals(g.Path, game.Path, StringComparison.OrdinalIgnoreCase)))
+        var added = 0;
+        foreach (var game in found)
         {
-            Status($"{game.Name} was already in the list.");
-        }
-        else
-        {
+            if (_games.Any(g => string.Equals(g.Path, game.Path, StringComparison.OrdinalIgnoreCase)))
+                continue;
             _games.Add(game);
-            _games.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+            added++;
         }
 
+        _games.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+
+        Status(added == 0
+            ? "Those games were already listed."
+            : $"Added {added} game(s) from {path}.");
+
         RefreshList();
-        SelectByPath(game.Path);
+        SelectByPath(found[0].Path);
+    }
+
+    /// <summary>
+    /// Shows the folders the user added, and lets them be removed. Adding a folder with no way
+    /// to see or undo it is a one-way door.
+    /// </summary>
+    private async Task ManageFoldersAsync()
+    {
+        var folders = _inventory.Folders;
+        var layout = new StackPanel { Spacing = 10 };
+
+        layout.Children.Add(new TextBlock
+        {
+            Text = "Steam, Epic and GOG are found on their own. These are the extra folders you " +
+                   "asked us to look in.",
+            TextWrapping = TextWrapping.Wrap,
+            Opacity = 0.7,
+            FontSize = 12,
+        });
+
+        var list = new StackPanel { Spacing = 6 };
+        var toRemove = new List<string>();
+
+        if (folders.All.Count == 0)
+        {
+            list.Children.Add(new TextBlock
+            {
+                Text = "None yet. Use “Add a folder…” for games installed outside a launcher.",
+                Opacity = 0.5,
+                FontSize = 12,
+            });
+        }
+
+        foreach (var folder in folders.All)
+        {
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+
+            var missing = folders.IsMissing(folder);
+            var label = new TextBlock
+            {
+                Text = missing ? $"{folder}   (not found right now)" : folder,
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                VerticalAlignment = VerticalAlignment.Center,
+                // A missing folder is flagged, never dropped on its own: an unplugged drive is
+                // not a decision to forget what the user asked us to remember.
+                Opacity = missing ? 0.55 : 1,
+            };
+            Grid.SetColumn(label, 0);
+
+            var remove = new Button { Content = "Remove", FontSize = 11 };
+            var captured = folder;
+            remove.Click += (_, _) =>
+            {
+                toRemove.Add(captured);
+                remove.IsEnabled = false;
+                label.Opacity = 0.35;
+                label.TextDecorations = TextDecorations.Strikethrough;
+            };
+            Grid.SetColumn(remove, 1);
+
+            row.Children.Add(label);
+            row.Children.Add(remove);
+            list.Children.Add(row);
+        }
+
+        layout.Children.Add(list);
+
+        if (!await ConfirmAsync("Folders you added", layout, "Apply")) return;
+        if (toRemove.Count == 0) return;
+
+        foreach (var folder in toRemove) folders.Remove(folder);
+        await ScanAsync();
     }
 
     private void RefreshList()
@@ -355,11 +443,57 @@ public partial class MainWindow : Window
     private Control Actions(GameReport report)
     {
         var panel = new StackPanel { Spacing = 10, Margin = new Avalonia.Thickness(0, 16, 0, 0) };
+        var engine = new InstallEngine(_platform, _catalog);
+
+        // The recommendation is a default, not a decision made for the user: some games work
+        // with one loader and not another for reasons no probe can see.
+        ComboBox? loaderPicker = null;
+
+        if (report.InstalledLoader is not null)
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = $"Using the {report.InstalledLoader.Display} already installed. " +
+                       "It will not be replaced — other mods may depend on it.",
+                FontSize = 12,
+                Opacity = 0.65,
+                TextWrapping = TextWrapping.Wrap,
+            });
+        }
+        else if (report.EligibleLoaders.Count > 0)
+        {
+            loaderPicker = new ComboBox { Width = 260 };
+            foreach (var loader in report.EligibleLoaders)
+            {
+                loaderPicker.Items.Add(new ComboBoxItem
+                {
+                    Content = loader == report.RecommendedLoader
+                        ? $"{loader.Display} {loader.Version}  (recommended)"
+                        : $"{loader.Display} {loader.Version}",
+                    Tag = loader,
+                });
+            }
+            loaderPicker.SelectedIndex = Math.Max(0,
+                report.EligibleLoaders.ToList().IndexOf(report.RecommendedLoader!));
+
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+            row.Children.Add(new TextBlock
+            {
+                Text = "Mod loader",
+                VerticalAlignment = VerticalAlignment.Center,
+                Opacity = 0.55,
+                FontSize = 12,
+            });
+            row.Children.Add(loaderPicker);
+            panel.Children.Add(row);
+        }
+
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
 
-        var engine = new InstallEngine(_platform, _catalog);
-        var plan = engine.Plan(report);
+        LoaderDescriptor? Chosen() =>
+            (loaderPicker?.SelectedItem as ComboBoxItem)?.Tag as LoaderDescriptor;
 
+        var plan = engine.Plan(report, ReleaseChannel.Stable, Chosen());
         var installed = report.InstalledPluginVersion is not null;
 
         var primary = new Button
@@ -367,7 +501,8 @@ public partial class MainWindow : Window
             Content = installed ? "Reinstall / update" : "Install",
             IsEnabled = plan is not null,
         };
-        primary.Click += async (_, _) => await RunInstallAsync(report, engine, plan);
+        primary.Click += async (_, _) =>
+            await RunInstallAsync(report, engine, engine.Plan(report, ReleaseChannel.Stable, Chosen()));
         buttons.Children.Add(primary);
 
         var uninstall = new Button

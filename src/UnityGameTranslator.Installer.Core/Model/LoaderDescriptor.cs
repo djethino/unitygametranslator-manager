@@ -28,6 +28,12 @@ public sealed class LoaderDescriptor
 
     [JsonPropertyName("version")] public string Version { get; set; } = "";
 
+    /// <summary>
+    /// GitHub release the archives come from. When set, download URLs and checksums are both
+    /// derived from it — so bumping a loader version means changing the tag, and nothing else.
+    /// </summary>
+    [JsonPropertyName("github")] public GitHubRelease? GitHub { get; set; }
+
     /// <summary>Downloadable archives, one per OS/architecture combination.</summary>
     [JsonPropertyName("assets")] public List<LoaderAsset> Assets { get; set; } = new();
 
@@ -74,6 +80,15 @@ public sealed class LoaderDescriptor
     };
 }
 
+public sealed class GitHubRelease
+{
+    /// <summary>"owner/name", e.g. "BepInEx/BepInEx".</summary>
+    [JsonPropertyName("repo")] public string Repo { get; set; } = "";
+
+    /// <summary>Release tag, e.g. "v5.4.23.5".</summary>
+    [JsonPropertyName("tag")] public string Tag { get; set; } = "";
+}
+
 public sealed class LoaderAsset
 {
     /// <summary>"windows", "linux", "macos".</summary>
@@ -82,9 +97,16 @@ public sealed class LoaderAsset
     /// <summary>"x64", "x86", "universal".</summary>
     [JsonPropertyName("arch")] public string Arch { get; set; } = "";
 
+    /// <summary>Asset file name inside the GitHub release. Preferred over a raw URL.</summary>
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+
+    /// <summary>Direct URL, for anything not hosted as a GitHub release asset.</summary>
     [JsonPropertyName("url")] public string Url { get; set; } = "";
 
-    /// <summary>Expected SHA-256 of the archive. Empty means "cannot verify" — we then refuse.</summary>
+    /// <summary>
+    /// Optional pinned SHA-256. Takes precedence over the digest GitHub publishes, for the case
+    /// where we want to guarantee a specific file rather than "whatever is behind that name".
+    /// </summary>
     [JsonPropertyName("sha256")] public string Sha256 { get; set; } = "";
 }
 

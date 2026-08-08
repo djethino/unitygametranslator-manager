@@ -19,6 +19,7 @@
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
           <TextBox x:Name="SearchBox" Width="200" Watermark="Filter by name" />
           <Button x:Name="AddFolderButton" Content="Add a folder..." />
+          <Button x:Name="FoldersButton" Content="My folders" />
           <Button x:Name="RescanButton" Content="Rescan" />
         </StackPanel>
       </Grid>

@@ -38,13 +38,15 @@ public sealed class InstallEngine
     private readonly IPlatform _platform;
     private readonly LoaderCatalogDocument _catalog;
     private readonly ModReleaseClient _releases;
+    private readonly GitHubAssets _assets;
 
     public InstallEngine(IPlatform platform, LoaderCatalogDocument catalog,
-                         ModReleaseClient? releases = null)
+                         ModReleaseClient? releases = null, GitHubAssets? assets = null)
     {
         _platform = platform;
         _catalog = catalog;
         _releases = releases ?? new ModReleaseClient();
+        _assets = assets ?? new GitHubAssets();
     }
 
     public event Action<string>? Status;
@@ -53,16 +55,29 @@ public sealed class InstallEngine
     /// Turns a report into a plan, or explains why there is none. Never partially applies:
     /// planning and doing are separate so the user can see the whole thing first.
     /// </summary>
-    public InstallPlan? Plan(GameReport report, ReleaseChannel channel = ReleaseChannel.Stable)
+    /// <param name="loaderOverride">
+    /// A loader the user picked instead of the recommendation. Ignored when a loader is already
+    /// installed: replacing someone's loader would break every other mod they have.
+    /// </param>
+    public InstallPlan? Plan(GameReport report, ReleaseChannel channel = ReleaseChannel.Stable,
+                             LoaderDescriptor? loaderOverride = null)
     {
         if (report.Blockers.Count > 0) return null;
-        if (report.RecommendedLoader is null || report.PluginBuildId is null) return null;
+
+        var loader = report.InstalledLoader is not null
+            ? report.RecommendedLoader
+            : loaderOverride ?? report.RecommendedLoader;
+
+        if (loader is null) return null;
+
+        var runtime = report.Game.Runtime == UnityRuntime.Il2Cpp ? "il2cpp" : "mono";
+        if (!_catalog.PluginBuilds.TryGetValue($"{loader.Id}:{runtime}", out var pattern)) return null;
 
         return new InstallPlan(
             Game: report.Game,
-            Loader: report.RecommendedLoader,
+            Loader: loader,
             InstallLoader: report.InstalledLoader is null,
-            PluginAssetPattern: report.PluginBuildId,
+            PluginAssetPattern: pattern,
             Channel: channel);
     }
 
@@ -147,9 +162,12 @@ public sealed class InstallEngine
             ?? throw new InvalidOperationException(
                 $"No {plan.Loader.Display} build for this system and architecture.");
 
+        var download = await ResolveAsync(plan.Loader, asset, ct).ConfigureAwait(false);
+        Status?.Invoke($"Verifying: {download.Describe()}");
+
         var fetcher = new ArchiveFetcher(staging);
         var archive = await fetcher
-            .FetchAsync(asset.Url, asset.Sha256, plan.Loader.Id, ct)
+            .FetchAsync(download.Url, download.Sha256, plan.Loader.Id, ct)
             .ConfigureAwait(false);
 
         Status?.Invoke($"Installing {plan.Loader.Display}...");
@@ -199,6 +217,37 @@ public sealed class InstallEngine
             Files = files.WrittenFiles.Skip(before).ToList(),
             DirsCreated = files.CreatedDirectories.Skip(dirsBefore).ToList(),
         };
+    }
+
+    /// <summary>
+    /// Works out where an archive lives and what checksum we can hold it to.
+    ///
+    /// Order matters: a hash pinned in our catalog wins, then the digest GitHub publishes for
+    /// the asset, then nothing. "Nothing" is a reported condition, not a failure — some
+    /// publishers offer no checksum at all, and refusing to work with them would only mean the
+    /// user installs by hand, unverified, with no record.
+    /// </summary>
+    public async Task<ResolvedDownload> ResolveAsync(LoaderDescriptor loader, LoaderAsset asset,
+                                                     CancellationToken ct = default)
+    {
+        var url = !string.IsNullOrWhiteSpace(asset.Url)
+            ? asset.Url
+            : loader.GitHub is { } release && !string.IsNullOrWhiteSpace(asset.Name)
+                ? GitHubAssets.BuildUrl(release.Repo, release.Tag, asset.Name)
+                : throw new InvalidOperationException(
+                    $"The catalog entry for {loader.Display} has no download for this system.");
+
+        if (!string.IsNullOrWhiteSpace(asset.Sha256))
+            return new ResolvedDownload(url, asset.Sha256.Trim().ToLowerInvariant(), IntegrityLevel.Pinned);
+
+        if (loader.GitHub is { } source && !string.IsNullOrWhiteSpace(asset.Name))
+        {
+            var digests = await _assets.GetDigestsAsync(source.Repo, source.Tag, ct).ConfigureAwait(false);
+            if (digests.TryGetValue(asset.Name, out var digest))
+                return new ResolvedDownload(url, digest, IntegrityLevel.Published);
+        }
+
+        return new ResolvedDownload(url, null, IntegrityLevel.None);
     }
 
     /// <summary>Copies an extracted archive into the game, preserving its internal layout.</summary>

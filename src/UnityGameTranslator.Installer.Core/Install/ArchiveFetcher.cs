@@ -33,23 +33,26 @@ public sealed class ArchiveFetcher
     /// <summary>Reports bytes downloaded so far and the total when the server states one.</summary>
     public event Action<long, long?>? Progress;
 
-    public async Task<FetchedArchive> FetchAsync(string url, string expectedSha256,
+    /// <summary>
+    /// Downloads, verifies when a checksum is available, and unpacks.
+    ///
+    /// <paramref name="expectedSha256"/> may be null: not every publisher offers one, and
+    /// refusing to install in that case would block the tool on projects that simply do not
+    /// publish hashes. A mismatch is always fatal; an absent checksum is reported, not fatal.
+    /// The hash actually observed is returned either way and recorded in the receipt.
+    /// </summary>
+    public async Task<FetchedArchive> FetchAsync(string url, string? expectedSha256,
                                                  string label, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(expectedSha256))
-        {
-            throw new InvalidOperationException(
-                $"No checksum published for {label}. Refusing to install an archive that " +
-                "cannot be verified.");
-        }
-
         Directory.CreateDirectory(_stagingRoot);
         var archivePath = Path.Combine(_stagingRoot, SafeFileName(label) + ".zip");
 
         await DownloadAsync(url, archivePath, ct).ConfigureAwait(false);
 
         var actual = FileOperations.HashFile(archivePath);
-        if (!string.Equals(actual, expectedSha256.Trim(), StringComparison.OrdinalIgnoreCase))
+
+        if (!string.IsNullOrWhiteSpace(expectedSha256)
+            && !string.Equals(actual, expectedSha256.Trim(), StringComparison.OrdinalIgnoreCase))
         {
             TryDelete(archivePath);
             throw new InvalidOperationException(

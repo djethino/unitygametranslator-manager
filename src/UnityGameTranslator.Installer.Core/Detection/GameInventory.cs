@@ -23,9 +23,16 @@ public sealed class GameInventory
         _platform = platform;
         _catalog = catalog;
         _api = api;
+        Folders = new CustomFolders(platform);
     }
 
-    /// <summary>Every Unity game we can find, Steam first because it is the richest source.</summary>
+    /// <summary>The folders the user added by hand. Exposed so they can be shown and removed.</summary>
+    public CustomFolders Folders { get; } = null!;
+
+    /// <summary>
+    /// Every Unity game we can find: Steam first because it is the richest source, then the
+    /// launcher defaults, then the folders the user added themselves.
+    /// </summary>
     public List<GameInstall> ScanAll()
     {
         var games = new List<GameInstall>();
@@ -38,6 +45,13 @@ public sealed class GameInventory
 
         foreach (var game in new SteamScanner(_platform).Scan()) Add(game);
         foreach (var game in new StoreScanner(_platform).Scan()) Add(game);
+
+        foreach (var folder in Folders.All)
+        {
+            if (Folders.IsMissing(folder)) continue; // reported elsewhere, not silently dropped
+            foreach (var game in StoreScanner.ScanFolder(folder, GameStore.Manual, maxDepth: 2))
+                Add(game);
+        }
 
         return games;
     }
@@ -105,6 +119,14 @@ public sealed class GameInventory
     /// </summary>
     private LoaderDescriptor? ResolveDescriptor(GameReport report, GameInstall game)
     {
+        var candidates = _catalog.Loaders
+            .Where(l => l.SupportsRuntime(game.Runtime))
+            .Where(l => FindAsset(l, game) is not null)
+            .OrderByDescending(l => l.Preference)
+            .ToList();
+
+        report.EligibleLoaders = candidates;
+
         if (report.InstalledLoader is not null)
         {
             var installed = _catalog.Loaders.FirstOrDefault(l => l.Id == report.InstalledLoader.Id);
@@ -116,12 +138,6 @@ public sealed class GameInventory
                 return installed;
             }
         }
-
-        var candidates = _catalog.Loaders
-            .Where(l => l.SupportsRuntime(game.Runtime))
-            .Where(l => FindAsset(l, game) is not null)
-            .OrderByDescending(l => l.Preference)
-            .ToList();
 
         if (candidates.Count == 0)
         {
@@ -205,14 +221,13 @@ public sealed class GameInventory
                 "or the loader is never injected.");
         }
 
-        // Only relevant when we would actually download the loader. An already-installed loader
-        // is never re-downloaded, so demanding a checksum for it would block an install that
-        // touches nothing but our own plugin.
-        if (report.InstalledLoader is null && FindAsset(descriptor, game) is { Sha256: "" })
+        // A missing download for this OS/architecture IS blocking: there is nothing to install.
+        // The checksum is not checked here — it is resolved from the publisher's release at
+        // download time, and its absence degrades to a warning rather than blocking the install.
+        if (report.InstalledLoader is null && FindAsset(descriptor, game) is null)
         {
             report.Blockers.Add(
-                $"No verified checksum for the {descriptor.Display} download — refusing to " +
-                "install an archive we cannot check.");
+                $"{descriptor.Display} has no build for {_platform.OsId}/{game.Architecture}.");
         }
     }
 

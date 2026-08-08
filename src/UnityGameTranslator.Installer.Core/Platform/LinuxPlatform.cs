@@ -73,14 +73,17 @@ public sealed class LinuxPlatform : IPlatform
 
     public IEnumerable<GameRootHint> ExtraGameRoots()
     {
-        // Heroic is how Epic and GOG games usually land on Linux. Its config lists the installs.
-        var heroic = Path.Combine(Home, ".config", "heroic");
-        if (Directory.Exists(heroic))
-            yield return new GameRootHint(heroic, GameStore.Unknown);
+        // Heroic is how Epic and GOG games usually land on Linux, and it installs into a known
+        // default folder. Nothing beyond launcher defaults is guessed: a "~/Games" folder is a
+        // personal habit, not a convention, and anything else is added explicitly by the user
+        // and remembered (see CustomFolders).
+        var heroicDefault = Path.Combine(Home, "Games", "Heroic");
+        if (Directory.Exists(heroicDefault))
+            yield return new GameRootHint(heroicDefault, GameStore.Manual);
 
-        var games = Path.Combine(Home, "Games");
-        if (Directory.Exists(games))
-            yield return new GameRootHint(games, GameStore.Manual);
+        var lutris = Path.Combine(Home, "Games");
+        if (Directory.Exists(Path.Combine(lutris, "lutris")))
+            yield return new GameRootHint(Path.Combine(lutris, "lutris"), GameStore.Manual);
     }
 
     public string UserDataDirectory

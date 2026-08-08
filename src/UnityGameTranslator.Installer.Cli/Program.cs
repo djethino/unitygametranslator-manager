@@ -266,8 +266,25 @@ internal static class Program
             ? ReleaseChannel.Beta
             : ReleaseChannel.Stable;
 
+        // The recommendation is a default. --loader lets the user override it, because some
+        // games work with one loader and not another for reasons no probe can see.
+        var wanted = ValueOf(args, "--loader");
+        LoaderDescriptor? chosen = null;
+        if (wanted is not null)
+        {
+            chosen = report.EligibleLoaders.FirstOrDefault(
+                l => string.Equals(l.Id, wanted, StringComparison.OrdinalIgnoreCase));
+            if (chosen is null)
+            {
+                Console.Error.WriteLine($"'{wanted}' is not usable for this game. Available:");
+                foreach (var loader in report.EligibleLoaders)
+                    Console.Error.WriteLine($"  {loader.Id,-18} {loader.Display} {loader.Version}");
+                return 1;
+            }
+        }
+
         var engine = new InstallEngine(platform, catalog, new ModReleaseClient());
-        var plan = engine.Plan(report, channel);
+        var plan = engine.Plan(report, channel, chosen);
 
         if (plan is null)
         {
@@ -276,6 +293,14 @@ internal static class Program
             if (report.Blockers.Count == 0)
                 Console.Error.WriteLine($"  ! {report.RecommendationReason ?? "no suitable loader"}");
             return 3;
+        }
+
+        if (report.InstalledLoader is null && report.EligibleLoaders.Count > 1 && chosen is null)
+        {
+            var others = report.EligibleLoaders.Where(l => l != plan.Loader).Select(l => l.Id);
+            Console.WriteLine($"Using {plan.Loader.Display} (recommended). " +
+                              $"Other options: --loader {string.Join(" / --loader ", others)}");
+            Console.WriteLine();
         }
 
         // Nothing is written before this is shown and accepted.
@@ -372,6 +397,18 @@ internal static class Program
 
         var report = await inventory.BuildReportAsync(game, offline);
         return (platform, catalog.Document, report);
+    }
+
+    /// <summary>Reads "--name value" from the arguments, or null when absent.</summary>
+    private static string? ValueOf(string[] args, string name)
+    {
+        var index = Array.FindIndex(args,
+            a => string.Equals(a, name, StringComparison.OrdinalIgnoreCase));
+
+        return index >= 0 && index + 1 < args.Length
+               && !args[index + 1].StartsWith("--", StringComparison.Ordinal)
+            ? args[index + 1]
+            : null;
     }
 
     private static bool Confirm(string[] args, string question)

@@ -109,6 +109,15 @@ public sealed class GameReport
     /// <summary>Loader we would install if the user accepts the default. Null when none fits.</summary>
     public LoaderDescriptor? RecommendedLoader { get; set; }
 
+    /// <summary>
+    /// Every loader that could host this game on this system, best first.
+    ///
+    /// The recommendation is a default, never a decision taken for the user: some games work
+    /// with one loader and not another for reasons no probe can see, so the alternatives have
+    /// to stay reachable.
+    /// </summary>
+    public IReadOnlyList<LoaderDescriptor> EligibleLoaders { get; set; } = Array.Empty<LoaderDescriptor>();
+
     /// <summary>Why that recommendation — always shown, never a silent choice.</summary>
     public string? RecommendationReason { get; set; }
 

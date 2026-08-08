@@ -1,0 +1,270 @@
+using UnityGameTranslator.Installer.Core.Detection;
+using UnityGameTranslator.Installer.Core.Model;
+using UnityGameTranslator.Installer.Core.Platform;
+
+namespace UnityGameTranslator.Installer.Core.Install;
+
+/// <summary>What the user chose to remove. Each level is opt-in and independent.</summary>
+public sealed record UninstallChoice(
+    bool RemovePlugin = true,
+    bool RemoveLoader = false,
+    bool RemoveUserData = false);
+
+public sealed record UninstallOutcome(
+    bool Success,
+    string Message,
+    IReadOnlyList<string> Removed,
+    IReadOnlyList<string> Kept,
+    string? BackupPath);
+
+/// <summary>
+/// Removes what we installed, and only that.
+///
+/// It works from the receipt, never from a list of what a loader is supposed to contain. Three
+/// rules follow, and they are the whole point of the design:
+///   1. a file is removed only if we wrote it AND its hash is unchanged — otherwise the user
+///      edited it, so we leave it and say so;
+///   2. a directory is removed only if we created it and it is now empty;
+///   3. the loader goes only if we installed it and nothing else depends on it.
+/// </summary>
+public sealed class UninstallEngine
+{
+    private readonly IPlatform _platform;
+    private readonly LoaderCatalogDocument _catalog;
+
+    public UninstallEngine(IPlatform platform, LoaderCatalogDocument catalog)
+    {
+        _platform = platform;
+        _catalog = catalog;
+    }
+
+    public event Action<string>? Status;
+
+    /// <summary>What can be removed for this game, given what is actually installed.</summary>
+    public UninstallChoice Available(GameInstall game)
+    {
+        var receipt = ReceiptStore.Read(game.Path);
+        if (receipt is null) return new UninstallChoice(false, false, false);
+
+        var loaderRemovable = receipt.Loader?.InstalledByUs == true
+                              && CountForeignMods(game, receipt) == 0;
+
+        return new UninstallChoice(
+            RemovePlugin: receipt.Plugin is not null,
+            RemoveLoader: loaderRemovable,
+            RemoveUserData: true);
+    }
+
+    public UninstallOutcome Apply(GameInstall game, UninstallChoice choice)
+    {
+        var receipt = ReceiptStore.Read(game.Path);
+        if (receipt is null)
+        {
+            return new UninstallOutcome(false,
+                "No install receipt here. This game was not set up by this tool, so there is " +
+                "nothing it can safely remove.",
+                Array.Empty<string>(), Array.Empty<string>(), null);
+        }
+
+        if (_platform.IsGameRunning(game))
+        {
+            return new UninstallOutcome(false, "The game is running. Close it and try again.",
+                Array.Empty<string>(), Array.Empty<string>(), null);
+        }
+
+        var removed = new List<string>();
+        var kept = new List<string>();
+        string? backupPath = null;
+        var files = new FileOperations(game.Path);
+
+        // User data first: it is the only irreplaceable thing here, so it gets saved before
+        // anything else is touched, even if the rest fails afterwards.
+        if (choice.RemoveUserData)
+        {
+            backupPath = BackupUserData(game, receipt, removed, kept);
+        }
+
+        if (choice.RemovePlugin && receipt.Plugin is not null)
+        {
+            RemoveRecorded(files, receipt.Plugin.Files, receipt.Plugin.DirsCreated, removed, kept);
+            receipt.Plugin = null;
+        }
+
+        if (choice.RemoveLoader && receipt.Loader is { InstalledByUs: true } loader)
+        {
+            var foreign = CountForeignMods(game, receipt);
+            if (foreign > 0)
+            {
+                kept.Add($"{loader.Id} (kept: {foreign} other mod(s) still use it)");
+            }
+            else
+            {
+                RemoveRecorded(files, loader.Files, loader.DirsCreated, removed, kept);
+                receipt.Loader = null;
+            }
+        }
+
+        RestoreBackups(game, files, removed);
+
+        // The receipt stays only while it still describes something WE installed. A record of a
+        // loader that was already there is not an install of ours: keeping it would make the
+        // tool believe it manages a game it no longer touches.
+        if (receipt.Plugin is null && receipt.Loader?.InstalledByUs != true)
+        {
+            ReceiptStore.Delete(game.Path);
+            FileOperations.TryRemoveEmptyDirectory(
+                Path.Combine(game.Path, FileOperations.BackupDirectory));
+        }
+        else
+        {
+            ReceiptStore.Write(game.Path, receipt);
+        }
+
+        var message = removed.Count == 0
+            ? "Nothing was removed."
+            : $"Removed {removed.Count} item(s).";
+        if (kept.Count > 0) message += $" {kept.Count} left in place — see the details.";
+
+        return new UninstallOutcome(true, message, removed, kept, backupPath);
+    }
+
+    /// <summary>
+    /// Removes recorded files whose content still matches what we wrote, then the directories we
+    /// created, deepest first and only while empty.
+    /// </summary>
+    private void RemoveRecorded(FileOperations files, List<ReceiptFile> recorded,
+                                List<string> dirsCreated, List<string> removed, List<string> kept)
+    {
+        foreach (var file in recorded)
+        {
+            string path;
+            try { path = files.ResolveInsideGame(file.Path); }
+            catch (Exception ex) { kept.Add($"{file.Path} ({ex.Message})"); continue; }
+
+            if (!File.Exists(path)) continue; // already gone: nothing to report
+
+            // A changed hash means the user (or another tool) rewrote this file. Deleting it
+            // would destroy work we never made.
+            var current = FileOperations.HashFile(path);
+            if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
+            {
+                kept.Add($"{file.Path} (changed since install — left untouched)");
+                continue;
+            }
+
+            try
+            {
+                File.Delete(path);
+                removed.Add(file.Path);
+                Status?.Invoke($"Removed {file.Path}");
+            }
+            catch (Exception ex)
+            {
+                kept.Add($"{file.Path} ({ex.GetType().Name})");
+            }
+        }
+
+        foreach (var dir in Enumerable.Reverse(dirsCreated))
+        {
+            try
+            {
+                if (FileOperations.TryRemoveEmptyDirectory(files.ResolveInsideGame(dir)))
+                    removed.Add(dir + "/");
+            }
+            catch
+            {
+                // A directory we cannot remove is a directory someone else is using.
+            }
+        }
+    }
+
+    /// <summary>Puts back anything we overwrote at install time.</summary>
+    private void RestoreBackups(GameInstall game, FileOperations files, List<string> removed)
+    {
+        var backupRoot = Path.Combine(game.Path, FileOperations.BackupDirectory);
+        if (!Directory.Exists(backupRoot)) return;
+
+        foreach (var backup in Directory.EnumerateFiles(backupRoot, "*", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(backupRoot, backup).Replace('\\', '/');
+            try
+            {
+                var target = files.ResolveInsideGame(relative);
+                if (File.Exists(target)) continue; // still in use by something we kept
+
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Move(backup, target);
+                removed.Add($"restored {relative}");
+            }
+            catch
+            {
+                // Leaving a backup in place is safe; losing the original is not.
+            }
+        }
+    }
+
+    /// <summary>
+    /// Copies settings and translations out before deleting them. A translation can be months of
+    /// work, and someone uninstalling a mod is not necessarily throwing that away.
+    /// </summary>
+    private string? BackupUserData(GameInstall game, Receipt receipt,
+                                   List<string> removed, List<string> kept)
+    {
+        var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == receipt.Loader?.Id)
+                         ?? _catalog.Loaders.FirstOrDefault(l => l.Id == receipt.Plugin?.Build);
+        if (descriptor is null) return null;
+
+        var userData = Path.Combine(game.Path,
+            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar));
+        if (!Directory.Exists(userData)) return null;
+
+        var names = new[]
+        {
+            LocalTranslationProbe.TranslationFileName,
+            LocalTranslationProbe.ConfigFileName,
+            LocalTranslationProbe.TranslationFileName + ".ancestor",
+            LocalTranslationProbe.TranslationFileName + ".mainancestor",
+        };
+
+        var stamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss");
+        var backupDir = Path.Combine(_platform.UserDataDirectory, "removed", $"{SafeName(game.Name)}-{stamp}");
+
+        var any = false;
+        foreach (var name in names)
+        {
+            var source = Path.Combine(userData, name);
+            if (!File.Exists(source)) continue;
+
+            try
+            {
+                Directory.CreateDirectory(backupDir);
+                File.Copy(source, Path.Combine(backupDir, name), overwrite: true);
+                File.Delete(source);
+                removed.Add(name);
+                any = true;
+            }
+            catch (Exception ex)
+            {
+                kept.Add($"{name} ({ex.GetType().Name})");
+            }
+        }
+
+        return any ? backupDir : null;
+    }
+
+    /// <summary>Mods other than ours sharing the loader. Any of them blocks removing it.</summary>
+    private int CountForeignMods(GameInstall game, Receipt receipt)
+    {
+        var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == receipt.Loader?.Id);
+        if (descriptor is null) return 1; // unknown layout: stay on the safe side
+
+        var detected = LoaderProbe.Detect(game.Path, _catalog);
+        return detected?.ForeignPluginCount ?? 0;
+    }
+
+    private static string SafeName(string name)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        return new string(name.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
+    }
+}

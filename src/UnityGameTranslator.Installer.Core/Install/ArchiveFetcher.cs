@@ -1,0 +1,134 @@
+using System.IO.Compression;
+using UnityGameTranslator.Installer.Core.Model;
+
+namespace UnityGameTranslator.Installer.Core.Install;
+
+public sealed record FetchedArchive(string ExtractedPath, string Sha256);
+
+/// <summary>
+/// Downloads an archive, checks it, and unpacks it into a staging folder.
+///
+/// Nothing ever lands in a game folder straight from the network. The archive is verified
+/// against the checksum published in the catalog first, and an archive we cannot verify is
+/// refused outright — this tool exists to place executable code into people's games, which is
+/// exactly the position an attacker would want to be in.
+/// </summary>
+public sealed class ArchiveFetcher
+{
+    private readonly HttpClient _http;
+    private readonly string _stagingRoot;
+
+    public ArchiveFetcher(string stagingRoot, HttpClient? http = null)
+    {
+        _stagingRoot = stagingRoot;
+        _http = http ?? new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+
+        if (!_http.DefaultRequestHeaders.UserAgent.Any())
+        {
+            _http.DefaultRequestHeaders.UserAgent.ParseAdd(
+                $"UnityGameTranslatorInstaller/{BuildInfo.Version}");
+        }
+    }
+
+    /// <summary>Reports bytes downloaded so far and the total when the server states one.</summary>
+    public event Action<long, long?>? Progress;
+
+    public async Task<FetchedArchive> FetchAsync(string url, string expectedSha256,
+                                                 string label, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(expectedSha256))
+        {
+            throw new InvalidOperationException(
+                $"No checksum published for {label}. Refusing to install an archive that " +
+                "cannot be verified.");
+        }
+
+        Directory.CreateDirectory(_stagingRoot);
+        var archivePath = Path.Combine(_stagingRoot, SafeFileName(label) + ".zip");
+
+        await DownloadAsync(url, archivePath, ct).ConfigureAwait(false);
+
+        var actual = FileOperations.HashFile(archivePath);
+        if (!string.Equals(actual, expectedSha256.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            TryDelete(archivePath);
+            throw new InvalidOperationException(
+                $"Checksum mismatch for {label}. Expected {expectedSha256}, got {actual}. " +
+                "The download was discarded.");
+        }
+
+        var extractPath = Path.Combine(_stagingRoot, SafeFileName(label));
+        if (Directory.Exists(extractPath)) Directory.Delete(extractPath, recursive: true);
+        Directory.CreateDirectory(extractPath);
+
+        ExtractSafely(archivePath, extractPath);
+        TryDelete(archivePath);
+
+        return new FetchedArchive(extractPath, actual);
+    }
+
+    private async Task DownloadAsync(string url, string destination, CancellationToken ct)
+    {
+        using var response = await _http
+            .GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct)
+            .ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+
+        var total = response.Content.Headers.ContentLength;
+        await using var source = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        await using var target = File.Create(destination);
+
+        var buffer = new byte[81920];
+        long done = 0;
+        int read;
+        while ((read = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+        {
+            await target.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+            done += read;
+            Progress?.Invoke(done, total);
+        }
+    }
+
+    /// <summary>
+    /// Unpacks while refusing entries that would escape the destination. A zip is attacker
+    /// controlled by definition, and "../../windows/system32" is the oldest trick there is.
+    /// </summary>
+    private static void ExtractSafely(string archivePath, string destination)
+    {
+        var root = Path.GetFullPath(destination);
+        if (!root.EndsWith(Path.DirectorySeparatorChar)) root += Path.DirectorySeparatorChar;
+
+        using var archive = ZipFile.OpenRead(archivePath);
+        foreach (var entry in archive.Entries)
+        {
+            var target = Path.GetFullPath(Path.Combine(root, entry.FullName));
+
+            if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"Archive entry escapes its folder: '{entry.FullName}'. Refusing to extract.");
+            }
+
+            // A directory entry has an empty name.
+            if (string.IsNullOrEmpty(entry.Name))
+            {
+                Directory.CreateDirectory(target);
+                continue;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            entry.ExtractToFile(target, overwrite: true);
+        }
+    }
+
+    private static string SafeFileName(string label)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        return new string(label.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
+    }
+
+    private static void TryDelete(string path)
+    {
+        try { if (File.Exists(path)) File.Delete(path); } catch { /* staging cleanup is best effort */ }
+    }
+}

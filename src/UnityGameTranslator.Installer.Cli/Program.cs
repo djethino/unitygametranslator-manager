@@ -2,6 +2,7 @@ using UnityGameTranslator.Installer.Core.Api;
 using UnityGameTranslator.Installer.Core.Catalog;
 using UnityGameTranslator.Installer.Core.Detection;
 using UnityGameTranslator.Installer.Core.Diagnostics;
+using UnityGameTranslator.Installer.Core.Install;
 using UnityGameTranslator.Installer.Core.Model;
 using UnityGameTranslator.Installer.Core.Platform;
 
@@ -34,6 +35,8 @@ internal static class Program
                 "report" => await ReportAsync(args, offline),
                 "catalog" => Catalog(offline),
                 "diagnose" => await DiagnoseAsync(offline),
+                "install" or "update" => await InstallAsync(args),
+                "uninstall" => await UninstallAsync(args),
                 "-h" or "--help" or "help" => Help(),
                 _ => Unknown(command),
             };
@@ -52,12 +55,20 @@ internal static class Program
 
               scan [--offline] [--all]     List Unity games found on this machine
               report <path or name>        Everything known about one game
+              install <path or name>       Set up the loader and the plugin
+              update <path or name>        Same thing: reinstalls the current release
+              uninstall <path or name>     Remove what was installed
               catalog [--offline]          Show the loader catalog and where it came from
               diagnose                     Printable report, safe to paste in a public issue
               help                         This text
 
             --offline skips every network call (catalog and community translations).
             --all also lists games that cannot be modded, with the reason.
+            --beta uses pre-release plugin builds.
+            --yes skips the confirmation prompt.
+            --loader, --settings  (uninstall) also remove the mod loader / your settings
+                                  and translations. Both are off by default; settings and
+                                  translations are copied aside before being deleted.
             """);
         return 0;
     }
@@ -242,6 +253,142 @@ internal static class Program
             Console.WriteLine("Before you install:");
             foreach (var warning in report.Warnings) Console.WriteLine($"  - {warning}");
         }
+    }
+
+    private static async Task<int> InstallAsync(string[] args)
+    {
+        var context = await ResolveGameAsync(args, offline: false);
+        if (context is null) return 1;
+
+        var (platform, catalog, report) = context.Value;
+
+        var channel = args.Contains("--beta", StringComparer.OrdinalIgnoreCase)
+            ? ReleaseChannel.Beta
+            : ReleaseChannel.Stable;
+
+        var engine = new InstallEngine(platform, catalog, new ModReleaseClient());
+        var plan = engine.Plan(report, channel);
+
+        if (plan is null)
+        {
+            Console.Error.WriteLine($"Cannot install into {report.Game.Name}:");
+            foreach (var blocker in report.Blockers) Console.Error.WriteLine($"  ! {blocker}");
+            if (report.Blockers.Count == 0)
+                Console.Error.WriteLine($"  ! {report.RecommendationReason ?? "no suitable loader"}");
+            return 3;
+        }
+
+        // Nothing is written before this is shown and accepted.
+        Console.WriteLine("This will:");
+        foreach (var line in plan.Describe()) Console.WriteLine($"  - {line}");
+        foreach (var warning in report.Warnings) Console.WriteLine($"  ! {warning}");
+        Console.WriteLine();
+
+        if (!Confirm(args, "Proceed?")) { Console.WriteLine("Cancelled. Nothing was written."); return 0; }
+
+        engine.Status += message => Console.WriteLine($"  {message}");
+        var outcome = await engine.ApplyAsync(plan);
+
+        Console.WriteLine();
+        Console.WriteLine(outcome.Message);
+        return outcome.Success ? 0 : 4;
+    }
+
+    private static async Task<int> UninstallAsync(string[] args)
+    {
+        var context = await ResolveGameAsync(args, offline: true);
+        if (context is null) return 1;
+
+        var (platform, catalog, report) = context.Value;
+        var engine = new UninstallEngine(platform, catalog);
+
+        var available = engine.Available(report.Game);
+        if (!available.RemovePlugin && !available.RemoveLoader)
+        {
+            Console.Error.WriteLine(
+                $"{report.Game.Name} has no install receipt — this tool did not set it up, so " +
+                "it will not remove anything.");
+            return 3;
+        }
+
+        var choice = new UninstallChoice(
+            RemovePlugin: true,
+            RemoveLoader: args.Contains("--loader", StringComparer.OrdinalIgnoreCase) && available.RemoveLoader,
+            RemoveUserData: args.Contains("--settings", StringComparer.OrdinalIgnoreCase));
+
+        Console.WriteLine("This will remove:");
+        Console.WriteLine("  - the plugin");
+        if (choice.RemoveLoader) Console.WriteLine("  - the mod loader (we installed it, nothing else uses it)");
+        else if (!available.RemoveLoader) Console.WriteLine("  (the loader stays: it was already there, or other mods use it)");
+
+        Console.WriteLine(choice.RemoveUserData
+            ? "  - your settings and translations, copied aside first"
+            : "  (your settings and translations stay — add --settings to remove them)");
+        Console.WriteLine();
+
+        if (!Confirm(args, "Proceed?")) { Console.WriteLine("Cancelled. Nothing was removed."); return 0; }
+
+        var outcome = engine.Apply(report.Game, choice);
+
+        Console.WriteLine();
+        Console.WriteLine(outcome.Message);
+        foreach (var item in outcome.Kept) Console.WriteLine($"  kept: {item}");
+        if (outcome.BackupPath is not null)
+            Console.WriteLine($"Your translations were copied to: {outcome.BackupPath}");
+
+        return outcome.Success ? 0 : 4;
+    }
+
+    /// <summary>Shared front half of install/uninstall: find the game and describe it.</summary>
+    private static async Task<(IPlatform, LoaderCatalogDocument, GameReport)?> ResolveGameAsync(
+        string[] args, bool offline)
+    {
+        var target = args.Skip(1).FirstOrDefault(a => !a.StartsWith("--", StringComparison.Ordinal));
+        if (target is null)
+        {
+            Console.Error.WriteLine("Usage: <command> <game folder or name fragment>");
+            return null;
+        }
+
+        var platform = PlatformFactory.Create();
+        var catalog = new CatalogProvider(platform).Get(offline);
+        var inventory = new GameInventory(platform, catalog.Document,
+                                          offline ? null : new CatalogApiClient());
+
+        var game = Directory.Exists(target)
+            ? inventory.ScanFolder(target)
+            : inventory.ScanAll().FirstOrDefault(g =>
+                g.Name.Contains(target, StringComparison.OrdinalIgnoreCase));
+
+        if (game is null)
+        {
+            Console.Error.WriteLine($"No Unity game found for '{target}'.");
+            return null;
+        }
+
+        Console.WriteLine($"{game.Name}  ({game.Runtime}, Unity {game.UnityVersion ?? "unknown"})");
+        Console.WriteLine($"{game.Path}");
+        Console.WriteLine();
+
+        var report = await inventory.BuildReportAsync(game, offline);
+        return (platform, catalog.Document, report);
+    }
+
+    private static bool Confirm(string[] args, string question)
+    {
+        if (args.Contains("--yes", StringComparer.OrdinalIgnoreCase)) return true;
+
+        // A redirected stdin cannot answer. Refusing is the safe reading of silence.
+        if (Console.IsInputRedirected)
+        {
+            Console.WriteLine($"{question} (no console to ask on — pass --yes to confirm)");
+            return false;
+        }
+
+        Console.Write($"{question} [y/N] ");
+        var answer = Console.ReadLine();
+        return answer?.Trim().StartsWith('y') == true
+               || answer?.Trim().StartsWith('Y') == true;
     }
 
     private static int Catalog(bool offline)

@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UnityGameTranslator.Install
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UnityGameTranslator.Installer.Cli", "src\UnityGameTranslator.Installer.Cli\UnityGameTranslator.Installer.Cli.csproj", "{5AD0E33D-1A97-4116-B653-CC53958C65F0}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UnityGameTranslator.Installer.Gui", "src\UnityGameTranslator.Installer.Gui\UnityGameTranslator.Installer.Gui.csproj", "{3AE433A7-12B7-4BD6-96FE-AEC1EABABA9C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -43,6 +45,18 @@ Global
 		{5AD0E33D-1A97-4116-B653-CC53958C65F0}.Release|x64.Build.0 = Release|Any CPU
 		{5AD0E33D-1A97-4116-B653-CC53958C65F0}.Release|x86.ActiveCfg = Release|Any CPU
 		{5AD0E33D-1A97-4116-B653-CC53958C65F0}.Release|x86.Build.0 = Release|Any CPU
+		{3AE433A7-12B7-4BD6-96FE-AEC1EABABA9C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3AE433A7-12B7-4BD6-96FE-AEC1EABABA9C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3AE433A7-12B7-4BD6-96FE-AEC1EABABA9C}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{3AE433A7-12B7-4BD6-96FE-AEC1EABABA9C}.Debug|x64.Build.0 = Debug|Any CPU
+		{3AE433A7-12B7-4BD6-96FE-AEC1EABABA9C}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{3AE433A7-12B7-4BD6-96FE-AEC1EABABA9C}.Debug|x86.Build.0 = Debug|Any CPU
+		{3AE433A7-12B7-4BD6-96FE-AEC1EABABA9C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3AE433A7-12B7-4BD6-96FE-AEC1EABABA9C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3AE433A7-12B7-4BD6-96FE-AEC1EABABA9C}.Release|x64.ActiveCfg = Release|Any CPU
+		{3AE433A7-12B7-4BD6-96FE-AEC1EABABA9C}.Release|x64.Build.0 = Release|Any CPU
+		{3AE433A7-12B7-4BD6-96FE-AEC1EABABA9C}.Release|x86.ActiveCfg = Release|Any CPU
+		{3AE433A7-12B7-4BD6-96FE-AEC1EABABA9C}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -50,5 +64,6 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{6D36B79A-775D-4711-89F6-A2BEE73BE87C} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{5AD0E33D-1A97-4116-B653-CC53958C65F0} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{3AE433A7-12B7-4BD6-96FE-AEC1EABABA9C} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

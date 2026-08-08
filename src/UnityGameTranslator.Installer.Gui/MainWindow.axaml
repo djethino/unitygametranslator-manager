@@ -1,0 +1,51 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="UnityGameTranslator.Installer.Gui.MainWindow"
+        Title="UnityGameTranslator Installer"
+        Width="1040" Height="680"
+        MinWidth="820" MinHeight="520"
+        WindowStartupLocation="CenterScreen">
+
+  <Grid RowDefinitions="Auto,*,Auto">
+
+    <!-- Header -->
+    <Border Grid.Row="0" Padding="16,12" Background="#1E1E1E">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Grid.Column="0" Spacing="2">
+          <TextBlock Text="Your Unity games" FontSize="18" FontWeight="SemiBold" />
+          <TextBlock x:Name="SubtitleText" Opacity="0.6" FontSize="12"
+                     Text="Scanning..." />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <TextBox x:Name="SearchBox" Width="200" Watermark="Filter by name" />
+          <Button x:Name="AddFolderButton" Content="Add a folder..." />
+          <Button x:Name="RescanButton" Content="Rescan" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- Body: games on the left, the selected game on the right -->
+    <Grid Grid.Row="1" ColumnDefinitions="340,*">
+
+      <Border Grid.Column="0" BorderBrush="#333" BorderThickness="0,0,1,0">
+        <ListBox x:Name="GameList" Background="Transparent" />
+      </Border>
+
+      <ScrollViewer Grid.Column="1">
+        <StackPanel x:Name="DetailPanel" Margin="20" Spacing="14">
+          <TextBlock Text="Select a game on the left." Opacity="0.6" />
+        </StackPanel>
+      </ScrollViewer>
+    </Grid>
+
+    <!-- Status bar -->
+    <Border Grid.Row="2" Padding="16,8" Background="#1E1E1E">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock x:Name="StatusText" Grid.Column="0" VerticalAlignment="Center"
+                   FontSize="12" Opacity="0.75" Text="Ready." TextTrimming="CharacterEllipsis" />
+        <ProgressBar x:Name="BusyBar" Grid.Column="1" Width="160" Height="4"
+                     IsIndeterminate="True" IsVisible="False" />
+      </Grid>
+    </Border>
+  </Grid>
+</Window>

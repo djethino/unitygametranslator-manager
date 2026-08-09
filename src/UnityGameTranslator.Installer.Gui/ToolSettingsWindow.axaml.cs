@@ -59,9 +59,13 @@ public sealed class ToolSettingsWindow : Window
         };
 
         Title = "Settings — this tool";
-        Width = 720;
-        Height = 620;
-        MinWidth = 640;
+
+        // Tall enough for both cards without a scrollbar in the ordinary case: a bar that appears
+        // to reveal two lines is more noticeable than the two lines are worth. The scroller stays
+        // for the cases that do overflow — a proxy expanded to four fields, a long error.
+        Width = 780;
+        Height = 780;
+        MinWidth = 700;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Background = this.FindResource("SurfaceBase") as IBrush;
 
@@ -216,6 +220,11 @@ public sealed class ToolSettingsWindow : Window
             FontSize = 20,
             FontWeight = FontWeight.SemiBold,
             Width = 200,
+
+            // Centred: this is a short string somebody reads character by character to type it
+            // elsewhere, not a field they are filling in. Left-aligned it sat against one edge of
+            // a box twice its width.
+            TextAlignment = TextAlignment.Center,
         };
 
         var copy = Glyphs.Button(Glyphs.Clipboard(), "Copy");
@@ -280,7 +289,7 @@ public sealed class ToolSettingsWindow : Window
 
     private Control NetworkCard()
     {
-        _proxyMode = new ComboBox { Width = 260 };
+        _proxyMode = new ComboBox { Width = 310 };
         _proxyMode.Items.Add(new ComboBoxItem { Content = "Normal (whatever this computer uses)", Tag = "default" });
         _proxyMode.Items.Add(new ComboBoxItem { Content = "Follow the system proxy settings", Tag = "system" });
         _proxyMode.Items.Add(new ComboBoxItem { Content = "Never use a proxy", Tag = "none" });

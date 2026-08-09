@@ -153,4 +153,69 @@ public sealed class CatalogApiClient
             return Array.Empty<OnlineTranslation>();
         }
     }
+
+    /// <summary>
+    /// Fetches a translation file, as JSON text, exactly as the server holds it.
+    ///
+    /// Returned as text rather than parsed on purpose: this file belongs to the mod, and whatever
+    /// keys it carries — including ones this tool has never heard of — must reach the game
+    /// byte for byte. Deserialising and re-serialising would quietly drop them.
+    ///
+    /// <paramref name="apiToken"/> is optional and only matters for a branch: the endpoint is
+    /// public for everything published, and resolves the caller when a token is sent so its
+    /// author can fetch their own work.
+    /// </summary>
+    public async Task<string?> DownloadAsync(int translationId, string? apiToken = null,
+                                             CancellationToken ct = default)
+    {
+        LastError = null;
+
+        try
+        {
+            var url = $"{BuildInfo.ApiBaseUrl}/translations/{translationId}/download";
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+
+            if (!string.IsNullOrWhiteSpace(apiToken))
+            {
+                request.Headers.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiToken);
+            }
+
+            using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+
+            if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            {
+                // Said in the terms that actually apply, rather than as a bare 403: this is what a
+                // branch belonging to somebody else answers.
+                LastError = "This translation is a private branch: only its author and the owner "
+                          + "of the main version can fetch it.";
+                return null;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                LastError = $"The server answered {(int)response.StatusCode}.";
+                return null;
+            }
+
+            var text = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+
+            // A truncated transfer produces text that is not a JSON object, and writing that over
+            // somebody's translation would be worse than not downloading at all.
+            if (string.IsNullOrWhiteSpace(text) || !text.TrimStart().StartsWith('{'))
+            {
+                LastError = "The server sent something that is not a translation file. "
+                          + "Nothing was written.";
+                return null;
+            }
+
+            return text;
+        }
+        catch (Exception ex)
+        {
+            LastError = Net.Http.Describe(ex, "the community site");
+            return null;
+        }
+    }
+
 }

@@ -41,6 +41,15 @@ public sealed class LocalTranslation
     /// <summary>Entries changed since the last sync, as recorded by the mod.</summary>
     public int LocalChanges { get; init; }
 
+    /// <summary>
+    /// The server's hash at the last sync, from _source.hash. Null on a file that has never been
+    /// synced, or that predates the field.
+    ///
+    /// It is what separates "the server moved on" from "I edited this", and without it the only
+    /// honest answer about a local file is that we do not know.
+    /// </summary>
+    public string? SourceHash { get; init; }
+
     public DateTimeOffset? LastWrite { get; init; }
 }
 
@@ -67,7 +76,43 @@ public sealed class OnlineTranslation
     /// <summary>How the translation was produced, e.g. "ai_corrected". Helps the user choose.</summary>
     [JsonPropertyName("type")] public string? Type { get; set; }
 
+    /// <summary>Superseded by the three measures below, kept because older answers carry it.</summary>
     [JsonPropertyName("quality_score")] public double? QualityScore { get; set; }
+
+    /// <summary>
+    /// What the file is made of. Same five counts, same order and same meaning as the mod's
+    /// quality bar and the website's — one denominator across the three, or the same file would
+    /// look different depending on where it was read.
+    /// </summary>
+    [JsonPropertyName("human_count")] public int HumanCount { get; set; }
+    [JsonPropertyName("validated_count")] public int ValidatedCount { get; set; }
+    [JsonPropertyName("ai_count")] public int AiCount { get; set; }
+    [JsonPropertyName("capture_count")] public int CaptureCount { get; set; }
+
+    /// <summary>Neither translated nor missing: shown on its own, never inside the bar.</summary>
+    [JsonPropertyName("skipped_count")] public int SkippedCount { get; set; }
+
+    /// <summary>Share of what the file met in game that is actually translated.</summary>
+    [JsonPropertyName("completeness")] public double? Completeness { get; set; }
+
+    /// <summary>Share of the file a human settled.</summary>
+    [JsonPropertyName("review_coverage")] public double? ReviewCoverage { get; set; }
+
+    /// <summary>
+    /// Share of the GAME this file reaches, relative to the other translations of that game.
+    /// Cannot be worked out client-side — it needs every other translation — so it is taken as
+    /// the server sends it.
+    /// </summary>
+    [JsonPropertyName("game_coverage")] public double? GameCoverage { get; set; }
+
+    /// <summary>
+    /// The server's hash of this file. Written into the game as _source.hash on download, which
+    /// is how the mod later tells "the server moved" from "I edited this".
+    /// </summary>
+    [JsonPropertyName("file_hash")] public string? FileHash { get; set; }
+
+    /// <summary>When it was published. The mod flags a newcomer from this.</summary>
+    [JsonPropertyName("created_at")] public DateTimeOffset? CreatedAt { get; set; }
 
     /// <summary>
     /// Date the *content* changed. Deliberately not updated_at: a vote or a download bumps

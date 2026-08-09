@@ -33,7 +33,7 @@ public static class LocalTranslationProbe
             if (root.ValueKind != JsonValueKind.Object) return null;
 
             var entryCount = 0;
-            string? uuid = null, gameName = null, steamId = null;
+            string? uuid = null, gameName = null, steamId = null, sourceHash = null;
             var localChanges = 0;
 
             foreach (var property in root.EnumerateObject())
@@ -48,6 +48,12 @@ public static class LocalTranslationProbe
                         break;
                     case "_local_changes" when property.Value.TryGetInt32(out var changes):
                         localChanges = changes;
+                        break;
+                    case "_source" when property.Value.ValueKind == JsonValueKind.Object:
+                        // The hash the mod last synced with. Read here so the tool can tell a
+                        // file that is still the server's from one somebody has worked on.
+                        if (property.Value.TryGetProperty("hash", out var hash))
+                            sourceHash = hash.GetString();
                         break;
                     case "_game" when property.Value.ValueKind == JsonValueKind.Object:
                         if (property.Value.TryGetProperty("name", out var n)) gameName = n.GetString();
@@ -69,6 +75,7 @@ public static class LocalTranslationProbe
                 SteamId = steamId,
                 EntryCount = entryCount,
                 LocalChanges = localChanges,
+                SourceHash = sourceHash,
                 LastWrite = File.GetLastWriteTimeUtc(path),
             };
         }

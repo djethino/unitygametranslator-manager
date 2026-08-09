@@ -59,6 +59,19 @@
   <SolidColorBrush x:Key="StatusSuccess" Color="#4ADE80" />    <!-- green-400 -->
   <SolidColorBrush x:Key="StatusWarning" Color="#FBBF24" />    <!-- amber-400 -->
   <SolidColorBrush x:Key="StatusError" Color="#F87171" />      <!-- red-400 -->
+
+  <!--
+    The five shares a translation is made of, in the website's own colours and in its order.
+    The mod draws the same bar with the same meaning; a file that looked different depending on
+    where it was read would make the measure worthless. Kept-as-is owns a band because it is
+    neither translated nor missing, and capture is what was seen but not yet worked on.
+  -->
+  <SolidColorBrush x:Key="QualityHuman" Color="#22C55E" />     <!-- green-500 -->
+  <SolidColorBrush x:Key="QualityValidated" Color="#3B82F6" /> <!-- blue-500 -->
+  <SolidColorBrush x:Key="QualityAi" Color="#F97316" />        <!-- orange-500 -->
+  <SolidColorBrush x:Key="QualityKept" Color="#A855F7" />      <!-- purple-500 -->
+  <SolidColorBrush x:Key="QualityCapture" Color="#6B7280" />   <!-- gray-500 -->
+  <SolidColorBrush x:Key="QualityTrack" Color="#374151" />     <!-- gray-700, the empty bar -->
   <SolidColorBrush x:Key="StatusInfo" Color="#60A5FA" />       <!-- blue-400 -->
   <SolidColorBrush x:Key="StatusNeutral" Color="#6B7280" />    <!-- gray-500 -->
 

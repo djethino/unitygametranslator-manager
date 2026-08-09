@@ -20,17 +20,28 @@
       -->
       <StackPanel Spacing="10">
         <Grid ColumnDefinitions="*,Auto">
-          <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12">
-            <Image Source="avares://UnityGameTranslatorInstaller/Assets/icon-128.png"
-                   Width="34" Height="34" VerticalAlignment="Center" />
-            <StackPanel Spacing="2" VerticalAlignment="Center">
+          <!--
+            A Grid rather than a horizontal StackPanel, and that is what makes the trimming work:
+            a StackPanel hands each child the width it asks for, so a TextBlock inside one never
+            has a reason to shorten itself and pushes into whatever sits next to it instead. The
+            starred column gives the text a width to fit into.
+
+            The subtitle needs it as much as the title: it counts games, and both numbers grow.
+          -->
+          <Grid Grid.Column="0" ColumnDefinitions="Auto,*" Margin="0,0,16,0">
+            <Image Grid.Column="0"
+                   Source="avares://UnityGameTranslatorInstaller/Assets/icon-128.png"
+                   Width="34" Height="34" VerticalAlignment="Center" Margin="0,0,12,0" />
+            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
               <TextBlock Text="Your Unity games" FontSize="18" FontWeight="SemiBold"
                          TextTrimming="CharacterEllipsis"
                          Foreground="{DynamicResource TextPrimary}" />
               <TextBlock x:Name="SubtitleText" FontSize="12"
+                         TextTrimming="CharacterEllipsis"
+                         ToolTip.Tip="{Binding #SubtitleText.Text}"
                          Text="Scanning..." Foreground="{DynamicResource TextMuted}" />
             </StackPanel>
-          </StackPanel>
+          </Grid>
 
           <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"
                       VerticalAlignment="Center">

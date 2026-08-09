@@ -26,8 +26,8 @@
   <SolidColorBrush x:Key="SurfaceBar" Color="#1A2332" />       <!-- header and status bar -->
   <SolidColorBrush x:Key="SurfaceCard" Color="#1F2937" />      <!-- gray-800, the site's card -->
   <SolidColorBrush x:Key="SurfaceCardHover" Color="#273449" />
-  <SolidColorBrush x:Key="SurfaceInput" Color="#1B2431" />     <!-- gray-800/80 over the body -->
-  <SolidColorBrush x:Key="SurfaceControl" Color="#374151" />   <!-- gray-700, raised control -->
+  <SolidColorBrush x:Key="SurfaceInput" Color="#1B2431" />     <!-- gray-800/80, form field recessed in a card -->
+  <SolidColorBrush x:Key="SurfaceControl" Color="#374151" />   <!-- gray-700, the site's search field -->
 
   <SolidColorBrush x:Key="BorderSubtle" Color="#374151" />     <!-- gray-700, the card's edge -->
   <SolidColorBrush x:Key="BorderStrong" Color="#4B5563" />     <!-- gray-600, the input's edge -->

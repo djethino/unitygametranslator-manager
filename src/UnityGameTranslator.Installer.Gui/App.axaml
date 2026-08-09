@@ -39,16 +39,29 @@
       <Setter Property="Foreground" Value="#FFFFFF" />
     </Style>
 
-    <!-- Inputs: the site's own field — gray-800/80 fill, gray-600/50 edge, purple on focus -->
+    <!--
+      Fields, and the site makes a distinction worth keeping.
+
+      A SEARCH field is `bg-gray-700 border-gray-600 focus:border-purple-500`: a lighter grey,
+      because it sits ON a surface and has to read as something you act on.
+      A FORM field inside a card is `bg-gray-800/80 border-gray-600/50`: darker, recessed into
+      the card it belongs to.
+
+      The default here is the search shade, because that is what this window has. Fields that
+      end up inside a card should carry Classes="recessed".
+    -->
     <Style Selector="TextBox">
       <Setter Property="CornerRadius" Value="{DynamicResource RadiusControl}" />
       <Setter Property="Padding" Value="12,7" />
       <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
     </Style>
     <Style Selector="TextBox /template/ Border#PART_BorderElement">
-      <Setter Property="Background" Value="{DynamicResource SurfaceInput}" />
+      <Setter Property="Background" Value="{DynamicResource SurfaceControl}" />
       <Setter Property="BorderBrush" Value="{DynamicResource BorderStrong}" />
       <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="TextBox.recessed /template/ Border#PART_BorderElement">
+      <Setter Property="Background" Value="{DynamicResource SurfaceInput}" />
     </Style>
     <Style Selector="TextBox:pointerover /template/ Border#PART_BorderElement">
       <Setter Property="BorderBrush" Value="{DynamicResource TextMuted}" />

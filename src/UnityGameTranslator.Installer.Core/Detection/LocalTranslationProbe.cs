@@ -18,6 +18,38 @@ public static class LocalTranslationProbe
     public const string ConfigFileName = "config.json";
     public const string PluginAssemblyName = "UnityGameTranslator.dll";
 
+    /// <summary>
+    /// The target language this game is set to, as the mod stores it — a NAME ("French"), not a
+    /// code. Null when there is no config yet, or when it says "auto".
+    ///
+    /// Read because installing a translation into a game aimed at another language leaves the mod
+    /// hunting for a language nobody provided: the file would sit there while the mod carried on
+    /// trying to translate into something else. Knowing it is what lets us say so.
+    /// </summary>
+    public static string? ReadTargetLanguage(string gamePath, LoaderDescriptor descriptor)
+    {
+        var path = Path.Combine(gamePath,
+            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar), ConfigFileName);
+
+        if (!File.Exists(path)) return null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(path));
+            if (!document.RootElement.TryGetProperty("target_language", out var value)) return null;
+
+            var language = value.GetString();
+            return string.IsNullOrWhiteSpace(language)
+                   || string.Equals(language, "auto", StringComparison.OrdinalIgnoreCase)
+                ? null
+                : language;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public static LocalTranslation? Read(string gamePath, LoaderDescriptor descriptor)
     {
         var path = Path.Combine(gamePath,

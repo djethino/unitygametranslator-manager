@@ -4,6 +4,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using UnityGameTranslator.Installer.Core.Api;
+using UnityGameTranslator.Installer.Core.Detection;
 using UnityGameTranslator.Installer.Core.Install;
 using UnityGameTranslator.Installer.Core.Model;
 using UnityGameTranslator.Installer.Core.Platform;
@@ -44,16 +45,25 @@ public sealed class TranslationsWindow : Window
     private readonly LoaderDescriptor _loader;
     private readonly CatalogApiClient _api = new();
 
+    private readonly SettingsStore _settings;
+
     private StackPanel _list = null!;
     private TextBlock _status = null!;
+    private ComboBox _target = null!;
+    private ComboBox _source = null!;
+    private SpinningGear _searching = null!;
+
+    /// <summary>Everything published for this game, whatever the languages. Feeds the pickers.</summary>
+    private IReadOnlyList<OnlineTranslation> _everything = Array.Empty<OnlineTranslation>();
 
     /// <summary>True when something was written, so the caller can refresh the game card.</summary>
     public bool Changed { get; private set; }
 
-    public TranslationsWindow(GameReport report, LoaderDescriptor loader)
+    public TranslationsWindow(GameReport report, LoaderDescriptor loader, SettingsStore settings)
     {
         _report = report;
         _loader = loader;
+        _settings = settings;
 
         Title = $"Translations for {report.Game.Name}";
         Width = 860;
@@ -78,11 +88,20 @@ public sealed class TranslationsWindow : Window
         layout.Children.Add(_status);
 
         layout.Children.Add(LocalState());
+        layout.Children.Add(Filters());
+
+        _searching = new SpinningGear("Asking the site...") { IsVisible = false };
+        layout.Children.Add(_searching);
 
         _list = new StackPanel { Spacing = 10 };
         layout.Children.Add(_list);
 
-        ShowTranslations();
+        // What the game scan already found, shown at once. The pickers are built from it, so they
+        // only ever offer languages this game actually has — a list of every language on earth
+        // would be a list of ways to get nothing.
+        _everything = Collect();
+        ApplyDefaults();
+        ShowTranslations(_everything);
 
         var close = new Button { Content = "Close", IsCancel = true };
         close.Click += (_, _) => Close();
@@ -148,13 +167,139 @@ public sealed class TranslationsWindow : Window
         };
     }
 
-    private void ShowTranslations()
+    /// <summary>
+    /// The two pickers, in the website's own shape: target language and source language, each
+    /// with an "any".
+    ///
+    /// Both matter, and the second is not a refinement: a game can ship in several regional
+    /// editions whose in-game text is not the same language, so "French" alone does not say which
+    /// original a translation was made from — and taking one made from a text your copy does not
+    /// contain gives a file that matches nothing.
+    ///
+    /// The target starts on the language configured in Mod defaults rather than on "any". Someone
+    /// opening this screen wants what they can play, not a catalogue; the "any" entry is there for
+    /// the case that actually happens — no translation in your language, and English will do.
+    /// </summary>
+    private Control Filters()
     {
-        _list.Children.Clear();
+        _target = new ComboBox { Width = 220 };
+        _source = new ComboBox { Width = 220 };
 
+        _target.SelectionChanged += async (_, _) => await SearchAsync();
+        _source.SelectionChanged += async (_, _) => await SearchAsync();
+
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 16 };
+        row.Children.Add(Labelled("Into", _target));
+        row.Children.Add(Labelled("From", _source));
+
+        return row;
+    }
+
+    private static Control Labelled(string label, Control control)
+    {
+        var panel = new StackPanel { Spacing = 4 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = label,
+            FontSize = 11,
+            Foreground = Brush("TextMuted"),
+        });
+        panel.Children.Add(control);
+        return panel;
+    }
+
+    /// <summary>Everything the scan found for this game, matching translation first.</summary>
+    private IReadOnlyList<OnlineTranslation> Collect()
+    {
         var all = new List<OnlineTranslation>();
         if (_report.MatchingOnline is { } mine) all.Add(mine);
         all.AddRange(_report.AlternativeOnline);
+        return all;
+    }
+
+    /// <summary>
+    /// Fills both pickers from the languages this game has, and preselects the configured one.
+    ///
+    /// ⚠ When nothing exists in that language the filter falls back to "any" and says so. Leaving
+    /// it selected would show an empty screen for a game that does have translations, and an empty
+    /// screen reads as "nothing here", not as "nothing in French".
+    /// </summary>
+    private void ApplyDefaults()
+    {
+        var configured = Languages.NameOf(_settings.ResolveTargetLanguage());
+
+        Fill(_target, _everything.Select(t => t.TargetLanguage));
+        Fill(_source, _everything.Select(t => t.SourceLanguage));
+
+        var hasConfigured = _everything.Any(t =>
+            string.Equals(t.TargetLanguage, configured, StringComparison.OrdinalIgnoreCase));
+
+        Select(_target, hasConfigured ? configured : null);
+        Select(_source, null);
+
+        if (!hasConfigured && _everything.Count > 0)
+        {
+            _status.Text = $"Nothing in {configured} for this game yet, so every language is "
+                         + "shown. Taking one in another language is a normal thing to do — the "
+                         + "screen will offer to point the game at it.";
+        }
+    }
+
+    private static void Fill(ComboBox box, IEnumerable<string?> languages)
+    {
+        box.Items.Clear();
+        box.Items.Add(new ComboBoxItem { Content = "Any language", Tag = null });
+
+        foreach (var language in languages
+                     .Where(l => !string.IsNullOrWhiteSpace(l))
+                     .Select(l => l!)
+                     .Distinct(StringComparer.OrdinalIgnoreCase)
+                     .OrderBy(l => l, StringComparer.OrdinalIgnoreCase))
+        {
+            box.Items.Add(new ComboBoxItem { Content = language, Tag = language });
+        }
+    }
+
+    private static void Select(ComboBox box, string? language)
+    {
+        box.SelectedItem = box.Items.OfType<ComboBoxItem>().FirstOrDefault(item =>
+            string.Equals(item.Tag as string, language, StringComparison.OrdinalIgnoreCase))
+            ?? box.Items.OfType<ComboBoxItem>().First();
+    }
+
+    /// <summary>
+    /// Asks the server again with the chosen languages.
+    ///
+    /// Filtered by the server, not here, because the search returns at most fifty results after
+    /// ranking: on a heavily translated game, filtering a top-fifty taken across all languages
+    /// could hide French ones that never made that list.
+    /// </summary>
+    private async Task SearchAsync()
+    {
+        var target = (_target.SelectedItem as ComboBoxItem)?.Tag as string;
+        var source = (_source.SelectedItem as ComboBoxItem)?.Tag as string;
+
+        _searching.IsVisible = true;
+        _list.Children.Clear();
+
+        var found = _report.Game.SteamAppId is { } steamId
+            ? await _api.SearchBySteamIdAsync(steamId, target, source)
+            : await _api.SearchByNameAsync(_report.Game.Name, target, source);
+
+        _searching.IsVisible = false;
+
+        if (_api.LastError is not null)
+        {
+            _status.Text = _api.LastError;
+            return;
+        }
+
+        ShowTranslations(found);
+    }
+
+    private void ShowTranslations(IReadOnlyList<OnlineTranslation> all)
+    {
+        _list.Children.Clear();
 
         if (all.Count == 0)
         {
@@ -165,8 +310,7 @@ public sealed class TranslationsWindow : Window
             return;
         }
 
-        _status.Text = $"{all.Count} translation(s) published for this game, in the order the site "
-                     + "ranks them.";
+        _status.Text = $"{all.Count} translation(s) for this game, in the order the site ranks them.";
 
         foreach (var translation in all) _list.Children.Add(Card(translation, all));
     }
@@ -355,6 +499,11 @@ public sealed class TranslationsWindow : Window
 
         Changed = true;
 
+        // The file is in place; the game may still be aimed elsewhere. Asked after the download
+        // rather than before, because it only matters once the file exists — and because saying
+        // no must leave a working translation behind, not a cancelled operation.
+        await OfferToAlignGameAsync(translation);
+
         var message = "Installed. The game will use it next time you launch it.";
         if (result.BackupPath is not null)
         {
@@ -401,6 +550,61 @@ public sealed class TranslationsWindow : Window
             "Replace the translation in this game?",
             what + " " + keep + merge,
             confirm: "Replace it");
+    }
+
+    /// <summary>
+    /// Points the game at the language of the translation just taken, with permission.
+    ///
+    /// This is the case that actually happens: no translation in your language for a Japanese or
+    /// Chinese game, so you take the English one. Without this the file lands in a game still set
+    /// to French — the mod would ignore what you just installed and carry on translating into a
+    /// language nobody provided, and nothing on screen would explain why.
+    ///
+    /// ⚠ Asked, never done silently. The target language is also what the mod uses to decide what
+    /// to translate as you play, so changing it has consequences beyond this file — and someone
+    /// running two games in two languages has a reason we cannot guess.
+    /// </summary>
+    private async Task OfferToAlignGameAsync(OnlineTranslation translation)
+    {
+        var taken = translation.TargetLanguage;
+        if (string.IsNullOrWhiteSpace(taken)) return;
+
+        // What the GAME is set to, not what this tool defaults to: they are allowed to differ, and
+        // this one is what the mod will act on.
+        var configured = LocalTranslationProbe.ReadTargetLanguage(_report.Game.Path, _loader);
+
+        // No config yet means the install path will write our own default, which already matches
+        // what this screen was filtered by. Nothing to reconcile.
+        if (configured is null) return;
+        if (string.Equals(configured, taken, StringComparison.OrdinalIgnoreCase)) return;
+
+        var agreed = await ConfirmationWindow.AskAsync(this,
+            $"Point the game at {taken}?",
+            $"This game is set to {configured}, and the translation you just took is in {taken}. "
+            + $"Left as it is, the mod will keep working towards {configured} and will not use the "
+            + $"file you just installed."
+            + Environment.NewLine + Environment.NewLine
+            + $"Switching only changes this game. Your default stays {Languages.NameOf(_settings.ResolveTargetLanguage())}.",
+            confirm: $"Use {taken} for this game");
+
+        if (!agreed) return;
+
+        var settings = _settings.Current;
+        var previous = settings.TargetLanguage;
+
+        try
+        {
+            // Written through the same merge as everything else, so the game keeps its token, its
+            // secrets and every key we do not know about.
+            settings.TargetLanguage = Languages.CodeOf(taken) ?? previous;
+            new GameConfigWriter().Apply(_report.Game.Path, _loader, settings);
+        }
+        finally
+        {
+            // The global default is untouched: this was a decision about one game, and leaving it
+            // changed would apply it to the next install without anyone asking.
+            settings.TargetLanguage = previous;
+        }
     }
 
     /// <summary>

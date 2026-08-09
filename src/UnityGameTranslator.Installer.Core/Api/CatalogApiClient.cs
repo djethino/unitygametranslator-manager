@@ -42,13 +42,24 @@ public sealed class CatalogApiClient
     /// Community translations for a Steam app id. Never throws: a failed search is a missing
     /// convenience, not a reason to block an install. It is recorded in <see cref="LastError"/>.
     /// </summary>
+    /// <param name="targetLanguage">
+    /// A language NAME as the API expects it ("French"), or null for every language.
+    ///
+    /// Filtered by the server rather than here, and not only out of tidiness: the search returns
+    /// at most fifty results after ranking, so on a heavily translated game the French ones could
+    /// fall outside a top-fifty taken across all languages. Asking the server for French gets the
+    /// top fifty French.
+    /// </param>
+    /// <param name="sourceLanguage">Same, for the language translated FROM.</param>
     public async Task<IReadOnlyList<OnlineTranslation>> SearchBySteamIdAsync(
-        string steamAppId, CancellationToken ct = default)
+        string steamAppId, string? targetLanguage = null, string? sourceLanguage = null,
+        CancellationToken ct = default)
     {
         LastError = null;
         if (string.IsNullOrWhiteSpace(steamAppId)) return Array.Empty<OnlineTranslation>();
 
-        var url = $"{BuildInfo.ApiBaseUrl}/translations?steam_id={Uri.EscapeDataString(steamAppId)}";
+        var url = $"{BuildInfo.ApiBaseUrl}/translations?steam_id={Uri.EscapeDataString(steamAppId)}"
+                + LanguageFilters(targetLanguage, sourceLanguage);
 
         try
         {
@@ -75,13 +86,15 @@ public sealed class CatalogApiClient
     /// different one would make the installer and the mod disagree about the very same game.
     /// </summary>
     public async Task<IReadOnlyList<OnlineTranslation>> SearchByNameAsync(
-        string gameName, CancellationToken ct = default)
+        string gameName, string? targetLanguage = null, string? sourceLanguage = null,
+        CancellationToken ct = default)
     {
         LastError = null;
         var name = gameName.Trim();
         if (name.Length < 2) return Array.Empty<OnlineTranslation>();
 
-        var url = $"{BuildInfo.ApiBaseUrl}/translations?q={Uri.EscapeDataString(name)}";
+        var url = $"{BuildInfo.ApiBaseUrl}/translations?q={Uri.EscapeDataString(name)}"
+                + LanguageFilters(targetLanguage, sourceLanguage);
 
         try
         {
@@ -217,5 +230,26 @@ public sealed class CatalogApiClient
             return null;
         }
     }
+
+    /// <summary>
+    /// The lang and source_lang parameters, or nothing when neither is set.
+    ///
+    /// ⚠ Both take a language NAME, not an ISO code — the API compares them to the stored
+    /// target_language and source_language, which the mod writes as names. Sending "fr" here
+    /// silently matches nothing at all, which is indistinguishable from "no translation exists".
+    /// </summary>
+    private static string LanguageFilters(string? targetLanguage, string? sourceLanguage)
+    {
+        var filters = "";
+
+        if (!string.IsNullOrWhiteSpace(targetLanguage))
+            filters += $"&lang={Uri.EscapeDataString(targetLanguage)}";
+
+        if (!string.IsNullOrWhiteSpace(sourceLanguage))
+            filters += $"&source_lang={Uri.EscapeDataString(sourceLanguage)}";
+
+        return filters;
+    }
+
 
 }

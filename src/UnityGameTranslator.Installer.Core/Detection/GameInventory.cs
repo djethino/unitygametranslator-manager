@@ -122,8 +122,8 @@ public sealed class GameInventory
         if (!offline && _api is not null && (game.SteamAppId is not null || !string.IsNullOrWhiteSpace(game.Name)))
         {
             report.OnlineTranslations = game.SteamAppId is not null
-                ? await _api.SearchBySteamIdAsync(game.SteamAppId, ct).ConfigureAwait(false)
-                : await _api.SearchByNameAsync(game.Name, ct).ConfigureAwait(false);
+                ? await _api.SearchBySteamIdAsync(game.SteamAppId, ct: ct).ConfigureAwait(false)
+                : await _api.SearchByNameAsync(game.Name, ct: ct).ConfigureAwait(false);
 
             // "No translation exists" and "the search failed" look identical to a user, and
             // only one of them is our problem. Keep them apart.

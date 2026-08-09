@@ -79,8 +79,8 @@ public sealed class OnlineCatalogCache
 
             var value = key[(key.IndexOf(':') + 1)..];
             var translations = key.StartsWith("steam:", StringComparison.Ordinal)
-                ? await _api.SearchBySteamIdAsync(value, ct).ConfigureAwait(false)
-                : await _api.SearchByNameAsync(value, ct).ConfigureAwait(false);
+                ? await _api.SearchBySteamIdAsync(value, ct: ct).ConfigureAwait(false)
+                : await _api.SearchByNameAsync(value, ct: ct).ConfigureAwait(false);
 
             // A failed lookup is not an empty catalog. Recording it as "no translations" would
             // turn one blocked request into a wrong answer that survives for hours.

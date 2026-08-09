@@ -526,15 +526,20 @@ internal static class Program
             }
 
             var perLine = trial.WarmElapsed ?? trial.Elapsed;
-            Console.WriteLine($"{model,-24} {Yes(trial.KeptPlaceholders),-6} "
-                              + $"{Yes(trial.AnsweredWithTranslationOnly),-6} "
+
+            // Shown as a tally, not a tick: these models are sampled, and "3 out of 4" is the
+            // difference between a model that does the job and one that will corrupt a line now
+            // and then — which no single draw can tell you.
+            Console.WriteLine($"{model,-24} {trial.RunsKeepingPlaceholders}/{trial.Runs,-4} "
+                              + $"{trial.RunsAnsweringOnly}/{trial.Runs,-4} "
                               + $"{perLine.TotalSeconds,6:F1}s   {trial.VramText,-8} "
                               + $"{trial.OnGpu switch { true => "yes", false => "NO", _ => "?" },-8}");
         }
 
         Console.WriteLine();
-        Console.WriteLine("keeps = placeholders came back untouched, in order. A model that fails this");
-        Console.WriteLine("        corrupts the game's text, and no amount of speed makes up for it.");
+        Console.WriteLine("keeps = of how many answers the placeholders came back untouched, in order.");
+        Console.WriteLine("        Anything short of all of them corrupts the game's text sooner or");
+        Console.WriteLine("        later, and no amount of speed makes up for it.");
         Console.WriteLine("only  = answered with the translation and nothing else.");
         Console.WriteLine("Times are measured with no game running; in play the model shares the GPU.");
         return 0;

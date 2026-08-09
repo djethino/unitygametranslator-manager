@@ -56,6 +56,22 @@ public sealed record AiTrial(
     /// <summary>Video memory the model actually occupies, in bytes, when the server says so.</summary>
     public long? VramBytes { get; init; }
 
+    /// <summary>
+    /// How many answers were judged, and how many of them held.
+    ///
+    /// The verdicts above used to come from ONE answer, while three more were requested for
+    /// timing and thrown away. That is how the same model could be told "keeps placeholders" by
+    /// the suite and "does not" by the comparison, minutes apart, with neither being wrong: these
+    /// models are sampled, not deterministic, and one draw says almost nothing.
+    ///
+    /// It matters more here than in most tests: a model that mangles one line in four corrupts a
+    /// game's text, and a single green tick is exactly how that gets shipped.
+    /// </summary>
+    public int Runs { get; init; } = 1;
+
+    public int RunsKeepingPlaceholders { get; init; }
+    public int RunsAnsweringOnly { get; init; }
+
     public string VramText => VramBytes is { } bytes
         ? $"{bytes / 1024.0 / 1024 / 1024:F1} GB"
         : "unknown";
@@ -182,17 +198,35 @@ public sealed class AiServerProbe
         // guaranteed not to include someone else's loading.
         TimeSpan? bestWarm = null;
 
+        // The answers are judged too, not only timed. They were already paid for, and throwing
+        // them away is what let one lucky draw pass for a verdict.
+        var runs = 1;
+        var kept = first.KeptPlaceholders == true ? 1 : 0;
+        var bare = first.AnsweredWithTranslationOnly == true ? 1 : 0;
+
         for (var run = 0; run < WarmRuns; run++)
         {
             var attempt = await TryTranslateAsync(baseUrl, model, ct).ConfigureAwait(false);
             if (!attempt.Succeeded) continue;
             if (bestWarm is null || attempt.Elapsed < bestWarm) bestWarm = attempt.Elapsed;
+
+            runs++;
+            if (attempt.KeptPlaceholders == true) kept++;
+            if (attempt.AnsweredWithTranslationOnly == true) bare++;
         }
 
         return first with
         {
             WarmElapsed = bestWarm,
             FirstRunWasCold = !alreadyLoaded,
+            Runs = runs,
+            RunsKeepingPlaceholders = kept,
+            RunsAnsweringOnly = bare,
+
+            // "Yes" now means every answer held, not that one did. For this criterion nothing
+            // less is worth saying: the failure it guards against is silent corruption of text.
+            KeptPlaceholders = kept == runs,
+            AnsweredWithTranslationOnly = bare == runs,
         };
     }
 

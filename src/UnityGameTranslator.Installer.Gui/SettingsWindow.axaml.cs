@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -393,7 +394,19 @@ public sealed class SettingsWindow : Window
 
     private Control ModCard()
     {
-        _hotkey = new TextBox { Width = 160, Text = _draft.SettingsHotkey };
+        // Same shape as the mod's own HotkeyCapture: three modifier boxes, a "+", and one button
+        // that captures the base key. Deliberately identical — it is the same setting in the same
+        // ecosystem, and someone who has met one should recognise the other. It also beats
+        // capturing the whole combination at once: changing Ctrl for Alt does not mean redoing
+        // the capture.
+        var initial = _draft.SettingsHotkey ?? Hotkeys.Default;
+
+        var ctrlBox = new CheckBox { Content = "Ctrl", IsChecked = initial.Contains("Ctrl+") };
+        var altBox = new CheckBox { Content = "Alt", IsChecked = initial.Contains("Alt+") };
+        var shiftBox = new CheckBox { Content = "Shift", IsChecked = initial.Contains("Shift+") };
+
+        var baseKey = Hotkeys.BaseKeyOf(initial);
+        var keyButton = new Button { Content = baseKey, MinWidth = 110, FontSize = 12 };
 
         _hotkeyProblem = new TextBlock
         {
@@ -403,15 +416,85 @@ public sealed class SettingsWindow : Window
             Foreground = Brush("StatusWarning"),
         };
 
-        // Checked as it is typed, because the alternative is discovering it in a game where the
-        // panel refuses to open and nothing explains why: the mod parses this into a Unity KeyCode
-        // and simply does nothing when that fails.
-        _hotkey.TextChanged += (_, _) =>
+        // Not shown, not editable: the field only exists so Save reads one value from one place.
+        _hotkey = new TextBox { IsVisible = false, Text = initial };
+
+        void Recompose()
         {
-            var problem = Hotkeys.Explain(_hotkey.Text?.Trim());
-            _hotkeyProblem.Text = problem ?? "";
-            _hotkeyProblem.IsVisible = problem is not null;
+            var prefix = (ctrlBox.IsChecked == true ? "Ctrl+" : "")
+                       + (altBox.IsChecked == true ? "Alt+" : "")
+                       + (shiftBox.IsChecked == true ? "Shift+" : "");
+            _hotkey.Text = prefix + keyButton.Content;
+        }
+
+        ctrlBox.IsCheckedChanged += (_, _) => Recompose();
+        altBox.IsCheckedChanged += (_, _) => Recompose();
+        shiftBox.IsCheckedChanged += (_, _) => Recompose();
+
+        var capturing = false;
+
+        keyButton.Click += (_, _) =>
+        {
+            capturing = true;
+            keyButton.Content = "Press a key...";
+            _hotkeyProblem.IsVisible = false;
+            keyButton.Focus();
         };
+
+        keyButton.KeyDown += (_, e) =>
+        {
+            if (!capturing) return;
+            e.Handled = true;
+
+            // Modifiers have their own boxes here, so pressing one alone is not an answer.
+            if (e.PhysicalKey is PhysicalKey.ControlLeft or PhysicalKey.ControlRight
+                or PhysicalKey.AltLeft or PhysicalKey.AltRight
+                or PhysicalKey.ShiftLeft or PhysicalKey.ShiftRight
+                or PhysicalKey.MetaLeft or PhysicalKey.MetaRight)
+            {
+                return;
+            }
+
+            capturing = false;
+
+            // The physical position, not the character printed on the key — which is exactly what
+            // Unity records too. That is why this holds on any layout and any system: the key left
+            // of "1" is BackQuote to both, whether it prints `, ² or ^. Verified against what the
+            // mod had actually written into real games.
+            var unityName = Hotkeys.FromPhysicalKey(e.PhysicalKey.ToString());
+
+            if (unityName is null)
+            {
+                // Said, never worked around. Substituting another key silently would leave someone
+                // pressing the one they chose and concluding the mod is broken.
+                keyButton.Content = Hotkeys.BaseKeyOf(_hotkey.Text ?? Hotkeys.Default);
+                _hotkeyProblem.Text = "The mod cannot use that key: Unity has no name for its "
+                                    + "position, so it would never respond. Your previous key was kept.";
+                _hotkeyProblem.IsVisible = true;
+                return;
+            }
+
+            keyButton.Content = unityName;
+            _hotkeyProblem.IsVisible = false;
+            Recompose();
+        };
+
+        var hotkeyRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        hotkeyRow.Children.Add(ctrlBox);
+        hotkeyRow.Children.Add(altBox);
+        hotkeyRow.Children.Add(shiftBox);
+        hotkeyRow.Children.Add(new TextBlock
+        {
+            Text = "+",
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = Brush("TextMuted"),
+        });
+        hotkeyRow.Children.Add(keyButton);
 
         _channel = new ComboBox { Width = 200 };
         _channel.Items.Add(new ComboBoxItem { Content = "Stable", Tag = "stable" });
@@ -425,7 +508,13 @@ public sealed class SettingsWindow : Window
         };
 
         var panel = new StackPanel { Spacing = 10 };
-        panel.Children.Add(Row("In-game hotkey", _hotkey));
+
+        panel.Children.Add(Row("In-game hotkey", hotkeyRow));
+        panel.Children.Add(_hotkey);
+        panel.Children.Add(Note(
+            "Click the key button, then press the key you want. It is stored by position on the "
+            + "keyboard, exactly as the mod reads it - so the key left of \"1\" works whatever "
+            + "character your layout prints on it.", "TextMuted"));
         panel.Children.Add(_hotkeyProblem);
         panel.Children.Add(Row("Updates", _channel));
         panel.Children.Add(_online);
@@ -1046,12 +1135,11 @@ public sealed class SettingsWindow : Window
         _draft.AiApiKey = string.IsNullOrWhiteSpace(_apiKey.Text) ? null : _apiKey.Text.Trim();
         DraftWithNetwork();
         _draft.EnableAi = _draft.TranslationBackend == "ai";
-        // An unusable hotkey is not saved as-is. Keeping it would tick "reviewed" on a setting
-        // that cannot work, and the game would get a mod whose panel never opens.
-        var typedHotkey = _hotkey.Text?.Trim();
-        _draft.SettingsHotkey = Hotkeys.IsValid(typedHotkey) && !string.IsNullOrWhiteSpace(typedHotkey)
-            ? typedHotkey
-            : Hotkeys.Default;
+        // Whatever is on screen is what gets saved. The field can only hold something captured,
+        // so it cannot be unusable — and quietly substituting a different key would be the exact
+        // behaviour this whole mechanism exists to avoid.
+        var captured = _hotkey.Text?.Trim();
+        if (!string.IsNullOrWhiteSpace(captured)) _draft.SettingsHotkey = captured;
         _draft.Channel = Tag(_channel) ?? "stable";
         _draft.OnlineMode = _online.IsChecked == true;
 

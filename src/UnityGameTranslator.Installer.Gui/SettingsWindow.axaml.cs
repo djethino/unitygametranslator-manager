@@ -65,6 +65,8 @@ public sealed class SettingsWindow : Window
     private Button _refreshModels = null!;
     private StackPanel _aiPanel = null!;
     private StackPanel _apiPanel = null!;
+    private Control _aiCard = null!;
+    private Control _apiCard = null!;
     private ComboBox _provider = null!;
     private TextBox _providerKey = null!;
     private CheckBox _deeplFree = null!;
@@ -161,8 +163,13 @@ public sealed class SettingsWindow : Window
         layout.Children.Add(GroupHeading("Written into your games"));
         layout.Children.Add(LanguageCard());
         layout.Children.Add(BackendCard());
-        layout.Children.Add(AiCard());
-        layout.Children.Add(ApiCard());
+        // The whole card is hidden, title included — not just its contents. Hiding only the inside
+        // left two headings sitting over nothing, which reads as a screen that failed to load
+        // rather than as a section that does not apply.
+        _aiCard = AiCard();
+        _apiCard = ApiCard();
+        layout.Children.Add(_aiCard);
+        layout.Children.Add(_apiCard);
         layout.Children.Add(ModCard());
 
         layout.Children.Add(GroupHeading("This tool"));
@@ -215,6 +222,7 @@ public sealed class SettingsWindow : Window
         root.Children.Add(bar);
         root.Children.Add(new ScrollViewer { Content = layout });
 
+        ShowBackendCards();
         WatchForChanges();
         RefreshApplyButton();
 
@@ -275,16 +283,20 @@ public sealed class SettingsWindow : Window
         _backend.Items.Add(new ComboBoxItem { Content = "Google / DeepL", Tag = "google" });
         Select(_backend, _draft.TranslationBackend == "deepl" ? "google" : _draft.TranslationBackend);
 
-        _backend.SelectionChanged += (_, _) =>
-        {
-            _aiPanel.IsVisible = Tag(_backend) == "llm";
-            _apiPanel.IsVisible = Tag(_backend) == "google";
-        };
+        _backend.SelectionChanged += (_, _) => ShowBackendCards();
 
         return Card("How lines get translated",
             "A game someone has already translated needs none of this. The rest is for what "
             + "nobody has translated yet: your own machine, free, or a paid service with your own key.",
             Row("Backend", _backend));
+    }
+
+    /// <summary>Only the card for the chosen backend is on screen; the other is gone entirely.</summary>
+    private void ShowBackendCards()
+    {
+        var backend = Tag(_backend);
+        _aiCard.IsVisible = backend == "llm";
+        _apiCard.IsVisible = backend == "google";
     }
 
     /// <summary>

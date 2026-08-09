@@ -1,0 +1,160 @@
+using UnityGameTranslator.Installer.Core.Model;
+
+namespace UnityGameTranslator.Installer.Core.Detection;
+
+/// <summary>
+/// Turns everything we found about a game into one sentence and one verb.
+///
+/// The rule that governs all of it: a translation marked "complete" is an author's declaration
+/// at a point in time, not a measurement — the total number of lines in a game is unknowable.
+/// So this never concludes "there is nothing left to do here"; it says what exists, when it last
+/// moved, and leaves every posture reachable.
+/// </summary>
+public static class SituationReader
+{
+    public static GameSituationInfo Read(GameReport report, string targetLanguage, bool onlineChecked)
+    {
+        var game = report.Game;
+
+        if (!game.IsModdable)
+        {
+            return new GameSituationInfo(
+                Situation.Blocked,
+                Explain(game),
+                null,
+                PrimaryAction: "");
+        }
+
+        var installed = report.InstalledPluginVersion is not null;
+        var local = report.LocalTranslation;
+
+        // What exists online in the language the player actually wants.
+        var inLanguage = report.OnlineTranslations
+            .Where(t => Languages.Matches(t.TargetLanguage, targetLanguage))
+            .OrderByDescending(t => t.LineCount)
+            .ToList();
+
+        if (installed)
+        {
+            if (local is { LocalChanges: > 0 })
+            {
+                return new GameSituationInfo(
+                    Situation.UnpublishedWork,
+                    $"{local.LocalChanges} change(s) not published",
+                    local.EntryCount > 0 ? $"{local.EntryCount} lines translated" : null,
+                    "Manage");
+            }
+
+            // A newer version of the very translation in use is worth surfacing; a different
+            // translation existing is not an update, it is an alternative.
+            var mine = report.MatchingOnline;
+            if (mine is not null && local is not null
+                && mine.ContentUpdatedAt is { } remoteDate
+                && local.LastWrite is { } localDate
+                && remoteDate > localDate)
+            {
+                return new GameSituationInfo(
+                    Situation.UpdateAvailable,
+                    "A newer version of this translation is available",
+                    Freshness(mine),
+                    "Update");
+            }
+
+            var readyDetail = local is { EntryCount: > 0 }
+                ? $"{local.EntryCount} lines"
+                : "no translation file yet — it fills up as you play";
+
+            return new GameSituationInfo(Situation.Ready, "Ready to play", readyDetail, "Manage");
+        }
+
+        if (!onlineChecked)
+        {
+            return new GameSituationInfo(
+                Situation.Unknown,
+                "Not set up yet",
+                "Community translations were not checked",
+                "Set up");
+        }
+
+        if (inLanguage.Count > 0)
+        {
+            var best = inLanguage[0];
+            var others = inLanguage.Count > 1 ? $", {inLanguage.Count - 1} other(s)" : "";
+
+            // "complete" is repeated as the author's word, with the date next to it: complete
+            // and last touched fourteen months ago is a different proposition from complete
+            // last week, and only showing the label would hide that.
+            var quality = string.Equals(best.Status, "complete", StringComparison.OrdinalIgnoreCase)
+                ? "complete according to its author"
+                : "in progress";
+
+            return new GameSituationInfo(
+                Situation.TranslationAvailable,
+                $"Translation available in {Languages.NameOf(targetLanguage)}",
+                $"{quality}{Freshness(best, prefix: " · ")}{others}",
+                "Install and play");
+        }
+
+        return new GameSituationInfo(
+            Situation.NotTranslatedYet,
+            $"No {Languages.NameOf(targetLanguage)} translation yet",
+            report.OnlineTranslations.Count > 0
+                ? $"{report.OnlineTranslations.Count} translation(s) in other languages"
+                : null,
+            "Install and translate");
+    }
+
+    /// <summary>
+    /// Postures offered for a game, best-first. All four stay reachable whenever a translation
+    /// exists — including a complete one, which is exactly the case where assuming would shut
+    /// the door on someone willing to finish what an author could not reach.
+    /// </summary>
+    public static IReadOnlyList<Posture> PosturesFor(GameReport report, string targetLanguage)
+    {
+        var hasTranslation = report.OnlineTranslations
+            .Any(t => Languages.Matches(t.TargetLanguage, targetLanguage));
+
+        return hasTranslation
+            ? new[] { Posture.Use, Posture.Contribute, Posture.Fork, Posture.Start }
+            : new[] { Posture.Start };
+    }
+
+    public static string Describe(Posture posture) => posture switch
+    {
+        Posture.Use => "Use it as it is",
+        Posture.Contribute => "Use it and offer my corrections back",
+        Posture.Fork => "Take it as a starting point, as my own version",
+        Posture.Start => "Start a translation for this game",
+        _ => posture.ToString(),
+    };
+
+    /// <summary>
+    /// Dates come from content_updated_at, never updated_at: a vote or a download bumps the
+    /// latter, which would show an abandoned translation as freshly maintained.
+    /// </summary>
+    private static string Freshness(OnlineTranslation translation, string prefix = "")
+    {
+        if (translation.ContentUpdatedAt is not { } date) return "";
+
+        var days = (int)(DateTimeOffset.UtcNow - date).TotalDays;
+        var text = days switch
+        {
+            < 0 => date.ToString("yyyy-MM-dd"),
+            0 => "updated today",
+            1 => "updated yesterday",
+            < 30 => $"updated {days} days ago",
+            < 365 => $"updated {days / 30} month(s) ago",
+            _ => $"updated {days / 365} year(s) ago",
+        };
+        return prefix + text;
+    }
+
+    private static string Explain(GameInstall game) => game.Verdict switch
+    {
+        ModdabilityVerdict.AntiCheat => $"Cannot be modded — {game.VerdictDetail}",
+        ModdabilityVerdict.StoreProtected => "Cannot be modded — store-protected build",
+        ModdabilityVerdict.RuntimeUnknown => "Cannot be modded — unrecognised Unity runtime",
+        ModdabilityVerdict.NotUnity => "Not a Unity game",
+        _ => "Cannot be modded",
+    };
+}

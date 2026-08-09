@@ -11,6 +11,7 @@ using UnityGameTranslator.Installer.Core.Detection;
 using UnityGameTranslator.Installer.Core.Install;
 using UnityGameTranslator.Installer.Core.Model;
 using UnityGameTranslator.Installer.Core.Platform;
+using UnityGameTranslator.Installer.Core.Settings;
 
 namespace UnityGameTranslator.Installer.Gui;
 
@@ -26,6 +27,16 @@ public partial class MainWindow : Window
 
     private readonly List<GameInstall> _games = new();
     private GameInstall? _selected;
+
+    private SettingsStore _settings = null!;
+    private OnlineCatalogCache _online = null!;
+    private CancellationTokenSource? _sweep;
+
+    /// <summary>Situation per game path, so a row can be redrawn without redoing the work.</summary>
+    private readonly Dictionary<string, GameSituationInfo> _situations =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private Situation? _filter;
 
     public MainWindow()
     {
@@ -43,6 +54,12 @@ public partial class MainWindow : Window
         AboutButton.Click += async (_, _) => await new AboutWindow().ShowDialog(this);
         GameList.SelectionChanged += async (_, _) => await ShowSelectedAsync();
 
+        _settings = new SettingsStore(_platform);
+        _online = new OnlineCatalogCache(_platform);
+
+        BuildLanguageBox();
+        BuildFilterBar();
+
         Loaded += async (_, _) => await ScanAsync();
     }
 
@@ -51,6 +68,8 @@ public partial class MainWindow : Window
     private async Task ScanAsync()
     {
         Busy(true, "Looking for the loader catalog...");
+
+        _sweep?.Cancel();
 
         var result = await Task.Run(() => new CatalogProvider(_platform).Get());
         _catalog = result.Document;
@@ -68,8 +87,155 @@ public partial class MainWindow : Window
             ? $"{_games.Count} Unity games found"
             : $"{_games.Count} Unity games found, {blocked} that cannot be modded";
 
+        RecomputeSituations();
         RefreshList();
         Busy(false, "Ready.");
+
+        StartOnlineSweep();
+    }
+
+    /// <summary>
+    /// Fills in what the community has, in the background.
+    ///
+    /// The window is usable immediately and rows sharpen as answers arrive, rather than the list
+    /// staying empty until every game has been looked up. Only Steam gives us an id to look up
+    /// with, so the others simply say so instead of pretending to know.
+    /// </summary>
+    private void StartOnlineSweep()
+    {
+        if (!_settings.Current.OnlineMode) return;
+
+        var ids = _games.Where(g => g.IsModdable && g.SteamAppId is not null)
+                        .Select(g => g.SteamAppId!)
+                        .ToList();
+        if (ids.Count == 0) return;
+
+        _sweep = new CancellationTokenSource();
+        var token = _sweep.Token;
+
+        _ = Task.Run(async () =>
+        {
+            var done = 0;
+            await _online.RefreshAsync(ids, async (appId, _) =>
+            {
+                done++;
+                var progress = done;
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    RecomputeSituations();
+                    RefreshList();
+                    Status($"Checking community translations... {progress}/{ids.Count}");
+                });
+            }, token);
+
+            if (!token.IsCancellationRequested)
+                await Dispatcher.UIThread.InvokeAsync(() => Status("Ready."));
+        }, token);
+    }
+
+    /// <summary>
+    /// Rebuilds every row's situation from what is currently known. Cheap: it reads the caches,
+    /// it does not go looking again.
+    /// </summary>
+    private void RecomputeSituations()
+    {
+        var language = _settings.ResolveTargetLanguage();
+        _situations.Clear();
+
+        foreach (var game in _games)
+        {
+            var online = _online.Peek(game.SteamAppId);
+            var report = new GameReport { Game = game };
+
+            var descriptor = _catalog.Loaders.FirstOrDefault(
+                l => l.Id == LoaderProbe.Detect(game.Path, _catalog)?.Id);
+
+            if (descriptor is not null)
+            {
+                report.InstalledPluginVersion =
+                    LocalTranslationProbe.ReadInstalledPluginVersion(game.Path, descriptor);
+                report.LocalTranslation = LocalTranslationProbe.Read(game.Path, descriptor);
+            }
+
+            if (online is not null)
+            {
+                report.OnlineTranslations = online;
+                if (report.LocalTranslation?.Uuid is { Length: > 0 } uuid)
+                {
+                    report.MatchingOnline = online.FirstOrDefault(
+                        t => string.Equals(t.Uuid, uuid, StringComparison.OrdinalIgnoreCase));
+                }
+            }
+
+            var checkedOnline = online is not null
+                                || game.SteamAppId is null
+                                || !_settings.Current.OnlineMode;
+
+            _situations[game.Path] = SituationReader.Read(report, language, checkedOnline);
+        }
+    }
+
+    // ---------------------------------------------------------------- language and filters
+
+    private void BuildLanguageBox()
+    {
+        // "auto" first: following the system is a legitimate answer, and it is the mod's default.
+        LanguageBox.Items.Add(new ComboBoxItem { Content = "System language", Tag = "auto" });
+        foreach (var (code, name) in Languages.All())
+            LanguageBox.Items.Add(new ComboBoxItem { Content = name, Tag = code });
+
+        var current = _settings.Current.TargetLanguage;
+        foreach (var item in LanguageBox.Items.OfType<ComboBoxItem>())
+        {
+            if (string.Equals(item.Tag as string, current, StringComparison.OrdinalIgnoreCase))
+            {
+                LanguageBox.SelectedItem = item;
+                break;
+            }
+        }
+        LanguageBox.SelectedItem ??= LanguageBox.Items.OfType<ComboBoxItem>().FirstOrDefault();
+
+        LanguageBox.SelectionChanged += (_, _) =>
+        {
+            if (LanguageBox.SelectedItem is not ComboBoxItem { Tag: string code }) return;
+            if (code == _settings.Current.TargetLanguage) return;
+
+            var updated = _settings.Current;
+            updated.TargetLanguage = code;
+            updated.Reviewed = true;
+            _settings.Save(updated);
+
+            // The language is the context for every row: changing it re-reads the whole list.
+            RecomputeSituations();
+            RefreshList();
+        };
+    }
+
+    private void BuildFilterBar()
+    {
+        (string Label, Situation? Value)[] filters =
+        {
+            ("All", null),
+            ("Playable in my language", Situation.TranslationAvailable),
+            ("Needs a translator", Situation.NotTranslatedYet),
+            ("Already set up", Situation.Ready),
+            ("Cannot be modded", Situation.Blocked),
+        };
+
+        foreach (var (label, value) in filters)
+        {
+            var button = new Button { Content = label, FontSize = 11, Tag = value };
+            button.Click += (_, _) =>
+            {
+                _filter = value;
+                foreach (var other in FilterBar.Children.OfType<Button>())
+                    other.Classes.Set("primary", ReferenceEquals(other, button));
+                RefreshList();
+            };
+            FilterBar.Children.Add(button);
+        }
+
+        (FilterBar.Children.FirstOrDefault() as Button)?.Classes.Add("primary");
     }
 
     private async Task AddFolderAsync()
@@ -199,6 +365,7 @@ public partial class MainWindow : Window
 
         var items = _games
             .Where(g => filter.Length == 0 || g.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
+            .Where(MatchesFilter)
             .Select(BuildListItem)
             .ToList();
 
@@ -207,37 +374,69 @@ public partial class MainWindow : Window
         if (previous is not null) SelectByPath(previous);
     }
 
-    private static ListBoxItem BuildListItem(GameInstall game)
+    private bool MatchesFilter(GameInstall game)
+    {
+        if (_filter is null) return true;
+        if (!_situations.TryGetValue(game.Path, out var situation)) return false;
+
+        // "Already set up" covers everything installed, whatever else is true of it: someone
+        // filtering on it wants their configured games, not a subset defined by a technicality.
+        if (_filter == Situation.Ready)
+        {
+            return situation.Situation is Situation.Ready
+                or Situation.UpdateAvailable
+                or Situation.UnpublishedWork;
+        }
+
+        return situation.Situation == _filter;
+    }
+
+    /// <summary>
+    /// A row states a situation and offers a verb, in the player's terms.
+    ///
+    /// The technical facts (runtime, Unity version, architecture) are not here on purpose: they
+    /// answer "what is this" while someone scanning this list is asking "what can I do". They
+    /// live in the card on the right, where they serve diagnosis.
+    /// </summary>
+    private ListBoxItem BuildListItem(GameInstall game)
     {
         var title = new TextBlock
         {
             Text = game.Name,
             FontWeight = FontWeight.SemiBold,
             TextTrimming = TextTrimming.CharacterEllipsis,
+            Foreground = Brush("TextPrimary"),
         };
 
-        var runtime = game.Runtime switch
-        {
-            UnityRuntime.Mono => "Mono",
-            UnityRuntime.Il2Cpp => "IL2CPP",
-            _ => "unknown type",
-        };
+        var body = new StackPanel { Spacing = 3, Children = { title } };
 
-        var detail = new TextBlock
+        if (_situations.TryGetValue(game.Path, out var situation))
         {
-            Text = game.IsModdable
-                ? $"{runtime} · Unity {game.UnityVersion ?? "?"}"
-                : $"cannot be modded — {game.VerdictDetail ?? game.Verdict.ToString()}",
-            FontSize = 11,
-            Opacity = game.IsModdable ? 0.6 : 0.85,
-            Foreground = game.IsModdable ? null : Brush("StatusWarning"),
-        };
+            var headline = new TextBlock
+            {
+                Text = situation.Headline,
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = situation.StatusKey is { } key ? Brush(key) : Brush("TextSecondary"),
+            };
+            body.Children.Add(headline);
+
+            if (situation.Detail is { Length: > 0 } detail)
+            {
+                body.Children.Add(new TextBlock
+                {
+                    Text = detail,
+                    FontSize = 10,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = Brush("TextMuted"),
+                });
+            }
+        }
 
         return new ListBoxItem
         {
             Tag = game,
-            Padding = new Avalonia.Thickness(12, 8),
-            Content = new StackPanel { Spacing = 2, Children = { title, detail } },
+            Content = body,
         };
     }
 

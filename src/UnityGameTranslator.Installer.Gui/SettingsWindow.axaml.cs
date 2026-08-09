@@ -317,8 +317,15 @@ public sealed class SettingsWindow : Window
                                           IsChecked = _draft.CheckModUpdates };
         _notifyUpdates = new CheckBox { Content = "Tell me when a translation I use is updated",
                                        IsChecked = _draft.NotifyUpdates };
-        _autoDownload = new CheckBox { Content = "Download those updates without asking",
-                                      IsChecked = _draft.AutoDownload };
+        // "those updates" sat under both boxes and read as covering the mod too. It never did:
+        // the mod is only ever updated from this tool, deliberately and with a confirmation. Named
+        // in full, and indented under the line it depends on.
+        _autoDownload = new CheckBox
+        {
+            Content = "Download translation updates without asking",
+            IsChecked = _draft.AutoDownload,
+            Margin = new Thickness(20, 0, 0, 0),
+        };
 
         _mergeStrategy = new ComboBox { Width = 260 };
         _mergeStrategy.Items.Add(new ComboBoxItem { Content = "Ask me every time", Tag = "ask" });
@@ -342,6 +349,9 @@ public sealed class SettingsWindow : Window
 
         var panel = new StackPanel { Spacing = 10 };
         panel.Children.Add(_checkModUpdates);
+        panel.Children.Add(Note(
+            "The mod itself is only ever updated from here, and always with a confirmation.",
+            "TextMuted"));
         panel.Children.Add(_notifyUpdates);
         panel.Children.Add(_autoDownload);
         panel.Children.Add(Row("When both changed", _mergeStrategy));

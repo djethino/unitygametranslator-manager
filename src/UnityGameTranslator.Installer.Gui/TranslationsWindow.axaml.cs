@@ -226,22 +226,43 @@ public sealed class TranslationsWindow : Window
     /// </summary>
     private void ApplyDefaults()
     {
-        var configured = Languages.NameOf(_settings.ResolveTargetLanguage());
-
         Fill(_target, _everything.Select(t => t.TargetLanguage));
         Fill(_source, _everything.Select(t => t.SourceLanguage));
 
-        var hasConfigured = _everything.Any(t =>
-            string.Equals(t.TargetLanguage, configured, StringComparison.OrdinalIgnoreCase));
+        // What this game is ALREADY doing wins over the global default, and that is the point:
+        // someone who took an English translation for a Japanese game — because none existed in
+        // their own language — must land back on the list that contains it. Opening on the global
+        // default would hide the very translation they are running and read as "it is gone".
+        var (gameSource, gameTarget) = LocalTranslationProbe.ReadLanguages(_report.Game.Path, _loader);
 
-        Select(_target, hasConfigured ? configured : null);
-        Select(_source, null);
+        // The lineage in use, when the site knows it, is the most precise answer of all: it names
+        // both languages of the exact file installed, which a config can only approximate.
+        var installedSource = _report.MatchingOnline?.SourceLanguage;
+        var installedTarget = _report.MatchingOnline?.TargetLanguage;
 
-        if (!hasConfigured && _everything.Count > 0)
+        var target = installedTarget ?? gameTarget
+                     ?? Languages.NameOf(_settings.ResolveTargetLanguage());
+
+        var source = installedSource ?? gameSource;
+
+        var hasTarget = _everything.Any(t =>
+            string.Equals(t.TargetLanguage, target, StringComparison.OrdinalIgnoreCase));
+
+        Select(_target, hasTarget ? target : null);
+
+        // Only kept when it would still leave something to look at: a source filter inherited
+        // from an installed file, matching nothing on the server, would empty the screen for a
+        // reason nobody could see.
+        var hasSource = source is not null && _everything.Any(t =>
+            string.Equals(t.SourceLanguage, source, StringComparison.OrdinalIgnoreCase));
+
+        Select(_source, hasSource ? source : null);
+
+        if (!hasTarget && _everything.Count > 0)
         {
-            _status.Text = $"Nothing in {configured} for this game yet, so every language is "
-                         + "shown. Taking one in another language is a normal thing to do — the "
-                         + "screen will offer to point the game at it.";
+            _status.Text = $"Nothing in {target} for this game yet, so every language is shown. "
+                         + "Taking one in another language is a normal thing to do — the screen "
+                         + "will offer to point the game at it.";
         }
     }
 

@@ -26,28 +26,47 @@ public static class LocalTranslationProbe
     /// hunting for a language nobody provided: the file would sit there while the mod carried on
     /// trying to translate into something else. Knowing it is what lets us say so.
     /// </summary>
-    public static string? ReadTargetLanguage(string gamePath, LoaderDescriptor descriptor)
+    public static string? ReadTargetLanguage(string gamePath, LoaderDescriptor descriptor) =>
+        ReadLanguages(gamePath, descriptor).Target;
+
+    /// <summary>
+    /// Both languages this game is set to, as NAMES, or null for either when unset or "auto".
+    ///
+    /// Read together because they answer one question: what is this game already doing. A screen
+    /// that offers translations should open on that, not on a default that ignores the choice
+    /// somebody already made here.
+    /// </summary>
+    public static (string? Source, string? Target) ReadLanguages(string gamePath,
+                                                                 LoaderDescriptor descriptor)
     {
         var path = Path.Combine(gamePath,
             descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar), ConfigFileName);
 
-        if (!File.Exists(path)) return null;
+        if (!File.Exists(path)) return (null, null);
 
         try
         {
             using var document = JsonDocument.Parse(File.ReadAllText(path));
-            if (!document.RootElement.TryGetProperty("target_language", out var value)) return null;
+            var root = document.RootElement;
 
-            var language = value.GetString();
-            return string.IsNullOrWhiteSpace(language)
-                   || string.Equals(language, "auto", StringComparison.OrdinalIgnoreCase)
-                ? null
-                : language;
+            return (Named(root, "source_language"), Named(root, "target_language"));
         }
         catch
         {
-            return null;
+            return (null, null);
         }
+    }
+
+    /// <summary>One language field, with "auto" and blanks reported as "not set".</summary>
+    private static string? Named(JsonElement root, string property)
+    {
+        if (!root.TryGetProperty(property, out var value)) return null;
+
+        var language = value.GetString();
+        return string.IsNullOrWhiteSpace(language)
+               || string.Equals(language, "auto", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : language;
     }
 
     public static LocalTranslation? Read(string gamePath, LoaderDescriptor descriptor)

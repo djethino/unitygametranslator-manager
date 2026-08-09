@@ -63,8 +63,8 @@ public sealed class LoaderDescriptor
     /// <summary>Wine/Proton DLL override needed to inject, e.g. "winhttp" or "version".</summary>
     [JsonPropertyName("proton_dll_override")] public string? ProtonDllOverride { get; set; }
 
-    /// <summary>Free-form warnings shown before installing (long first launch, extra runtime...).</summary>
-    [JsonPropertyName("warnings")] public List<string> Warnings { get; set; } = new();
+    /// <summary>Notes shown before installing, each with the situation it actually applies to.</summary>
+    [JsonPropertyName("warnings")] public List<LoaderWarning> Warnings { get; set; } = new();
 
     /// <summary>
     /// Preference when several loaders fit. Higher wins. Lets us change the recommendation
@@ -78,6 +78,46 @@ public sealed class LoaderDescriptor
         UnityRuntime.Il2Cpp => Runtimes.Contains("il2cpp"),
         _ => false,
     };
+}
+
+/// <summary>
+/// A note shown before installing, together with when it is actually true.
+///
+/// Conditions are not decoration. A warning that appears when it does not apply teaches the
+/// reader to skip warnings — which is exactly the habit we need them not to have on the one
+/// that matters. "First launch will be slow" is false once the loader has already run, and a
+/// note about macOS shown on Windows is noise.
+/// </summary>
+public sealed class LoaderWarning
+{
+    [JsonPropertyName("text")] public string Text { get; set; } = "";
+
+    /// <summary>Operating systems this applies to. Empty means all.</summary>
+    [JsonPropertyName("os")] public List<string> Os { get; set; } = new();
+
+    /// <summary>Scripting backends this applies to ("mono", "il2cpp"). Empty means all.</summary>
+    [JsonPropertyName("runtimes")] public List<string> Runtimes { get; set; } = new();
+
+    /// <summary>
+    /// Only when we are about to install the loader ourselves — not when it is already there
+    /// and has been running for months.
+    /// </summary>
+    [JsonPropertyName("on_fresh_install")] public bool OnFreshInstallOnly { get; set; }
+
+    public bool AppliesTo(string osId, UnityRuntime runtime, bool freshInstall)
+    {
+        if (OnFreshInstallOnly && !freshInstall) return false;
+
+        if (Os.Count > 0 && !Os.Contains(osId, StringComparer.OrdinalIgnoreCase)) return false;
+
+        if (Runtimes.Count > 0)
+        {
+            var name = runtime == UnityRuntime.Il2Cpp ? "il2cpp" : "mono";
+            if (!Runtimes.Contains(name, StringComparer.OrdinalIgnoreCase)) return false;
+        }
+
+        return true;
+    }
 }
 
 public sealed class GitHubRelease

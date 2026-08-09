@@ -306,7 +306,11 @@ internal static class Program
         // Nothing is written before this is shown and accepted.
         Console.WriteLine("This will:");
         foreach (var line in plan.Describe()) Console.WriteLine($"  - {line}");
-        foreach (var warning in report.Warnings) Console.WriteLine($"  ! {warning}");
+
+        // Recomputed for the loader actually chosen, which may not be the recommended one.
+        var inventory = new GameInventory(platform, catalog);
+        foreach (var warning in inventory.WarningsFor(plan.Loader, report.Game, plan.InstallLoader))
+            Console.WriteLine($"  ! {warning}");
         Console.WriteLine();
 
         if (!Confirm(args, "Proceed?")) { Console.WriteLine("Cancelled. Nothing was written."); return 0; }

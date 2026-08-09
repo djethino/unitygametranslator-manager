@@ -1,5 +1,5 @@
 {
-  "schema": 2,
+  "schema": 3,
   "generated_at": "2026-08-08T00:00:00Z",
   "_comment": [
     "Loader layouts and download locations. Fetched at runtime by the installer so that a",
@@ -12,7 +12,11 @@
     "when a specific file must be guaranteed, because a pinned hash goes stale on every version",
     "bump and a stale hash blocks installs for everyone.",
     "",
-    "Bumping a loader version = change 'version', the release 'tag', and the asset names."
+    "Bumping a loader version = change 'version', the release 'tag', and the asset names.",
+    "",
+    "Each warning carries the situation it applies to (os / runtimes / on_fresh_install). A note",
+    "shown when it is not true teaches the reader to skip warnings, which is the one habit they",
+    "must not have. Facts about platforms we do not offer belong in this comment, not on screen."
   ],
 
   "loaders": [
@@ -70,7 +74,10 @@
       "requires": { "unity_min": null, "dotnet_desktop": null },
       "proton_dll_override": "winhttp",
       "warnings": [
-        "BepInEx 6 is still a pre-release. For a Mono game, BepInEx 5 is the safer choice."
+        {
+          "text": "BepInEx 6 is still a pre-release. For a Mono game, BepInEx 5 is the safer choice.",
+          "on_fresh_install": true
+        }
       ]
     },
 
@@ -98,8 +105,10 @@
       "requires": { "unity_min": null, "dotnet_desktop": null },
       "proton_dll_override": "winhttp",
       "warnings": [
-        "First launch takes much longer than usual: BepInEx generates the game's interop assemblies. It has not crashed.",
-        "macOS is not offered: IL2CPP modding is not possible there with current tooling."
+        {
+          "text": "The first launch after installing takes much longer than usual: BepInEx generates the game's interop assemblies. It has not crashed.",
+          "on_fresh_install": true
+        }
       ]
     },
 
@@ -128,8 +137,10 @@
       "requires": { "unity_min": null, "dotnet_desktop": "6.0" },
       "proton_dll_override": "version",
       "warnings": [
-        "MelonLoader scans only the root of Mods/. The plugin DLL is placed there directly, alongside any other mods.",
-        "IL2CPP games need the .NET 6 Desktop Runtime installed, or the game fails at launch."
+        {
+          "text": "MelonLoader scans only the root of Mods/. The plugin DLL goes there directly, alongside any other mods.",
+          "on_fresh_install": true
+        }
       ]
     }
   ],

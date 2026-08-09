@@ -189,9 +189,30 @@ public sealed class GameInventory
         return _catalog.PluginBuilds.TryGetValue(key, out var asset) ? asset : null;
     }
 
+    /// <summary>
+    /// The notes that are actually true for this loader in this situation.
+    ///
+    /// Public because the loader can be overridden after the report was built: showing the
+    /// recommended loader's notes next to a different chosen loader would be worse than showing
+    /// none, since the reader has no way to tell they no longer apply.
+    /// </summary>
+    /// <param name="freshInstall">
+    /// False when the loader is already installed: it has already been through its first launch
+    /// and will not be replaced, so notes about installing it are not true here.
+    /// </param>
+    public IEnumerable<string> WarningsFor(LoaderDescriptor loader, GameInstall game, bool freshInstall)
+    {
+        foreach (var warning in loader.Warnings)
+        {
+            if (warning.AppliesTo(_platform.OsId, game.Runtime, freshInstall))
+                yield return warning.Text;
+        }
+    }
+
     private void CollectRequirements(GameReport report, LoaderDescriptor descriptor, GameInstall game)
     {
-        foreach (var warning in descriptor.Warnings) report.Warnings.Add(warning);
+        foreach (var warning in WarningsFor(descriptor, game, report.InstalledLoader is null))
+            report.Warnings.Add(warning);
 
         // A required desktop runtime we can prove is missing is a blocker, not a warning: the
         // game would fail at launch and the user would blame the mod.

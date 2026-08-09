@@ -535,8 +535,18 @@ public partial class MainWindow : Window
     {
         if (plan is null) return;
 
-        // Nothing is written before this is shown and accepted.
-        var body = string.Join(Environment.NewLine, plan.Describe().Select(line => "• " + line));
+        // Nothing is written before this is shown and accepted. The notes are recomputed for the
+        // loader actually chosen, which may not be the recommended one shown in the report.
+        var lines = plan.Describe().Select(line => "• " + line).ToList();
+
+        var notes = _inventory.WarningsFor(plan.Loader, report.Game, plan.InstallLoader).ToList();
+        if (notes.Count > 0)
+        {
+            lines.Add("");
+            lines.AddRange(notes.Select(note => "! " + note));
+        }
+
+        var body = string.Join(Environment.NewLine, lines);
         if (!await ConfirmAsync($"Install into {report.Game.Name}?", body, "Install")) return;
 
         Busy(true, "Starting...");

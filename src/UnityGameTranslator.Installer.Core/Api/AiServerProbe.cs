@@ -123,7 +123,7 @@ public sealed class AiServerProbe
     {
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, Join(baseUrl, "v1/models"));
+            using var request = new HttpRequestMessage(HttpMethod.Get, AiEndpoint.Models(baseUrl));
             if (!string.IsNullOrWhiteSpace(apiKey))
                 request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
 
@@ -305,7 +305,7 @@ public sealed class AiServerProbe
             using var content = new StringContent(payload, Encoding.UTF8, "application/json");
             using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(2) };
 
-            var response = await client.PostAsync(Join(baseUrl, "v1/chat/completions"), content, ct)
+            var response = await client.PostAsync(AiEndpoint.Chat(baseUrl), content, ct)
                                        .ConfigureAwait(false);
             if (!response.IsSuccessStatusCode) return null;
 
@@ -362,7 +362,7 @@ public sealed class AiServerProbe
             using var content = new StringContent(payload, Encoding.UTF8, "application/json");
             using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(2) };
 
-            var response = await client.PostAsync(Join(baseUrl, "v1/chat/completions"), content, ct)
+            var response = await client.PostAsync(AiEndpoint.Chat(baseUrl), content, ct)
                                        .ConfigureAwait(false);
             var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             stopwatch.Stop();
@@ -404,7 +404,7 @@ public sealed class AiServerProbe
     {
         try
         {
-            var json = await _http.GetStringAsync(Join(baseUrl, "api/ps"), ct).ConfigureAwait(false);
+            var json = await _http.GetStringAsync(OllamaRoot(baseUrl) + "/api/ps", ct).ConfigureAwait(false);
 
             using var document = JsonDocument.Parse(json);
             if (!document.RootElement.TryGetProperty("models", out var models)
@@ -476,7 +476,7 @@ public sealed class AiServerProbe
     {
         try
         {
-            var json = await _http.GetStringAsync(Join(baseUrl, "api/ps"), ct).ConfigureAwait(false);
+            var json = await _http.GetStringAsync(OllamaRoot(baseUrl) + "/api/ps", ct).ConfigureAwait(false);
             using var document = JsonDocument.Parse(json);
             if (!document.RootElement.TryGetProperty("models", out var models)) return null;
 
@@ -517,6 +517,25 @@ public sealed class AiServerProbe
         }
     }
 
-    private static string Join(string baseUrl, string path) =>
-        $"{baseUrl.TrimEnd('/')}/{path}";
+    /// <summary>
+    /// The server root, for the few calls that are not OpenAI-compatible.
+    ///
+    /// /api/ps is Ollama's own, so it hangs off the host rather than off the chat path: someone
+    /// who pasted ".../v1/chat/completions" would otherwise be asked for
+    /// ".../v1/chat/completions/api/ps", and the video-memory reading would silently come back
+    /// as "unknown" on exactly the setups that can report it.
+    /// </summary>
+    private static string OllamaRoot(string baseUrl)
+    {
+        var url = baseUrl.TrimEnd('/');
+
+        foreach (var marker in new[] { "/v1/", "/v1" })
+        {
+            var index = url.LastIndexOf(marker, StringComparison.Ordinal);
+            if (index >= 0) return url[..index];
+        }
+
+        var chat = url.LastIndexOf("/chat/completions", StringComparison.Ordinal);
+        return chat >= 0 ? url[..chat] : url;
+    }
 }

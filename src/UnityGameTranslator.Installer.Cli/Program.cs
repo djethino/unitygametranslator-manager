@@ -40,6 +40,7 @@ internal static class Program
                 "uninstall" => await UninstallAsync(args),
                 "forget" => await ForgetAsync(args),
                 "ai" => await AiAsync(args),
+                "urls" => Urls(args),
                 "-h" or "--help" or "help" => Help(),
                 _ => Unknown(command),
             };
@@ -65,6 +66,7 @@ internal static class Program
               ai [--test] [--model M]      Find a local AI server, optionally translate one line
               ai --compare a,b,c            Score several models on the job the mod asks of them
               ai --suite --model M          Put one model through the mod's instructions, hardest last
+              urls <address>                Show which endpoints an address resolves to
               catalog [--offline]          Show the loader catalog and where it came from
               diagnose                     Printable report, safe to paste in a public issue
               help                         This text
@@ -592,6 +594,39 @@ internal static class Program
         Console.WriteLine("Read the answers, not just the marks: these checks are heuristics on free");
         Console.WriteLine("text and can be wrong either way. Whether this model is good enough is");
         Console.WriteLine("your call, not the tool's.");
+        return 0;
+    }
+
+    /// <summary>
+    /// Shows what an address resolves to, so a divergence from the mod is visible rather than
+    /// discovered in a game. Same five rules, same order, mirrored from ResolveAIEndpoint.
+    /// </summary>
+    private static int Urls(string[] args)
+    {
+        var inputs = args.Skip(1).Where(a => !a.StartsWith("--", StringComparison.Ordinal)).ToArray();
+
+        if (inputs.Length == 0)
+        {
+            inputs = new[]
+            {
+                "http://localhost:11434",
+                "https://api.openai.com/v1/chat/completions",
+                "https://api.deepseek.com/chat/completions",
+                "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+                "https://api.groq.com/openai/v1",
+            };
+            Console.WriteLine("No address given — showing the cases the mod documents.");
+            Console.WriteLine();
+        }
+
+        foreach (var input in inputs)
+        {
+            Console.WriteLine(input);
+            Console.WriteLine($"    chat   {AiEndpoint.Chat(input)}");
+            Console.WriteLine($"    models {AiEndpoint.Models(input)}");
+            Console.WriteLine();
+        }
+
         return 0;
     }
 

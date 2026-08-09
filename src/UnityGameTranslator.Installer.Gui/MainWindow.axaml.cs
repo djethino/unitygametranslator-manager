@@ -287,6 +287,7 @@ public partial class MainWindow : Window
             Text = game.Name,
             FontSize = 20,
             FontWeight = FontWeight.SemiBold,
+            Foreground = Brush("TextPrimary"),
             TextWrapping = TextWrapping.Wrap,
         });
 
@@ -294,11 +295,11 @@ public partial class MainWindow : Window
         {
             Text = game.Path,
             FontSize = 11,
-            Opacity = 0.5,
+            Foreground = Brush("TextMuted"),
             TextWrapping = TextWrapping.Wrap,
         });
 
-        DetailPanel.Children.Add(Facts(report));
+        DetailPanel.Children.Add(Card(Facts(report)));
 
         foreach (var blocker in report.Blockers)
             DetailPanel.Children.Add(Callout(blocker, "CalloutErrorBg", "StatusError"));
@@ -306,8 +307,8 @@ public partial class MainWindow : Window
         foreach (var warning in report.Warnings)
             DetailPanel.Children.Add(Callout(warning, "CalloutWarningBg", "StatusWarning"));
 
-        DetailPanel.Children.Add(Translations(report));
-        DetailPanel.Children.Add(Actions(report));
+        DetailPanel.Children.Add(Card(Translations(report)));
+        DetailPanel.Children.Add(Card(Actions(report)));
     }
 
     private static Control Facts(GameReport report)
@@ -340,11 +341,11 @@ public partial class MainWindow : Window
         {
             grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
 
-            var label = new TextBlock { Text = rows[i].Label, Opacity = 0.55, FontSize = 12, Margin = new Avalonia.Thickness(0, 3, 12, 3) };
+            var label = new TextBlock { Text = rows[i].Label, Foreground = Brush("TextMuted"), FontSize = 12, Margin = new Avalonia.Thickness(0, 3, 12, 3) };
             Grid.SetRow(label, i);
             Grid.SetColumn(label, 0);
 
-            var value = new TextBlock { Text = rows[i].Value, TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new Avalonia.Thickness(0, 3, 0, 3) };
+            var value = new TextBlock { Text = rows[i].Value, TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = Brush("TextSecondary"), Margin = new Avalonia.Thickness(0, 3, 0, 3) };
             Grid.SetRow(value, i);
             Grid.SetColumn(value, 1);
 
@@ -358,17 +359,17 @@ public partial class MainWindow : Window
     private static Control Translations(GameReport report)
     {
         var panel = new StackPanel { Spacing = 6, Margin = new Avalonia.Thickness(0, 10, 0, 0) };
-        panel.Children.Add(new TextBlock { Text = "Translations", FontWeight = FontWeight.SemiBold });
+        panel.Children.Add(new TextBlock { Text = "Translations", FontWeight = FontWeight.SemiBold, Foreground = Brush("TextPrimary") });
 
         if (report.LocalTranslation is { } local)
         {
             var count = local.EntryCount < 0 ? "unreadable file" : $"{local.EntryCount} entries";
             var unsynced = local.LocalChanges > 0 ? $", {local.LocalChanges} not uploaded yet" : "";
-            panel.Children.Add(new TextBlock { Text = $"On this machine: {count}{unsynced}", FontSize = 12, Opacity = 0.8 });
+            panel.Children.Add(new TextBlock { Text = $"On this machine: {count}{unsynced}", FontSize = 12, Foreground = Brush("TextSecondary") });
         }
         else
         {
-            panel.Children.Add(new TextBlock { Text = "On this machine: none", FontSize = 12, Opacity = 0.8 });
+            panel.Children.Add(new TextBlock { Text = "On this machine: none", FontSize = 12, Foreground = Brush("TextSecondary") });
         }
 
         if (report.MatchingOnline is { } mine)
@@ -696,6 +697,21 @@ public partial class MainWindow : Window
         ok.Click += (_, _) => dialog.Close();
         await dialog.ShowDialog(this);
     }
+
+    /// <summary>
+    /// The site's card, reproduced: gray-800 fill, gray-700 edge, 8px radius, generous padding.
+    /// Framing each section is what turns a wall of lines into things you can look at one at a
+    /// time — which is the whole reason the site uses them.
+    /// </summary>
+    private static Control Card(Control content) => new Border
+    {
+        Background = Brush("SurfaceCard"),
+        BorderBrush = Brush("BorderSubtle"),
+        BorderThickness = new Avalonia.Thickness(1),
+        CornerRadius = new Avalonia.CornerRadius(8),
+        Padding = new Avalonia.Thickness(18, 15),
+        Child = content,
+    };
 
     /// <summary>Looks a brush up in the shared palette (Theme.axaml).</summary>
     private static IBrush? Brush(string key) =>

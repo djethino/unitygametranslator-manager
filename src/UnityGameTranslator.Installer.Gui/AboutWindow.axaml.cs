@@ -56,6 +56,19 @@ public sealed class AboutWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Background = this.FindResource("SurfaceBase") as IBrush;
 
+        // The publisher's compact mark signs this window. It carries its own white pill because
+        // hand-drawn black line art needs a background to read on any title bar.
+        try
+        {
+            using var iconStream = AssetLoader.Open(
+                new Uri("avares://UnityGameTranslatorInstaller/Assets/asymptomatik-games-mark.png"));
+            Icon = new WindowIcon(new Bitmap(iconStream));
+        }
+        catch
+        {
+            // Falls back to the application icon.
+        }
+
         var layout = new StackPanel { Spacing = 18, Margin = new Thickness(24) };
 
         layout.Children.Add(Header());

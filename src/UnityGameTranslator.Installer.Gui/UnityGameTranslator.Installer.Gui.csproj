@@ -47,12 +47,6 @@
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.10" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.10" />
 
-    <!--
-      For reading the icon a game keeps in its own executable. Windows-only by nature: the package
-      throws on other systems, so every call sits behind a platform guard and Linux simply shows no
-      icon. Nothing is downloaded and no other source was viable — see GameIcons.
-    -->
-    <PackageReference Include="System.Drawing.Common" Version="8.0.10" />
   </ItemGroup>
 
   <ItemGroup>

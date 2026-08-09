@@ -53,6 +53,7 @@ public partial class MainWindow : Window
         FoldersButton.Click += async (_, _) => await ManageFoldersAsync();
         SettingsButton.Click += async (_, _) => await OpenSettingsAsync();
         ToolSettingsButton.Click += async (_, _) => await OpenToolSettingsAsync();
+        ShowAccount();
         AboutButton.Click += async (_, _) => await new AboutWindow().ShowDialog(this);
         GameList.SelectionChanged += async (_, _) => await ShowSelectedAsync();
 
@@ -295,6 +296,117 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// Whether we are signed in, said on the screen people actually look at.
+    ///
+    /// Until now this only appeared inside a settings window, so the answer to "am I signed in"
+    /// required opening a dialog to find out — and someone who had signed in three days earlier
+    /// had no way of knowing it still held.
+    ///
+    /// Signed out it opens the settings, which is where signing in happens. Signed in it opens the
+    /// account on the site, because everything one does with an account — revoking a token,
+    /// renaming, looking at one's translations — lives there and not here.
+    /// </summary>
+    private void ShowAccount()
+    {
+        var settings = _settings.Current;
+
+        if (!settings.SignedIn)
+        {
+            var signIn = new Button { Content = "Sign in", FontSize = 12 };
+            signIn.Click += async (_, _) => await OpenToolSettingsAsync();
+            ToolTip.SetTip(signIn, "Optional. Published translations can be taken without an account.");
+            AccountSlot.Content = signIn;
+            return;
+        }
+
+        var name = settings.ApiUser ?? "your account";
+
+        var row = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        };
+
+        row.Children.Add(Avatar(name));
+        row.Children.Add(new TextBlock
+        {
+            Text = name,
+            FontSize = 12,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Foreground = Brush("TextSecondary"),
+        });
+
+        var button = new Button
+        {
+            Content = row,
+            Padding = new Avalonia.Thickness(6, 2),
+            Background = Avalonia.Media.Brushes.Transparent,
+            BorderThickness = new Avalonia.Thickness(0),
+            Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+        };
+
+        ToolTip.SetTip(button, "Open your account on the website");
+        button.Click += (_, _) => OpenUrl($"{BuildInfo.WebsiteBaseUrl}/profile");
+
+        AccountSlot.Content = button;
+    }
+
+    /// <summary>
+    /// An initial in a coloured disc.
+    ///
+    /// Deliberately NOT the website's avatar: those are drawn by DiceBear in the browser from a
+    /// seed, and reproducing that here would be a lot of work for a 26-pixel dot — and the seed is
+    /// not even in the API. An initial claims nothing it cannot deliver.
+    ///
+    /// The colour comes from the name, so it is the same disc every time rather than a shade that
+    /// moves between launches for no reason anybody could explain.
+    /// </summary>
+    private static Control Avatar(string name)
+    {
+        var initial = name.Trim().Length > 0 ? char.ToUpperInvariant(name.Trim()[0]).ToString() : "?";
+
+        // A stable hash of our own: string.GetHashCode is randomised per process in .NET, so it
+        // would give a different colour on every launch.
+        var hash = name.Aggregate(17, (current, c) => current * 31 + c);
+        var hues = new[] { "#9333EA", "#3B82F6", "#22C55E", "#F97316", "#A855F7", "#06B6D4" };
+        var colour = hues[Math.Abs(hash) % hues.Length];
+
+        return new Border
+        {
+            Width = 26,
+            Height = 26,
+            CornerRadius = new Avalonia.CornerRadius(13),
+            Background = Avalonia.Media.SolidColorBrush.Parse(colour),
+            Child = new TextBlock
+            {
+                Text = initial,
+                FontSize = 13,
+                FontWeight = FontWeight.SemiBold,
+                Foreground = Avalonia.Media.Brushes.White,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            },
+        };
+    }
+
+    private static void OpenUrl(string url)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url)
+            {
+                UseShellExecute = true,
+            });
+        }
+        catch
+        {
+            // No browser we may start. Nothing to report: the button simply does nothing rather
+            // than raising an error about a convenience.
+        }
+    }
+
+    /// <summary>
     /// This tool's own settings — account and network.
     ///
     /// A second window rather than a section of the first: what goes into a game and what this
@@ -305,6 +417,10 @@ public partial class MainWindow : Window
     {
         var window = new ToolSettingsWindow(_platform, _settings);
         await window.ShowDialog(this);
+
+        // Redrawn whatever was saved: signing in and out both happen in that window, and the
+        // header would otherwise keep claiming the opposite until the next launch.
+        ShowAccount();
 
         if (!window.Saved) return;
 

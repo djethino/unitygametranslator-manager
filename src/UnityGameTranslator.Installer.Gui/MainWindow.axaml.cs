@@ -221,6 +221,37 @@ public partial class MainWindow : Window
         await ShowSelectedAsync();
     }
 
+    /// <summary>
+    /// Opens the list of community translations for a game.
+    ///
+    /// The loader is resolved here because only this window holds the catalog, and because the
+    /// folder a translation lives in is a catalog entry of its own — a detected loader knows where
+    /// its plugins go, not where the mod keeps its file. Writing to the wrong one would put a
+    /// translation somewhere the mod never looks, and it would read as "the download did nothing".
+    /// </summary>
+    private async Task OpenTranslationsAsync(GameReport report)
+    {
+        var loaderId = report.InstalledLoader?.Id ?? report.RecommendedLoader?.Id;
+        var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == loaderId);
+
+        if (descriptor is null)
+        {
+            Status("No loader is set up for this game yet, so there is nowhere to put a translation.");
+            return;
+        }
+
+        var window = new TranslationsWindow(report, descriptor);
+        await window.ShowDialog(this);
+
+        // Only when something was actually written: re-reading the game on every close would
+        // rescan for nothing each time somebody just looked.
+        if (!window.Changed) return;
+
+        RecomputeSituations();
+        RefreshList();
+        await ShowSelectedAsync();
+    }
+
     /// <summary>Puts the header picker back in step with what was just saved.</summary>
     private void SyncLanguageBox()
     {
@@ -670,6 +701,24 @@ public partial class MainWindow : Window
         }
 
         var alternatives = report.AlternativeOnline.ToList();
+
+        // One button rather than a list of names: choosing between translations needs what they
+        // are made of, who reviewed them and which language they came FROM — none of which fits
+        // on a line here, and all of which decides the choice.
+        var offered = alternatives.Count + (report.MatchingOnline is null ? 0 : 1);
+        if (offered > 0)
+        {
+            var browse = new Button
+            {
+                Content = offered == 1 ? "See the translation" : $"See the {offered} translations",
+                FontSize = 12,
+                Margin = new Avalonia.Thickness(0, 6, 0, 0),
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+            };
+            browse.Click += async (_, _) => await OpenTranslationsAsync(report);
+            panel.Children.Add(browse);
+        }
+
         if (alternatives.Count > 0)
         {
             panel.Children.Add(new TextBlock

@@ -12,6 +12,18 @@ public sealed record ModelTest(
 {
     /// <summary>What the model was asked to do, in one line, for the report.</summary>
     public string Expectation { get; init; } = "";
+
+    /// <summary>
+    /// A capability the mod exposes as an experimental option, not something every model is
+    /// expected to do today.
+    ///
+    /// Counting it in the main score would be misleading twice over: it would mark a perfectly
+    /// usable model down for a feature the mod itself ships disabled, and it would flatten the
+    /// difference between models when they all fail the same one. Reported on its own, it
+    /// answers a question the user actually has — can I switch that option on with this model —
+    /// and it will start passing as models get better at following instructions.
+    /// </summary>
+    public string? UnlocksOption { get; init; }
 }
 
 /// <summary>Outcome of one test: the verdict AND what the model actually said.</summary>
@@ -130,7 +142,7 @@ public static class ModelTestSuite
                 Expectation = "a trailing [!nl] is not swallowed",
             },
 
-            new("refuses to translate the wrong language", "hardest",
+            new("refuses to translate the wrong language", "experimental",
                 "Bonjour tout le monde",
                 $"""
                 === CRITICAL RULE ===
@@ -142,6 +154,11 @@ public static class ModelTestSuite
                 (_, answer) => answer.Trim() == SkipMarker)
             {
                 Expectation = $"answers exactly {SkipMarker} and nothing else",
+
+                // The mod's own documentation on this option: "Experimental, and off for a
+                // reason: asks the model to skip anything that is not in the source language.
+                // It can silently drop text that was fine."
+                UnlocksOption = "strict_source",
             },
         };
     }

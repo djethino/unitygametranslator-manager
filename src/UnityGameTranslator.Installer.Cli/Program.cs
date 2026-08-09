@@ -540,11 +540,19 @@ internal static class Program
         var passed = 0;
         var total = 0;
         var echoed = 0;
+        var unlocked = new List<(string Option, bool Supported)>();
 
         await probe.RunSuiteAsync(server.Url, model, language, result =>
         {
-            total++;
-            if (result.Passed) passed++;
+            if (result.Test.UnlocksOption is not null)
+            {
+                unlocked.Add((result.Test.UnlocksOption, result.Passed));
+            }
+            else
+            {
+                total++;
+                if (result.Passed) passed++;
+            }
 
             var mark = result.Passed ? "ok" : "KO";
             Console.WriteLine($"[{mark}] {result.Test.Difficulty,-7} {result.Test.Name}");
@@ -563,7 +571,18 @@ internal static class Program
             Console.WriteLine();
         });
 
-        Console.WriteLine($"{passed}/{total} instructions followed.");
+        Console.WriteLine($"{passed}/{total} required instructions followed.");
+
+        // Experimental capabilities are listed apart, and phrased as what they unlock rather
+        // than as a failure: the mod ships these options disabled, so a model that cannot do one
+        // is not a worse model — it just means that option stays off. Models are getting better
+        // at this, and the same test will start passing on its own.
+        foreach (var (option, supported) in unlocked)
+        {
+            Console.WriteLine(supported
+                ? $"Experimental option '{option}': this model can do it — you may switch it on."
+                : $"Experimental option '{option}': not followed by this model — leave it off.");
+        }
         if (echoed > 0)
         {
             Console.WriteLine($"{echoed}/{total} answers repeated the instructions back — on its own, a reason");

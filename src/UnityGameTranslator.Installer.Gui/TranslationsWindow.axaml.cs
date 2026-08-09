@@ -47,6 +47,16 @@ public sealed class TranslationsWindow : Window
 
     private readonly SettingsStore _settings;
 
+    /// <summary>
+    /// Every lineage this account takes part in — not just the one the local file belongs to.
+    ///
+    /// GameReport.MyPosition answers for the installed file alone, which is enough on the game card
+    /// and wrong here: this list shows every translation of the game, and one of them may be a
+    /// published translation of yours under a lineage you do not currently have on disk. Asked per
+    /// card, from the same single fetch.
+    /// </summary>
+    private readonly AccountLineages _lineages;
+
     private StackPanel _list = null!;
     private TextBlock _status = null!;
     private ComboBox _target = null!;
@@ -59,11 +69,13 @@ public sealed class TranslationsWindow : Window
     /// <summary>True when something was written, so the caller can refresh the game card.</summary>
     public bool Changed { get; private set; }
 
-    public TranslationsWindow(GameReport report, LoaderDescriptor loader, SettingsStore settings)
+    public TranslationsWindow(GameReport report, LoaderDescriptor loader, SettingsStore settings,
+                              AccountLineages lineages)
     {
         _report = report;
         _loader = loader;
         _settings = settings;
+        _lineages = lineages;
 
         Title = $"Translations for {report.Game.Name}";
         Width = 860;
@@ -392,9 +404,24 @@ public sealed class TranslationsWindow : Window
             Foreground = Brush("TextPrimary"),
         });
 
-        // Badges work by being rare, so there are only three, and each says something written
-        // nowhere else on the card.
+        // Where this account stands on THIS card, which "installed" does not answer: a file can sit
+        // in the game without being one's own, and one's own can be published without being on this
+        // machine at all.
+        //
+        // Matched on the site id, not on the lineage: a fork keeps the uuid of the work it came
+        // from and is published too, so two cards here can share a lineage while belonging to two
+        // different people. Matching on the uuid alone would hand somebody else's fork your name.
+        var lineage = _lineages.For(translation.Uuid);
+        var isYours = lineage is { SiteId: > 0 } && lineage.SiteId == translation.Id;
+
+        // A branch of this lineage is never IN this list — branches are not published — so a
+        // position that is not this card, on this card's lineage, is a contribution you made to it.
+        var contributesHere = !isYours && lineage is { IsMain: false };
+
+        // Badges work by being rare, and each says something written nowhere else on the card.
         var by = $"by {translation.Author ?? "unknown"}";
+        if (isYours) by += "  ·  yours";
+        if (contributesHere) by += "  ·  you have a branch of this";
         if (IsNew(translation)) by += "  ·  new";
         if (IsFurthest(translation, all)) by += "  ·  goes furthest";
         if (installed) by += "  ·  installed";
@@ -403,8 +430,25 @@ public sealed class TranslationsWindow : Window
         {
             Text = by,
             FontSize = 12,
-            Foreground = Brush(installed ? "Accent" : "TextSecondary"),
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush(isYours || contributesHere ? "StatusSuccess"
+                               : installed ? "Accent"
+                               : "TextSecondary"),
         });
+
+        // Said on the card that carries them, rather than only on the game card: a Main owner
+        // scrolling a list of six translations should not have to work out which one has people
+        // waiting behind it.
+        if (isYours && lineage is { BranchesCount: > 0 })
+        {
+            body.Children.Add(new TextBlock
+            {
+                Text = lineage.Describe(),
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("StatusSuccess"),
+            });
+        }
 
         body.Children.Add(new TextBlock
         {

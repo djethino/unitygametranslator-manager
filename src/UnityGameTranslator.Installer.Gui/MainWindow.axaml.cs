@@ -296,7 +296,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var window = new TranslationsWindow(report, descriptor, _settings);
+        var window = new TranslationsWindow(report, descriptor, _settings, _lineages);
         await window.ShowDialog(this);
 
         // Only when something was actually written: re-reading the game on every close would

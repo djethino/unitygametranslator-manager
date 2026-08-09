@@ -65,6 +65,9 @@ internal static class Program
             --offline skips every network call (catalog and community translations).
             --all also lists games that cannot be modded, with the reason.
             --beta uses pre-release plugin builds.
+            --runtime mono|il2cpp   tell us what we could not read
+            --arch x86|x64          tell us what we could not read
+            --force                 proceed despite a refusal (never for an anti-cheat)
             --yes skips the confirmation prompt.
             --loader, --settings  (uninstall) also remove the mod loader / your settings
                                   and translations. Both are off by default; settings and
@@ -260,7 +263,7 @@ internal static class Program
         var context = await ResolveGameAsync(args, offline: false);
         if (context is null) return 1;
 
-        var (platform, catalog, report) = context.Value;
+        var (platform, catalog, report, inventory) = context.Value;
 
         var channel = args.Contains("--beta", StringComparer.OrdinalIgnoreCase)
             ? ReleaseChannel.Beta
@@ -281,6 +284,52 @@ internal static class Program
                     Console.Error.WriteLine($"  {loader.Id,-18} {loader.Display} {loader.Version}");
                 return 1;
             }
+        }
+
+        // Answers for a game we could not read. Recorded, so the next run does not ask again.
+        var runtimeArg = ValueOf(args, "--runtime");
+        var archArg = ValueOf(args, "--arch");
+        var force = args.Contains("--force", StringComparer.OrdinalIgnoreCase);
+
+        if (runtimeArg is not null || archArg is not null || force)
+        {
+            var value = new GameOverride
+            {
+                Runtime = runtimeArg?.ToLowerInvariant() switch
+                {
+                    "mono" => UnityRuntime.Mono,
+                    "il2cpp" => UnityRuntime.Il2Cpp,
+                    _ => null,
+                },
+                Architecture = archArg?.ToLowerInvariant() switch
+                {
+                    "x86" => GameArchitecture.X86,
+                    "x64" => GameArchitecture.X64,
+                    _ => null,
+                },
+                IgnoreVerdict = force,
+            };
+
+            if (force && !ModdabilityProbe.CanBeOverridden(report.Game.Verdict)
+                      && report.Game.Verdict != ModdabilityVerdict.Ok)
+            {
+                Console.Error.WriteLine(
+                    $"--force does not apply here: {ModdabilityProbe.Explain(report.Game)}");
+                return 3;
+            }
+
+            inventory.Overrides.Set(report.Game.Path, value);
+            inventory.Overrides.Apply(report.Game);
+            report = await inventory.BuildReportAsync(report.Game, offline: false);
+
+            if (report.Game is { VerdictOverridden: true, OverriddenVerdict: { } overruled })
+            {
+                Console.WriteLine($"Proceeding despite: {ModdabilityProbe.Explain(
+                    new GameInstall { Name = report.Game.Name, Path = report.Game.Path,
+                                      Verdict = overruled, VerdictDetail = report.Game.VerdictDetail })}");
+                Console.WriteLine(ModdabilityProbe.OverrideCaveat(overruled));
+            }
+            Console.WriteLine();
         }
 
         var engine = new InstallEngine(platform, catalog, new ModReleaseClient());
@@ -308,7 +357,6 @@ internal static class Program
         foreach (var line in plan.Describe()) Console.WriteLine($"  - {line}");
 
         // Recomputed for the loader actually chosen, which may not be the recommended one.
-        var inventory = new GameInventory(platform, catalog);
         foreach (var warning in inventory.WarningsFor(plan.Loader, report.Game, plan.InstallLoader))
             Console.WriteLine($"  ! {warning}");
         Console.WriteLine();
@@ -328,7 +376,7 @@ internal static class Program
         var context = await ResolveGameAsync(args, offline: true);
         if (context is null) return 1;
 
-        var (platform, catalog, report) = context.Value;
+        var (platform, catalog, report, _) = context.Value;
         var engine = new UninstallEngine(platform, catalog);
 
         var available = engine.Available(report.Game);
@@ -369,7 +417,7 @@ internal static class Program
     }
 
     /// <summary>Shared front half of install/uninstall: find the game and describe it.</summary>
-    private static async Task<(IPlatform, LoaderCatalogDocument, GameReport)?> ResolveGameAsync(
+    private static async Task<(IPlatform, LoaderCatalogDocument, GameReport, GameInventory)?> ResolveGameAsync(
         string[] args, bool offline)
     {
         var target = args.Skip(1).FirstOrDefault(a => !a.StartsWith("--", StringComparison.Ordinal));
@@ -400,7 +448,7 @@ internal static class Program
         Console.WriteLine();
 
         var report = await inventory.BuildReportAsync(game, offline);
-        return (platform, catalog.Document, report);
+        return (platform, catalog.Document, report, inventory);
     }
 
     /// <summary>Reads "--name value" from the arguments, or null when absent.</summary>

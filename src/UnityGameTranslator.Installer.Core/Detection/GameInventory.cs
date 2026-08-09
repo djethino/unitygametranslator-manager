@@ -24,7 +24,11 @@ public sealed class GameInventory
         _catalog = catalog;
         _api = api;
         Folders = new CustomFolders(platform);
+        Overrides = new GameOverrides(platform);
     }
+
+    /// <summary>What the user told us about games we could not read on our own.</summary>
+    public GameOverrides Overrides { get; } = null!;
 
     /// <summary>The folders the user added by hand. Exposed so they can be shown and removed.</summary>
     public CustomFolders Folders { get; } = null!;
@@ -46,6 +50,10 @@ public sealed class GameInventory
         foreach (var game in new SteamScanner(_platform).Scan()) Add(game);
         foreach (var game in new StoreScanner(_platform).Scan()) Add(game);
 
+        // Applied after detection, never instead of it: we always read the files first, so a
+        // stale answer about a game that has since been updated gets replaced by the truth.
+        foreach (var game in games) Overrides.Apply(game);
+
         foreach (var folder in Folders.All)
         {
             if (Folders.IsMissing(folder)) continue; // reported elsewhere, not silently dropped
@@ -63,6 +71,7 @@ public sealed class GameInventory
         if (game is null) return null;
 
         ModdabilityProbe.Evaluate(game);
+        Overrides.Apply(game);
         return game;
     }
 
@@ -90,6 +99,21 @@ public sealed class GameInventory
         {
             report.Blockers.Add(ModdabilityProbe.Explain(game));
         }
+
+        // An override is a standing decision, not a one-off click. It keeps saying so on every
+        // report: once forced, the game would otherwise read as perfectly ordinary, and nobody
+        // would connect "the mod does nothing" back to the refusal they overruled weeks ago.
+        if (game is { VerdictOverridden: true, OverriddenVerdict: { } overruled })
+        {
+            report.Warnings.Add(
+                $"You chose to proceed here despite a refusal. {ModdabilityProbe.OverrideCaveat(overruled)}");
+        }
+
+        if (game.RuntimeIsAssumed)
+            report.Warnings.Add($"The runtime ({Describe(game.Runtime)}) is what you told us, not what we read.");
+
+        if (game.ArchitectureIsAssumed)
+            report.Warnings.Add($"The architecture ({game.Architecture}) is what you told us, not what we read.");
 
         if (!offline && game.SteamAppId is not null && _api is not null)
         {
@@ -175,17 +199,21 @@ public sealed class GameInventory
     {
         var os = game.RunsUnderProton ? "windows" : _platform.OsId;
 
-        var arch = game.Architecture != GameArchitecture.Unknown
-            ? game.Architecture
-            : _platform.HostArchitecture;
-
-        var wanted = arch switch
+        // No fallback to the host architecture. It used to default to x64 on a 64-bit machine,
+        // which quietly installed the wrong loader into a 32-bit game; an unread architecture is
+        // now a refusal the user can answer (see ModdabilityProbe.CanBeOverridden).
+        var wanted = game.Architecture switch
         {
             GameArchitecture.X86 => "x86",
             GameArchitecture.X64 => "x64",
             GameArchitecture.Arm64 => "arm64",
-            _ => "x64",
+            _ => null,
         };
+
+        if (wanted is null)
+        {
+            return descriptor.Assets.FirstOrDefault(a => a.Os == os && a.Arch == "universal");
+        }
 
         return descriptor.Assets.FirstOrDefault(a =>
                    a.Os == os && (a.Arch == wanted || a.Arch == "universal"))

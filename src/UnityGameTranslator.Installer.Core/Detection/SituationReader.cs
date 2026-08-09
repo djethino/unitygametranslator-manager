@@ -153,7 +153,8 @@ public static class SituationReader
     {
         ModdabilityVerdict.AntiCheat => $"Cannot be modded — {game.VerdictDetail}",
         ModdabilityVerdict.StoreProtected => "Cannot be modded — store-protected build",
-        ModdabilityVerdict.RuntimeUnknown => "Cannot be modded — unrecognised Unity runtime",
+        ModdabilityVerdict.RuntimeUnknown => "Not identified — Mono or IL2CPP could not be read",
+        ModdabilityVerdict.ArchitectureUnknown => "Not identified — 32-bit or 64-bit could not be read",
         ModdabilityVerdict.StrippedRuntime => "Cannot be modded — the game ships a stripped runtime",
         ModdabilityVerdict.NotUnity => "Not a Unity game",
         _ => "Cannot be modded",

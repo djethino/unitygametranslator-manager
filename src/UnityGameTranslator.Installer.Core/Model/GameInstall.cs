@@ -46,6 +46,13 @@ public enum ModdabilityVerdict
     RuntimeUnknown,
 
     /// <summary>
+    /// We could not read whether the game is 32 or 64 bit. Refused rather than guessed: falling
+    /// back to the machine's architecture installs a 64-bit loader into a 32-bit game, which does
+    /// not crash — it simply never loads, and reads as "the mod does not work".
+    /// </summary>
+    ArchitectureUnknown,
+
+    /// <summary>
     /// The game ships a stripped runtime library: members every mod loader calls were removed at
     /// build time. No loader can start, and this is a property of the game, not a bug in ours.
     /// </summary>
@@ -99,6 +106,25 @@ public sealed class GameInstall
 
     /// <summary>Human-readable detail behind <see cref="Verdict"/>, e.g. "EasyAntiCheat".</summary>
     public string? VerdictDetail { get; set; }
+
+    /// <summary>True when the runtime came from the user rather than from the files.</summary>
+    public bool RuntimeIsAssumed { get; set; }
+
+    /// <summary>True when the architecture came from the user rather than from the files.</summary>
+    public bool ArchitectureIsAssumed { get; set; }
+
+    /// <summary>
+    /// True when the user chose to proceed despite a refusal. Kept visible so nothing downstream
+    /// mistakes an override for a clean verdict.
+    /// </summary>
+    public bool VerdictOverridden { get; set; }
+
+    /// <summary>
+    /// The refusal the user overruled. Kept because the caveat that matters describes what was
+    /// refused, and reading it off the current verdict — now Ok — returned an empty warning at
+    /// the one moment it needed to be read.
+    /// </summary>
+    public ModdabilityVerdict? OverriddenVerdict { get; set; }
 
     public bool IsUnity => DataDirectory is not null || ExecutablePath is not null;
 

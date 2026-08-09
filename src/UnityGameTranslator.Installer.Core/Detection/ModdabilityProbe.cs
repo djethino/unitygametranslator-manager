@@ -70,9 +70,50 @@ public static class ModdabilityProbe
             }
         }
 
+        // Architecture matters as much as runtime: BepInEx ships separate x86 and x64 archives,
+        // and there are still 32-bit Unity games. Guessing from the host means a 64-bit loader in
+        // a 32-bit game, which fails by doing nothing at all.
+        if (game.Architecture == GameArchitecture.Unknown)
+        {
+            game.Verdict = ModdabilityVerdict.ArchitectureUnknown;
+            game.VerdictDetail = "Could not read 32-bit or 64-bit";
+            return;
+        }
+
         game.Verdict = ModdabilityVerdict.Ok;
         game.VerdictDetail = null;
     }
+
+    /// <summary>
+    /// Whether a refusal is one the user may overrule.
+    ///
+    /// The line is reversibility, not confidence. Everything we install is recorded and can be
+    /// removed, so a loader that turns out not to work costs time and nothing else — the user is
+    /// entitled to try. An anti-cheat is the exception and always will be: the cost there is a
+    /// banned account, it is paid by them, and no uninstall undoes it.
+    /// </summary>
+    public static bool CanBeOverridden(ModdabilityVerdict verdict) => verdict switch
+    {
+        ModdabilityVerdict.RuntimeUnknown => true,
+        ModdabilityVerdict.ArchitectureUnknown => true,
+        ModdabilityVerdict.StrippedRuntime => true,
+        ModdabilityVerdict.StoreProtected => true,
+        _ => false,
+    };
+
+    /// <summary>What the user should weigh before overruling a refusal.</summary>
+    public static string OverrideCaveat(ModdabilityVerdict verdict) => verdict switch
+    {
+        ModdabilityVerdict.RuntimeUnknown =>
+            "Pick the wrong one and the game starts without the mod, or not at all. Uninstalling puts it back.",
+        ModdabilityVerdict.ArchitectureUnknown =>
+            "Pick the wrong one and the loader silently never runs. Uninstalling puts it back.",
+        ModdabilityVerdict.StrippedRuntime =>
+            "This has been tested on a game built the same way: BepInEx 5, BepInEx 6 and MelonLoader all failed, and so did swapping in unstripped runtime libraries. Trying costs a few minutes and nothing else.",
+        ModdabilityVerdict.StoreProtected =>
+            "The folder is usually read-only, so the install will most likely be refused by the system rather than by us.",
+        _ => "",
+    };
 
     /// <summary>Returns the name of the anti-cheat found, or null.</summary>
     public static string? FindAntiCheat(string gamePath)
@@ -135,6 +176,9 @@ public static class ModdabilityProbe
             $"{CorlibProbe.NeededBy(game.VerdictDetail ?? "")} calls it before any mod runs. " +
             "No mod loader can start here. This is how the game was built, not a limitation of " +
             "the tool or of the mod.",
+        ModdabilityVerdict.ArchitectureUnknown =>
+            "Refused: could not read whether this game is 32-bit or 64-bit. A 64-bit loader in a " +
+            "32-bit game does not crash, it simply never runs — which looks exactly like a broken mod.",
         ModdabilityVerdict.NotUnity => "Not a Unity game.",
         _ => "Unknown state.",
     };

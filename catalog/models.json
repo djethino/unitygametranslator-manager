@@ -20,8 +20,12 @@
     "which is right for a family name like 'gemma' that matches many things, and for anything we",
     "would not put in front of someone as a starting point.",
     "",
-    "TAGS ARE PINNED TO A VERSION, NEVER 'latest'. A moving tag makes every figure below a lie",
+    "'pull' IS PINNED TO A VERSION, NEVER 'latest'. A moving tag makes every figure below a lie",
     "the day it moves, and the reader has no way of knowing which day that was.",
+    "⚠ 'match' is NOT the same thing and must not be pinned as tightly: it recognises what someone",
+    "already has, as a substring, longest match winning. Pinning it to an exact tag silently robs",
+    "everyone running ':latest' of their note. Hence the family entries below — they carry no",
+    "figures precisely because a moving tag has none to carry.",
     "",
     "'min_vram_gb' is the card size below which the model runs on the processor instead, which",
     "means minutes per line rather than seconds. It filters the offer; it never hides the list.",
@@ -159,6 +163,27 @@
       "languages": {
         "supported": 55,
         "source": "https://ollama.com/library/translategemma"
+      }
+    },
+    {
+      "match": "qwen3.5",
+      "runner": "ollama",
+      "role": "tested",
+      "note": "Several sizes were run and each has its own line here. If this reads 'latest', the tag moves between versions, so no figure of ours applies to it — check which size it resolves to today.",
+      "languages": {
+        "supported": 201,
+        "source": "https://ollama.com/library/qwen3.5"
+      }
+    },
+    {
+      "match": "gemma4",
+      "runner": "ollama",
+      "role": "tested",
+      "note": "Several builds were run and each has its own line here. If this reads 'latest', the tag moves between versions, so no figure of ours applies to it — check which build it resolves to today.",
+      "languages": {
+        "supported": 35,
+        "pretrained": 140,
+        "source": "https://ai.google.dev/gemma/docs/core/model_card_4"
       }
     },
     {

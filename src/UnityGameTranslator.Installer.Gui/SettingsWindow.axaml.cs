@@ -827,6 +827,30 @@ public sealed class SettingsWindow : Window
         Select(_aiModel, _draft.AiModel);
         _aiModel.SelectedItem ??= _aiModel.Items.OfType<ComboBoxItem>().FirstOrDefault();
         _testButton.IsEnabled = _aiModel.SelectedItem is not null;
+
+        // Reachable even with models already installed, and that is the point.
+        //
+        // The list used to appear only on a server holding nothing, which quietly assumed that
+        // whoever has a model has the right one. Somebody running a model that mangles the game's
+        // placeholders is precisely the person this list is for, and they were the one person who
+        // could not see it. Offered as a button rather than opened: they came here for a setting,
+        // not for a catalogue.
+        var others = new Button
+        {
+            Content = "Other models we have tested",
+            FontSize = 12,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+        };
+
+        others.Click += async (_, _) =>
+        {
+            others.IsEnabled = false;
+            await OfferModelAsync(server.Url, alreadyHasModels: true);
+        };
+
+        _ollamaPanel.Children.Clear();
+        _ollamaPanel.Children.Add(others);
+        _ollamaPanel.IsVisible = true;
     }
 
     /// <summary>
@@ -984,7 +1008,12 @@ public sealed class SettingsWindow : Window
     /// ⚠ Never ordered or filtered by language. Every part of this project stays language-agnostic
     /// and this is the screen where the temptation is strongest.
     /// </summary>
-    private async Task OfferModelAsync(string serverUrl)
+    /// <param name="alreadyHasModels">
+    /// Changes what is said, never what is offered. "No model here yet" is a fix; the same list
+    /// shown to someone who already has one is a comparison, and calling it a fix would read as
+    /// "yours is wrong" about a model we have never run.
+    /// </param>
+    private async Task OfferModelAsync(string serverUrl, bool alreadyHasModels = false)
     {
         _ollamaPanel.Children.Clear();
         _ollamaPanel.IsVisible = true;
@@ -998,18 +1027,29 @@ public sealed class SettingsWindow : Window
         if (candidates.Count == 0)
         {
             _ollamaPanel.Children.Add(Note(
-                "This server has no model loaded yet, and we could not reach our list of models "
-                + "to suggest one. Any model pulled with Ollama works — the mod only needs a "
-                + "server that answers.", "StatusWarning"));
+                alreadyHasModels
+                    ? "We could not reach our list of tested models just now. Nothing is wrong "
+                      + "with the one you have — the mod only needs a server that answers."
+                    : "This server has no model loaded yet, and we could not reach our list of "
+                      + "models to suggest one. Any model pulled with Ollama works — the mod only "
+                      + "needs a server that answers.",
+                alreadyHasModels ? "TextMuted" : "StatusWarning"));
             return;
         }
 
+        var card = vram is { } bytes
+            ? $"Your graphics card has {bytes / 1024.0 / 1024 / 1024:F0} GB"
+            : "We could not read your graphics card size";
+
         _ollamaPanel.Children.Add(Note(
-            vram is { } bytes
-                ? $"No model on this server yet. Your graphics card has "
-                  + $"{bytes / 1024.0 / 1024 / 1024:F0} GB, so these are worth considering:"
-                : "No model on this server yet. We could not read your graphics card size, so "
-                  + "here is the whole list with what each one needs:",
+            alreadyHasModels
+                ? $"What we have run ourselves, with the memory each one held here. {card}. "
+                  + "Nothing to change if yours does the job — pulling a second one costs only "
+                  + "disk space, and Ollama keeps both."
+                : vram is not null
+                    ? $"No model on this server yet. {card}, so these are worth considering:"
+                    : $"No model on this server yet. {card}, so here is the whole list with what "
+                      + "each one needs:",
             "TextSecondary"));
 
         var progress = Note("", "TextMuted");

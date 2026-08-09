@@ -207,21 +207,44 @@ public sealed class ToolSettingsWindow : Window
             $"Open {start.VerificationUri} while signed in to your account, and enter this code:",
             "TextSecondary"));
 
-        // A field rather than a label: a code has to be selectable and copyable, and reading one
-        // off a screen to retype it is exactly where a character goes missing.
-        _accountPanel.Children.Add(new TextBox
+        // A field rather than a label: a code has to be selectable, and reading one off a screen
+        // to retype it is exactly where a character goes missing.
+        var code = new TextBox
         {
             Text = start.UserCode,
             IsReadOnly = true,
             FontSize = 20,
             FontWeight = FontWeight.SemiBold,
             Width = 200,
-            HorizontalAlignment = HorizontalAlignment.Left,
-        });
+        };
+
+        var copy = new Button { Content = "Copy", FontSize = 12 };
+        copy.Click += async (_, _) =>
+        {
+            // Selecting six characters by hand and hitting Ctrl+C is work nobody should do when a
+            // button can. The confirmation matters as much as the copy: without it there is no way
+            // to tell it happened, and people copy twice to be sure.
+            var clipboard = GetTopLevel(this)?.Clipboard;
+            if (clipboard is null) return;
+
+            await clipboard.SetTextAsync(start.UserCode);
+
+            copy.Content = "Copied";
+            await Task.Delay(1500);
+            copy.Content = "Copy";
+        };
 
         var open = new Button { Content = "Open the page", FontSize = 12 };
         open.Click += (_, _) => OpenUrl(start.VerificationUri);
-        _accountPanel.Children.Add(open);
+
+        var row = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Children = { code, copy, open },
+        };
+
+        _accountPanel.Children.Add(row);
 
         var waiting = new SpinningGear("Waiting for you to enter it...");
         _accountPanel.Children.Add(waiting);

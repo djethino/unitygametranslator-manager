@@ -880,9 +880,15 @@ public partial class MainWindow : Window
             }
         }
 
+        // ⚠ The icon's column is a FIXED width, not Auto, and that is what makes the rest safe.
+        //
+        // Sizing the icon to the text is circular by nature: a wider icon leaves the text less
+        // room, the text wraps, the block grows taller, the icon grows again. Reserving the
+        // largest width up front means the text always has the same space to lay itself out in,
+        // whatever the icon ends up being — so it never wraps because of the picture.
         var grid = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnDefinitions = new ColumnDefinitions($"*,{IconColumnWidth}"),
             Margin = new Avalonia.Thickness(0, 0, 0, 4),
         };
 
@@ -894,10 +900,23 @@ public partial class MainWindow : Window
             var image = new Image
             {
                 Source = icon,
-                Width = 48,
-                Height = 48,
+                Width = MinIconSize,
+                Height = MinIconSize,
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
                 Margin = new Avalonia.Thickness(12, 2, 0, 0),
+            };
+
+            // Followed rather than computed: the height of the text is only known once it has been
+            // laid out, and it changes with the window's width and with how many folders this game
+            // turns out to have.
+            text.PropertyChanged += (_, e) =>
+            {
+                if (e.Property != Visual.BoundsProperty) return;
+
+                var height = Math.Clamp(text.Bounds.Height, MinIconSize, MaxIconSize);
+                image.Width = height;
+                image.Height = height;
             };
 
             Grid.SetColumn(image, 1);
@@ -906,6 +925,17 @@ public partial class MainWindow : Window
 
         return grid;
     }
+
+    /// <summary>
+    /// Never smaller than the title line — an icon shorter than the name it belongs to reads as an
+    /// afterthought — and never taller than four lines, which is the most folders a game can show.
+    /// Beyond that it would be a picture with a caption rather than a game with an icon.
+    /// </summary>
+    private const double MinIconSize = 30;
+    private const double MaxIconSize = 78;
+
+    /// <summary>Reserved for the icon whatever its size, so the text's width never moves.</summary>
+    private const double IconColumnWidth = MaxIconSize + 12;
 
     /// <summary>A path, with a way to go there. The button is the only thing added.</summary>
     private static Control FolderRow(string path, string what)

@@ -240,13 +240,19 @@ public sealed class AiServerProbe
     /// directions. Showing what the model actually said is what lets a human notice that, and
     /// overrule us. We measure; the user decides whether to use the model.
     /// </summary>
+    /// <param name="gameContext">
+    /// What the mod's "describe this game" setting would hold. Passed through so the suite can be
+    /// run both ways: it is the one line of the prompt a player writes themselves, and whether it
+    /// helps or hurts was until now a matter of opinion.
+    /// </param>
     public async Task<IReadOnlyList<ModelTestResult>> RunSuiteAsync(
         string baseUrl, string model, string targetLanguage,
-        Action<ModelTestResult>? onResult = null, CancellationToken ct = default)
+        Action<ModelTestResult>? onResult = null, CancellationToken ct = default,
+        string? gameContext = null)
     {
         var results = new List<ModelTestResult>();
 
-        foreach (var test in ModelTestSuite.Build(targetLanguage))
+        foreach (var test in ModelTestSuite.Build(targetLanguage, gameContext))
         {
             var answer = await AskAsync(baseUrl, model, test.Rule, test.Source, ct)
                 .ConfigureAwait(false);

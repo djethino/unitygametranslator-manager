@@ -67,6 +67,7 @@ internal static class Program
               ai [--test] [--model M]      Find a local AI server, optionally translate one line
               ai --compare a,b,c            Score several models on the job the mod asks of them
               ai --suite --model M          Put one model through the mod's instructions, hardest last
+                  [--context "..."]         ...with the game description the mod would send
               ai --ollama [--yes]           Start an installed Ollama, or price installing one
               urls <address>                Show which endpoints an address resolves to
               catalog [--offline]          Show the loader catalog and where it came from
@@ -648,7 +649,15 @@ internal static class Program
         var settings = new SettingsStore(PlatformFactory.Create());
         var language = ValueOf(args, "--lang") ?? settings.ResolveTargetLanguage();
 
+        // The mod's "describe this game" setting, which goes into the very first line of the
+        // prompt. Offered here because nobody could say whether filling it in helps or hurts, and
+        // running the suite both ways settles it for a given model.
+        var gameContext = ValueOf(args, "--context");
+
         Console.WriteLine($"{model} on {server.Product}, translating to {Languages.NameOf(language)}");
+        Console.WriteLine(gameContext is null
+            ? "Game context: none (the mod's default wording)"
+            : $"Game context: {gameContext}");
 
         // What we have run ourselves against this model, if anything — said before the suite so
         // it reads as background, not as a conclusion drawn from the marks below.
@@ -664,7 +673,7 @@ internal static class Program
         var echoed = 0;
         var unlocked = new List<(ModelTest Test, bool Supported)>();
 
-        await probe.RunSuiteAsync(server.Url, model, language, result =>
+        await probe.RunSuiteAsync(server.Url, model, language, gameContext: gameContext, onResult: result =>
         {
             if (result.Test.UnlocksOption is not null)
             {

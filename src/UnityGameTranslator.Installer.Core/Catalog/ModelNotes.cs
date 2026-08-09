@@ -44,6 +44,35 @@ public sealed class ModelLanguages
     }
 }
 
+/// <summary>
+/// What the model tester found, as figures rather than as a sentence.
+///
+/// These used to live only inside the note's prose, which meant no screen could sort on them,
+/// compare them or put the interesting ones first — it could only stack paragraphs. A measurement
+/// worth taking is worth storing in a form something else can read.
+/// </summary>
+public sealed class ModelMeasurements
+{
+    /// <summary>Video memory the model actually held, in GB, read from the server.</summary>
+    [JsonPropertyName("vram_gb")] public double? VramGb { get; set; }
+
+    /// <summary>Draws that came back with every placeholder intact, out of how many.</summary>
+    [JsonPropertyName("kept")] public int? Kept { get; set; }
+    [JsonPropertyName("draws")] public int? Draws { get; set; }
+
+    /// <summary>Instructions of the suite followed, out of how many.</summary>
+    [JsonPropertyName("suite")] public int? Suite { get; set; }
+    [JsonPropertyName("suite_of")] public int? SuiteOf { get; set; }
+
+    /// <summary>Whether it also followed the experimental source-language rule.</summary>
+    [JsonPropertyName("strict_source")] public bool? StrictSource { get; set; }
+
+    /// <summary>Everything asked of it, every time. The bar for being put forward at all.</summary>
+    [JsonIgnore]
+    public bool Flawless => Kept is { } kept && Draws is { } draws && kept == draws
+                            && Suite is { } suite && SuiteOf is { } of && suite == of;
+}
+
 public sealed class ModelNote
 {
     /// <summary>Matched as a substring of the model name, case-insensitively.</summary>
@@ -73,6 +102,9 @@ public sealed class ModelNote
 
     /// <summary>What the publisher says about language coverage, when they say anything.</summary>
     [JsonPropertyName("languages")] public ModelLanguages? Languages { get; set; }
+
+    /// <summary>What we measured, when we measured it.</summary>
+    [JsonPropertyName("measured")] public ModelMeasurements? Measured { get; set; }
 
     [JsonIgnore] public bool IsReference => Role == "reference";
 
@@ -212,18 +244,59 @@ public sealed class ModelNotesProvider
         if (document is null) return Array.Empty<ModelNote>();
 
         var offerable = document.Models.Where(note => note.CanBeInstalled).ToList();
-        if (videoMemoryBytes is not { } bytes) return offerable;
+        var lightest = LightestFlawless(offerable);
+
+        // Two entries earn their place at the top, and both are answers to a question somebody
+        // actually asks: "which one do you use?" and "what is the smallest that still works?".
+        // Neither is a score — one is a fact about this project, the other the lowest measured
+        // memory among models that did everything asked of them, every time.
+        static int Rank(ModelNote note, ModelNote? lightest, bool fits) =>
+            !fits ? 3
+            : note.IsReference ? 0
+            : ReferenceEquals(note, lightest) ? 1
+            : 2;
+
+        if (videoMemoryBytes is not { } bytes)
+        {
+            return offerable
+                .OrderBy(note => Rank(note, lightest, true))
+                .ThenByDescending(note => note.MinVramGb ?? 0)
+                .ToList();
+        }
 
         var availableGb = bytes / 1024.0 / 1024 / 1024;
 
-        // Fits first, largest of those first — a bigger model that still fits is generally the
-        // better translation. What does not fit stays visible, last, with its requirement shown:
-        // someone willing to wait is entitled to decide that for themselves.
+        // What fits comes first whatever its standing: a reference model that spills out of this
+        // card is not a recommendation, it is a trap — it falls back to the processor and takes
+        // minutes a line. What does not fit stays visible, last, with its requirement shown,
+        // because someone willing to wait is entitled to decide that themselves.
         return offerable
-            .OrderByDescending(note => note.MinVramGb is null || note.MinVramGb <= availableGb)
+            .OrderBy(note => Rank(note, lightest, note.MinVramGb is null || note.MinVramGb <= availableGb))
             .ThenByDescending(note => note.MinVramGb ?? 0)
             .ToList();
     }
+
+    /// <summary>
+    /// The smallest model that did everything asked of it, every time.
+    ///
+    /// Deliberately not "the smallest": one that mangles a placeholder now and then is not a
+    /// lighter option, it is a broken one, and offering it as the small choice would push the
+    /// people with the least room towards the worst outcome.
+    /// </summary>
+    public static ModelNote? LightestFlawless(IEnumerable<ModelNote> notes) =>
+        notes.Where(note => note.CanBeInstalled
+                            && note.Measured is { Flawless: true, VramGb: not null })
+             .OrderBy(note => note.Measured!.VramGb)
+             .FirstOrDefault();
+
+    /// <summary>
+    /// Why an entry is shown first, in the words the reader gets. Null for everything else —
+    /// a badge on every row is a badge on none.
+    /// </summary>
+    public static string? Standout(ModelNote note, ModelNote? lightest) =>
+        note.IsReference ? "What we develop against"
+        : ReferenceEquals(note, lightest) ? "Smallest that passed everything"
+        : null;
 
     /// <summary>Whether this model fits the card, or null when the card size is unknown.</summary>
     public static bool? Fits(ModelNote note, long? videoMemoryBytes)

@@ -79,6 +79,7 @@
   <SolidColorBrush x:Key="CalloutErrorBg" Color="#2C1B20" />
   <SolidColorBrush x:Key="CalloutWarningBg" Color="#2B2419" />
   <SolidColorBrush x:Key="CalloutInfoBg" Color="#1A2333" />
+  <SolidColorBrush x:Key="CalloutSuccessBg" Color="#1B2A20" />
 
   <!-- Shape — rounded-lg is the site's radius on cards, inputs and buttons alike -->
   <CornerRadius x:Key="RadiusCard">8</CornerRadius>

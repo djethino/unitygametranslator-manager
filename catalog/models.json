@@ -1,5 +1,5 @@
 {
-  "schema": 3,
+  "schema": 4,
   "updated": "2026-08-10",
 
   "_comment": [
@@ -16,9 +16,10 @@
     "  - NEVER pick or rank by language. Sorting by 'good at Japanese' would break the rule the",
     "    whole project is built on: every part of it stays language-agnostic.",
     "",
-    "'pull' is what makes a model offerable for download. An entry without it is a note only —",
-    "which is right for a family name like 'gemma' that matches many things, and for anything we",
-    "would not put in front of someone as a starting point.",
+    "'pull' is what makes a model offerable for download, and it is EARNED: every draw kept its",
+    "placeholders and every instruction of the suite was followed. Anything less is a note only.",
+    "That bar is not severity for its own sake — a model that mangles a line now and then damages",
+    "a game's text without ever saying so, which is worse than one that fails openly.",
     "",
     "'pull' IS PINNED TO A VERSION, NEVER 'latest'. A moving tag makes every figure below a lie",
     "the day it moves, and the reader has no way of knowing which day that was.",
@@ -27,18 +28,19 @@
     "everyone running ':latest' of their note. Hence the family entries below — they carry no",
     "figures precisely because a moving tag has none to carry.",
     "",
+    "'measured' is the tester's own reading, as figures rather than prose, so a screen can sort",
+    "and compare them instead of stacking paragraphs. 'kept' counts draws that came back with",
+    "every placeholder intact; 'suite' counts instructions followed. Both are needed: two models",
+    "here passed one and failed the other, on the very same line, minutes apart.",
+    "",
     "'min_vram_gb' is the card size below which the model runs on the processor instead, which",
     "means minutes per line rather than seconds. It filters the offer; it never hides the list.",
-    "⚠ It is NOT the download size, and the two differ wildly in BOTH directions: gemma4:e4b",
-    "downloads 9.6 GB and holds 3.2 in memory, qwen3:8b downloads 5.2 GB and takes 9.3. Every",
-    "figure here is the model tester's own reading, plus a gigabyte of headroom, rounded up to a",
-    "card size that exists. Where a note quotes memory, that is the raw measurement.",
+    "⚠ It is NOT the download size, and the two differ wildly in BOTH directions: gemma4:e2b-it-qat",
+    "downloads 4.3 GB and holds 1.7, qwen3:8b downloads 5.2 GB and takes 9.3. Every figure is a",
+    "measurement plus a gigabyte of headroom, rounded up to a card size that exists.",
     "",
-    "⚠ THESE MODELS ARE SAMPLED, NOT DETERMINISTIC. The tester now judges four answers instead of",
-    "one, because a single draw is worth very little: translategemma:12b passes the whole suite",
-    "and still dropped a placeholder on one draw in four. One bad line in four corrupts a game's",
-    "text quietly, which is worse than a model that fails openly — so a note says how many draws",
-    "held, never 'reliable'.",
+    "⚠ THESE MODELS ARE SAMPLED, NOT DETERMINISTIC. Verdicts come from four draws, not one,",
+    "because a single draw is worth very little — and even four is a sample, on one line.",
     "",
     "'languages' is the PUBLISHER'S claim, never our measurement — we have verified none of them.",
     "Two numbers when they give two: a model tuned for 35 languages that merely saw 140 in",
@@ -52,10 +54,18 @@
       "match": "qwen3.5:9b",
       "runner": "ollama",
       "role": "reference",
-      "note": "What the mod is developed against. Follows the instruction suite in full, including the experimental source-language rule, and kept every placeholder across four draws. Held 6.1 GB of video memory here.",
+      "note": "What the mod is developed against, and one of only two here that also follows the experimental source-language rule.",
       "pull": "qwen3.5:9b",
       "download_gb": 6.6,
       "min_vram_gb": 8,
+      "measured": {
+        "vram_gb": 6.1,
+        "kept": 4,
+        "draws": 4,
+        "suite": 8,
+        "suite_of": 8,
+        "strict_source": true
+      },
       "languages": {
         "supported": 201,
         "source": "https://ollama.com/library/qwen3.5"
@@ -65,10 +75,18 @@
       "match": "gemma4:e2b-it-qat",
       "runner": "ollama",
       "role": "tested",
-      "note": "Passed the whole suite and kept every placeholder across four draws while holding 1.7 GB of video memory — the smallest footprint anything here has managed, and the one worth trying on a card nobody would call suitable.",
+      "note": "The smallest footprint anything here has managed, and it gave nothing up for it — worth trying on a card nobody would call suitable.",
       "pull": "gemma4:e2b-it-qat",
       "download_gb": 4.3,
       "min_vram_gb": 4,
+      "measured": {
+        "vram_gb": 1.7,
+        "kept": 4,
+        "draws": 4,
+        "suite": 8,
+        "suite_of": 8,
+        "strict_source": false
+      },
       "languages": {
         "supported": 35,
         "pretrained": 140,
@@ -79,10 +97,18 @@
       "match": "gemma3:4b",
       "runner": "ollama",
       "role": "tested",
-      "note": "Passed the whole suite and kept every placeholder across four draws, in 2.9 GB of video memory.",
+      "note": "The previous generation's small build, and still a sound one. Its download is the lightest of the lot.",
       "pull": "gemma3:4b",
       "download_gb": 3.3,
       "min_vram_gb": 4,
+      "measured": {
+        "vram_gb": 2.9,
+        "kept": 4,
+        "draws": 4,
+        "suite": 8,
+        "suite_of": 8,
+        "strict_source": false
+      },
       "languages": {
         "supported": 140,
         "source": "https://ollama.com/library/gemma3"
@@ -92,37 +118,39 @@
       "match": "translategemma:4b",
       "runner": "ollama",
       "role": "tested",
-      "note": "Translation-specialised and light: 2.9 GB of video memory, the whole suite passed and four draws in four keeping their placeholders. An earlier single draw had dropped one at the end of a line, which is the sort of thing only repeated draws settle.",
+      "note": "Translation-specialised, and the only model here built for nothing else. An earlier single draw had dropped a placeholder at the end of a line; four draws since have not.",
       "pull": "translategemma:4b",
       "download_gb": 3.3,
       "min_vram_gb": 4,
+      "measured": {
+        "vram_gb": 2.9,
+        "kept": 4,
+        "draws": 4,
+        "suite": 8,
+        "suite_of": 8,
+        "strict_source": false
+      },
       "languages": {
         "supported": 55,
         "source": "https://ollama.com/library/translategemma"
       }
     },
     {
-      "match": "gemma4:e4b",
-      "runner": "ollama",
-      "role": "tested",
-      "note": "Passed the whole suite and kept every placeholder across four draws, in 3.2 GB of video memory — a third of what its download suggests.",
-      "pull": "gemma4:e4b",
-      "download_gb": 9.6,
-      "min_vram_gb": 6,
-      "languages": {
-        "supported": 35,
-        "pretrained": 140,
-        "source": "https://ai.google.dev/gemma/docs/core/model_card_4"
-      }
-    },
-    {
       "match": "qwen3.5:4b",
       "runner": "ollama",
       "role": "tested",
-      "note": "The reference model's small sibling: same suite passed, four draws in four keeping their placeholders, in 3.9 GB of video memory instead of 6.1.",
+      "note": "The reference model's small sibling: same behaviour on everything asked, in less than two thirds of the memory.",
       "pull": "qwen3.5:4b",
       "download_gb": 3.4,
       "min_vram_gb": 6,
+      "measured": {
+        "vram_gb": 3.9,
+        "kept": 4,
+        "draws": 4,
+        "suite": 8,
+        "suite_of": 8,
+        "strict_source": false
+      },
       "languages": {
         "supported": 201,
         "source": "https://ollama.com/library/qwen3.5"
@@ -132,10 +160,18 @@
       "match": "gemma4:12b-it-qat",
       "runner": "ollama",
       "role": "tested",
-      "note": "Passed the whole suite including the experimental source-language rule — one of only two here that does — and kept every placeholder across four draws, in 7.5 GB of video memory.",
+      "note": "The second of only two here that follows the experimental source-language rule, for a card with room to spare.",
       "pull": "gemma4:12b-it-qat",
       "download_gb": 7.2,
       "min_vram_gb": 10,
+      "measured": {
+        "vram_gb": 7.5,
+        "kept": 4,
+        "draws": 4,
+        "suite": 8,
+        "suite_of": 8,
+        "strict_source": true
+      },
       "languages": {
         "supported": 35,
         "pretrained": 140,
@@ -146,20 +182,55 @@
       "match": "qwen3:8b",
       "runner": "ollama",
       "role": "tested",
-      "note": "Passed the whole suite and kept every placeholder across four draws, but took 9.3 GB of video memory — well beyond what its 5.2 GB download suggests, and beyond an 8 GB card.",
+      "note": "Does everything asked of it, but wants far more memory than its download suggests — check the figure before choosing it over a smaller one.",
       "pull": "qwen3:8b",
       "download_gb": 5.2,
       "min_vram_gb": 12,
+      "measured": {
+        "vram_gb": 9.3,
+        "kept": 4,
+        "draws": 4,
+        "suite": 8,
+        "suite_of": 8,
+        "strict_source": false
+      },
       "languages": {
         "supported": 100,
         "source": "https://ollama.com/library/qwen3"
       }
     },
     {
+      "match": "gemma4:e4b",
+      "runner": "ollama",
+      "role": "tested",
+      "note": "Not offered: it kept its placeholders on four draws and then swallowed a line break on the fifth, gluing two sentences together. Its lighter sibling e2b-it-qat did the same job in half the memory without missing one.",
+      "measured": {
+        "vram_gb": 3.2,
+        "kept": 4,
+        "draws": 4,
+        "suite": 7,
+        "suite_of": 8,
+        "strict_source": false
+      },
+      "languages": {
+        "supported": 35,
+        "pretrained": 140,
+        "source": "https://ai.google.dev/gemma/docs/core/model_card_4"
+      }
+    },
+    {
       "match": "translategemma:12b",
       "runner": "ollama",
       "role": "tested",
-      "note": "Not offered on purpose: it passes the whole suite, yet dropped a placeholder on one draw in four of the same line. Its 4B sibling held all four for the same job in a third of the memory, and a model that mangles a line now and then damages a game's text without ever announcing it.",
+      "note": "Not offered: it follows every instruction of the suite, yet dropped a placeholder on one draw in four of the same line. Its 4B sibling held all four for the same job in a third of the memory.",
+      "measured": {
+        "vram_gb": 7.5,
+        "kept": 3,
+        "draws": 4,
+        "suite": 8,
+        "suite_of": 8,
+        "strict_source": false
+      },
       "languages": {
         "supported": 55,
         "source": "https://ollama.com/library/translategemma"

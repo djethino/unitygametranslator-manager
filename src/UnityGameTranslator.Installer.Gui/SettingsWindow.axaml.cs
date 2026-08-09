@@ -865,26 +865,10 @@ public sealed class SettingsWindow : Window
 
         _ollamaPanel.IsVisible = true;
 
-        if (!installed.Any(model => ModelNotesProvider.For(_modelNotes, model) is not null))
-        {
-            await OfferModelAsync(serverUrl, alreadyHasModels: true, noneOfTheirsTested: true);
-            return;
-        }
+        var noneTested = !installed.Any(model => ModelNotesProvider.For(_modelNotes, model) is not null);
 
-        var others = new Button
-        {
-            Content = "Other models we have tested",
-            FontSize = 12,
-            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
-        };
-
-        others.Click += async (_, _) =>
-        {
-            others.IsEnabled = false;
-            await OfferModelAsync(serverUrl, alreadyHasModels: true);
-        };
-
-        _ollamaPanel.Children.Add(others);
+        await OfferModelAsync(serverUrl, alreadyHasModels: true, noneOfTheirsTested: noneTested,
+                              startExpanded: noneTested);
     }
 
     /// <summary>
@@ -1051,8 +1035,12 @@ public sealed class SettingsWindow : Window
     /// Said plainly, because it explains why this list appeared unasked — and because the reader
     /// might otherwise take our silence about their models for approval of them.
     /// </param>
+    /// <param name="startExpanded">
+    /// Open when there is nothing else to go on — an empty server, or nothing of theirs we have
+    /// ever run. Closed when it is merely a comparison, which is most visits.
+    /// </param>
     private async Task OfferModelAsync(string serverUrl, bool alreadyHasModels = false,
-                                       bool noneOfTheirsTested = false)
+                                       bool noneOfTheirsTested = false, bool startExpanded = true)
     {
         _ollamaPanel.Children.Clear();
         _ollamaPanel.IsVisible = true;
@@ -1080,73 +1068,210 @@ public sealed class SettingsWindow : Window
             ? $"Your graphics card has {bytes / 1024.0 / 1024 / 1024:F0} GB"
             : "We could not read your graphics card size";
 
-        _ollamaPanel.Children.Add(Note(
+        var content = new StackPanel { Spacing = 10, Margin = new Thickness(0, 8, 0, 0) };
+
+        content.Children.Add(Note(
             noneOfTheirsTested
                 ? $"We have never run any of the models on this server, so we can tell you nothing "
-                  + $"about them — that is about us, not about them. {card}. Here is what we did "
-                  + "run, with the memory each one held. Pulling one changes nothing to what you "
-                  + "already have: Ollama keeps both."
+                  + $"about them — that is about us, not about them. {card}. Pulling one of these "
+                  + "changes nothing to what you already have: Ollama keeps both."
                 : alreadyHasModels
-                ? $"What we have run ourselves, with the memory each one held here. {card}. "
-                  + "Nothing to change if yours does the job — pulling a second one costs only "
-                  + "disk space, and Ollama keeps both."
-                : vram is not null
-                    ? $"No model on this server yet. {card}, so these are worth considering:"
-                    : $"No model on this server yet. {card}, so here is the whole list with what "
-                      + "each one needs:",
+                    ? $"{card}. Nothing to change if yours does the job — pulling a second one "
+                      + "costs only disk space, and Ollama keeps both."
+                    : $"No model on this server yet. {card}.",
             "TextSecondary"));
 
         var progress = Note("", "TextMuted");
+        var lightest = ModelNotesProvider.LightestFlawless(candidates);
+
+        content.Children.Add(ModelTable(candidates, vram, lightest, serverUrl, progress));
+        content.Children.Add(progress);
+
+        // An expander rather than a block dropped on the screen: it opens where it is relevant and
+        // — the part that was missing — closes again. Open by itself only when there is nothing
+        // else to go on, closed when it is a comparison somebody may not want.
+        var lightestText = lightest?.Measured?.VramGb is { } gb
+            ? $", from {gb:F1} GB of video memory"
+            : "";
+
+        _ollamaPanel.Children.Add(new Expander
+        {
+            Header = new TextBlock
+            {
+                Text = $"Models we have run ourselves — {candidates.Count}{lightestText}",
+                FontSize = 12,
+                Foreground = Brush("TextSecondary"),
+            },
+            Content = content,
+            IsExpanded = startExpanded,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+        });
+    }
+
+    /// <summary>
+    /// The measurements as a table, because that is what they are.
+    ///
+    /// They used to be prose under a button each, which made comparing two models a reading
+    /// exercise — the one thing a reader in this screen is trying to avoid. Columns line up, so
+    /// "half the memory for the same result" is seen rather than worked out.
+    ///
+    /// Two rows carry a mark, and only two: what this project develops against, and the smallest
+    /// that got everything right every time. Both are facts, not opinions — the second is simply
+    /// the lowest measured figure among models that never missed. A mark on every row would be a
+    /// mark on none.
+    /// </summary>
+    private Control ModelTable(IReadOnlyList<ModelNote> candidates, long? vram,
+                               ModelNote? lightest, string serverUrl, TextBlock progress)
+    {
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto,Auto"),
+            RowSpacing = 2,
+            ColumnSpacing = 14,
+        };
+
+        void Put(Control control, int row, int column, int span = 1)
+        {
+            Grid.SetRow(control, row);
+            Grid.SetColumn(control, column);
+            if (span > 1) Grid.SetColumnSpan(control, span);
+            grid.Children.Add(control);
+        }
+
+        TextBlock Head(string text) => new()
+        {
+            Text = text,
+            FontSize = 10,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = Brush("TextMuted"),
+        };
+
+        grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+        Put(Head("MODEL"), 0, 0);
+        Put(Head("HELD"), 0, 1);
+        Put(Head("DOWNLOAD"), 0, 2);
+        Put(Head("KEPT"), 0, 3);
+        Put(Head("SUITE"), 0, 4);
+
+        var line = 1;
 
         foreach (var candidate in candidates)
         {
             var fits = ModelNotesProvider.Fits(candidate, vram);
-            var size = candidate.DownloadGb is { } gb ? $"{gb:F1} GB" : "size unknown";
-            var need = candidate.MinVramGb is { } min ? $", wants {min:F0} GB of video memory" : "";
+            var standout = ModelNotesProvider.Standout(candidate, lightest);
+            var measured = candidate.Measured;
 
-            var row = new StackPanel { Spacing = 2 };
+            grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
 
-            var button = new Button
+            var name = new StackPanel
             {
-                Content = $"Download {candidate.Pull} ({size})",
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                Margin = new Thickness(0, 8, 0, 0),
+            };
+
+            name.Children.Add(new TextBlock
+            {
+                Text = candidate.Pull,
+                FontSize = 13,
+                FontWeight = standout is null ? FontWeight.Normal : FontWeight.SemiBold,
+                Foreground = Brush(standout is null ? "TextPrimary" : "StatusSuccess"),
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            });
+
+            if (standout is not null)
+            {
+                name.Children.Add(new Border
+                {
+                    Background = Brush("CalloutSuccessBg"),
+                    CornerRadius = new CornerRadius(3),
+                    Padding = new Thickness(6, 1),
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                    Child = new TextBlock
+                    {
+                        Text = standout,
+                        FontSize = 10,
+                        Foreground = Brush("StatusSuccess"),
+                    },
+                });
+            }
+
+            Put(name, line, 0);
+
+            TextBlock Figure(string text, string colour = "TextSecondary") => new()
+            {
+                Text = text,
                 FontSize = 12,
-                Classes = { "primary" },
+                Foreground = Brush(colour),
+                Margin = new Thickness(0, 8, 0, 0),
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
             };
 
-            button.Click += async (_, _) =>
-            {
-                button.IsEnabled = false;
-                await PullModelAsync(serverUrl, candidate.Pull!, progress);
-                button.IsEnabled = true;
-            };
+            // The memory it actually held, next to the card size we ask for. The second is the
+            // first plus headroom, and showing only one of them is how someone concludes we
+            // invented a requirement.
+            Put(Figure(measured?.VramGb is { } held ? $"{held:F1} GB" : "—",
+                       fits == false ? "StatusWarning" : "TextSecondary"), line, 1);
 
-            row.Children.Add(button);
-            row.Children.Add(Note(
-                $"{candidate.Note} ({size}{need})",
-                fits == false ? "StatusWarning" : "TextMuted"));
+            Put(Figure(candidate.DownloadGb is { } dl ? $"{dl:F1} GB" : "—"), line, 2);
 
-            // On its own line, and never merged with the sentence above: that one is what we
-            // measured, this one is what the publisher says. A reader choosing a model for an
-            // uncommon language needs both, and needs to know which is which — we have verified
-            // none of these figures.
+            Put(Figure(measured is { Kept: { } kept, Draws: { } draws } ? $"{kept}/{draws}" : "—",
+                       measured is { Kept: { } k, Draws: { } d } && k < d ? "StatusWarning" : "TextSecondary"),
+                line, 3);
+
+            Put(Figure(measured is { Suite: { } suite, SuiteOf: { } of } ? $"{suite}/{of}" : "—",
+                       measured is { Suite: { } s, SuiteOf: { } o } && s < o ? "StatusWarning" : "TextSecondary"),
+                line, 4);
+
+            line++;
+
+            // The prose under the figures, spanning the width: it says the thing no column can,
+            // and it is what someone reads once the table has narrowed the choice to two.
+            grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+
+            var details = new StackPanel { Spacing = 2, Margin = new Thickness(0, 2, 0, 0) };
+            details.Children.Add(Note(candidate.Note, "TextMuted"));
+
+            // Kept apart from the sentence above on purpose: that one is what we measured, this
+            // one is what the publisher says, and we have verified none of it.
             if (candidate.Languages?.Sentence() is { } coverage)
             {
                 var claim = Note($"On coverage, {coverage}.", "TextMuted");
                 claim.Opacity = 0.75;
-                row.Children.Add(claim);
+                details.Children.Add(claim);
             }
 
             if (fits == false)
             {
-                row.Children.Add(Note(
-                    "Larger than your card: it will run on the processor instead, which means "
-                    + "minutes per line rather than seconds. It still works.", "StatusWarning"));
+                details.Children.Add(Note(
+                    $"Larger than your card: it needs about {candidate.MinVramGb:F0} GB and will "
+                    + "run on the processor instead — minutes per line rather than seconds. It "
+                    + "still works.", "StatusWarning"));
             }
 
-            _ollamaPanel.Children.Add(row);
+            var take = new Button
+            {
+                Content = "Download",
+                FontSize = 11,
+                Padding = new Thickness(10, 3),
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+                Margin = new Thickness(0, 4, 0, 0),
+                Classes = { "primary" },
+            };
+
+            take.Click += async (_, _) =>
+            {
+                take.IsEnabled = false;
+                await PullModelAsync(serverUrl, candidate.Pull!, progress);
+                take.IsEnabled = true;
+            };
+
+            details.Children.Add(take);
+            Put(details, line, 0, span: 5);
+            line++;
         }
 
-        _ollamaPanel.Children.Add(progress);
+        return grid;
     }
 
     /// <summary>Pulls one model, saying where it is up to the whole way.</summary>

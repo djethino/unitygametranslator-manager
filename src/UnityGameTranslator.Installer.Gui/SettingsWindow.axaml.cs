@@ -1041,6 +1041,17 @@ public sealed class SettingsWindow : Window
                 $"{candidate.Note} ({size}{need})",
                 fits == false ? "StatusWarning" : "TextMuted"));
 
+            // On its own line, and never merged with the sentence above: that one is what we
+            // measured, this one is what the publisher says. A reader choosing a model for an
+            // uncommon language needs both, and needs to know which is which — we have verified
+            // none of these figures.
+            if (candidate.Languages?.Sentence() is { } coverage)
+            {
+                var claim = Note($"On coverage, {coverage}.", "TextMuted");
+                claim.Opacity = 0.75;
+                row.Children.Add(claim);
+            }
+
             if (fits == false)
             {
                 row.Children.Add(Note(

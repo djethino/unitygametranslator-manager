@@ -5,6 +5,45 @@ using UnityGameTranslator.Installer.Core.Net;
 
 namespace UnityGameTranslator.Installer.Core.Catalog;
 
+/// <summary>
+/// How many languages a model's publisher says it handles. Their claim, never our measurement.
+///
+/// Two numbers because some publishers give two, and collapsing them would mislead exactly the
+/// person this is for: a model can be tuned for thirty-five languages and merely have seen a
+/// hundred and forty during training. Someone whose language sits in the gap is told the truth —
+/// it may work, nobody promised it would.
+///
+/// ⚠ This is a COUNT, and it must stay one. Turning it into "which languages" — filtering the
+/// offer by what somebody is translating into — is the one thing this project does not do
+/// anywhere, and a per-language list here would be the first step towards it.
+/// </summary>
+public sealed class ModelLanguages
+{
+    /// <summary>Claimed as supported out of the box.</summary>
+    [JsonPropertyName("supported")] public int? Supported { get; set; }
+
+    /// <summary>Present in training only, when the publisher distinguishes the two.</summary>
+    [JsonPropertyName("pretrained")] public int? Pretrained { get; set; }
+
+    /// <summary>Where the figure was read, so it can be checked rather than believed.</summary>
+    [JsonPropertyName("source")] public string? Source { get; set; }
+
+    /// <summary>The claim in one clause, or null when the publisher states nothing.</summary>
+    public string? Sentence()
+    {
+        if (Supported is { } supported && Pretrained is { } pretrained && pretrained > supported)
+        {
+            return $"the publisher claims {supported} languages out of the box, "
+                 + $"and {pretrained} seen during training";
+        }
+
+        if (Supported is { } only) return $"the publisher claims {only} languages";
+        if (Pretrained is { } trained) return $"the publisher claims {trained} languages seen during training";
+
+        return null;
+    }
+}
+
 public sealed class ModelNote
 {
     /// <summary>Matched as a substring of the model name, case-insensitively.</summary>
@@ -31,6 +70,9 @@ public sealed class ModelNote
     /// seconds. Filters what is offered first; never hides the rest.
     /// </summary>
     [JsonPropertyName("min_vram_gb")] public double? MinVramGb { get; set; }
+
+    /// <summary>What the publisher says about language coverage, when they say anything.</summary>
+    [JsonPropertyName("languages")] public ModelLanguages? Languages { get; set; }
 
     [JsonIgnore] public bool IsReference => Role == "reference";
 
@@ -144,7 +186,13 @@ public sealed class ModelNotesProvider
         var lead = note.IsReference ? "Reference model" : "Tested";
         var stamp = string.IsNullOrWhiteSpace(document?.Updated) ? "" : $" (as of {document!.Updated})";
 
-        return $"{lead}{stamp}: {note.Note}";
+        // The publisher's claim comes after our own observation, and says whose claim it is. A
+        // number this size — two hundred languages — reads as a guarantee unless it is attributed,
+        // and we have verified none of them.
+        var coverage = note.Languages?.Sentence();
+        var claim = coverage is null ? "" : $" On coverage, {coverage}.";
+
+        return $"{lead}{stamp}: {note.Note}{claim}";
     }
 
     /// <summary>

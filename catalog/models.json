@@ -1,6 +1,6 @@
 {
-  "schema": 2,
-  "updated": "2026-08-09",
+  "schema": 3,
+  "updated": "2026-08-10",
 
   "_comment": [
     "What we have actually run, not what we recommend. Models age in weeks and this file is",
@@ -19,19 +19,50 @@
     "'pull' is what makes a model offerable for download. An entry without it is a note only —",
     "which is right for a family name like 'gemma' that matches many things, and for anything we",
     "would not put in front of someone as a starting point.",
+    "",
+    "TAGS ARE PINNED TO A VERSION, NEVER 'latest'. A moving tag makes every figure below a lie",
+    "the day it moves, and the reader has no way of knowing which day that was.",
+    "",
     "'min_vram_gb' is the card size below which the model runs on the processor instead, which",
-    "means minutes per line rather than seconds. It filters the offer; it never hides the list."
+    "means minutes per line rather than seconds. It filters the offer; it never hides the list.",
+    "⚠ It is NOT the download size, and the two differ wildly in BOTH directions: gemma4:e4b",
+    "downloads 9.6 GB and ran here in 3.0, qwen3:8b downloads 5.2 GB and took 9.3. Measured with",
+    "the model tester where we could; where we could not, it is an estimate and the note says so.",
+    "",
+    "'languages' is the PUBLISHER'S claim, never our measurement — we have verified none of them.",
+    "Two numbers when they give two: a model tuned for 35 languages that merely saw 140 in",
+    "training is not the same promise, and the difference matters to whoever falls in the gap.",
+    "⚠ It stays a COUNT. Recording WHICH languages, and filtering the offer by what somebody is",
+    "translating into, is the one thing this project does nowhere."
   ],
 
   "models": [
     {
-      "match": "qwen3.5",
+      "match": "qwen3.5:9b",
       "runner": "ollama",
       "role": "reference",
       "note": "What the mod is developed against. Follows the instruction suite in full, including the experimental source-language rule.",
-      "pull": "qwen3.5:latest",
-      "download_gb": 5.2,
-      "min_vram_gb": 8
+      "pull": "qwen3.5:9b",
+      "download_gb": 6.6,
+      "min_vram_gb": 8,
+      "languages": {
+        "supported": 201,
+        "source": "https://ollama.com/library/qwen3.5"
+      }
+    },
+    {
+      "match": "gemma4:e4b",
+      "runner": "ollama",
+      "role": "tested",
+      "note": "Kept the placeholders and answered with the translation alone. Ran in 3.0 GB of video memory here — a third of what its download suggests, and half the reference model.",
+      "pull": "gemma4:e4b",
+      "download_gb": 9.6,
+      "min_vram_gb": 4,
+      "languages": {
+        "supported": 35,
+        "pretrained": 140,
+        "source": "https://ai.google.dev/gemma/docs/core/model_card_4"
+      }
     },
     {
       "match": "translategemma:4b",
@@ -40,7 +71,24 @@
       "note": "Translation-specialised and light enough for a small card. Drops a placeholder sitting at the very end of a line.",
       "pull": "translategemma:4b",
       "download_gb": 3.3,
-      "min_vram_gb": 4
+      "min_vram_gb": 4,
+      "languages": {
+        "supported": 55,
+        "source": "https://ollama.com/library/translategemma"
+      }
+    },
+    {
+      "match": "qwen3:8b",
+      "runner": "ollama",
+      "role": "tested",
+      "note": "Kept the placeholders and answered with the translation alone, but needed 9.3 GB of video memory here — well beyond what its 5.2 GB download suggests, and beyond an 8 GB card.",
+      "pull": "qwen3:8b",
+      "download_gb": 5.2,
+      "min_vram_gb": 10,
+      "languages": {
+        "supported": 100,
+        "source": "https://ollama.com/library/qwen3"
+      }
     },
     {
       "match": "translategemma",
@@ -52,13 +100,13 @@
       "match": "gemma",
       "runner": "ollama",
       "role": "tested",
-      "note": "Has no separate system turn: it is merged into the conversation, which makes it more sensitive to how instructions are phrased."
+      "note": "A whole family rather than one model, so no size or figure is given here. Gemma has no separate system turn — it is merged into the conversation, which makes it more sensitive to how instructions are phrased."
     },
     {
       "match": "gpt-oss",
       "runner": "ollama",
       "role": "tested",
-      "note": "Reasons before answering, so every line costs noticeably more time."
+      "note": "Reasons before answering, so every line costs noticeably more time. Not offered for download either: the smaller build is a 14 GB download and the other 65 GB, both beyond the cards this tool is aimed at."
     }
   ]
 }

@@ -53,12 +53,16 @@ public partial class MainWindow : Window
         FoldersButton.Click += async (_, _) => await ManageFoldersAsync();
         SettingsButton.Click += async (_, _) => await OpenSettingsAsync();
         ToolSettingsButton.Click += async (_, _) => await OpenToolSettingsAsync();
-        ShowAccount();
         AboutButton.Click += async (_, _) => await new AboutWindow().ShowDialog(this);
         GameList.SelectionChanged += async (_, _) => await ShowSelectedAsync();
 
         _settings = new SettingsStore(_platform);
         _online = new OnlineCatalogCache(_platform);
+
+        // After the settings exist, not while the buttons are being wired: this reads the stored
+        // token, and reading it a line too early is a null reference at startup rather than a
+        // wrong pixel.
+        ShowAccount();
 
         BuildLanguageBox();
         BuildFilterBar();

@@ -537,6 +537,14 @@ internal static class Program
         var language = ValueOf(args, "--lang") ?? settings.ResolveTargetLanguage();
 
         Console.WriteLine($"{model} on {server.Product}, translating to {Languages.NameOf(language)}");
+
+        // What we have run ourselves against this model, if anything — said before the suite so
+        // it reads as background, not as a conclusion drawn from the marks below.
+        var notes = await new ModelNotesProvider(PlatformFactory.Create())
+            .GetAsync(offline: !settings.Current.OnlineMode);
+        var note = ModelNotesProvider.Describe(notes, model);
+        if (note is not null) Console.WriteLine(note);
+
         Console.WriteLine();
 
         var passed = 0;
@@ -556,8 +564,18 @@ internal static class Program
                 if (result.Passed) passed++;
             }
 
-            var mark = result.Passed ? "ok" : "KO";
-            Console.WriteLine($"[{mark}] {result.Test.Difficulty,-7} {result.Test.Name}");
+            // Same vocabulary as the window, and for the same reason: an experimental test that
+            // does not pass is not a KO. Amber says "this door stays closed", green says "this
+            // model opens one almost none do" — the outcome that is easy to miss.
+            var experimental = result.Test.UnlocksOption is not null;
+            var mark = experimental
+                ? (result.Passed ? "can" : "cannot")
+                : (result.Passed ? "ok" : "KO");
+
+            Write($"[{mark}] ", result.Passed
+                ? ConsoleColor.Green
+                : experimental ? ConsoleColor.Yellow : ConsoleColor.Red);
+            Console.WriteLine($"{result.Test.Difficulty,-7} {result.Test.Name}");
             Console.WriteLine($"       asked  : {result.Test.Source.ReplaceLineEndings(" / ")}");
             Console.WriteLine($"       expect : {result.Test.Expectation}");
             Console.WriteLine($"       answer : {result.Answer?.ReplaceLineEndings(" / ") ?? "(nothing)"}");
@@ -581,9 +599,11 @@ internal static class Program
         // at this, and the same test will start passing on its own.
         foreach (var (option, supported) in unlocked)
         {
-            Console.WriteLine(supported
-                ? $"Experimental option '{option}': this model can do it — you may switch it on."
-                : $"Experimental option '{option}': not followed by this model — leave it off.");
+            Write(supported
+                    ? $"Experimental option '{option}': this model can do it — you may switch it on."
+                    : $"Experimental option '{option}': not followed by this model — leave it off.",
+                supported ? ConsoleColor.Green : ConsoleColor.Yellow);
+            Console.WriteLine();
         }
         if (echoed > 0)
         {
@@ -826,5 +846,26 @@ internal static class Program
 
         await Task.CompletedTask;
         return 0;
+    }
+
+    /// <summary>
+    /// Writes a fragment in colour and restores what was there.
+    ///
+    /// Restoring rather than calling ResetColor: the terminal may have been set to something the
+    /// user chose, and a tool has no business flattening it on the way out. Redirected output
+    /// carries no colour at all, which is exactly what a pipe wants.
+    /// </summary>
+    private static void Write(string text, ConsoleColor colour)
+    {
+        if (Console.IsOutputRedirected)
+        {
+            Console.Write(text);
+            return;
+        }
+
+        var previous = Console.ForegroundColor;
+        Console.ForegroundColor = colour;
+        Console.Write(text);
+        Console.ForegroundColor = previous;
     }
 }

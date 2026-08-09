@@ -213,8 +213,8 @@ public sealed class AiServerProbe
 
         foreach (var test in ModelTestSuite.Build(targetLanguage))
         {
-            var prompt = test.Rule + Environment.NewLine + test.Source;
-            var answer = await AskAsync(baseUrl, model, prompt, ct).ConfigureAwait(false);
+            var answer = await AskAsync(baseUrl, model, test.Rule, test.Source, ct)
+                .ConfigureAwait(false);
 
             ModelTestResult result;
 
@@ -269,12 +269,13 @@ public sealed class AiServerProbe
     /// <summary>
     /// Sends one instruction and returns the answer, walking the reasoning ladder like the mod.
     /// </summary>
-    public async Task<string?> AskAsync(string baseUrl, string model, string prompt,
-                                        CancellationToken ct = default)
+    public async Task<string?> AskAsync(string baseUrl, string model, string systemPrompt,
+                                        string? userContent = null, CancellationToken ct = default)
     {
         foreach (var effort in ReasoningEffortLadder)
         {
-            var answer = await AskOnceAsync(baseUrl, model, prompt, effort, ct).ConfigureAwait(false);
+            var answer = await AskOnceAsync(baseUrl, model, systemPrompt, userContent, effort, ct)
+                .ConfigureAwait(false);
             if (answer is not null) return answer;
         }
         return null;
@@ -285,15 +286,37 @@ public sealed class AiServerProbe
     /// request is built: the timing wrapper and the test suite both go through here, so they
     /// cannot drift into asking the model two different things.
     /// </summary>
-    private async Task<string?> AskOnceAsync(string baseUrl, string model, string prompt,
-                                             string? effort, CancellationToken ct)
+    private async Task<string?> AskOnceAsync(string baseUrl, string model, string systemPrompt,
+                                             string? userContent, string? effort,
+                                             CancellationToken ct)
     {
+        // Two messages, split exactly as the mod splits them: the rules go in the system turn
+        // and only the text to translate goes in the user turn.
+        //
+        // Piling everything into one user message was the first shape here, and it changed the
+        // answers: rules delivered as user content read as text to work on, and some models
+        // dutifully repeated them before translating. Testing a model on a request the mod never
+        // sends measures a situation that will never happen.
+        var messages = userContent is null
+            ? new[] { new { role = "user", content = systemPrompt } }
+            : new[]
+            {
+                new { role = "system", content = systemPrompt },
+                new { role = "user", content = userContent },
+            };
+
+        // The mod's own formula: twice the source length, never below 200. A first attempt here
+        // capped it at 32 and every reasoning model came back blank — the budget was spent before
+        // a single word of the answer.
+        var maxTokens = Math.Max(200, (userContent ?? systemPrompt).Length * 2);
+
         var payload = JsonSerializer.Serialize(new
         {
             model,
-            messages = new[] { new { role = "user", content = prompt } },
+            messages,
             stream = false,
             temperature = 0.0,
+            max_tokens = maxTokens,
             reasoning_effort = effort,
         }, new JsonSerializerOptions
         {
@@ -324,7 +347,7 @@ public sealed class AiServerProbe
         // The rules the mod itself sends, in the same words, around a line carrying the
         // placeholders it actually uses. Testing with a bare sentence would measure a job the
         // model is never asked to do.
-        const string prompt = """
+        const string rules = """
             === TRANSLATION RULES ===
             - Output the translation only, no explanation
             - Keep it concise for UI
@@ -333,44 +356,22 @@ public sealed class AiServerProbe
             - IMPORTANT: Keep [!v*0], [!v*1], etc. placeholders exactly as-is, do not modify them
 
             Now, translate this to French:
-            Press [!v*0] to save[!nl]Your API key is required
             """;
 
-        // Built like the mod builds it, and for the same reason it had to.
-        //
-        // Reasoning models spend their output budget thinking and return an EMPTY translation.
-        // The mod disables it through reasoning_effort, with a ladder because providers accept
-        // different values ("none" on Ollama, vLLM, LM Studio; "low" as the common denominator;
-        // nothing at all for models that reject the parameter). Temperature 0 for determinism.
-        //
-        // A first attempt here capped max_tokens at 32 and every reasoning model came back blank
-        // — the cap was spent before a single word of the answer. Measuring a model with settings
-        // the mod never uses measures nothing useful.
-        var payload = JsonSerializer.Serialize(new
-        {
-            model,
-            messages = new[] { new { role = "user", content = prompt } },
-            stream = false,
-            temperature = 0.0,
-            reasoning_effort = effort,
-        }, new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
+        const string line = "Press [!v*0] to save[!nl]Your API key is required";
 
         var stopwatch = Stopwatch.StartNew();
 
         try
         {
-            using var content = new StringContent(payload, Encoding.UTF8, "application/json");
-            using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(2) };
-
-            var response = await client.PostAsync(AiEndpoint.Chat(baseUrl), content, ct)
-                                       .ConfigureAwait(false);
-            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            // The request itself is built in exactly one place, so the timed path and the
+            // instruction suite cannot drift into asking the model two different things.
+            var text = await AskOnceAsync(baseUrl, model, rules, line, effort, ct)
+                .ConfigureAwait(false);
             stopwatch.Stop();
 
-            if (!response.IsSuccessStatusCode)
-                return new AiTrial(false, null, stopwatch.Elapsed, null, $"HTTP {(int)response.StatusCode}");
-
-            var text = ReadFirstChoice(body);
+            if (text is null)
+                return new AiTrial(false, null, stopwatch.Elapsed, null, "no answer");
             var onGpu = await IsResidentOnGpuAsync(baseUrl, model, ct).ConfigureAwait(false);
             var vram = await VramBytesAsync(baseUrl, model, ct).ConfigureAwait(false);
 

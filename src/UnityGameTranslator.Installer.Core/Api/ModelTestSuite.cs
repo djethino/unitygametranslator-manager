@@ -144,13 +144,15 @@ public static class ModelTestSuite
 
             new("refuses to translate the wrong language", "experimental",
                 "Bonjour tout le monde",
+                // The critical rule sits ABOVE the usual blocks in the mod, it does not replace
+                // them: the model still has to translate normally when the language does match.
                 $"""
                 === CRITICAL RULE ===
                 Source language: English
                 - If text is NOT in English: reply ONLY with exactly: {SkipMarker}
                 - If text IS in English: translate to {language}
-                - Output the translation only, no explanation
-                """,
+
+                """ + Rules(language),
                 (_, answer) => answer.Trim() == SkipMarker)
             {
                 Expectation = $"answers exactly {SkipMarker} and nothing else",
@@ -169,13 +171,21 @@ public static class ModelTestSuite
         - IMPORTANT: Keep [!v*0], [!v*1], etc. placeholders exactly as-is, do not modify them
         """;
 
+    /// <summary>
+    /// The system turn, in the shape the mod builds it: a context block naming the job and the
+    /// target language, then the rules. No "now translate this" line — in the mod the text to
+    /// translate arrives as the user turn and nothing announces it.
+    /// </summary>
     private static string Rules(string language) => $"""
+        === CONTEXT ===
+        Translating video game (video game UI, menus and dialogues) to {language}.
+
         === TRANSLATION RULES ===
         - Output the translation only, no explanation
-        - Translation must be understandable and correct in target language
+        - Translation must be correct in target language
         - Keep it concise for UI
-
-        Now, translate this to {language}:
+        - Do not add punctuation if not in the source to translate
+        - Keep unchanged: keyboard keys (Tab, Esc, Space...), technical settings (VSync, Auto)
         """;
 
     /// <summary>

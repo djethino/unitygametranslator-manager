@@ -63,8 +63,8 @@ public sealed class CatalogProvider
         {
             foreach (var (url, source) in new[]
                      {
-                         (BuildInfo.CatalogPrimaryUrl, CatalogSource.Remote),
-                         (BuildInfo.CatalogMirrorUrl, CatalogSource.Mirror),
+                         (BuildInfo.CatalogPrimaryBase + "/loaders.json", CatalogSource.Remote),
+                         (BuildInfo.CatalogMirrorBase + "/loaders.json", CatalogSource.Mirror),
                      })
             {
                 try

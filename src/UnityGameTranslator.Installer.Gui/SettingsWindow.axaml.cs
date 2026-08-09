@@ -4,6 +4,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using UnityGameTranslator.Installer.Core.Api;
+using UnityGameTranslator.Installer.Core.Catalog;
 using UnityGameTranslator.Installer.Core.Install;
 using UnityGameTranslator.Installer.Core.Model;
 using UnityGameTranslator.Installer.Core.Platform;
@@ -27,6 +28,7 @@ public sealed class SettingsWindow : Window
     private readonly IPlatform _platform;
     private readonly SettingsStore _store;
     private readonly AiServerProbe _probe = new();
+    private ModelNotesDocument? _modelNotes;
 
     private readonly InstallerSettings _draft;
 
@@ -40,6 +42,7 @@ public sealed class SettingsWindow : Window
 
     private TextBox _apiKey = null!;
     private TextBlock _metrics = null!;
+    private TextBlock _modelNote = null!;
     private Button _connectButton = null!;
     private StackPanel _aiPanel = null!;
     private StackPanel _testOutput = null!;
@@ -234,8 +237,22 @@ public sealed class SettingsWindow : Window
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("TextMuted"),
         });
+        _modelNote = new TextBlock
+        {
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            IsVisible = false,
+            Foreground = Brush("TextMuted"),
+        };
+
         _aiPanel.Children.Add(Row("Model", _aiModel, _testButton));
+        _aiPanel.Children.Add(_modelNote);
         _aiPanel.Children.Add(_metrics);
+
+        // Shown as soon as a model is picked, before any test: knowing that one of the listed
+        // models is the one the mod is developed against is worth more than a mark obtained
+        // afterwards, because it tells someone where to start rather than judging where they went.
+        _aiModel.SelectionChanged += (_, _) => ShowModelNote();
         _aiPanel.Children.Add(new TextBlock
         {
             Text = "The test asks this model to do exactly what the mod asks of it, from easy to "
@@ -286,6 +303,11 @@ public sealed class SettingsWindow : Window
         _aiModel.Items.Clear();
         _testButton.IsEnabled = false;
 
+        // Fetched alongside the search, never blocking it: a note is a nicety, a server list is
+        // the screen's reason to exist. Offline settings mean no note and nothing else missing.
+        _modelNotes ??= await new ModelNotesProvider(_platform)
+            .GetAsync(offline: !_draft.OnlineMode);
+
         var servers = await _probe.DiscoverAsync();
 
         if (servers.Count == 0)
@@ -306,6 +328,22 @@ public sealed class SettingsWindow : Window
         Select(_aiModel, _draft.AiModel);
         _aiModel.SelectedItem ??= _aiModel.Items.OfType<ComboBoxItem>().FirstOrDefault();
         _testButton.IsEnabled = _aiModel.SelectedItem is not null;
+    }
+
+    /// <summary>
+    /// Says what we have run ourselves against the selected model, and nothing more.
+    ///
+    /// Never a recommendation, and never a ranking: the suite is a heuristic on free text, and
+    /// the machine matters as much as the model. Silence when we have never run it — an absent
+    /// line is honest, an invented one is not.
+    /// </summary>
+    private void ShowModelNote()
+    {
+        var model = Tag(_aiModel);
+        var text = model is null ? null : ModelNotesProvider.Describe(_modelNotes, model);
+
+        _modelNote.Text = text ?? "";
+        _modelNote.IsVisible = text is not null;
     }
 
     /// <summary>
@@ -446,7 +484,14 @@ public sealed class SettingsWindow : Window
             ? (result.Passed ? "can" : "cannot")
             : (result.Passed ? "ok" : "KO");
 
-        var colour = experimental ? "TextMuted" : (result.Passed ? "StatusSuccess" : "StatusError");
+        // An experimental test never fails a model, so "cannot" must not be red — that would read
+        // as a defect where there is none. But it was grey on both sides, and grey buried the one
+        // outcome worth seeing: "can" means an option the mod keeps off can be switched on for
+        // this model, and almost no model manages it. Green for the gain, amber for the closed
+        // door — visible, and unmistakably not an error.
+        var colour = experimental
+            ? (result.Passed ? "StatusSuccess" : "StatusWarning")
+            : (result.Passed ? "StatusSuccess" : "StatusError");
 
         var body = new StackPanel { Spacing = 2 };
 

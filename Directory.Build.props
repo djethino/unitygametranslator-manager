@@ -2,11 +2,12 @@
   <PropertyGroup>
     <Version>0.1.0</Version>
 
-    <!-- Where the loader catalog is fetched from, in this order.
-         GitHub first on purpose: fetching it from our own site would put an IP in our
+    <!-- Where the catalogs are fetched from, in this order. A folder, not a file: every
+         catalog we add (loaders, models) sits beside the others and needs no new setting.
+         GitHub first on purpose: fetching them from our own site would put an IP in our
          server logs on every launch, and we have no reason to hold that. -->
-    <CatalogPrimaryUrl>https://raw.githubusercontent.com/djethino/unitygametranslator-installer/main/catalog/loaders.json</CatalogPrimaryUrl>
-    <CatalogMirrorUrl>https://unitygametranslator.asymptomatikgames.com/catalog/loaders.json</CatalogMirrorUrl>
+    <CatalogPrimaryBase>https://raw.githubusercontent.com/djethino/unitygametranslator-installer/main/catalog</CatalogPrimaryBase>
+    <CatalogMirrorBase>https://unitygametranslator.asymptomatikgames.com/catalog</CatalogMirrorBase>
 
     <!-- UnityGameTranslator services (same values as the mod's Directory.Build.props) -->
     <ApiBaseUrl>https://unitygametranslator.asymptomatikgames.com/api/v1</ApiBaseUrl>
@@ -32,8 +33,8 @@
 namespace UnityGameTranslator.Installer {
     internal static class BuildInfo {
         public const string Version = "$(Version)"%3B
-        public const string CatalogPrimaryUrl = "$(CatalogPrimaryUrl)"%3B
-        public const string CatalogMirrorUrl = "$(CatalogMirrorUrl)"%3B
+        public const string CatalogPrimaryBase = "$(CatalogPrimaryBase)"%3B
+        public const string CatalogMirrorBase = "$(CatalogMirrorBase)"%3B
         public const string ApiBaseUrl = "$(ApiBaseUrl)"%3B
         public const string WebsiteBaseUrl = "$(WebsiteBaseUrl)"%3B
         public const string ModReleasesApi = "$(ModReleasesApi)"%3B

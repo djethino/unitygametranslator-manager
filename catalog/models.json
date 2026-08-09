@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "updated": "2026-08-09",
+
+  "_comment": [
+    "What we have actually run, not what we recommend. Models age in weeks and this file is",
+    "fetched at runtime for that reason: a name compiled into the installer would still be",
+    "advertised long after it stopped being a sensible choice, and the installer does not",
+    "update itself.",
+    "",
+    "Rules for adding a line here:",
+    "  - only models someone on the project has actually run the instruction suite against",
+    "  - 'note' says what was observed, in one sentence, with no superlative",
+    "  - never a ranking: the suite is a heuristic on free text and the machine matters as much",
+    "    as the model. The person testing decides; this only tells them where to start."
+  ],
+
+  "models": [
+    {
+      "match": "qwen3.5",
+      "runner": "ollama",
+      "role": "reference",
+      "note": "What the mod is developed against. Follows the instruction suite in full, including the experimental source-language rule."
+    },
+    {
+      "match": "translategemma",
+      "runner": "ollama",
+      "role": "tested",
+      "note": "Translation-specialised and light. Drops a placeholder sitting at the very end of a line."
+    },
+    {
+      "match": "gemma",
+      "runner": "ollama",
+      "role": "tested",
+      "note": "Has no separate system turn: it is merged into the conversation, which makes it more sensitive to how instructions are phrased."
+    },
+    {
+      "match": "gpt-oss",
+      "runner": "ollama",
+      "role": "tested",
+      "note": "Reasons before answering, so every line costs noticeably more time."
+    }
+  ]
+}

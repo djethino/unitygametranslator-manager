@@ -222,6 +222,47 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// What exists for this game, counted by language, with the reader's own language first.
+    ///
+    /// The order is the answer: someone scanning this line wants to know whether they can play,
+    /// and only then what else is around. Naming the other languages when there are few of them
+    /// costs nothing and saves opening a screen; past a handful it becomes the noise it was meant
+    /// to replace, so it turns into a count.
+    /// </summary>
+    private static string SummariseLanguages(IReadOnlyList<OnlineTranslation> translations,
+                                             string targetLanguage)
+    {
+        var mine = translations.Count(t => Languages.Matches(t.TargetLanguage, targetLanguage));
+
+        var others = translations
+            .Where(t => !Languages.Matches(t.TargetLanguage, targetLanguage))
+            .Select(t => t.TargetLanguage)
+            .Where(l => !string.IsNullOrWhiteSpace(l))
+            .Select(l => l!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(l => l, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var yours = Languages.NameOf(targetLanguage);
+
+        var head = mine > 0
+            ? $"From the community: {mine} in {yours}"
+            : $"From the community: none in {yours} yet";
+
+        if (others.Count == 0) return head + ".";
+
+        var otherCount = translations.Count - mine;
+
+        // Named while the list stays readable, counted once it would not. Five is where a line
+        // stops being scannable at this size, not a figure with any deeper meaning.
+        var tail = others.Count <= 5
+            ? $"{otherCount} in {string.Join(", ", others)}"
+            : $"{otherCount} in {others.Count} other languages";
+
+        return $"{head}, {tail}.";
+    }
+
+    /// <summary>
     /// Opens the list of community translations for a game.
     ///
     /// The loader is resolved here because only this window holds the catalog, and because the
@@ -733,37 +774,23 @@ public partial class MainWindow : Window
 
         if (alternatives.Count > 0)
         {
+            // A count by language, not a list of names.
+            //
+            // This section used to print up to eight entries. It was written when it was the only
+            // place a translation could be seen; now a button opens a screen with filters and full
+            // cards, and eight raw lines both duplicate it and fail at it — on a game with two
+            // hundred translations they are eight arbitrary ones, taking the room without
+            // answering the question the card is for: is there something here for ME.
+            //
+            // Not a silent truncation either: every figure below is the real total.
             panel.Children.Add(new TextBlock
             {
-                Text = $"From the community ({alternatives.Count}):",
+                Text = SummariseLanguages(alternatives, _settings.ResolveTargetLanguage()),
                 FontSize = 12,
                 Opacity = 0.8,
+                TextWrapping = TextWrapping.Wrap,
                 Margin = new Avalonia.Thickness(0, 4, 0, 0),
             });
-
-            foreach (var translation in alternatives.Take(8))
-            {
-                panel.Children.Add(new TextBlock
-                {
-                    Text = "• " + translation,
-                    FontSize = 12,
-                    Opacity = 0.75,
-                    TextWrapping = TextWrapping.Wrap,
-                    Margin = new Avalonia.Thickness(8, 0, 0, 0),
-                });
-            }
-
-            // Never truncate silently.
-            if (alternatives.Count > 8)
-            {
-                panel.Children.Add(new TextBlock
-                {
-                    Text = $"…and {alternatives.Count - 8} more on the website",
-                    FontSize = 11,
-                    Opacity = 0.5,
-                    Margin = new Avalonia.Thickness(8, 0, 0, 0),
-                });
-            }
         }
         else if (report.OnlineSearchError is not null)
         {

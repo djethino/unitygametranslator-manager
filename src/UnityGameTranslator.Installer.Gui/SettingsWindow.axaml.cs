@@ -22,8 +22,10 @@ namespace UnityGameTranslator.Installer.Gui;
 /// written into each game's config.json, which is what lets the mod's first-run wizard be skipped
 /// and what lets an already-configured game be reconfigured without opening it.
 ///
-/// The network card is the one exception, and it is grouped apart for that reason: it governs this
-/// tool, and is passed on to games as well because a proxy one needs is a proxy the other needs.
+/// Everything here goes into a game. The tool's own settings — its account, how it reaches the
+/// network — live in their own window: they were grouped under one title with two headings, which
+/// was a patch over the real problem. They are two subjects, and someone changing a value has to
+/// know without thinking whether it will reach a game.
 ///
 /// The target language especially is a fact about the person, not a per-game preference, and it is
 /// what turns "3 translations available" into "this game is playable in your language".
@@ -48,7 +50,6 @@ public sealed class SettingsWindow : Window
     private TextBox _hotkey = null!;
     private TextBlock _hotkeyProblem = null!;
     private ComboBox _channel = null!;
-    private CheckBox _online = null!;
     private CheckBox _modOnline = null!;
     private CheckBox _autoDownload = null!;
     private CheckBox _notifyUpdates = null!;
@@ -61,12 +62,6 @@ public sealed class SettingsWindow : Window
     private TextBlock _metrics = null!;
     private TextBlock _modelNote = null!;
     private StackPanel _ollamaPanel = null!;
-    private ComboBox _proxyMode = null!;
-    private TextBox _proxyUrl = null!;
-    private TextBox _proxyUser = null!;
-    private TextBox _proxyPassword = null!;
-    private StackPanel _proxyFields = null!;
-    private TextBlock _netStatus = null!;
     private Button _connectButton = null!;
     private Button _refreshModels = null!;
     private StackPanel _aiPanel = null!;
@@ -80,8 +75,6 @@ public sealed class SettingsWindow : Window
     private TextBlock _aiStatus = null!;
     private Button _testButton = null!;
     private Button _applyButton = null!;
-    private StackPanel _accountPanel = null!;
-    private CancellationTokenSource? _signIn;
 
     /// <summary>
     /// True while the screen is filling itself in rather than being edited.
@@ -136,11 +129,6 @@ public sealed class SettingsWindow : Window
             MergeStrategy = current.MergeStrategy,
             NotificationsEnabled = current.NotificationsEnabled,
             NotificationPosition = current.NotificationPosition,
-            ProxyMode = current.ProxyMode,
-            ProxyUrl = current.ProxyUrl,
-            ProxyUsername = current.ProxyUsername,
-            ProxyPassword = current.ProxyPassword,
-            ProxyBypassLocal = current.ProxyBypassLocal,
             DefaultPosture = current.DefaultPosture,
             Reviewed = current.Reviewed,
         };
@@ -174,7 +162,6 @@ public sealed class SettingsWindow : Window
             Foreground = Brush("TextSecondary"),
         });
 
-        layout.Children.Add(GroupHeading("Written into your games"));
         layout.Children.Add(LanguageCard());
         layout.Children.Add(BackendCard());
         // The whole card is hidden, title included — not just its contents. Hiding only the inside
@@ -187,9 +174,6 @@ public sealed class SettingsWindow : Window
         layout.Children.Add(ModCard());
         layout.Children.Add(SyncCard());
 
-        layout.Children.Add(GroupHeading("This tool"));
-        layout.Children.Add(AccountCard());
-        layout.Children.Add(NetworkCard());
 
         var buttons = new StackPanel
         {
@@ -244,22 +228,6 @@ public sealed class SettingsWindow : Window
 
         return root;
     }
-
-    /// <summary>
-    /// Separates what leaves this window for a game from what stays in the tool.
-    ///
-    /// The distinction cannot live in the window's name alone, and getting it wrong has a cost:
-    /// someone has to know whether changing a value here will reach a game they have already set
-    /// up, or only affect the installer.
-    /// </summary>
-    private Control GroupHeading(string text) => new TextBlock
-    {
-        Text = text.ToUpperInvariant(),
-        FontSize = 11,
-        FontWeight = FontWeight.SemiBold,
-        Foreground = Brush("TextMuted"),
-        Margin = new Thickness(2, 8, 0, 0),
-    };
 
     // ---------------------------------------------------------------- cards
 
@@ -544,283 +512,6 @@ public sealed class SettingsWindow : Window
         return Card("AI translation", null, _aiPanel);
     }
 
-    /// <summary>
-    /// The community account, for this tool.
-    ///
-    /// ⚠ In the "This tool" group on purpose: this token is the installer's, and the mod keeps its
-    /// own. Revoking one must not disconnect the other, and someone reading this screen has to be
-    /// able to tell which of the two they are looking at.
-    ///
-    /// Signing in is optional and stays optional. Everything published can be taken without an
-    /// account; this exists to reach what is yours — your own branch, your own translations first
-    /// in the list — and to give back later.
-    /// </summary>
-    private Control AccountCard()
-    {
-        _accountPanel = new StackPanel { Spacing = 10 };
-        ShowAccount();
-
-        return Card("Your community account",
-            "Optional. Published translations can be taken without one — this is for reaching your "
-            + "own work, and for sharing what you translate.",
-            _accountPanel);
-    }
-
-    private void ShowAccount()
-    {
-        _accountPanel.Children.Clear();
-
-        var settings = _store.Current;
-
-        if (settings.SignedIn)
-        {
-            _accountPanel.Children.Add(Note(
-                $"Signed in as {settings.ApiUser ?? "your account"}.", "StatusSuccess"));
-
-            var signOut = new Button { Content = "Sign out", FontSize = 12 };
-            signOut.Click += (_, _) =>
-            {
-                // Local only, and said as such. Revoking the token server-side is a different act
-                // with different consequences — it would also cut off anything else using it —
-                // and the site is where that decision belongs.
-                settings.ApiToken = null;
-                settings.ApiUser = null;
-                settings.ApiTokenServer = null;
-                _store.Save(settings);
-                ShowAccount();
-            };
-
-            _accountPanel.Children.Add(signOut);
-            _accountPanel.Children.Add(Note(
-                "Signing out here forgets the token on this machine. To cut it off everywhere, "
-                + "revoke it from your account on the site.", "TextMuted"));
-            return;
-        }
-
-        var signIn = new Button { Content = "Sign in", FontSize = 12, Classes = { "primary" } };
-        signIn.Click += async (_, _) => await SignInAsync();
-
-        _accountPanel.Children.Add(signIn);
-    }
-
-    /// <summary>
-    /// Signs in without ever asking for a password: the site shows a short code, you type it there.
-    ///
-    /// The code stays on screen the whole time, selectable, because the one thing this flow must
-    /// never do is make someone hunt for it — and because a stream that drops is not a reason to
-    /// invalidate a code that is still good for fifteen minutes.
-    /// </summary>
-    private async Task SignInAsync()
-    {
-        _signIn?.Cancel();
-        _signIn = new CancellationTokenSource();
-        var token = _signIn.Token;
-
-        _accountPanel.Children.Clear();
-
-        var waiting = new SpinningGear("Asking the site for a code...");
-        _accountPanel.Children.Add(waiting);
-
-        var client = new DeviceFlowClient();
-        var start = await client.BeginAsync(token);
-
-        if (start is null)
-        {
-            _accountPanel.Children.Clear();
-            _accountPanel.Children.Add(Note(
-                "Could not reach the site to start signing in. A firewall or a proxy blocking this "
-                + "program looks exactly like this — nothing was changed.", "StatusError"));
-
-            var again = new Button { Content = "Try again", FontSize = 12 };
-            again.Click += async (_, _) => await SignInAsync();
-            _accountPanel.Children.Add(again);
-            return;
-        }
-
-        _accountPanel.Children.Clear();
-
-        _accountPanel.Children.Add(Note(
-            $"Open {start.VerificationUri} while signed in to your account, and enter this code:",
-            "TextSecondary"));
-
-        // Read-only rather than a label: a code has to be selectable and copyable, and typing one
-        // by hand from a screen is exactly where a character gets lost.
-        _accountPanel.Children.Add(new TextBox
-        {
-            Text = start.UserCode,
-            IsReadOnly = true,
-            FontSize = 20,
-            FontWeight = FontWeight.SemiBold,
-            Width = 200,
-            HorizontalAlignment = HorizontalAlignment.Left,
-        });
-
-        var open = new Button { Content = "Open the page", FontSize = 12 };
-        open.Click += (_, _) => OpenUrl(start.VerificationUri);
-        _accountPanel.Children.Add(open);
-
-        var status = new SpinningGear("Waiting for you to enter it...");
-        _accountPanel.Children.Add(status);
-
-        var cancel = new Button { Content = "Cancel", FontSize = 12 };
-        cancel.Click += (_, _) =>
-        {
-            _signIn?.Cancel();
-            ShowAccount();
-        };
-        _accountPanel.Children.Add(cancel);
-
-        var result = await client.WaitAsync(start.DeviceCode, token);
-
-        if (token.IsCancellationRequested) return;
-
-        if (!result.Authorised)
-        {
-            status.IsVisible = false;
-            cancel.Content = "Start over";
-
-            if (result.Failure is not null)
-                _accountPanel.Children.Add(Note(result.Failure, "StatusWarning"));
-
-            return;
-        }
-
-        var settings = _store.Current;
-        settings.ApiToken = result.AccessToken;
-        settings.ApiUser = result.UserName;
-
-        // Recorded so the token is dropped if this tool is ever pointed at another instance.
-        settings.ApiTokenServer = BuildInfo.ApiBaseUrl;
-        _store.Save(settings);
-
-        ShowAccount();
-    }
-
-    private static void OpenUrl(string url)
-    {
-        try
-        {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url)
-            {
-                UseShellExecute = true,
-            });
-        }
-        catch
-        {
-            // No browser, or none we are allowed to start. The address is on screen either way,
-            // which is why it is shown as text rather than hidden behind the button.
-        }
-    }
-
-    /// <summary>
-    /// How this tool reaches the internet.
-    ///
-    /// Here because the situation it addresses is one where nothing else works: behind a company
-    /// proxy every catalog fetch, every community lookup and every download fails, all with
-    /// messages that point at our servers. Someone in that position needs one place to fix it and
-    /// one button to confirm they did — not a tool that fails the same way for the tenth time.
-    ///
-    /// Same four modes and the same names as the mod, so a proxy configured there is described
-    /// the same way here.
-    /// </summary>
-    private Control NetworkCard()
-    {
-        _proxyMode = new ComboBox { Width = 260 };
-        _proxyMode.Items.Add(new ComboBoxItem { Content = "Normal (whatever this computer uses)", Tag = "default" });
-        _proxyMode.Items.Add(new ComboBoxItem { Content = "Follow the system proxy settings", Tag = "system" });
-        _proxyMode.Items.Add(new ComboBoxItem { Content = "Never use a proxy", Tag = "none" });
-        _proxyMode.Items.Add(new ComboBoxItem { Content = "Use this proxy", Tag = "custom" });
-        Select(_proxyMode, _draft.ProxyMode);
-
-        _proxyUrl = new TextBox { Width = 300, Watermark = "http://proxy.company.com:8080" };
-        _proxyUrl.Text = _draft.ProxyUrl ?? "";
-
-        _proxyUser = new TextBox { Width = 300, Watermark = "only if your proxy asks for it" };
-        _proxyUser.Text = _draft.ProxyUsername ?? "";
-
-        _proxyPassword = new TextBox { Width = 300, PasswordChar = '*' };
-        _proxyPassword.Text = _draft.ProxyPassword ?? "";
-
-        _proxyFields = new StackPanel { Spacing = 10, IsVisible = Tag(_proxyMode) == "custom" };
-        _proxyFields.Children.Add(Row("Address", _proxyUrl));
-        _proxyFields.Children.Add(Row("Username", _proxyUser));
-        _proxyFields.Children.Add(Row("Password", _proxyPassword));
-        _proxyFields.Children.Add(Note(
-            "The password is stored encrypted and tied to this machine, like every other secret "
-            + "here.", "TextMuted"));
-
-        _proxyMode.SelectionChanged += (_, _) =>
-            _proxyFields.IsVisible = Tag(_proxyMode) == "custom";
-
-        _netStatus = Note("", "TextMuted");
-        _netStatus.IsVisible = false;
-
-        var test = new Button { Content = "Test the connection", FontSize = 12 };
-        test.Click += async (_, _) =>
-        {
-            test.IsEnabled = false;
-            _netStatus.IsVisible = true;
-            _netStatus.Text = "Trying...";
-            _netStatus.Foreground = Brush("TextMuted");
-
-            // Applied before testing, not on Save: testing the settings someone is looking at is
-            // the only thing that answers their question. Cancel still restores the saved ones.
-            SettingsStore.ApplyNetworkSettings(DraftWithNetwork());
-
-            var (ok, detail) = await TestNetworkAsync();
-            _netStatus.Text = detail;
-            _netStatus.Foreground = Brush(ok ? "StatusSuccess" : "StatusError");
-            test.IsEnabled = true;
-        };
-
-        var panel = new StackPanel { Spacing = 10 };
-        panel.Children.Add(_online);
-        panel.Children.Add(Row("Connection", _proxyMode, test));
-        panel.Children.Add(_proxyFields);
-        panel.Children.Add(_netStatus);
-
-        return Card("Network",
-            "Used by this tool, and passed on to your games as well - a proxy one needs is a proxy "
-            + "the other needs. Only worth touching if nothing reaches the internet: a company "
-            + "network usually needs a proxy here, while at home a firewall prompt is the more "
-            + "likely culprit.",
-            panel);
-    }
-
-    /// <summary>The draft with the network fields as they currently read on screen.</summary>
-    private InstallerSettings DraftWithNetwork()
-    {
-        _draft.ProxyMode = Tag(_proxyMode) ?? "default";
-        _draft.ProxyUrl = string.IsNullOrWhiteSpace(_proxyUrl.Text) ? null : _proxyUrl.Text.Trim();
-        _draft.ProxyUsername = string.IsNullOrWhiteSpace(_proxyUser.Text) ? null : _proxyUser.Text.Trim();
-        _draft.ProxyPassword = string.IsNullOrWhiteSpace(_proxyPassword.Text) ? null : _proxyPassword.Text;
-        return _draft;
-    }
-
-    /// <summary>
-    /// Fetches the catalog to prove the route works end to end.
-    ///
-    /// GitHub rather than our own site: it is what the tool actually needs to reach to install
-    /// anything, and a corporate proxy that allows one may well block the other.
-    /// </summary>
-    private static async Task<(bool Ok, string Detail)> TestNetworkAsync()
-    {
-        try
-        {
-            using var client = Core.Net.Http.Create(TimeSpan.FromSeconds(15));
-            using var response = await client.GetAsync(BuildInfo.CatalogPrimaryBase + "/loaders.json");
-
-            return response.IsSuccessStatusCode
-                ? (true, "Connected. Downloads and community translations will work.")
-                : (false, $"Reached the server, which answered {(int)response.StatusCode}. "
-                        + "A proxy that intercepts requests often does this.");
-        }
-        catch (Exception ex)
-        {
-            return (false, Core.Net.Http.Describe(ex, "GitHub"));
-        }
-    }
-
     private Control ModCard()
     {
         // Same shape as the mod's own HotkeyCapture: three modifier boxes, a "+", and one button
@@ -929,12 +620,6 @@ public sealed class SettingsWindow : Window
         _channel.Items.Add(new ComboBoxItem { Content = "Stable", Tag = "stable" });
         _channel.Items.Add(new ComboBoxItem { Content = "Beta (test releases)", Tag = "beta" });
         Select(_channel, _draft.Channel);
-
-        _online = new CheckBox
-        {
-            Content = "Use the community catalog",
-            IsChecked = _draft.OnlineMode,
-        };
 
         // The mod's own connection, not this tool's. Someone who installs everything from here,
         // translation included, has what they need before the game starts.
@@ -1726,15 +1411,13 @@ public sealed class SettingsWindow : Window
         _draft.MergeStrategy = Tag(_mergeStrategy) ?? "ask";
         _draft.NotificationsEnabled = _notificationsEnabled.IsChecked == true;
         _draft.NotificationPosition = Tag(_notificationPosition) ?? "top-right";
-        DraftWithNetwork();
-        _draft.EnableAi = _draft.TranslationBackend == "ai";
+        _draft.EnableAi = _draft.TranslationBackend == "llm";
         // Whatever is on screen is what gets saved. The field can only hold something captured,
         // so it cannot be unusable — and quietly substituting a different key would be the exact
         // behaviour this whole mechanism exists to avoid.
         var captured = _hotkey.Text?.Trim();
         if (!string.IsNullOrWhiteSpace(captured)) _draft.SettingsHotkey = captured;
         _draft.Channel = Tag(_channel) ?? "stable";
-        _draft.OnlineMode = _online.IsChecked == true;
 
         // Reviewed is what allows the mod's first-run wizard to be skipped later, and it is set
         // here and nowhere else: it means a human has actually looked at these values.
@@ -1771,13 +1454,6 @@ public sealed class SettingsWindow : Window
         Compare("API key", _apiKey.Text, saved.AiApiKey);
         Compare("hotkey", _hotkey.Text, saved.SettingsHotkey);
         Compare("updates channel", Tag(_channel), saved.Channel);
-        Compare("proxy mode", Tag(_proxyMode), saved.ProxyMode);
-        Compare("proxy address", _proxyUrl.Text, saved.ProxyUrl);
-        Compare("proxy username", _proxyUser.Text, saved.ProxyUsername);
-        Compare("proxy password", _proxyPassword.Text, saved.ProxyPassword);
-
-        if ((_online.IsChecked == true) != saved.OnlineMode)
-            changes.Add($"community catalog: {saved.OnlineMode} -> {_online.IsChecked == true}");
 
         if ((_modOnline.IsChecked == true) != saved.ModOnlineMode)
             changes.Add($"mod goes online: {saved.ModOnlineMode} -> {_modOnline.IsChecked == true}");
@@ -1828,13 +1504,12 @@ public sealed class SettingsWindow : Window
     /// </summary>
     private void WatchForChanges()
     {
-        foreach (var box in new[] { _language, _backend, _aiModel, _channel, _proxyMode })
+        foreach (var box in new[] { _language, _backend, _aiModel, _channel })
             box.SelectionChanged += (_, _) => RefreshApplyButton();
 
-        foreach (var field in new[] { _aiUrl, _apiKey, _hotkey, _proxyUrl, _proxyUser, _proxyPassword })
+        foreach (var field in new[] { _aiUrl, _apiKey, _hotkey })
             field.TextChanged += (_, _) => RefreshApplyButton();
 
-        _online.IsCheckedChanged += (_, _) => RefreshApplyButton();
         _modOnline.IsCheckedChanged += (_, _) => RefreshApplyButton();
         foreach (var box in new[] { _autoDownload, _notifyUpdates, _checkModUpdates, _notificationsEnabled })
             box.IsCheckedChanged += (_, _) => RefreshApplyButton();

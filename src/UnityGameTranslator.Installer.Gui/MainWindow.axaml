@@ -38,6 +38,7 @@
             <Button x:Name="FoldersButton" Content="My folders" />
             <Button x:Name="RescanButton" Content="Rescan" />
             <Button x:Name="SettingsButton" Content="Mod defaults" />
+            <Button x:Name="ToolSettingsButton" Content="Settings" />
             <Button x:Name="AboutButton" Content="About" />
           </StackPanel>
         </Grid>

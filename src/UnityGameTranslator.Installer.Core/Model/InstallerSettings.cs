@@ -128,6 +128,19 @@ public sealed class InstallerSettings
     [JsonPropertyName("proxy_bypass_local")] public bool ProxyBypassLocal { get; set; } = true;
 
     /// <summary>
+    /// Whether the proxy is also written into each game's config.json.
+    ///
+    /// Asked rather than assumed, because it is genuinely two questions. A proxy is usually a fact
+    /// about the network, so the same one serves both — but not always: this tool runs on a work
+    /// machine's network while a game may not need it at all, and pushing our setting into every
+    /// game would change how the mod reaches the internet without anyone deciding it.
+    ///
+    /// On by default: when someone has bothered to configure a proxy, the common case is that
+    /// nothing here reaches the network without it.
+    /// </summary>
+    [JsonPropertyName("proxy_in_games")] public bool ProxyInGames { get; set; } = true;
+
+    /// <summary>
     /// The site token, for this tool alone.
     ///
     /// ⚠ Deliberately NOT the mod's. Revoking one must not disconnect the other, and a tool that

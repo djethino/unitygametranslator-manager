@@ -117,10 +117,10 @@ public sealed class GameConfigWriter
                 Set(root, applied, "enable_ai", false, "AI translation (off)");
             }
 
-            // Network settings carry across because the reason to set them is the same on both
-            // sides: a proxy that this tool needs is a proxy the mod needs. Only written when
-            // they differ from the default, so an untouched game keeps its own arrangement.
-            if (settings.ProxyMode != "default")
+            // Carried across only when asked to. It usually IS the same network on both sides,
+            // which is why the box is ticked by default — but it is a decision, and a game that
+            // never needed a proxy should not inherit one because the installer did.
+            if (settings.ProxyInGames && settings.ProxyMode != "default")
             {
                 Set(root, applied, "proxy_mode", settings.ProxyMode, "proxy");
                 Set(root, applied, "proxy_url", settings.ProxyUrl, null);

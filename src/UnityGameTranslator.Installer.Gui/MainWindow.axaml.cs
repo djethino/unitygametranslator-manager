@@ -52,6 +52,7 @@ public partial class MainWindow : Window
         AddFolderButton.Click += async (_, _) => await AddFolderAsync();
         FoldersButton.Click += async (_, _) => await ManageFoldersAsync();
         SettingsButton.Click += async (_, _) => await OpenSettingsAsync();
+        ToolSettingsButton.Click += async (_, _) => await OpenToolSettingsAsync();
         AboutButton.Click += async (_, _) => await new AboutWindow().ShowDialog(this);
         GameList.SelectionChanged += async (_, _) => await ShowSelectedAsync();
 
@@ -291,6 +292,25 @@ public partial class MainWindow : Window
         RecomputeSituations();
         RefreshList();
         await ShowSelectedAsync();
+    }
+
+    /// <summary>
+    /// This tool's own settings — account and network.
+    ///
+    /// A second window rather than a section of the first: what goes into a game and what this
+    /// program does are two subjects, and someone changing a value has to know which one they are
+    /// touching without reading a heading.
+    /// </summary>
+    private async Task OpenToolSettingsAsync()
+    {
+        var window = new ToolSettingsWindow(_platform, _settings);
+        await window.ShowDialog(this);
+
+        if (!window.Saved) return;
+
+        // Signing in or changing the proxy both change what the community lookup can answer, so
+        // what is on screen has to be asked again rather than left as it was.
+        await RetryOnlineAsync();
     }
 
     /// <summary>Puts the header picker back in step with what was just saved.</summary>

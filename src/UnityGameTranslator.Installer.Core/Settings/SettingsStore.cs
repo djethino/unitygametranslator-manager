@@ -49,6 +49,20 @@ public sealed class SettingsStore
                     loaded.ProxyPassword = SecretProtection.Unprotect(loaded.ProxyPasswordStored);
                     loaded.GoogleApiKey = SecretProtection.Unprotect(loaded.GoogleApiKeyStored);
                     loaded.DeeplApiKey = SecretProtection.Unprotect(loaded.DeeplApiKeyStored);
+                    loaded.ApiToken = SecretProtection.Unprotect(loaded.ApiTokenStored);
+
+                    // A token belongs to the server that issued it. If the tool now points
+                    // somewhere else, keeping it would send someone's credential to a site that
+                    // never made it — the mod guards the same way.
+                    if (loaded.ApiToken is not null
+                        && !string.IsNullOrWhiteSpace(loaded.ApiTokenServer)
+                        && !string.Equals(loaded.ApiTokenServer, BuildInfo.ApiBaseUrl, StringComparison.OrdinalIgnoreCase))
+                    {
+                        loaded.ApiToken = null;
+                        loaded.ApiTokenStored = null;
+                        loaded.ApiUser = null;
+                        loaded.ApiTokenServer = null;
+                    }
 
                     // Applied before anything can make a request. Every HttpClient in the tool is
                     // built from these, so a proxy configured once holds everywhere — a partial
@@ -101,6 +115,7 @@ public sealed class SettingsStore
             settings.ProxyPasswordStored = SecretProtection.Protect(settings.ProxyPassword);
             settings.GoogleApiKeyStored = SecretProtection.Protect(settings.GoogleApiKey);
             settings.DeeplApiKeyStored = SecretProtection.Protect(settings.DeeplApiKey);
+            settings.ApiTokenStored = SecretProtection.Protect(settings.ApiToken);
 
             var temp = _path + ".tmp";
             File.WriteAllText(temp, JsonSerializer.Serialize(settings, JsonOptions));

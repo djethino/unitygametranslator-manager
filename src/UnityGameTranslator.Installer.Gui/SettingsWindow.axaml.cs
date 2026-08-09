@@ -80,6 +80,8 @@ public sealed class SettingsWindow : Window
     private TextBlock _aiStatus = null!;
     private Button _testButton = null!;
     private Button _applyButton = null!;
+    private StackPanel _accountPanel = null!;
+    private CancellationTokenSource? _signIn;
 
     /// <summary>
     /// True while the screen is filling itself in rather than being edited.
@@ -186,6 +188,7 @@ public sealed class SettingsWindow : Window
         layout.Children.Add(SyncCard());
 
         layout.Children.Add(GroupHeading("This tool"));
+        layout.Children.Add(AccountCard());
         layout.Children.Add(NetworkCard());
 
         var buttons = new StackPanel
@@ -539,6 +542,174 @@ public sealed class SettingsWindow : Window
         _aiPanel.Children.Add(_testOutput);
 
         return Card("AI translation", null, _aiPanel);
+    }
+
+    /// <summary>
+    /// The community account, for this tool.
+    ///
+    /// ⚠ In the "This tool" group on purpose: this token is the installer's, and the mod keeps its
+    /// own. Revoking one must not disconnect the other, and someone reading this screen has to be
+    /// able to tell which of the two they are looking at.
+    ///
+    /// Signing in is optional and stays optional. Everything published can be taken without an
+    /// account; this exists to reach what is yours — your own branch, your own translations first
+    /// in the list — and to give back later.
+    /// </summary>
+    private Control AccountCard()
+    {
+        _accountPanel = new StackPanel { Spacing = 10 };
+        ShowAccount();
+
+        return Card("Your community account",
+            "Optional. Published translations can be taken without one — this is for reaching your "
+            + "own work, and for sharing what you translate.",
+            _accountPanel);
+    }
+
+    private void ShowAccount()
+    {
+        _accountPanel.Children.Clear();
+
+        var settings = _store.Current;
+
+        if (settings.SignedIn)
+        {
+            _accountPanel.Children.Add(Note(
+                $"Signed in as {settings.ApiUser ?? "your account"}.", "StatusSuccess"));
+
+            var signOut = new Button { Content = "Sign out", FontSize = 12 };
+            signOut.Click += (_, _) =>
+            {
+                // Local only, and said as such. Revoking the token server-side is a different act
+                // with different consequences — it would also cut off anything else using it —
+                // and the site is where that decision belongs.
+                settings.ApiToken = null;
+                settings.ApiUser = null;
+                settings.ApiTokenServer = null;
+                _store.Save(settings);
+                ShowAccount();
+            };
+
+            _accountPanel.Children.Add(signOut);
+            _accountPanel.Children.Add(Note(
+                "Signing out here forgets the token on this machine. To cut it off everywhere, "
+                + "revoke it from your account on the site.", "TextMuted"));
+            return;
+        }
+
+        var signIn = new Button { Content = "Sign in", FontSize = 12, Classes = { "primary" } };
+        signIn.Click += async (_, _) => await SignInAsync();
+
+        _accountPanel.Children.Add(signIn);
+    }
+
+    /// <summary>
+    /// Signs in without ever asking for a password: the site shows a short code, you type it there.
+    ///
+    /// The code stays on screen the whole time, selectable, because the one thing this flow must
+    /// never do is make someone hunt for it — and because a stream that drops is not a reason to
+    /// invalidate a code that is still good for fifteen minutes.
+    /// </summary>
+    private async Task SignInAsync()
+    {
+        _signIn?.Cancel();
+        _signIn = new CancellationTokenSource();
+        var token = _signIn.Token;
+
+        _accountPanel.Children.Clear();
+
+        var waiting = new SpinningGear("Asking the site for a code...");
+        _accountPanel.Children.Add(waiting);
+
+        var client = new DeviceFlowClient();
+        var start = await client.BeginAsync(token);
+
+        if (start is null)
+        {
+            _accountPanel.Children.Clear();
+            _accountPanel.Children.Add(Note(
+                "Could not reach the site to start signing in. A firewall or a proxy blocking this "
+                + "program looks exactly like this — nothing was changed.", "StatusError"));
+
+            var again = new Button { Content = "Try again", FontSize = 12 };
+            again.Click += async (_, _) => await SignInAsync();
+            _accountPanel.Children.Add(again);
+            return;
+        }
+
+        _accountPanel.Children.Clear();
+
+        _accountPanel.Children.Add(Note(
+            $"Open {start.VerificationUri} while signed in to your account, and enter this code:",
+            "TextSecondary"));
+
+        // Read-only rather than a label: a code has to be selectable and copyable, and typing one
+        // by hand from a screen is exactly where a character gets lost.
+        _accountPanel.Children.Add(new TextBox
+        {
+            Text = start.UserCode,
+            IsReadOnly = true,
+            FontSize = 20,
+            FontWeight = FontWeight.SemiBold,
+            Width = 200,
+            HorizontalAlignment = HorizontalAlignment.Left,
+        });
+
+        var open = new Button { Content = "Open the page", FontSize = 12 };
+        open.Click += (_, _) => OpenUrl(start.VerificationUri);
+        _accountPanel.Children.Add(open);
+
+        var status = new SpinningGear("Waiting for you to enter it...");
+        _accountPanel.Children.Add(status);
+
+        var cancel = new Button { Content = "Cancel", FontSize = 12 };
+        cancel.Click += (_, _) =>
+        {
+            _signIn?.Cancel();
+            ShowAccount();
+        };
+        _accountPanel.Children.Add(cancel);
+
+        var result = await client.WaitAsync(start.DeviceCode, token);
+
+        if (token.IsCancellationRequested) return;
+
+        if (!result.Authorised)
+        {
+            status.IsVisible = false;
+            cancel.Content = "Start over";
+
+            if (result.Failure is not null)
+                _accountPanel.Children.Add(Note(result.Failure, "StatusWarning"));
+
+            return;
+        }
+
+        var settings = _store.Current;
+        settings.ApiToken = result.AccessToken;
+        settings.ApiUser = result.UserName;
+
+        // Recorded so the token is dropped if this tool is ever pointed at another instance.
+        settings.ApiTokenServer = BuildInfo.ApiBaseUrl;
+        _store.Save(settings);
+
+        ShowAccount();
+    }
+
+    private static void OpenUrl(string url)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url)
+            {
+                UseShellExecute = true,
+            });
+        }
+        catch
+        {
+            // No browser, or none we are allowed to start. The address is on screen either way,
+            // which is why it is shown as text rather than hidden behind the button.
+        }
     }
 
     /// <summary>

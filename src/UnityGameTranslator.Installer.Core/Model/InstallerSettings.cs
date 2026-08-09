@@ -127,6 +127,32 @@ public sealed class InstallerSettings
 
     [JsonPropertyName("proxy_bypass_local")] public bool ProxyBypassLocal { get; set; } = true;
 
+    /// <summary>
+    /// The site token, for this tool alone.
+    ///
+    /// ⚠ Deliberately NOT the mod's. Revoking one must not disconnect the other, and a tool that
+    /// installs things has no business holding the credential a game plays with. The installer may
+    /// later offer to write its own into a game — asked, never by copying what the mod has.
+    ///
+    /// Encrypted on disk like every other secret here, with the plaintext kept apart so nothing
+    /// can serialise it by accident.
+    /// </summary>
+    [JsonPropertyName("api_token")] public string? ApiTokenStored { get; set; }
+
+    [JsonIgnore] public string? ApiToken { get; set; }
+
+    /// <summary>Who we are signed in as, for display. Cleared together with the token.</summary>
+    [JsonPropertyName("api_user")] public string? ApiUser { get; set; }
+
+    /// <summary>
+    /// Which server issued the token. A token is only valid for the site that made it, so pointing
+    /// the tool at another instance must not send this one along — the mod holds the same guard.
+    /// </summary>
+    [JsonPropertyName("api_token_server")] public string? ApiTokenServer { get; set; }
+
+    /// <summary>True when a usable token is on hand.</summary>
+    [JsonIgnore] public bool SignedIn => !string.IsNullOrWhiteSpace(ApiToken);
+
     /// <summary>Community features. Off means the catalog is never queried.</summary>
     [JsonPropertyName("online_mode")] public bool OnlineMode { get; set; } = true;
 

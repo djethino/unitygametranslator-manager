@@ -633,10 +633,13 @@ public sealed class TranslationsWindow : Window
     }
 
     /// <summary>
-    /// The site token, once signing in exists. Null until then, which is exactly what the public
-    /// endpoints expect — so nothing here waits on that work.
+    /// The site token, when signed in.
+    ///
+    /// Sent on every download rather than only for branches: the endpoint is public for anything
+    /// published and resolves the caller when a token is present, so passing it costs nothing and
+    /// is what lets the author of a branch fetch their own work.
     /// </summary>
-    private string? ApiToken() => null;
+    private string? ApiToken() => _settings.Current.ApiToken;
 
     private static void Show(TextBlock block, string text, string colour)
     {

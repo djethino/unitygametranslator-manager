@@ -13,6 +13,11 @@
     <ApiBaseUrl>https://unitygametranslator.asymptomatikgames.com/api/v1</ApiBaseUrl>
     <WebsiteBaseUrl>https://unitygametranslator.asymptomatikgames.com</WebsiteBaseUrl>
 
+    <!-- The event streams, served by a micro-server of their own rather than by the site. Same
+         value as the mod's Directory.Build.props: they read the same stream, so a difference here
+         would mean one of the two signing in against a server the other never sees. -->
+    <SseBaseUrl>https://sse-unitygametranslator.asymptomatikgames.com</SseBaseUrl>
+
     <!-- Where mod releases are published -->
     <ModReleasesApi>https://api.github.com/repos/djethino/unitygametranslator/releases</ModReleasesApi>
   </PropertyGroup>
@@ -45,6 +50,7 @@ namespace UnityGameTranslator.Installer {
         public const string CatalogMirrorBase = "$(CatalogMirrorBase)"%3B
         public const string ApiBaseUrl = "$(ApiBaseUrl)"%3B
         public const string WebsiteBaseUrl = "$(WebsiteBaseUrl)"%3B
+        public const string SseBaseUrl = "$(SseBaseUrl)"%3B
         public const string ModReleasesApi = "$(ModReleasesApi)"%3B
     }
 }

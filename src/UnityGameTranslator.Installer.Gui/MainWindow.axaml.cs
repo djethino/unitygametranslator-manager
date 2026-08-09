@@ -811,22 +811,7 @@ public partial class MainWindow : Window
         var game = report.Game;
         DetailPanel.Children.Clear();
 
-        DetailPanel.Children.Add(new TextBlock
-        {
-            Text = game.Name,
-            FontSize = 20,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = Brush("TextPrimary"),
-            TextWrapping = TextWrapping.Wrap,
-        });
-
-        DetailPanel.Children.Add(new TextBlock
-        {
-            Text = game.Path,
-            FontSize = 11,
-            Foreground = Brush("TextMuted"),
-            TextWrapping = TextWrapping.Wrap,
-        });
+        DetailPanel.Children.Add(Header(report));
 
         DetailPanel.Children.Add(Card(Facts(report)));
 
@@ -838,6 +823,160 @@ public partial class MainWindow : Window
 
         DetailPanel.Children.Add(Card(Translations(report)));
         DetailPanel.Children.Add(Card(Actions(report)));
+    }
+
+    /// <summary>
+    /// The game's name, where it lives, and its own icon.
+    ///
+    /// The icon is sized to the two lines beside it rather than to a round number: a picture that
+    /// matches the height of the text it belongs to reads as one block, while any other size reads
+    /// as two things that happen to be adjacent. Pushed to the right so the eye still starts on
+    /// the name, which is what the panel is about.
+    ///
+    /// Folders get a button each, and only the ones that exist: a game always has one, the mod has
+    /// its own once installed, and MelonLoader keeps its data somewhere else again — Mods against
+    /// UserData/UnityGameTranslator, where BepInEx uses a single folder for both. Showing an
+    /// identical path twice would suggest a distinction that is not there.
+    /// </summary>
+    private Control Header(GameReport report)
+    {
+        var game = report.Game;
+
+        var text = new StackPanel { Spacing = 2, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+
+        text.Children.Add(new TextBlock
+        {
+            Text = game.Name,
+            FontSize = 20,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = Brush("TextPrimary"),
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        text.Children.Add(FolderRow(game.Path, "the game"));
+
+        // The mod's folders, once there is a mod. Resolved from the catalog because a detected
+        // loader knows where its plugins go, not where the mod keeps its own files.
+        var loaderId = report.InstalledLoader?.Id;
+        var descriptor = loaderId is null
+            ? null
+            : _catalog.Loaders.FirstOrDefault(l => l.Id == loaderId);
+
+        if (descriptor is not null)
+        {
+            var pluginDir = System.IO.Path.Combine(game.Path,
+                descriptor.PluginDir.Replace('/', System.IO.Path.DirectorySeparatorChar));
+
+            var dataDir = System.IO.Path.Combine(game.Path,
+                descriptor.UserDataDir.Replace('/', System.IO.Path.DirectorySeparatorChar));
+
+            if (System.IO.Directory.Exists(pluginDir)) text.Children.Add(FolderRow(pluginDir, "the mod"));
+
+            // Only when it is genuinely another place.
+            if (!string.Equals(pluginDir, dataDir, StringComparison.OrdinalIgnoreCase)
+                && System.IO.Directory.Exists(dataDir))
+            {
+                text.Children.Add(FolderRow(dataDir, "its settings and translation"));
+            }
+        }
+
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            Margin = new Avalonia.Thickness(0, 0, 0, 4),
+        };
+
+        Grid.SetColumn(text, 0);
+        grid.Children.Add(text);
+
+        if (GameIcons.For(game.ExecutablePath) is { } icon)
+        {
+            var image = new Image
+            {
+                Source = icon,
+                Width = 48,
+                Height = 48,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+                Margin = new Avalonia.Thickness(12, 2, 0, 0),
+            };
+
+            Grid.SetColumn(image, 1);
+            grid.Children.Add(image);
+        }
+
+        return grid;
+    }
+
+    /// <summary>A path, with a way to go there. The button is the only thing added.</summary>
+    private static Control FolderRow(string path, string what)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+
+        var open = new Button
+        {
+            Content = FolderGlyph(),
+            Padding = new Avalonia.Thickness(4, 1),
+            Background = Avalonia.Media.Brushes.Transparent,
+            BorderThickness = new Avalonia.Thickness(0),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+        };
+
+        ToolTip.SetTip(open, $"Open the folder of {what}");
+        open.Click += (_, _) => OpenFolder(path);
+
+        row.Children.Add(open);
+        row.Children.Add(new TextBlock
+        {
+            Text = path,
+            FontSize = 11,
+            Foreground = Brush("TextMuted"),
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        });
+
+        return row;
+    }
+
+    /// <summary>
+    /// A folder drawn as a shape rather than typed as a character.
+    ///
+    /// An emoji would render differently on each system and is missing outright from some Linux
+    /// font stacks, and an icon font would be a dependency for one glyph.
+    /// </summary>
+    private static Control FolderGlyph() => new Avalonia.Controls.Shapes.Path
+    {
+        Data = Avalonia.Media.Geometry.Parse(
+            "M2,3 L6,3 L7.5,4.5 L13,4.5 A1,1 0 0,1 14,5.5 L14,12 A1,1 0 0,1 13,13 "
+            + "L2,13 A1,1 0 0,1 1,12 L1,4 A1,1 0 0,1 2,3 Z"),
+        Fill = Brush("TextMuted"),
+        Width = 15,
+        Height = 15,
+        Stretch = Avalonia.Media.Stretch.Uniform,
+    };
+
+    /// <summary>
+    /// Opens a folder in whatever the system uses for that.
+    ///
+    /// UseShellExecute on the path itself: Windows opens Explorer, Linux hands it to the desktop's
+    /// own handler, macOS to Finder. Spawning explorer.exe by name would work on one system only.
+    /// </summary>
+    private static void OpenFolder(string path)
+    {
+        try
+        {
+            if (!System.IO.Directory.Exists(path)) return;
+
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path)
+            {
+                UseShellExecute = true,
+            });
+        }
+        catch
+        {
+            // A locked-down desktop, no file manager. The path is written beside the button, which
+            // is why it is shown as text rather than hidden behind it.
+        }
     }
 
     private static Control Facts(GameReport report)

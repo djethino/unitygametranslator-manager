@@ -44,7 +44,15 @@ public sealed class InstallerSettings
     /// </summary>
     [JsonPropertyName("target_language")] public string TargetLanguage { get; set; } = "auto";
 
-    /// <summary>"none", "ai", "google", "deepl" — mirrors the mod's translation_backend.</summary>
+    /// <summary>
+    /// "none", "llm", "google" or "deepl" — the mod's own values, written into config.json as-is.
+    ///
+    /// ⚠ It is "llm", not "ai". This tool used "ai" because that is the word its own screen uses,
+    /// and the mod's switch matches on "llm": every AI setup written into a game was a backend the
+    /// mod did not recognise, so it translated nothing and said nothing. A value that only has to
+    /// travel between two programs must use the receiving program's spelling; the friendly wording
+    /// belongs in the UI, not in the file.
+    /// </summary>
     [JsonPropertyName("translation_backend")] public string TranslationBackend { get; set; } = "none";
 
     /// <summary>OpenAI-compatible endpoint. Empty means "not configured yet".</summary>
@@ -65,6 +73,35 @@ public sealed class InstallerSettings
 
     /// <summary>The key in clear, in memory only. Never serialised.</summary>
     [JsonIgnore] public string? AiApiKey { get; set; }
+
+    /// <summary>
+    /// Google Translate and DeepL keys, kept apart from the AI one and from each other.
+    ///
+    /// One shared field would have looked simpler and been worse: switching backend to compare
+    /// them would silently overwrite the key you were using, and you would only find out when a
+    /// game stopped translating. Each service gets its own slot, so going back is free.
+    /// </summary>
+    [JsonPropertyName("google_api_key")] public string? GoogleApiKeyStored { get; set; }
+
+    [JsonIgnore] public string? GoogleApiKey { get; set; }
+
+    [JsonPropertyName("deepl_api_key")] public string? DeeplApiKeyStored { get; set; }
+
+    [JsonIgnore] public string? DeeplApiKey { get; set; }
+
+    /// <summary>DeepL's free tier uses a different host, so the mod needs telling which one.</summary>
+    [JsonPropertyName("deepl_use_free")] public bool DeeplUseFree { get; set; } = true;
+
+    /// <summary>
+    /// Whether the MOD may reach the internet from inside a game. Separate from OnlineMode, which
+    /// governs this tool.
+    ///
+    /// They looked like one setting and are two decisions. Someone who installs everything from
+    /// here — translation included — has what they need before the game starts, and may well not
+    /// want the mod talking to anything while they play. Folding the two together meant that
+    /// choice could not be expressed at all.
+    /// </summary>
+    [JsonPropertyName("mod_online_mode")] public bool ModOnlineMode { get; set; } = true;
 
     /// <summary>
     /// How to reach the network: "default", "none", "system" or "custom".
@@ -131,5 +168,11 @@ public sealed class InstallerSettings
         // unusable hotkey means the wizard runs, which is exactly the safety net it is for.
         && Hotkeys.IsValid(SettingsHotkey)
 
-        && (TranslationBackend != "ai" || !string.IsNullOrWhiteSpace(AiUrl));
+        && (TranslationBackend != "llm" || !string.IsNullOrWhiteSpace(AiUrl))
+
+        // A paid backend with no key is a backend that cannot translate a single line. Letting
+        // the mod's wizard run is better than writing a setup that fails on the first sentence
+        // with nothing on screen to explain it.
+        && (TranslationBackend != "google" || !string.IsNullOrWhiteSpace(GoogleApiKey))
+        && (TranslationBackend != "deepl" || !string.IsNullOrWhiteSpace(DeeplApiKey));
 }

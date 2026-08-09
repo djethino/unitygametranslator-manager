@@ -47,11 +47,19 @@ public sealed class SettingsStore
                     // rather than as a crash or as garbage sent to a provider.
                     loaded.AiApiKey = SecretProtection.Unprotect(loaded.AiApiKeyStored);
                     loaded.ProxyPassword = SecretProtection.Unprotect(loaded.ProxyPasswordStored);
+                    loaded.GoogleApiKey = SecretProtection.Unprotect(loaded.GoogleApiKeyStored);
+                    loaded.DeeplApiKey = SecretProtection.Unprotect(loaded.DeeplApiKeyStored);
 
                     // Applied before anything can make a request. Every HttpClient in the tool is
                     // built from these, so a proxy configured once holds everywhere — a partial
                     // application would produce "search works, install does not", which is close
                     // to undiagnosable from the outside.
+                    // Settings written before the backend name was corrected say "ai" where the
+                    // mod expects "llm". Left alone, they would keep producing game configs the
+                    // mod cannot act on, silently — so they are moved on read rather than asking
+                    // the user to notice and redo it.
+                    if (loaded.TranslationBackend == "ai") loaded.TranslationBackend = "llm";
+
                     ApplyNetworkSettings(loaded);
                     return loaded;
                 }
@@ -91,6 +99,8 @@ public sealed class SettingsStore
             // Encrypted on the way out, every time: the only path from memory to disk.
             settings.AiApiKeyStored = SecretProtection.Protect(settings.AiApiKey);
             settings.ProxyPasswordStored = SecretProtection.Protect(settings.ProxyPassword);
+            settings.GoogleApiKeyStored = SecretProtection.Protect(settings.GoogleApiKey);
+            settings.DeeplApiKeyStored = SecretProtection.Protect(settings.DeeplApiKey);
 
             var temp = _path + ".tmp";
             File.WriteAllText(temp, JsonSerializer.Serialize(settings, JsonOptions));

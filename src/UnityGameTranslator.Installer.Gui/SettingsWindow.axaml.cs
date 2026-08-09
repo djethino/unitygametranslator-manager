@@ -49,6 +49,7 @@ public sealed class SettingsWindow : Window
     private TextBlock _hotkeyProblem = null!;
     private ComboBox _channel = null!;
     private CheckBox _online = null!;
+    private CheckBox _modOnline = null!;
 
     private TextBox _apiKey = null!;
     private TextBlock _metrics = null!;
@@ -63,6 +64,10 @@ public sealed class SettingsWindow : Window
     private Button _connectButton = null!;
     private Button _refreshModels = null!;
     private StackPanel _aiPanel = null!;
+    private StackPanel _apiPanel = null!;
+    private ComboBox _provider = null!;
+    private TextBox _providerKey = null!;
+    private CheckBox _deeplFree = null!;
     private StackPanel _testOutput = null!;
     private TextBlock _aiStatus = null!;
     private Button _testButton = null!;
@@ -111,6 +116,10 @@ public sealed class SettingsWindow : Window
             SettingsHotkey = current.SettingsHotkey,
             Channel = current.Channel,
             AiApiKey = current.AiApiKey,
+            GoogleApiKey = current.GoogleApiKey,
+            DeeplApiKey = current.DeeplApiKey,
+            DeeplUseFree = current.DeeplUseFree,
+            ModOnlineMode = current.ModOnlineMode,
             ProxyMode = current.ProxyMode,
             ProxyUrl = current.ProxyUrl,
             ProxyUsername = current.ProxyUsername,
@@ -153,6 +162,7 @@ public sealed class SettingsWindow : Window
         layout.Children.Add(LanguageCard());
         layout.Children.Add(BackendCard());
         layout.Children.Add(AiCard());
+        layout.Children.Add(ApiCard());
         layout.Children.Add(ModCard());
 
         layout.Children.Add(GroupHeading("This tool"));
@@ -255,20 +265,78 @@ public sealed class SettingsWindow : Window
 
     private Control BackendCard()
     {
+        // The mod's own two-level shape, and its own words: one choice of kind, then a provider
+        // if the kind has several. Listing Google and DeepL as siblings of "an AI" made them look
+        // like three unrelated things, when the mod treats the last two as one backend with a
+        // provider setting.
         _backend = new ComboBox { Width = 260 };
         _backend.Items.Add(new ComboBoxItem { Content = "Community translations only", Tag = "none" });
-        _backend.Items.Add(new ComboBoxItem { Content = "Translate with an AI (yours, or an online one)", Tag = "ai" });
-        _backend.Items.Add(new ComboBoxItem { Content = "Google Translate (your key)", Tag = "google" });
-        _backend.Items.Add(new ComboBoxItem { Content = "DeepL (your key)", Tag = "deepl" });
-        Select(_backend, _draft.TranslationBackend);
+        _backend.Items.Add(new ComboBoxItem { Content = "AI (local or cloud)", Tag = "llm" });
+        _backend.Items.Add(new ComboBoxItem { Content = "Google / DeepL", Tag = "google" });
+        Select(_backend, _draft.TranslationBackend == "deepl" ? "google" : _draft.TranslationBackend);
 
         _backend.SelectionChanged += (_, _) =>
-            _aiPanel.IsVisible = Tag(_backend) == "ai";
+        {
+            _aiPanel.IsVisible = Tag(_backend) == "llm";
+            _apiPanel.IsVisible = Tag(_backend) == "google";
+        };
 
         return Card("How lines get translated",
             "A game someone has already translated needs none of this. The rest is for what "
             + "nobody has translated yet: your own machine, free, or a paid service with your own key.",
             Row("Backend", _backend));
+    }
+
+    /// <summary>
+    /// Google Translate and DeepL: one card, one provider choice, one key per provider.
+    ///
+    /// Written because choosing either of them used to configure nothing at all — the backend was
+    /// written into the game without the key it needs, so the mod started with something that
+    /// could not translate a single line and no screen said why.
+    /// </summary>
+    private Control ApiCard()
+    {
+        _provider = new ComboBox { Width = 260 };
+        _provider.Items.Add(new ComboBoxItem { Content = "Google Translate", Tag = "google" });
+        _provider.Items.Add(new ComboBoxItem { Content = "DeepL", Tag = "deepl" });
+        Select(_provider, _draft.TranslationBackend == "deepl" ? "deepl" : "google");
+
+        _providerKey = new TextBox { Width = 300, PasswordChar = '*' };
+        _deeplFree = new CheckBox
+        {
+            Content = "Free tier (api-free.deepl.com)",
+            IsChecked = _draft.DeeplUseFree,
+        };
+
+        void ShowProvider()
+        {
+            var isDeepl = Tag(_provider) == "deepl";
+
+            // Each provider keeps its own key. Sharing one field would overwrite the key you were
+            // using the moment you looked at the other one.
+            _providerKey.Text = (isDeepl ? _draft.DeeplApiKey : _draft.GoogleApiKey) ?? "";
+            _deeplFree.IsVisible = isDeepl;
+        }
+
+        _provider.SelectionChanged += (_, _) => ShowProvider();
+        _providerKey.TextChanged += (_, _) =>
+        {
+            if (Tag(_provider) == "deepl") _draft.DeeplApiKey = _providerKey.Text;
+            else _draft.GoogleApiKey = _providerKey.Text;
+        };
+
+        ShowProvider();
+
+        _apiPanel = new StackPanel { Spacing = 10, IsVisible = Tag(_backend) == "google" };
+        _apiPanel.Children.Add(Row("Provider", _provider));
+        _apiPanel.Children.Add(Row("API key", _providerKey));
+        _apiPanel.Children.Add(_deeplFree);
+        _apiPanel.Children.Add(Note(
+            "Both bill you directly on your own account, and both offer a free allowance worth "
+            + "reading up on before you start. We take no part in what it costs. The key is stored "
+            + "encrypted and tied to this machine.", "TextMuted"));
+
+        return Card("Google / DeepL", null, _apiPanel);
     }
 
     private Control AiCard()
@@ -450,6 +518,7 @@ public sealed class SettingsWindow : Window
         };
 
         var panel = new StackPanel { Spacing = 10 };
+        panel.Children.Add(_online);
         panel.Children.Add(Row("Connection", _proxyMode, test));
         panel.Children.Add(_proxyFields);
         panel.Children.Add(_netStatus);
@@ -611,6 +680,14 @@ public sealed class SettingsWindow : Window
             IsChecked = _draft.OnlineMode,
         };
 
+        // The mod's own connection, not this tool's. Someone who installs everything from here,
+        // translation included, has what they need before the game starts.
+        _modOnline = new CheckBox
+        {
+            Content = "Let the mod go online while you play",
+            IsChecked = _draft.ModOnlineMode,
+        };
+
         var panel = new StackPanel { Spacing = 10 };
 
         panel.Children.Add(Row("In-game hotkey", hotkeyRow));
@@ -621,7 +698,10 @@ public sealed class SettingsWindow : Window
             + "character your layout prints on it.", "TextMuted"));
         panel.Children.Add(_hotkeyProblem);
         panel.Children.Add(Row("Updates", _channel));
-        panel.Children.Add(_online);
+        panel.Children.Add(_modOnline);
+        panel.Children.Add(Note(
+            "Off means the mod never contacts anything from inside the game: no update notices, "
+            + "no community lookups. What you installed from here keeps working.", "TextMuted"));
 
         return Card("In the game",
             "The hotkey opens the mod's own panel while you play. It is asked here because the "
@@ -1378,6 +1458,12 @@ public sealed class SettingsWindow : Window
         _draft.AiUrl = _aiUrl.Text?.Trim() ?? "";
         _draft.AiModel = Tag(_aiModel) ?? "";
         _draft.AiApiKey = string.IsNullOrWhiteSpace(_apiKey.Text) ? null : _apiKey.Text.Trim();
+
+        // "Google / DeepL" is one choice on screen and two values in the file, exactly as the mod
+        // stores it.
+        if (Tag(_backend) == "google") _draft.TranslationBackend = Tag(_provider) ?? "google";
+        _draft.DeeplUseFree = _deeplFree.IsChecked == true;
+        _draft.ModOnlineMode = _modOnline.IsChecked == true;
         DraftWithNetwork();
         _draft.EnableAi = _draft.TranslationBackend == "ai";
         // Whatever is on screen is what gets saved. The field can only hold something captured,
@@ -1431,6 +1517,12 @@ public sealed class SettingsWindow : Window
         if ((_online.IsChecked == true) != saved.OnlineMode)
             changes.Add($"community catalog: {saved.OnlineMode} -> {_online.IsChecked == true}");
 
+        if ((_modOnline.IsChecked == true) != saved.ModOnlineMode)
+            changes.Add($"mod goes online: {saved.ModOnlineMode} -> {_modOnline.IsChecked == true}");
+
+        Compare("Google key", _draft.GoogleApiKey, saved.GoogleApiKey);
+        Compare("DeepL key", _draft.DeeplApiKey, saved.DeeplApiKey);
+
         return changes;
     }
 
@@ -1473,6 +1565,10 @@ public sealed class SettingsWindow : Window
             field.TextChanged += (_, _) => RefreshApplyButton();
 
         _online.IsCheckedChanged += (_, _) => RefreshApplyButton();
+        _modOnline.IsCheckedChanged += (_, _) => RefreshApplyButton();
+        _deeplFree.IsCheckedChanged += (_, _) => RefreshApplyButton();
+        _provider.SelectionChanged += (_, _) => RefreshApplyButton();
+        _providerKey.TextChanged += (_, _) => RefreshApplyButton();
     }
 
     // ---------------------------------------------------------------- helpers

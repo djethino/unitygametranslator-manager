@@ -65,9 +65,12 @@ public sealed class GameConfigWriter
             // happens — leaving the panel unreachable in a game where it used to open.
             if (Hotkeys.IsValid(settings.SettingsHotkey))
                 Set(root, applied, "settings_hotkey", settings.SettingsHotkey, "in-game hotkey");
-            Set(root, applied, "online_mode", settings.OnlineMode, "community features");
+            // The mod's own setting, not this tool's. Someone who installed everything from here,
+            // translation included, has what they need before the game starts and may not want
+            // the mod reaching the network while they play.
+            Set(root, applied, "online_mode", settings.ModOnlineMode, "community features in game");
 
-            if (settings.TranslationBackend == "ai")
+            if (settings.TranslationBackend == "llm")
             {
                 Set(root, applied, "ai_url", settings.AiUrl, "AI server");
                 Set(root, applied, "ai_model", settings.AiModel, "AI model");
@@ -78,6 +81,21 @@ public sealed class GameConfigWriter
                 // line can work. Written in its protected form: the plaintext never reaches disk.
                 if (!string.IsNullOrWhiteSpace(settings.AiApiKey))
                     Set(root, applied, "ai_api_key", SecretProtection.Protect(settings.AiApiKey), "API key");
+            }
+            else if (settings.TranslationBackend == "google")
+            {
+                // Without the key the backend is written but cannot translate a line, and the
+                // failure appears in the game with nothing to explain it.
+                if (!string.IsNullOrWhiteSpace(settings.GoogleApiKey))
+                    Set(root, applied, "google_api_key", SecretProtection.Protect(settings.GoogleApiKey), "Google key");
+            }
+            else if (settings.TranslationBackend == "deepl")
+            {
+                if (!string.IsNullOrWhiteSpace(settings.DeeplApiKey))
+                    Set(root, applied, "deepl_api_key", SecretProtection.Protect(settings.DeeplApiKey), "DeepL key");
+
+                // Free and paid DeepL are different hosts; guessing wrong fails every request.
+                Set(root, applied, "deepl_use_free", settings.DeeplUseFree, null);
             }
             else if (settings.TranslationBackend == "none")
             {
@@ -100,6 +118,12 @@ public sealed class GameConfigWriter
                 if (!string.IsNullOrWhiteSpace(settings.ProxyPassword))
                     Set(root, applied, "proxy_password", SecretProtection.Protect(settings.ProxyPassword), null);
             }
+
+            // The channel picked here decides which plugin build is installed; the mod has its own
+            // switch for which releases it announces. Leaving them apart meant choosing beta and
+            // still being told only about stable ones.
+            if (settings.Channel == "beta")
+                SetNested(root, applied, "sync", "notify_prereleases", true, "beta update notices");
 
             var wizardSkipped = skipWizard && settings.AnswersTheWizard;
             if (wizardSkipped) Set(root, applied, "first_run_completed", true, "first-run wizard skipped");
@@ -146,6 +170,33 @@ public sealed class GameConfigWriter
             ?? throw new InvalidOperationException(
                 "This game's config.json is not a JSON object. It was left untouched — "
                 + "opening it and fixing it by hand is safer than us guessing.");
+    }
+
+    /// <summary>
+    /// Sets one key inside a nested object, keeping everything else that object holds.
+    ///
+    /// The mod's "sync" block carries auto_download, notify_updates, merge_strategy and more. We
+    /// only own one of them, so the object is edited in place rather than replaced — assigning a
+    /// fresh object would wipe the player's merge strategy to change an update preference, which
+    /// is exactly the kind of collateral damage the merge rule exists to prevent.
+    /// </summary>
+    private static void SetNested(JsonObject root, List<string> applied, string parent, string key,
+                                  object value, string? label)
+    {
+        if (root[parent] is not JsonObject nested)
+        {
+            nested = new JsonObject();
+            root[parent] = nested;
+        }
+
+        nested[key] = value switch
+        {
+            bool flag => JsonValue.Create(flag),
+            string text => JsonValue.Create(text),
+            _ => JsonValue.Create(value.ToString()),
+        };
+
+        if (label is not null) applied.Add(label);
     }
 
     /// <summary>

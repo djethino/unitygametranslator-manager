@@ -85,15 +85,35 @@ public static class LocalTranslationProbe
         }
     }
 
-    /// <summary>Version of the deployed plugin, or null when it is not installed.</summary>
-    public static string? ReadInstalledPluginVersion(string gamePath, LoaderDescriptor descriptor)
-    {
-        var path = Path.Combine(gamePath,
-            descriptor.PluginDir.Replace('/', Path.DirectorySeparatorChar),
-            PluginAssemblyName);
+    /// <summary>Where the plugin was found, and which version it is.</summary>
+    public readonly record struct InstalledPlugin(string Directory, string? Version);
 
-        return File.Exists(path) ? PeFile.ReadFileVersion(path) : null;
+    /// <summary>
+    /// Finds the deployed plugin, wherever it actually sits.
+    ///
+    /// The catalog says where a fresh install goes, and for MelonLoader that is the root of
+    /// Mods/ because its documentation states subdirectories are not scanned. Real installs are
+    /// not always there — a Mods/UnityGameTranslator/ subfolder is common in the wild — and a
+    /// game whose plugin we fail to find is reported as not set up, offering to install a mod
+    /// that is already running. Looking in both places costs nothing; being wrong costs a row
+    /// that contradicts what the player sees in their game.
+    /// </summary>
+    public static InstalledPlugin? FindInstalledPlugin(string gamePath, LoaderDescriptor descriptor)
+    {
+        var root = Path.Combine(gamePath, descriptor.PluginDir.Replace('/', Path.DirectorySeparatorChar));
+
+        foreach (var directory in new[] { root, Path.Combine(root, "UnityGameTranslator") })
+        {
+            var dll = Path.Combine(directory, PluginAssemblyName);
+            if (File.Exists(dll)) return new InstalledPlugin(directory, PeFile.ReadFileVersion(dll));
+        }
+
+        return null;
     }
+
+    /// <summary>Version of the deployed plugin, or null when it is not installed.</summary>
+    public static string? ReadInstalledPluginVersion(string gamePath, LoaderDescriptor descriptor) =>
+        FindInstalledPlugin(gamePath, descriptor)?.Version;
 
     public static bool HasConfig(string gamePath, LoaderDescriptor descriptor) =>
         File.Exists(Path.Combine(gamePath,

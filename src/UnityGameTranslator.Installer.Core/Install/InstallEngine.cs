@@ -208,7 +208,15 @@ public sealed class InstallEngine
         var before = files.WrittenFiles.Count;
         var dirsBefore = files.CreatedDirectories.Count;
 
-        CopyTree(archive.ExtractedPath, plan.Loader.PluginDir, files);
+        // Update where it already lives. Writing to the catalog's location while a copy sits in
+        // a different folder would leave two plugin assemblies in the same game, and the loader
+        // picking either one.
+        var existing = LocalTranslationProbe.FindInstalledPlugin(plan.Game.Path, plan.Loader);
+        var target = existing is { } found
+            ? Path.GetRelativePath(plan.Game.Path, found.Directory).Replace('\\', '/')
+            : plan.Loader.PluginDir;
+
+        CopyTree(archive.ExtractedPath, target, files);
 
         receipt.Plugin = new ReceiptPlugin
         {

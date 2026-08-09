@@ -150,8 +150,8 @@ public partial class MainWindow : Window
             var online = _online.Peek(game);
             var report = new GameReport { Game = game };
 
-            var descriptor = _catalog.Loaders.FirstOrDefault(
-                l => l.Id == LoaderProbe.Detect(game.Path, _catalog)?.Id);
+            var detected = LoaderProbe.Detect(game.Path, _catalog);
+            var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == detected?.Id);
 
             if (descriptor is not null)
             {

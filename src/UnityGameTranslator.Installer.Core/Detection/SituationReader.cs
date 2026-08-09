@@ -25,8 +25,13 @@ public static class SituationReader
                 PrimaryAction: "");
         }
 
-        var installed = report.InstalledPluginVersion is not null;
         var local = report.LocalTranslation;
+
+        // A translation file is proof the mod ran here, whatever we did or did not find on disk.
+        // Deciding on the assembly alone made a game with a live translation read as "not set up
+        // yet" and offer to install a mod that was already working — the row contradicted the
+        // player's own game.
+        var installed = report.InstalledPluginVersion is not null || local is not null;
 
         // What exists online in the language the player actually wants.
         var inLanguage = report.OnlineTranslations

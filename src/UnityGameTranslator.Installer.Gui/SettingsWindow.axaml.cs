@@ -69,14 +69,25 @@ public sealed class SettingsWindow : Window
     /// screen nobody had touched. The mod guards its own counter the same way, for the same
     /// reason.
     /// </summary>
-    private bool _populating;
+    /// <summary>
+    /// Starts true, and stays true until the first discovery has finished.
+    ///
+    /// The window is built before it is shown, so at construction time the model list is still
+    /// empty while a model is already saved — an empty selection against a saved value, counted as
+    /// a pending change and shown as "Apply (1)" before anything could possibly have been edited.
+    /// The screen is not in a state worth counting until it has finished filling itself in.
+    /// </summary>
+    private bool _populating = true;
 
     public bool Saved { get; private set; }
 
-    public SettingsWindow(IPlatform platform, SettingsStore store)
+    private readonly AiServerMemory _aiServers;
+
+    public SettingsWindow(IPlatform platform, SettingsStore store, AiServerMemory? aiServers = null)
     {
         _platform = platform;
         _store = store;
+        _aiServers = aiServers ?? new AiServerMemory();
 
         // Edited on a copy: Cancel has to mean cancel, including for the language, which the
         // main window reads back on close.
@@ -109,7 +120,7 @@ public sealed class SettingsWindow : Window
         Background = this.FindResource("SurfaceBase") as IBrush;
 
         Content = Build();
-        Opened += async (_, _) => await DiscoverAsync();
+        Opened += async (_, _) => await DiscoverAsync(reuseKnown: true);
     }
 
     private Control Build()
@@ -145,7 +156,10 @@ public sealed class SettingsWindow : Window
         // changed?" before you click, and "Close" says there is nothing to apply — which is worth
         // knowing on a screen where testing a model changes nothing worth saving. Same family of
         // tools, same sentence.
-        _applyButton = new Button { IsDefault = true, Classes = { "primary" } };
+        // Labelled up front rather than left to the first count, which is deliberately suppressed
+        // until the screen has settled: an empty button in the meantime would be worse than the
+        // wrong number.
+        _applyButton = new Button { Content = "Close", IsDefault = true, Classes = { "primary" } };
         _applyButton.Click += (_, _) =>
         {
             if (CountPendingChanges() == 0) { Close(); return; }
@@ -251,7 +265,11 @@ public sealed class SettingsWindow : Window
         };
 
         var refresh = new Button { Content = "Search again", FontSize = 12 };
-        refresh.Click += async (_, _) => await DiscoverAsync();
+        refresh.Click += async (_, _) =>
+        {
+            _aiServers.Forget();
+            await DiscoverAsync();
+        };
 
         _testButton = new Button
         {
@@ -571,19 +589,35 @@ public sealed class SettingsWindow : Window
 
     // ---------------------------------------------------------------- AI
 
-    private async Task DiscoverAsync()
+    /// <param name="reuseKnown">
+    /// Show what the last search found instead of searching again. True when the window opens:
+    /// probing six ports takes a couple of seconds, and nothing about the machine changed while
+    /// this dialog was closed. False for "Search again" and after anything we did ourselves.
+    /// </param>
+    private async Task DiscoverAsync(bool reuseKnown = false)
     {
         _populating = true;
         try
         {
+            if (reuseKnown && _aiServers.Remembered is { } known)
+            {
+                ShowServers(known);
+                return;
+            }
+
             await DiscoverCoreAsync();
         }
         finally
         {
-            // Released before the recount, so the button ends up showing the truth about the
-            // state the screen actually settled into.
             _populating = false;
-            RefreshApplyButton();
+
+            // Recounted once the pending input events have been dealt with, not straight away.
+            // Rebuilding a list raises its selection change through the dispatcher, so counting
+            // here would read a selection that has not landed yet — which is what produced a
+            // brief "Apply (1)" on a screen nobody had touched, settling back to "Close" a moment
+            // later. Posted at background priority: driven by the queue draining, not by a delay
+            // we guessed at.
+            Dispatcher.UIThread.Post(RefreshApplyButton, DispatcherPriority.Background);
         }
     }
 
@@ -598,8 +632,35 @@ public sealed class SettingsWindow : Window
         _modelNotes ??= await new ModelNotesProvider(_platform)
             .GetAsync(offline: !_draft.OnlineMode);
 
-        var servers = await _probe.DiscoverAsync();
+        // An address already configured is asked first, and on its own. Sweeping the local ports
+        // regardless would list a local server's models next to an online provider's URL — two
+        // things that have nothing to do with each other, shown as if they did. It is also one
+        // request instead of six.
+        var configured = _aiUrl.Text?.Trim();
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            var models = await _probe.ListModelsAsync(configured, _apiKey.Text?.Trim());
+            if (models is not null)
+            {
+                var known = new[] { new AiServer(configured, "Your server", models) };
+                _aiServers.Remember(known);
+                ShowServers(known);
+                return;
+            }
+        }
 
+        var servers = await _probe.DiscoverAsync();
+        _aiServers.Remember(servers);
+
+        ShowServers(servers);
+    }
+
+    /// <summary>
+    /// Puts a set of servers on screen. Split out so a remembered result and a fresh one produce
+    /// exactly the same window — two code paths drawing the same thing is how they drift.
+    /// </summary>
+    private void ShowServers(IReadOnlyList<AiServer> servers)
+    {
         if (servers.Count == 0)
         {
             _aiStatus.Text = "No local AI server answered on the usual ports. "
@@ -607,7 +668,7 @@ public sealed class SettingsWindow : Window
 
             // Nothing answered: this is the only moment we are allowed to talk about installing
             // anything. What we offer depends on what is already on the machine, so ask first.
-            await OfferOllamaAsync();
+            _ = OfferOllamaAsync();
             return;
         }
 
@@ -624,7 +685,7 @@ public sealed class SettingsWindow : Window
         // between an engine and an engine with fuel.
         if (server.Models.Count == 0)
         {
-            await OfferModelAsync(server.Url);
+            _ = OfferModelAsync(server.Url);
             return;
         }
 
@@ -683,6 +744,8 @@ public sealed class SettingsWindow : Window
                     if (outcome.HowToStop is not null)
                         _ollamaPanel.Children.Add(Note($"To stop it later: {outcome.HowToStop}", "TextMuted"));
 
+                    // We just changed the situation ourselves, so what we remembered is wrong.
+                    _aiServers.Forget();
                     await DiscoverAsync();
                     return;
                 }
@@ -762,6 +825,7 @@ public sealed class SettingsWindow : Window
             {
                 progress.Text = "Installed. Looking for it now.";
                 downloading.Message = "Waiting for Ollama to answer...";
+                _aiServers.Forget();
                 await DiscoverAsync();
                 return;
             }
@@ -882,6 +946,7 @@ public sealed class SettingsWindow : Window
         if (failure is null)
         {
             progress.Text = "Downloaded. Reading the server again.";
+            _aiServers.Forget();
             await DiscoverAsync();
             Select(_aiModel, model);
             return;
@@ -965,7 +1030,7 @@ public sealed class SettingsWindow : Window
                            + "online provider: a rejected key looks exactly like a wrong address.";
             _connectButton.IsEnabled = true;
             _populating = false;
-            RefreshApplyButton();
+            Dispatcher.UIThread.Post(RefreshApplyButton, DispatcherPriority.Background);
             return;
         }
 
@@ -979,7 +1044,7 @@ public sealed class SettingsWindow : Window
         _connectButton.IsEnabled = true;
 
         _populating = false;
-        RefreshApplyButton();
+        Dispatcher.UIThread.Post(RefreshApplyButton, DispatcherPriority.Background);
     }
 
     /// <summary>
@@ -1223,35 +1288,59 @@ public sealed class SettingsWindow : Window
     /// connection test, and counting against it would report zero changes right after someone
     /// changed something.
     /// </summary>
-    private int CountPendingChanges()
+    private IReadOnlyList<string> PendingChanges()
     {
         var saved = _store.Current;
-        var count = 0;
+        var changes = new List<string>();
 
-        if (Tag(_language) != saved.TargetLanguage) count++;
-        if (Tag(_backend) != saved.TranslationBackend) count++;
-        if ((_aiUrl.Text ?? "") != (saved.AiUrl ?? "")) count++;
-        if ((_aiModel.SelectedItem as ComboBoxItem)?.Tag as string != saved.AiModel) count++;
-        if ((_apiKey.Text ?? "") != (saved.AiApiKey ?? "")) count++;
-        if ((_hotkey.Text ?? "") != (saved.SettingsHotkey ?? "")) count++;
-        if (Tag(_channel) != saved.Channel) count++;
-        if ((_online.IsChecked == true) != saved.OnlineMode) count++;
+        void Compare(string label, string? now, string? before)
+        {
+            // Empty and null mean the same thing to every one of these settings, and treating
+            // them as different is how a screen claims to have unsaved work it does not have.
+            if ((now ?? "") != (before ?? "")) changes.Add($"{label}: \"{before}\" -> \"{now}\"");
+        }
 
-        if (Tag(_proxyMode) != saved.ProxyMode) count++;
-        if ((_proxyUrl.Text ?? "") != (saved.ProxyUrl ?? "")) count++;
-        if ((_proxyUser.Text ?? "") != (saved.ProxyUsername ?? "")) count++;
-        if ((_proxyPassword.Text ?? "") != (saved.ProxyPassword ?? "")) count++;
+        Compare("language", Tag(_language), saved.TargetLanguage);
+        Compare("backend", Tag(_backend), saved.TranslationBackend);
+        Compare("AI server", _aiUrl.Text, saved.AiUrl);
+        Compare("AI model", Tag(_aiModel), saved.AiModel);
+        Compare("API key", _apiKey.Text, saved.AiApiKey);
+        Compare("hotkey", _hotkey.Text, saved.SettingsHotkey);
+        Compare("updates channel", Tag(_channel), saved.Channel);
+        Compare("proxy mode", Tag(_proxyMode), saved.ProxyMode);
+        Compare("proxy address", _proxyUrl.Text, saved.ProxyUrl);
+        Compare("proxy username", _proxyUser.Text, saved.ProxyUsername);
+        Compare("proxy password", _proxyPassword.Text, saved.ProxyPassword);
 
-        return count;
+        if ((_online.IsChecked == true) != saved.OnlineMode)
+            changes.Add($"community catalog: {saved.OnlineMode} -> {_online.IsChecked == true}");
+
+        return changes;
     }
+
+    /// <summary>
+    /// How many settings differ from what is currently saved.
+    ///
+    /// Compared against the store, not against the draft: the draft is edited in place by the
+    /// connection test, and counting against it would report zero changes right after someone
+    /// changed something.
+    /// </summary>
+    private int CountPendingChanges() => PendingChanges().Count;
 
     /// <summary>"Apply (3)" while there is something to save, "Close" when there is not.</summary>
     private void RefreshApplyButton()
     {
         if (_populating) return;
 
-        var changes = CountPendingChanges();
-        _applyButton.Content = changes > 0 ? $"Apply ({changes})" : "Close";
+        var changes = PendingChanges();
+        _applyButton.Content = changes.Count > 0 ? $"Apply ({changes.Count})" : "Close";
+
+        // What exactly is pending, on hover. A count alone is a claim; this is the evidence — and
+        // on a screen with a dozen fields it is the difference between trusting the number and
+        // clicking Apply to find out.
+        ToolTip.SetTip(_applyButton, changes.Count > 0
+            ? string.Join(Environment.NewLine, changes)
+            : "Nothing to save.");
     }
 
     /// <summary>

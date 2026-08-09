@@ -185,9 +185,17 @@ public partial class MainWindow : Window
     /// that does not hold the language would send the reader looking for it. They stay in step
     /// because the settings are a modal dialog: nothing can drift while it is open.
     /// </summary>
+    /// <summary>
+    /// What the last AI server search found, for as long as this window lives.
+    ///
+    /// Held here rather than in the settings dialog because the dialog is built anew every time it
+    /// is opened, which is exactly the thing that was making it re-probe six ports on each visit.
+    /// </summary>
+    private readonly AiServerMemory _aiServers = new();
+
     private async Task OpenSettingsAsync()
     {
-        var window = new SettingsWindow(_platform, _settings);
+        var window = new SettingsWindow(_platform, _settings, _aiServers);
         await window.ShowDialog(this);
 
         if (!window.Saved) return;

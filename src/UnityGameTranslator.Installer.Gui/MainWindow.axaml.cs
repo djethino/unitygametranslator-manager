@@ -234,21 +234,21 @@ public partial class MainWindow : Window
             var button = new Button
             {
                 Content = label,
-                FontSize = 11,
                 Tag = value,
+                Classes = { "filter" },
                 Margin = new Avalonia.Thickness(0, 0, 6, 6),
             };
             button.Click += (_, _) =>
             {
                 _filter = value;
                 foreach (var other in FilterBar.Children.OfType<Button>())
-                    other.Classes.Set("primary", ReferenceEquals(other, button));
+                    other.Classes.Set("selected", ReferenceEquals(other, button));
                 RefreshList();
             };
             FilterBar.Children.Add(button);
         }
 
-        (FilterBar.Children.FirstOrDefault() as Button)?.Classes.Add("primary");
+        (FilterBar.Children.FirstOrDefault() as Button)?.Classes.Add("selected");
     }
 
     private async Task AddFolderAsync()

@@ -124,6 +124,43 @@
     </Style>
 
     <!--
+      Filter chips.
+
+      Their own class rather than the primary button's: selection must not change how much room
+      a chip takes. Reusing "primary" made the selected one wider and heavier, so the wrap panel
+      reflowed between two and three lines depending on which filter was active — the row moved
+      under the pointer that had just clicked it. Only colours change here; padding, font size
+      and weight are identical in both states.
+    -->
+    <Style Selector="Button.filter">
+      <Setter Property="Padding" Value="12,5" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontWeight" Value="Normal" />
+      <Setter Property="CornerRadius" Value="{DynamicResource RadiusControl}" />
+    </Style>
+    <Style Selector="Button.filter /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource SurfaceCard}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtle}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+      <Setter Property="CornerRadius" Value="{DynamicResource RadiusControl}" />
+    </Style>
+    <Style Selector="Button.filter:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource SurfaceCardHover}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource BorderStrong}" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+    </Style>
+    <Style Selector="Button.filter.selected /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AccentSelected}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AccentEdge}" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+    </Style>
+    <Style Selector="Button.filter.selected:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AccentSelected}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AccentSoft}" />
+    </Style>
+
+    <!--
       The game list: real cards, like the site's.
 
       Each row carries the site's recipe (gray-800 fill, gray-700 edge, 8px radius) with a gap

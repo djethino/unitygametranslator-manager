@@ -45,6 +45,12 @@ public enum ModdabilityVerdict
     /// <summary>Unity game, but we could not tell Mono from IL2CPP — refuse rather than coin-flip.</summary>
     RuntimeUnknown,
 
+    /// <summary>
+    /// The game ships a stripped runtime library: members every mod loader calls were removed at
+    /// build time. No loader can start, and this is a property of the game, not a bug in ours.
+    /// </summary>
+    StrippedRuntime,
+
     /// <summary>Not a Unity game.</summary>
     NotUnity,
 }

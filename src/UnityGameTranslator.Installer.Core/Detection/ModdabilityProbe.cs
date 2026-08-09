@@ -58,6 +58,18 @@ public static class ModdabilityProbe
             return;
         }
 
+        // Only Mono games have a managed corlib to strip; IL2CPP compiles it away entirely.
+        if (game.Runtime == UnityRuntime.Mono)
+        {
+            var corlib = CorlibProbe.Check(game.DataDirectory);
+            if (corlib.IsStripped)
+            {
+                game.Verdict = ModdabilityVerdict.StrippedRuntime;
+                game.VerdictDetail = corlib.MissingMember;
+                return;
+            }
+        }
+
         game.Verdict = ModdabilityVerdict.Ok;
         game.VerdictDetail = null;
     }
@@ -117,6 +129,12 @@ public static class ModdabilityProbe
         ModdabilityVerdict.RuntimeUnknown =>
             "Refused: could not tell whether this game uses Mono or IL2CPP. Installing the " +
             "wrong loader would stop the game from starting.",
+        ModdabilityVerdict.StrippedRuntime =>
+            $"Refused: this game was built with its runtime library stripped, and " +
+            $"{game.VerdictDetail} is missing from it — " +
+            $"{CorlibProbe.NeededBy(game.VerdictDetail ?? "")} calls it before any mod runs. " +
+            "No mod loader can start here. This is how the game was built, not a limitation of " +
+            "the tool or of the mod.",
         ModdabilityVerdict.NotUnity => "Not a Unity game.",
         _ => "Unknown state.",
     };

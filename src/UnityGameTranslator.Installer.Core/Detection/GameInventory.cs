@@ -119,6 +119,15 @@ public sealed class GameInventory
     /// </summary>
     private LoaderDescriptor? ResolveDescriptor(GameReport report, GameInstall game)
     {
+        // A game we have refused gets no recommendation. Naming a loader next to "no loader can
+        // start here" invites the reader to try it anyway, and reads as if the tool disagrees
+        // with itself.
+        if (!game.IsModdable)
+        {
+            report.RecommendationReason = null;
+            return null;
+        }
+
         var candidates = _catalog.Loaders
             .Where(l => l.SupportsRuntime(game.Runtime))
             .Where(l => FindAsset(l, game) is not null)

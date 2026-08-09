@@ -54,6 +54,7 @@ public sealed class SettingsWindow : Window
     private StackPanel _proxyFields = null!;
     private TextBlock _netStatus = null!;
     private Button _connectButton = null!;
+    private Button _refreshModels = null!;
     private StackPanel _aiPanel = null!;
     private StackPanel _testOutput = null!;
     private TextBlock _aiStatus = null!;
@@ -274,6 +275,13 @@ public sealed class SettingsWindow : Window
             await DiscoverAsync();
         };
 
+        // Beside the list, because that is what it acts on. "Test connection" does the same
+        // request, but it sits next to the API key and reads as "is this working" — not as
+        // "show me what is on the server now", which is the question someone has after pulling a
+        // model in another window.
+        _refreshModels = new Button { Content = "Refresh", FontSize = 12 };
+        _refreshModels.Click += async (_, _) => await TestConnectionAsync(asRefresh: true);
+
         _testButton = new Button
         {
             Content = "Test this model",
@@ -327,7 +335,7 @@ public sealed class SettingsWindow : Window
         _ollamaPanel = new StackPanel { Spacing = 8, IsVisible = false };
         _aiPanel.Children.Add(_ollamaPanel);
 
-        _aiPanel.Children.Add(Row("Model", _aiModel, _testButton));
+        _aiPanel.Children.Add(Row("Model", _aiModel, _refreshModels, _testButton));
         _aiPanel.Children.Add(_modelNote);
         _aiPanel.Children.Add(_metrics);
 
@@ -1067,7 +1075,7 @@ public sealed class SettingsWindow : Window
     /// disobeys are three different problems with three different fixes, and folding them into
     /// one red line sends people looking in the wrong place.
     /// </summary>
-    private async Task TestConnectionAsync()
+    private async Task TestConnectionAsync(bool asRefresh = false)
     {
         var url = _aiUrl.Text?.Trim();
         if (string.IsNullOrWhiteSpace(url))
@@ -1077,7 +1085,8 @@ public sealed class SettingsWindow : Window
         }
 
         _connectButton.IsEnabled = false;
-        _aiStatus.Text = "Connecting...";
+        _refreshModels.IsEnabled = false;
+        _aiStatus.Text = asRefresh ? "Reading the model list..." : "Connecting...";
         _populating = true;
         _aiModel.Items.Clear();
         _testButton.IsEnabled = false;
@@ -1099,12 +1108,15 @@ public sealed class SettingsWindow : Window
             _aiStatus.Text = "No answer from that address. Check the URL, and the key if this is an "
                            + "online provider: a rejected key looks exactly like a wrong address.";
             _connectButton.IsEnabled = true;
+            _refreshModels.IsEnabled = true;
             _populating = false;
             Dispatcher.UIThread.Post(RefreshApplyButton, DispatcherPriority.Background);
             return;
         }
 
-        _aiStatus.Text = $"Connected - {models.Count} model(s) offered.";
+        _aiStatus.Text = asRefresh
+            ? $"{models.Count} model(s) on the server."
+            : $"Connected - {models.Count} model(s) offered.";
         foreach (var name in models)
             _aiModel.Items.Add(new ComboBoxItem { Content = name, Tag = name });
 
@@ -1112,6 +1124,7 @@ public sealed class SettingsWindow : Window
         _aiModel.SelectedItem ??= _aiModel.Items.OfType<ComboBoxItem>().FirstOrDefault();
         _testButton.IsEnabled = _aiModel.SelectedItem is not null;
         _connectButton.IsEnabled = true;
+        _refreshModels.IsEnabled = true;
 
         _populating = false;
         Dispatcher.UIThread.Post(RefreshApplyButton, DispatcherPriority.Background);

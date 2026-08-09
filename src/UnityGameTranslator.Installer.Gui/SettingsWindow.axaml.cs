@@ -339,7 +339,7 @@ public sealed class SettingsWindow : Window
 
         ShowProvider();
 
-        _apiPanel = new StackPanel { Spacing = 10, IsVisible = Tag(_backend) == "google" };
+        _apiPanel = new StackPanel { Spacing = 10 };
         _apiPanel.Children.Add(Row("Provider", _provider));
         _apiPanel.Children.Add(Row("API key", _providerKey));
         _apiPanel.Children.Add(_deeplFree);
@@ -414,7 +414,7 @@ public sealed class SettingsWindow : Window
             Foreground = Brush("TextSecondary"),
         };
 
-        _aiPanel = new StackPanel { Spacing = 10, IsVisible = Tag(_backend) == "ai" };
+        _aiPanel = new StackPanel { Spacing = 10 };
         _aiPanel.Children.Add(_aiStatus);
         _aiPanel.Children.Add(Row("Server", _aiUrl, refresh));
         _aiPanel.Children.Add(Row("API key", _apiKey, _connectButton));

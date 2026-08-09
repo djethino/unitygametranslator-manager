@@ -553,7 +553,14 @@ public sealed class SettingsWindow : Window
         }
 
         var installer = new OllamaInstaller(_platform);
+
+        // Two network calls behind this, and until now nothing on screen while they ran. On a
+        // slow link that is several seconds of a panel that looks empty and finished.
+        var checking = new SpinningGear("Checking what the current Ollama release is...");
+        _ollamaPanel.Children.Add(checking);
+
         var offer = await installer.PrepareAsync();
+        _ollamaPanel.Children.Remove(checking);
 
         if (!offer.CanInstall)
         {
@@ -571,9 +578,12 @@ public sealed class SettingsWindow : Window
         var progress = Note("", "TextMuted");
         var install = new Button { Content = $"Install Ollama ({offer.SizeText})", FontSize = 12 };
 
+        var downloading = new SpinningGear("Starting the download...") { IsVisible = false };
+
         install.Click += async (_, _) =>
         {
             install.IsEnabled = false;
+            downloading.IsVisible = true;
             installer.Progress += (done, total) => Dispatcher.UIThread.Post(() =>
                 progress.Text = total is { } t
                     ? $"Downloading... {done / 1024.0 / 1024:F0} of {t / 1024.0 / 1024:F0} MB"
@@ -584,17 +594,19 @@ public sealed class SettingsWindow : Window
             if (failure is null)
             {
                 progress.Text = "Installed. Looking for it now.";
+                downloading.Message = "Waiting for Ollama to answer...";
                 await DiscoverAsync();
+                return;
             }
-            else
-            {
-                progress.Text = failure;
-                progress.Foreground = Brush("StatusError");
-                install.IsEnabled = true;
-            }
+
+            downloading.IsVisible = false;
+            progress.Text = failure;
+            progress.Foreground = Brush("StatusError");
+            install.IsEnabled = true;
         };
 
         _ollamaPanel.Children.Add(install);
+        _ollamaPanel.Children.Add(downloading);
         _ollamaPanel.Children.Add(progress);
     }
 
@@ -692,7 +704,13 @@ public sealed class SettingsWindow : Window
         progress.Foreground = Brush("TextMuted");
         progress.Text = "Starting...";
 
+        // Several gigabytes: the byte counter answers "how far", the gear answers "is it still
+        // going" during the stretches where the counter does not move.
+        var pulling = new SpinningGear($"Downloading {model}...");
+        _ollamaPanel.Children.Add(pulling);
+
         var failure = await puller.PullAsync(model);
+        _ollamaPanel.Children.Remove(pulling);
 
         if (failure is null)
         {
@@ -761,7 +779,17 @@ public sealed class SettingsWindow : Window
         _aiModel.Items.Clear();
         _testButton.IsEnabled = false;
 
+        // Quick when it works, and precisely not quick when it does not — which is the case where
+        // someone needs to be told the tool has not given up.
+        var connecting = new SpinningGear($"Asking {url}...");
+        _ollamaPanel.Children.Clear();
+        _ollamaPanel.Children.Add(connecting);
+        _ollamaPanel.IsVisible = true;
+
         var models = await _probe.ListModelsAsync(url, _apiKey.Text?.Trim());
+
+        _ollamaPanel.Children.Remove(connecting);
+        _ollamaPanel.IsVisible = _ollamaPanel.Children.Count > 0;
 
         if (models is null)
         {
@@ -798,6 +826,12 @@ public sealed class SettingsWindow : Window
         _testButton.IsEnabled = false;
         _testOutput.Children.Clear();
 
+        // Sits at the bottom of the list, which is where the next result will appear. A model
+        // slow enough to spill out of video memory takes long enough between answers that a
+        // finished-looking screen is the honest reading — this is what says otherwise.
+        var waiting = new SpinningGear("Measuring how long a line takes...");
+        _testOutput.Children.Add(waiting);
+
         // Measured first, and shown on its own line: what a model costs to run is a different
         // question from whether it obeys, and both decide whether someone keeps it.
         _metrics.IsVisible = true;
@@ -827,6 +861,12 @@ public sealed class SettingsWindow : Window
         var passed = 0;
         var required = 0;
         var echoed = 0;
+        var done = 0;
+
+        // Known before the first request, which is the point: "3 of 9" tells someone there is
+        // more coming. A bare spinner would not.
+        var total = ModelTestSuite.Build(language).Count;
+        waiting.Message = $"Running test 1 of {total}...";
 
         await _probe.RunSuiteAsync(url, model, language, result =>
         {
@@ -839,12 +879,23 @@ public sealed class SettingsWindow : Window
                 }
                 if (result.EchoedInstructions) echoed++;
 
-                _testOutput.Children.Add(TestRow(result));
+                done++;
+
+                // Inserted above the gear so the gear stays last: results accumulate, and the
+                // thing that says "more is coming" keeps sitting where the next one will land.
+                _testOutput.Children.Insert(_testOutput.Children.Count - 1, TestRow(result));
+
+                waiting.Message = done < total
+                    ? $"Running test {done + 1} of {total}..."
+                    : "Finishing...";
+                waiting.IsVisible = done < total;
             });
         });
 
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
+            _testOutput.Children.Remove(waiting);
+
             _testOutput.Children.Add(new TextBlock
             {
                 Text = $"{passed}/{required} required instructions followed.",

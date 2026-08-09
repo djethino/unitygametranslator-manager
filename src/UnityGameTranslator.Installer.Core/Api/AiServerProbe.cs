@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using UnityGameTranslator.Installer.Core.Net;
 
 namespace UnityGameTranslator.Installer.Core.Api;
 
@@ -90,7 +91,7 @@ public sealed class AiServerProbe
     {
         // Short timeout: this runs against a closed port most of the time, and a settings screen
         // that takes ten seconds to say "nothing found" is a settings screen nobody opens twice.
-        _http = http ?? new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+        _http = http ?? Http.Create(TimeSpan.FromSeconds(2));
     }
 
     /// <summary>Every local server that answers, probed in parallel.</summary>
@@ -326,7 +327,7 @@ public sealed class AiServerProbe
         try
         {
             using var content = new StringContent(payload, Encoding.UTF8, "application/json");
-            using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(2) };
+            using var client = Http.Create(TimeSpan.FromMinutes(2));
 
             var response = await client.PostAsync(AiEndpoint.Chat(baseUrl), content, ct)
                                        .ConfigureAwait(false);

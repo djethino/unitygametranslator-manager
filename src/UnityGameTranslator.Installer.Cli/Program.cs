@@ -1,3 +1,4 @@
+using UnityGameTranslator.Installer.Core.Ai;
 using UnityGameTranslator.Installer.Core.Api;
 using UnityGameTranslator.Installer.Core.Catalog;
 using UnityGameTranslator.Installer.Core.Detection;
@@ -66,6 +67,7 @@ internal static class Program
               ai [--test] [--model M]      Find a local AI server, optionally translate one line
               ai --compare a,b,c            Score several models on the job the mod asks of them
               ai --suite --model M          Put one model through the mod's instructions, hardest last
+              ai --ollama [--yes]           Start an installed Ollama, or price installing one
               urls <address>                Show which endpoints an address resolves to
               catalog [--offline]          Show the loader catalog and where it came from
               diagnose                     Printable report, safe to paste in a public issue
@@ -397,6 +399,9 @@ internal static class Program
         if (args.Contains("--suite", StringComparer.OrdinalIgnoreCase))
             return await SuiteAsync(probe, args);
 
+        if (args.Contains("--ollama", StringComparer.OrdinalIgnoreCase))
+            return await OllamaAsync(args);
+
         if (ValueOf(args, "--compare") is { } list)
             return await CompareAsync(probe, list.Split(',', StringSplitOptions.RemoveEmptyEntries));
 
@@ -407,6 +412,13 @@ internal static class Program
         {
             Console.WriteLine("None found on the usual ports.");
             Console.WriteLine("A server on another port or another machine still works: enter its URL in the settings.");
+
+            // Only when nothing answered, and only as a suggestion: the command that would set
+            // one up is printed, never run behind their back.
+            var status = await new OllamaProbe(PlatformFactory.Create()).InspectAsync();
+            Console.WriteLine(status.State == OllamaState.InstalledButStopped
+                ? "Ollama is installed here but stopped — 'ai --ollama' offers to start it."
+                : "Nothing installed either — 'ai --ollama' says what it would take.");
             return 0;
         }
 
@@ -519,6 +531,71 @@ internal static class Program
     /// wrong in both directions; a reader who can see the answer catches that and decides for
     /// themselves. This tool reports, it does not certify.
     /// </summary>
+    /// <summary>
+    /// Start what is there, or price what is not. Never both, and never silently.
+    ///
+    /// --yes exists for our own end-to-end runs; without it nothing is downloaded, which matters
+    /// for a 1.5 GB installer that someone may have typed this command out of curiosity about.
+    /// </summary>
+    private static async Task<int> OllamaAsync(string[] args)
+    {
+        var platform = PlatformFactory.Create();
+        var probe = new OllamaProbe(platform);
+        var status = await probe.InspectAsync();
+
+        switch (status.State)
+        {
+            case OllamaState.Running:
+                Console.WriteLine($"Ollama is already serving ({status.Detail}). Nothing to do.");
+                return 0;
+
+            case OllamaState.InstalledButStopped:
+                Console.WriteLine($"Ollama is installed: {Sanitize.Path(status.ExecutablePath!)}");
+                Console.WriteLine("Starting it. Nothing is downloaded.");
+                if (await probe.StartAsync(status.ExecutablePath!))
+                {
+                    Console.WriteLine("It answers now.");
+                    return 0;
+                }
+                Console.Error.WriteLine("It would not start from here. Launch Ollama yourself and try again.");
+                return 4;
+        }
+
+        var installer = new OllamaInstaller(platform);
+        var offer = await installer.PrepareAsync();
+
+        if (!offer.CanInstall)
+        {
+            Console.WriteLine(offer.Refusal);
+            return 4;
+        }
+
+        Console.WriteLine($"Would install {offer.AssetName} ({offer.SizeText}), checksum {offer.Sha256}");
+        Console.WriteLine("A model has to be downloaded on top of that before anything can be translated.");
+
+        if (!args.Contains("--yes", StringComparer.OrdinalIgnoreCase))
+        {
+            Console.WriteLine("Nothing downloaded. Add --yes to go ahead.");
+            return 0;
+        }
+
+        installer.Progress += (done, total) =>
+        {
+            if (total is { } t && done % (20 * 1024 * 1024) < 81920)
+                Console.WriteLine($"  {done / 1024 / 1024} / {t / 1024 / 1024} MB");
+        };
+
+        var failure = await installer.InstallAsync(offer);
+        if (failure is null)
+        {
+            Console.WriteLine("Installed and answering.");
+            return 0;
+        }
+
+        Console.Error.WriteLine(failure);
+        return 4;
+    }
+
     private static async Task<int> SuiteAsync(AiServerProbe probe, string[] args)
     {
         var servers = await probe.DiscoverAsync();

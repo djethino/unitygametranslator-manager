@@ -61,6 +61,19 @@ public interface IPlatform
     /// into a single-file build for one string, so the string is fetched where it actually lives.
     /// </summary>
     string? SystemLanguage();
+
+    /// <summary>
+    /// Video memory on the largest graphics adapter, in bytes, or null when it cannot be read.
+    ///
+    /// Used to say which models are worth offering — a 12 GB model on a 6 GB card runs on the
+    /// processor and takes minutes per line, which reads as "the mod is broken".
+    ///
+    /// ⚠ Null must never block anything. Cards, drivers and virtual machines report this in ways
+    /// we will not all have seen; when we cannot tell, the whole list is shown with its
+    /// requirements stated and the person decides. A tool that refuses to offer anything because
+    /// it failed to read a number is worse than one that asks.
+    /// </summary>
+    long? VideoMemoryBytes();
 }
 
 /// <summary>A folder to scan, with what we already know about where it came from.</summary>

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using UnityGameTranslator.Installer.Core.Net;
 
 namespace UnityGameTranslator.Installer.Core.Install;
 
@@ -40,7 +41,7 @@ public sealed class GitHubAssets
 
     public GitHubAssets(HttpClient? http = null)
     {
-        _http = http ?? new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        _http = http ?? Http.Create(TimeSpan.FromSeconds(30));
         if (!_http.DefaultRequestHeaders.UserAgent.Any())
         {
             _http.DefaultRequestHeaders.UserAgent.ParseAdd(

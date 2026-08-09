@@ -66,6 +66,30 @@ public sealed class InstallerSettings
     /// <summary>The key in clear, in memory only. Never serialised.</summary>
     [JsonIgnore] public string? AiApiKey { get; set; }
 
+    /// <summary>
+    /// How to reach the network: "default", "none", "system" or "custom".
+    ///
+    /// Same four values and the same key name as the mod's own proxy_mode, so someone who
+    /// configured one does not have to learn a second vocabulary — and so these can be written
+    /// into a game's config.json unchanged the day we do that.
+    /// </summary>
+    [JsonPropertyName("proxy_mode")] public string ProxyMode { get; set; } = "default";
+
+    [JsonPropertyName("proxy_url")] public string? ProxyUrl { get; set; }
+
+    [JsonPropertyName("proxy_username")] public string? ProxyUsername { get; set; }
+
+    /// <summary>
+    /// The proxy password as it sits on disk: encrypted, like every other secret here. Same
+    /// two-property split as the API key — nothing can serialise the plaintext by accident.
+    /// </summary>
+    [JsonPropertyName("proxy_password")] public string? ProxyPasswordStored { get; set; }
+
+    /// <summary>The proxy password in clear, in memory only. Never serialised.</summary>
+    [JsonIgnore] public string? ProxyPassword { get; set; }
+
+    [JsonPropertyName("proxy_bypass_local")] public bool ProxyBypassLocal { get; set; } = true;
+
     /// <summary>Community features. Off means the catalog is never queried.</summary>
     [JsonPropertyName("online_mode")] public bool OnlineMode { get; set; } = true;
 

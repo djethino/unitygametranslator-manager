@@ -198,6 +198,21 @@ public partial class MainWindow : Window
         await ShowSelectedAsync();
     }
 
+    /// <summary>
+    /// Asks the community site again after a failure.
+    ///
+    /// Cheap by construction: a failed lookup is never cached as "no translations", so the entry
+    /// is still stale and a plain sweep retries it. Nothing about the games, the choices or the
+    /// scan is redone — which is the whole point. Someone who has just allowed us through their
+    /// firewall should be one click from carrying on, not from starting over.
+    /// </summary>
+    private async Task RetryOnlineAsync()
+    {
+        Status("Asking the community site again...");
+        StartOnlineSweep();
+        await ShowSelectedAsync();
+    }
+
     /// <summary>Puts the header picker back in step with what was just saved.</summary>
     private void SyncLanguageBox()
     {
@@ -619,7 +634,7 @@ public partial class MainWindow : Window
         return grid;
     }
 
-    private static Control Translations(GameReport report)
+    private Control Translations(GameReport report)
     {
         var panel = new StackPanel { Spacing = 6, Margin = new Avalonia.Thickness(0, 10, 0, 0) };
         panel.Children.Add(new TextBlock { Text = "Translations", FontWeight = FontWeight.SemiBold, Foreground = Brush("TextPrimary") });
@@ -686,11 +701,37 @@ public partial class MainWindow : Window
             panel.Children.Add(new TextBlock
             {
                 Text = $"Could not reach the community site ({report.OnlineSearchError}). " +
-                       "A firewall blocking this tool looks exactly like this.",
+                       "A firewall, an antivirus or a company proxy blocking this tool looks " +
+                       "exactly like this. Nothing was lost.",
                 FontSize = 12,
                 Opacity = 0.7,
                 TextWrapping = TextWrapping.Wrap,
             });
+
+            // A dead end with no way out is the thing this tool must never be: someone who lets
+            // the firewall prompt through, or fills in their proxy, has to be able to carry on
+            // from here rather than start the whole thing again.
+            var actions = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                Margin = new Avalonia.Thickness(0, 6, 0, 0),
+            };
+
+            var retry = new Button { Content = "Try again", FontSize = 12 };
+            retry.Click += async (_, _) =>
+            {
+                retry.IsEnabled = false;
+                retry.Content = "Trying...";
+                await RetryOnlineAsync();
+            };
+
+            var network = new Button { Content = "Network settings", FontSize = 12 };
+            network.Click += async (_, _) => await OpenSettingsAsync();
+
+            actions.Children.Add(retry);
+            actions.Children.Add(network);
+            panel.Children.Add(actions);
         }
         else if (report.Game.SteamAppId is null)
         {

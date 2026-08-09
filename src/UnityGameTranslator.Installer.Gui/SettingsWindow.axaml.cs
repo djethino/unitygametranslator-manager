@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using UnityGameTranslator.Installer.Core.Ai;
 using UnityGameTranslator.Installer.Core.Api;
 using UnityGameTranslator.Installer.Core.Catalog;
 using UnityGameTranslator.Installer.Core.Install;
@@ -43,6 +44,13 @@ public sealed class SettingsWindow : Window
     private TextBox _apiKey = null!;
     private TextBlock _metrics = null!;
     private TextBlock _modelNote = null!;
+    private StackPanel _ollamaPanel = null!;
+    private ComboBox _proxyMode = null!;
+    private TextBox _proxyUrl = null!;
+    private TextBox _proxyUser = null!;
+    private TextBox _proxyPassword = null!;
+    private StackPanel _proxyFields = null!;
+    private TextBlock _netStatus = null!;
     private Button _connectButton = null!;
     private StackPanel _aiPanel = null!;
     private StackPanel _testOutput = null!;
@@ -70,6 +78,11 @@ public sealed class SettingsWindow : Window
             SettingsHotkey = current.SettingsHotkey,
             Channel = current.Channel,
             AiApiKey = current.AiApiKey,
+            ProxyMode = current.ProxyMode,
+            ProxyUrl = current.ProxyUrl,
+            ProxyUsername = current.ProxyUsername,
+            ProxyPassword = current.ProxyPassword,
+            ProxyBypassLocal = current.ProxyBypassLocal,
             DefaultPosture = current.DefaultPosture,
             Reviewed = current.Reviewed,
         };
@@ -101,6 +114,7 @@ public sealed class SettingsWindow : Window
         layout.Children.Add(LanguageCard());
         layout.Children.Add(BackendCard());
         layout.Children.Add(AiCard());
+        layout.Children.Add(NetworkCard());
         layout.Children.Add(ModCard());
 
         var buttons = new StackPanel
@@ -245,6 +259,9 @@ public sealed class SettingsWindow : Window
             Foreground = Brush("TextMuted"),
         };
 
+        _ollamaPanel = new StackPanel { Spacing = 8, IsVisible = false };
+        _aiPanel.Children.Add(_ollamaPanel);
+
         _aiPanel.Children.Add(Row("Model", _aiModel, _testButton));
         _aiPanel.Children.Add(_modelNote);
         _aiPanel.Children.Add(_metrics);
@@ -265,6 +282,112 @@ public sealed class SettingsWindow : Window
         _aiPanel.Children.Add(_testOutput);
 
         return Card("AI translation", null, _aiPanel);
+    }
+
+    /// <summary>
+    /// How this tool reaches the internet.
+    ///
+    /// Here because the situation it addresses is one where nothing else works: behind a company
+    /// proxy every catalog fetch, every community lookup and every download fails, all with
+    /// messages that point at our servers. Someone in that position needs one place to fix it and
+    /// one button to confirm they did — not a tool that fails the same way for the tenth time.
+    ///
+    /// Same four modes and the same names as the mod, so a proxy configured there is described
+    /// the same way here.
+    /// </summary>
+    private Control NetworkCard()
+    {
+        _proxyMode = new ComboBox { Width = 260 };
+        _proxyMode.Items.Add(new ComboBoxItem { Content = "Normal (whatever this computer uses)", Tag = "default" });
+        _proxyMode.Items.Add(new ComboBoxItem { Content = "Follow the system proxy settings", Tag = "system" });
+        _proxyMode.Items.Add(new ComboBoxItem { Content = "Never use a proxy", Tag = "none" });
+        _proxyMode.Items.Add(new ComboBoxItem { Content = "Use this proxy", Tag = "custom" });
+        Select(_proxyMode, _draft.ProxyMode);
+
+        _proxyUrl = new TextBox { Width = 300, Watermark = "http://proxy.company.com:8080" };
+        _proxyUrl.Text = _draft.ProxyUrl ?? "";
+
+        _proxyUser = new TextBox { Width = 300, Watermark = "only if your proxy asks for it" };
+        _proxyUser.Text = _draft.ProxyUsername ?? "";
+
+        _proxyPassword = new TextBox { Width = 300, PasswordChar = '*' };
+        _proxyPassword.Text = _draft.ProxyPassword ?? "";
+
+        _proxyFields = new StackPanel { Spacing = 10, IsVisible = Tag(_proxyMode) == "custom" };
+        _proxyFields.Children.Add(Row("Address", _proxyUrl));
+        _proxyFields.Children.Add(Row("Username", _proxyUser));
+        _proxyFields.Children.Add(Row("Password", _proxyPassword));
+        _proxyFields.Children.Add(Note(
+            "The password is stored encrypted and tied to this machine, like every other secret "
+            + "here.", "TextMuted"));
+
+        _proxyMode.SelectionChanged += (_, _) =>
+            _proxyFields.IsVisible = Tag(_proxyMode) == "custom";
+
+        _netStatus = Note("", "TextMuted");
+        _netStatus.IsVisible = false;
+
+        var test = new Button { Content = "Test the connection", FontSize = 12 };
+        test.Click += async (_, _) =>
+        {
+            test.IsEnabled = false;
+            _netStatus.IsVisible = true;
+            _netStatus.Text = "Trying...";
+            _netStatus.Foreground = Brush("TextMuted");
+
+            // Applied before testing, not on Save: testing the settings someone is looking at is
+            // the only thing that answers their question. Cancel still restores the saved ones.
+            SettingsStore.ApplyNetworkSettings(DraftWithNetwork());
+
+            var (ok, detail) = await TestNetworkAsync();
+            _netStatus.Text = detail;
+            _netStatus.Foreground = Brush(ok ? "StatusSuccess" : "StatusError");
+            test.IsEnabled = true;
+        };
+
+        var panel = new StackPanel { Spacing = 10 };
+        panel.Children.Add(Row("Connection", _proxyMode, test));
+        panel.Children.Add(_proxyFields);
+        panel.Children.Add(_netStatus);
+
+        return Card("Network",
+            "Only worth touching if nothing reaches the internet. A company network usually needs "
+            + "a proxy here; at home, a firewall prompt is the more likely culprit.",
+            panel);
+    }
+
+    /// <summary>The draft with the network fields as they currently read on screen.</summary>
+    private InstallerSettings DraftWithNetwork()
+    {
+        _draft.ProxyMode = Tag(_proxyMode) ?? "default";
+        _draft.ProxyUrl = string.IsNullOrWhiteSpace(_proxyUrl.Text) ? null : _proxyUrl.Text.Trim();
+        _draft.ProxyUsername = string.IsNullOrWhiteSpace(_proxyUser.Text) ? null : _proxyUser.Text.Trim();
+        _draft.ProxyPassword = string.IsNullOrWhiteSpace(_proxyPassword.Text) ? null : _proxyPassword.Text;
+        return _draft;
+    }
+
+    /// <summary>
+    /// Fetches the catalog to prove the route works end to end.
+    ///
+    /// GitHub rather than our own site: it is what the tool actually needs to reach to install
+    /// anything, and a corporate proxy that allows one may well block the other.
+    /// </summary>
+    private static async Task<(bool Ok, string Detail)> TestNetworkAsync()
+    {
+        try
+        {
+            using var client = Core.Net.Http.Create(TimeSpan.FromSeconds(15));
+            using var response = await client.GetAsync(BuildInfo.CatalogPrimaryBase + "/loaders.json");
+
+            return response.IsSuccessStatusCode
+                ? (true, "Connected. Downloads and community translations will work.")
+                : (false, $"Reached the server, which answered {(int)response.StatusCode}. "
+                        + "A proxy that intercepts requests often does this.");
+        }
+        catch (Exception ex)
+        {
+            return (false, Core.Net.Http.Describe(ex, "GitHub"));
+        }
     }
 
     private Control ModCard()
@@ -314,8 +437,15 @@ public sealed class SettingsWindow : Window
         {
             _aiStatus.Text = "No local AI server answered on the usual ports. "
                            + "One running elsewhere still works — type its address above.";
+
+            // Nothing answered: this is the only moment we are allowed to talk about installing
+            // anything. What we offer depends on what is already on the machine, so ask first.
+            await OfferOllamaAsync();
             return;
         }
+
+        _ollamaPanel.Children.Clear();
+        _ollamaPanel.IsVisible = false;
 
         var server = servers[0];
         if (string.IsNullOrWhiteSpace(_aiUrl.Text)) _aiUrl.Text = server.Url;
@@ -329,6 +459,116 @@ public sealed class SettingsWindow : Window
         _aiModel.SelectedItem ??= _aiModel.Items.OfType<ComboBoxItem>().FirstOrDefault();
         _testButton.IsEnabled = _aiModel.SelectedItem is not null;
     }
+
+    /// <summary>
+    /// Offers the smallest thing that would fix the situation, and nothing more.
+    ///
+    /// Three situations, three different answers, and only the last one downloads anything:
+    /// an Ollama already installed only needs starting, and a machine with none gets an offer
+    /// with the size stated up front. Installing a second Ollama beside a working one would
+    /// leave someone with two servers, two model folders and gigabytes duplicated — so the
+    /// question "what is already here" is asked before the question "what can we install".
+    /// </summary>
+    private async Task OfferOllamaAsync()
+    {
+        _ollamaPanel.Children.Clear();
+        _ollamaPanel.IsVisible = true;
+
+        var probe = new OllamaProbe(_platform);
+        var status = await probe.InspectAsync();
+
+        if (status.State == OllamaState.Running)
+        {
+            // Serving but our port scan missed it — nothing to install, and saying otherwise
+            // would be the start of a duplicate install.
+            _ollamaPanel.IsVisible = false;
+            return;
+        }
+
+        if (status.State == OllamaState.InstalledButStopped)
+        {
+            _ollamaPanel.Children.Add(Note(
+                "Ollama is installed on this machine but is not running. Nothing to download.",
+                "TextSecondary"));
+
+            var start = new Button { Content = "Start Ollama", FontSize = 12, Classes = { "primary" } };
+            start.Click += async (_, _) =>
+            {
+                start.IsEnabled = false;
+                start.Content = "Starting...";
+
+                if (await probe.StartAsync(status.ExecutablePath!))
+                {
+                    await DiscoverAsync();
+                }
+                else
+                {
+                    start.Content = "Start Ollama";
+                    start.IsEnabled = true;
+                    _ollamaPanel.Children.Add(Note(
+                        "It would not start from here. Launching Ollama yourself and searching "
+                        + "again works — we would rather say so than keep retrying.",
+                        "StatusWarning"));
+                }
+            };
+
+            _ollamaPanel.Children.Add(start);
+            return;
+        }
+
+        var installer = new OllamaInstaller(_platform);
+        var offer = await installer.PrepareAsync();
+
+        if (!offer.CanInstall)
+        {
+            _ollamaPanel.Children.Add(Note(offer.Refusal ?? "Ollama cannot be installed from here.",
+                "TextSecondary"));
+            return;
+        }
+
+        _ollamaPanel.Children.Add(Note(
+            "Ollama runs a language model on your own machine: no account, no key, nothing "
+            + "billed. It is a real download and a real load on your graphics card — "
+            + $"{offer.SizeText} for the program, and a model on top of that.",
+            "TextSecondary"));
+
+        var progress = Note("", "TextMuted");
+        var install = new Button { Content = $"Install Ollama ({offer.SizeText})", FontSize = 12 };
+
+        install.Click += async (_, _) =>
+        {
+            install.IsEnabled = false;
+            installer.Progress += (done, total) => Dispatcher.UIThread.Post(() =>
+                progress.Text = total is { } t
+                    ? $"Downloading... {done / 1024.0 / 1024:F0} of {t / 1024.0 / 1024:F0} MB"
+                    : $"Downloading... {done / 1024.0 / 1024:F0} MB");
+
+            var failure = await installer.InstallAsync(offer);
+
+            if (failure is null)
+            {
+                progress.Text = "Installed. Looking for it now.";
+                await DiscoverAsync();
+            }
+            else
+            {
+                progress.Text = failure;
+                progress.Foreground = Brush("StatusError");
+                install.IsEnabled = true;
+            }
+        };
+
+        _ollamaPanel.Children.Add(install);
+        _ollamaPanel.Children.Add(progress);
+    }
+
+    private TextBlock Note(string text, string colour) => new()
+    {
+        Text = text,
+        FontSize = 11,
+        TextWrapping = TextWrapping.Wrap,
+        Foreground = Brush(colour),
+    };
 
     /// <summary>
     /// Says what we have run ourselves against the selected model, and nothing more.
@@ -579,6 +819,7 @@ public sealed class SettingsWindow : Window
         _draft.AiUrl = _aiUrl.Text?.Trim() ?? "";
         _draft.AiModel = Tag(_aiModel) ?? "";
         _draft.AiApiKey = string.IsNullOrWhiteSpace(_apiKey.Text) ? null : _apiKey.Text.Trim();
+        DraftWithNetwork();
         _draft.EnableAi = _draft.TranslationBackend == "ai";
         _draft.SettingsHotkey = _hotkey.Text?.Trim() ?? "Ctrl+F10";
         _draft.Channel = Tag(_channel) ?? "stable";

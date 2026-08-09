@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using UnityGameTranslator.Installer.Core.Model;
+using UnityGameTranslator.Installer.Core.Net;
 
 namespace UnityGameTranslator.Installer.Core.Install;
 
@@ -21,7 +22,7 @@ public sealed class ArchiveFetcher
     public ArchiveFetcher(string stagingRoot, HttpClient? http = null)
     {
         _stagingRoot = stagingRoot;
-        _http = http ?? new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+        _http = http ?? Http.Create(TimeSpan.FromMinutes(10));
 
         if (!_http.DefaultRequestHeaders.UserAgent.Any())
         {

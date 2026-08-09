@@ -1,5 +1,6 @@
 using System.Text.Json;
 using UnityGameTranslator.Installer.Core.Model;
+using UnityGameTranslator.Installer.Core.Net;
 
 namespace UnityGameTranslator.Installer.Core.Api;
 
@@ -22,7 +23,7 @@ public sealed class CatalogApiClient
 
     public CatalogApiClient(HttpClient? http = null)
     {
-        _http = http ?? new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        _http = http ?? Http.Create(TimeSpan.FromSeconds(10));
         if (!_http.DefaultRequestHeaders.UserAgent.Any())
         {
             _http.DefaultRequestHeaders.UserAgent.ParseAdd(

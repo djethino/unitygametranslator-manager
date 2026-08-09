@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using UnityGameTranslator.Installer.Core.Platform;
+using UnityGameTranslator.Installer.Core.Net;
 
 namespace UnityGameTranslator.Installer.Core.Catalog;
 
@@ -57,7 +58,7 @@ public sealed class ModelNotesProvider
     public ModelNotesProvider(IPlatform platform, HttpClient? http = null)
     {
         _platform = platform;
-        _http = http ?? new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        _http = http ?? Http.Create(TimeSpan.FromSeconds(10));
     }
 
     private string CachePath => Path.Combine(_platform.UserDataDirectory, "models.cache.json");

@@ -46,6 +46,13 @@ public sealed class SettingsStore
                     // another machine cannot be read here, and must come back as "no key"
                     // rather than as a crash or as garbage sent to a provider.
                     loaded.AiApiKey = SecretProtection.Unprotect(loaded.AiApiKeyStored);
+                    loaded.ProxyPassword = SecretProtection.Unprotect(loaded.ProxyPasswordStored);
+
+                    // Applied before anything can make a request. Every HttpClient in the tool is
+                    // built from these, so a proxy configured once holds everywhere — a partial
+                    // application would produce "search works, install does not", which is close
+                    // to undiagnosable from the outside.
+                    ApplyNetworkSettings(loaded);
                     return loaded;
                 }
             }
@@ -58,9 +65,23 @@ public sealed class SettingsStore
         return new InstallerSettings();
     }
 
+    /// <summary>
+    /// Pushes the proxy configuration into the HTTP factory. Called on load and on save, because
+    /// a proxy someone just configured has to work without restarting the tool — the situation
+    /// they are in is precisely that nothing is reaching the network yet.
+    /// </summary>
+    public static void ApplyNetworkSettings(InstallerSettings settings) =>
+        Net.Http.Proxy = new Net.ProxySettings(
+            settings.ProxyMode,
+            settings.ProxyUrl,
+            settings.ProxyUsername,
+            settings.ProxyPassword,
+            settings.ProxyBypassLocal);
+
     public void Save(InstallerSettings settings)
     {
         Current = settings;
+        ApplyNetworkSettings(settings);
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
@@ -69,6 +90,7 @@ public sealed class SettingsStore
             // back as defaults, silently discarding what the user chose.
             // Encrypted on the way out, every time: the only path from memory to disk.
             settings.AiApiKeyStored = SecretProtection.Protect(settings.AiApiKey);
+            settings.ProxyPasswordStored = SecretProtection.Protect(settings.ProxyPassword);
 
             var temp = _path + ".tmp";
             File.WriteAllText(temp, JsonSerializer.Serialize(settings, JsonOptions));

@@ -45,13 +45,7 @@ public sealed class CatalogProvider
         _http = http ?? CreateHttpClient();
     }
 
-    private static HttpClient CreateHttpClient()
-    {
-        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd(
-            $"UnityGameTranslatorInstaller/{BuildInfo.Version}");
-        return client;
-    }
+    private static HttpClient CreateHttpClient() => Net.Http.Create(TimeSpan.FromSeconds(10));
 
     private string CachePath => Path.Combine(_platform.UserDataDirectory, "loaders.cache.json");
 

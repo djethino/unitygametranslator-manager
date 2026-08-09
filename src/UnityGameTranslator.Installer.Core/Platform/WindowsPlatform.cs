@@ -204,6 +204,54 @@ public sealed class WindowsPlatform : IPlatform
         }
     }
 
+    /// <summary>
+    /// Read from the display adapter keys in the registry.
+    ///
+    /// qwMemorySize rather than WMI's Win32_VideoController.AdapterRAM: the WMI value is a 32-bit
+    /// field and caps at 4 GB, so every card above that reports 4 GB — which would push someone
+    /// with a 16 GB card towards a tiny model for no reason.
+    ///
+    /// The largest adapter wins. Laptops routinely expose both an integrated chip sharing system
+    /// memory and a discrete card; the integrated one comes first in the enumeration and is not
+    /// the one that will run the model.
+    /// </summary>
+    public long? VideoMemoryBytes()
+    {
+        try
+        {
+            using var adapters = Registry.LocalMachine.OpenSubKey(
+                @"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}");
+            if (adapters is null) return null;
+
+            long largest = 0;
+
+            foreach (var name in adapters.GetSubKeyNames())
+            {
+                // Only the numbered device keys hold adapters; siblings like "Configuration" do not.
+                if (name.Length != 4 || !name.All(char.IsDigit)) continue;
+
+                using var adapter = adapters.OpenSubKey(name);
+                if (adapter?.GetValue("HardwareInformation.qwMemorySize") is not { } raw) continue;
+
+                var bytes = raw switch
+                {
+                    long value => value,
+                    int value => (long)value,
+                    byte[] buffer when buffer.Length >= 8 => BitConverter.ToInt64(buffer, 0),
+                    _ => 0L,
+                };
+
+                if (bytes > largest) largest = bytes;
+            }
+
+            return largest > 0 ? largest : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private static string Env(Environment.SpecialFolder folder) =>
         Environment.GetFolderPath(folder);
 

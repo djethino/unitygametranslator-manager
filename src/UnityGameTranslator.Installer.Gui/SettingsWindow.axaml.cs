@@ -121,9 +121,13 @@ public sealed class SettingsWindow : Window
         };
 
         Title = "Mod defaults — what gets written into your games";
-        Width = 720;
+        // Wide enough for the longest row: the model list plus Refresh plus "Test this model",
+        // after a 130px label. At 720 that row reached the card's edge and the last button sat
+        // against it. The minimum is kept above that width rather than merely below the default,
+        // so shrinking the window cannot recreate the same collision.
+        Width = 840;
         Height = 760;
-        MinWidth = 640;
+        MinWidth = 780;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Background = this.FindResource("SurfaceBase") as IBrush;
 

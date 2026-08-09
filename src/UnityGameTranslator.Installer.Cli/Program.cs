@@ -174,8 +174,20 @@ internal static class Program
         var inventory = new GameInventory(platform, catalog.Document,
                                           offline ? null : new CatalogApiClient());
 
+        // A path is looked up in the full scan FIRST, and only probed on its own when that finds
+        // nothing.
+        //
+        // Probing a folder in isolation skips the store scanners, so a Steam game came back as
+        // "Manual" with no app id — which sent the community lookup to search by name instead of
+        // by id, and reported "none found" for a game whose translation was right there. This
+        // command is what a user pastes into an issue: a diagnosis that does not reproduce the
+        // real detection path sends whoever reads it after the wrong thing. It sent me.
         var game = Directory.Exists(target)
-            ? inventory.ScanFolder(target)
+            ? inventory.ScanAll().FirstOrDefault(g =>
+                  string.Equals(Path.GetFullPath(g.Path).TrimEnd(Path.DirectorySeparatorChar),
+                                Path.GetFullPath(target).TrimEnd(Path.DirectorySeparatorChar),
+                                StringComparison.OrdinalIgnoreCase))
+              ?? inventory.ScanFolder(target)
             : inventory.ScanAll().FirstOrDefault(g =>
                 g.Name.Contains(target, StringComparison.OrdinalIgnoreCase));
 
@@ -844,8 +856,20 @@ internal static class Program
         var inventory = new GameInventory(platform, catalog.Document,
                                           offline ? null : new CatalogApiClient());
 
+        // A path is looked up in the full scan FIRST, and only probed on its own when that finds
+        // nothing.
+        //
+        // Probing a folder in isolation skips the store scanners, so a Steam game came back as
+        // "Manual" with no app id — which sent the community lookup to search by name instead of
+        // by id, and reported "none found" for a game whose translation was right there. This
+        // command is what a user pastes into an issue: a diagnosis that does not reproduce the
+        // real detection path sends whoever reads it after the wrong thing. It sent me.
         var game = Directory.Exists(target)
-            ? inventory.ScanFolder(target)
+            ? inventory.ScanAll().FirstOrDefault(g =>
+                  string.Equals(Path.GetFullPath(g.Path).TrimEnd(Path.DirectorySeparatorChar),
+                                Path.GetFullPath(target).TrimEnd(Path.DirectorySeparatorChar),
+                                StringComparison.OrdinalIgnoreCase))
+              ?? inventory.ScanFolder(target)
             : inventory.ScanAll().FirstOrDefault(g =>
                 g.Name.Contains(target, StringComparison.OrdinalIgnoreCase));
 

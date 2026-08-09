@@ -753,12 +753,10 @@ public partial class MainWindow : Window
             });
         }
 
-        var alternatives = report.AlternativeOnline.ToList();
-
         // One button rather than a list of names: choosing between translations needs what they
         // are made of, who reviewed them and which language they came FROM — none of which fits
         // on a line here, and all of which decides the choice.
-        var offered = alternatives.Count + (report.MatchingOnline is null ? 0 : 1);
+        var offered = report.OnlineTranslations.Count;
         if (offered > 0)
         {
             var browse = new Button
@@ -772,7 +770,12 @@ public partial class MainWindow : Window
             panel.Children.Add(browse);
         }
 
-        if (alternatives.Count > 0)
+        // Counted over everything published, not over the alternatives. Excluding the one already
+        // installed made the card announce "none in French" to the very person who wrote the only
+        // French one and published it — the count contradicted the line above it.
+        var published = report.OnlineTranslations;
+
+        if (published.Count > 0)
         {
             // A count by language, not a list of names.
             //
@@ -785,7 +788,7 @@ public partial class MainWindow : Window
             // Not a silent truncation either: every figure below is the real total.
             panel.Children.Add(new TextBlock
             {
-                Text = SummariseLanguages(alternatives, _settings.ResolveTargetLanguage()),
+                Text = SummariseLanguages(published, _settings.ResolveTargetLanguage()),
                 FontSize = 12,
                 Opacity = 0.8,
                 TextWrapping = TextWrapping.Wrap,

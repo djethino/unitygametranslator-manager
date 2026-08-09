@@ -24,6 +24,16 @@ public sealed record ModelTest(
     /// and it will start passing as models get better at following instructions.
     /// </summary>
     public string? UnlocksOption { get; init; }
+
+    /// <summary>
+    /// Why the option stays experimental even when the model passes.
+    ///
+    /// Lives here rather than in each screen: the window and the CLI both report this, and a
+    /// caveat written twice is a caveat that will end up saying two different things. Passing is
+    /// a capability, never a clearance — one sentence in one language says nothing about what a
+    /// whole game will do, and the failure mode of this particular option is silent.
+    /// </summary>
+    public string? Caveat { get; init; }
 }
 
 /// <summary>Outcome of one test: the verdict AND what the model actually said.</summary>
@@ -161,6 +171,11 @@ public static class ModelTestSuite
                 // reason: asks the model to skip anything that is not in the source language.
                 // It can silently drop text that was fine."
                 UnlocksOption = "strict_source",
+
+                Caveat = "It stays experimental whatever this test says: one sentence is not a "
+                       + "game, and when it goes wrong it goes wrong silently — text that was "
+                       + "perfectly fine is dropped and nothing tells you. Switch it on knowing "
+                       + "that, and keep an eye on what disappears.",
             },
         };
     }

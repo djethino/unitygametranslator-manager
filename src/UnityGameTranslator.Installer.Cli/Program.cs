@@ -550,13 +550,13 @@ internal static class Program
         var passed = 0;
         var total = 0;
         var echoed = 0;
-        var unlocked = new List<(string Option, bool Supported)>();
+        var unlocked = new List<(ModelTest Test, bool Supported)>();
 
         await probe.RunSuiteAsync(server.Url, model, language, result =>
         {
             if (result.Test.UnlocksOption is not null)
             {
-                unlocked.Add((result.Test.UnlocksOption, result.Passed));
+                unlocked.Add((result.Test, result.Passed));
             }
             else
             {
@@ -597,13 +597,22 @@ internal static class Program
         // than as a failure: the mod ships these options disabled, so a model that cannot do one
         // is not a worse model — it just means that option stays off. Models are getting better
         // at this, and the same test will start passing on its own.
-        foreach (var (option, supported) in unlocked)
+        foreach (var (test, supported) in unlocked)
         {
             Write(supported
-                    ? $"Experimental option '{option}': this model can do it — you may switch it on."
-                    : $"Experimental option '{option}': not followed by this model — leave it off.",
+                    ? $"Experimental option '{test.UnlocksOption}': this model can do it — you may switch it on."
+                    : $"Experimental option '{test.UnlocksOption}': not followed by this model — leave it off.",
                 supported ? ConsoleColor.Green : ConsoleColor.Yellow);
             Console.WriteLine();
+
+            // Printed on success too, in amber: passing says the model is capable, not that the
+            // option is safe. A green line on its own would read as a recommendation, and the
+            // mod ships this option disabled precisely because it fails silently.
+            if (test.Caveat is not null)
+            {
+                Write($"  {test.Caveat}", ConsoleColor.Yellow);
+                Console.WriteLine();
+            }
         }
         if (echoed > 0)
         {

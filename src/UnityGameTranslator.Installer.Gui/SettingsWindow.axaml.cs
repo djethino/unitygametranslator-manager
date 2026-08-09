@@ -531,6 +531,21 @@ public sealed class SettingsWindow : Window
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("TextMuted"),
             });
+
+            // Shown on success too, and in amber so it is not read as small print under a green
+            // mark. Passing means the model is capable, not that the option is safe: the mod
+            // ships it disabled because its failure mode is silent, and a green line saying
+            // "you may switch it on" with nothing beside it would quietly recommend it.
+            if (result.Test.Caveat is not null)
+            {
+                body.Children.Add(new TextBlock
+                {
+                    Text = result.Test.Caveat,
+                    FontSize = 11,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = Brush("StatusWarning"),
+                });
+            }
         }
 
         if (result.EchoedInstructions)

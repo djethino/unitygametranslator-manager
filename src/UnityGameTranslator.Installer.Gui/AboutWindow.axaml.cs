@@ -83,9 +83,20 @@ public sealed class AboutWindow : Window
         links.Children.Add(close);
 
         layout.Children.Add(links);
-        layout.Children.Add(PublisherSignature());
 
-        Content = new ScrollViewer { Content = layout };
+        // The publisher band sits OUTSIDE the scrollable, margined content: it has to reach both
+        // edges of the window, and it must stay put while the credits scroll.
+        var root = new Grid { RowDefinitions = new RowDefinitions("*,Auto") };
+
+        var scroller = new ScrollViewer { Content = layout };
+        Grid.SetRow(scroller, 0);
+        root.Children.Add(scroller);
+
+        var band = PublisherBand();
+        Grid.SetRow(band, 1);
+        root.Children.Add(band);
+
+        Content = root;
     }
 
     private Control Header()
@@ -129,61 +140,58 @@ public sealed class AboutWindow : Window
     }
 
     /// <summary>
-    /// The publisher's signature, at the foot of the window.
+    /// The publisher's band, across the foot of the window.
     ///
-    /// Product identity at the top, publisher at the bottom: that separation is the whole point
-    /// of an About box. The full logo is used rather than the gear mark, because the gear is
-    /// ASymptOmatik and this is published by ASymptOmatik Games — only the full logo says so.
+    /// Product identity at the top, publisher at the bottom: that separation is what an About box
+    /// is for. The logo is drawn black on white rather than inverted to white on the dark
+    /// surface — the mascot is hand-drawn line art, and inverted strokes read as a negative
+    /// rather than as a drawing. So the band carries its own white, and the logo is black ink on
+    /// transparent, which means the two whites are the same white and there is no visible seam.
+    ///
+    /// The gear mark is deliberately not used: it stands for ASymptOmatik, while this is
+    /// published by ASymptOmatik Games, and only the full logo says so.
     /// </summary>
-    private Control PublisherSignature()
+    private Control PublisherBand()
     {
-        var panel = new StackPanel
+        var band = new Border
         {
-            Spacing = 8,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Margin = new Thickness(0, 8, 0, 0),
+            Background = Brushes.White,
+            BorderBrush = this.FindResource("BorderSubtle") as IBrush,
+            BorderThickness = new Thickness(0, 1, 0, 0),
+            Padding = new Thickness(24, 14),
+            Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
         };
 
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Published by",
-            FontSize = 11,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Foreground = this.FindResource("TextMuted") as IBrush,
-        });
+        ToolTip.SetTip(band, "https://asymptomatikgames.com");
+        band.PointerPressed += (_, _) => OpenUrl("https://asymptomatikgames.com");
 
         try
         {
             using var stream = AssetLoader.Open(
                 new Uri("avares://UnityGameTranslatorInstaller/Assets/asymptomatik-full.png"));
 
-            var logo = new Image
+            band.Child = new Image
             {
                 Source = new Bitmap(stream),
-                Height = 46,
+                Height = 44,
                 Stretch = Stretch.Uniform,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                Opacity = 0.9,
-                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
             };
-            ToolTip.SetTip(logo, "https://asymptomatikgames.com");
-            logo.PointerPressed += (_, _) => OpenUrl("https://asymptomatikgames.com");
-
-            panel.Children.Add(logo);
         }
         catch
         {
-            // A missing logo falls back to the name, never to an empty space.
-            panel.Children.Add(new TextBlock
+            // A missing logo falls back to the name, never to an empty white strip.
+            band.Child = new TextBlock
             {
                 Text = "ASymptOmatik Games",
                 FontWeight = FontWeight.SemiBold,
+                FontSize = 15,
+                Foreground = Brushes.Black,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                Foreground = this.FindResource("TextSecondary") as IBrush,
-            });
+            };
         }
 
-        return panel;
+        return band;
     }
 
     private Control Section(string title, string? intro, Credit[] credits)

@@ -264,9 +264,12 @@ public sealed class SettingsWindow : Window
             Foreground = Brush("TextMuted"),
         };
 
-        var refresh = new Button { Content = "Search again", FontSize = 12 };
+        var refresh = new Button { Content = "Look for a local AI", FontSize = 12 };
         refresh.Click += async (_, _) =>
         {
+            // Explicit means explicit: forget what we knew and sweep the ports again, even when
+            // an address is already saved. This is how someone moves from an online provider back
+            // to a server on their own machine.
             _aiServers.Forget();
             await DiscoverAsync();
         };
@@ -599,6 +602,17 @@ public sealed class SettingsWindow : Window
         _populating = true;
         try
         {
+            // Already set up? Then nothing happens until asked. Probing a configured server on
+            // every visit is a request the person did not ask for — pointless on a local server
+            // they know is running, and on a paid provider it is us touching their account to
+            // answer a question nobody posed. What is saved is shown; the two buttons are right
+            // there for when they want more.
+            if (reuseKnown && !string.IsNullOrWhiteSpace(_draft.AiUrl))
+            {
+                await ShowConfiguredAsync();
+                return;
+            }
+
             if (reuseKnown && _aiServers.Remembered is { } known)
             {
                 ShowServers(known);
@@ -632,27 +646,83 @@ public sealed class SettingsWindow : Window
         _modelNotes ??= await new ModelNotesProvider(_platform)
             .GetAsync(offline: !_draft.OnlineMode);
 
-        // An address already configured is asked first, and on its own. Sweeping the local ports
-        // regardless would list a local server's models next to an online provider's URL — two
-        // things that have nothing to do with each other, shown as if they did. It is also one
-        // request instead of six.
-        var configured = _aiUrl.Text?.Trim();
-        if (!string.IsNullOrWhiteSpace(configured))
-        {
-            var models = await _probe.ListModelsAsync(configured, _apiKey.Text?.Trim());
-            if (models is not null)
-            {
-                var known = new[] { new AiServer(configured, "Your server", models) };
-                _aiServers.Remember(known);
-                ShowServers(known);
-                return;
-            }
-        }
-
         var servers = await _probe.DiscoverAsync();
         _aiServers.Remember(servers);
 
         ShowServers(servers);
+    }
+
+    /// <summary>
+    /// Shows the saved setup, then checks that it still holds.
+    ///
+    /// One request to the address already saved — not a sweep of six ports, and not a search for
+    /// something else. The difference matters: a saved setup does not need discovering, but it
+    /// does deserve checking, because the model can be gone. Someone who removes a model from
+    /// Ollama and later finds the game translating nothing has no way of connecting the two.
+    ///
+    /// What is saved appears first, so the screen is readable immediately and stays honest even
+    /// if the check fails or the machine is offline.
+    /// </summary>
+    private async Task ShowConfiguredAsync()
+    {
+        _aiModel.Items.Clear();
+        if (!string.IsNullOrWhiteSpace(_draft.AiModel))
+        {
+            _aiModel.Items.Add(new ComboBoxItem { Content = _draft.AiModel, Tag = _draft.AiModel });
+            _aiModel.SelectedIndex = 0;
+        }
+
+        _testButton.IsEnabled = _aiModel.SelectedItem is not null;
+        _ollamaPanel.Children.Clear();
+        _ollamaPanel.IsVisible = false;
+        ShowModelNote();
+
+        _aiStatus.Text = $"Set to {_draft.AiUrl}. Checking it is still there...";
+
+        var models = await _probe.ListModelsAsync(_draft.AiUrl, _draft.AiApiKey);
+
+        if (models is null)
+        {
+            // Not dressed up as a failure: a laptop away from its server, or a server not started
+            // yet, is an ordinary situation and nothing here is broken.
+            _aiStatus.Text = $"Set to {_draft.AiUrl}, using {_draft.AiModel}. "
+                           + "It did not answer just now — it may simply not be running. Your "
+                           + "settings are unchanged.";
+            return;
+        }
+
+        // The list is refreshed while we are here, so the choice offered is what the server
+        // actually holds rather than what it held the last time anyone looked.
+        var saved = _draft.AiModel;
+        _aiModel.Items.Clear();
+        foreach (var model in models)
+            _aiModel.Items.Add(new ComboBoxItem { Content = model, Tag = model });
+
+        var stillThere = !string.IsNullOrWhiteSpace(saved)
+                         && models.Any(m => string.Equals(m, saved, StringComparison.Ordinal));
+
+        if (stillThere)
+        {
+            Select(_aiModel, saved);
+            _aiStatus.Text = $"{_draft.AiUrl} answered — {models.Count} model(s), "
+                           + $"and {saved} is still there.";
+        }
+        else if (!string.IsNullOrWhiteSpace(saved))
+        {
+            // Said loudly, and the saved value is NOT quietly replaced: swapping in another model
+            // would leave someone believing they are running the one they chose. The selection is
+            // left empty so the choice is visibly theirs to make.
+            _aiStatus.Text = $"{_draft.AiUrl} answered, but \"{saved}\" is not among the "
+                           + $"{models.Count} model(s) it offers any more. Nothing was changed — "
+                           + "pick one below, or put that model back.";
+        }
+        else
+        {
+            _aiStatus.Text = $"{_draft.AiUrl} answered — {models.Count} model(s). Choose one.";
+        }
+
+        _testButton.IsEnabled = _aiModel.SelectedItem is not null;
+        ShowModelNote();
     }
 
     /// <summary>

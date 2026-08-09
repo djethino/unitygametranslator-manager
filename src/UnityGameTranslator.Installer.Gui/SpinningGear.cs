@@ -39,12 +39,21 @@ public sealed class SpinningGear : StackPanel
         Orientation = Orientation.Horizontal;
         Spacing = 8;
         VerticalAlignment = VerticalAlignment.Center;
+
+        // Centred across the panel rather than left-aligned like the results above it. Sharing
+        // their left edge made it read as one more entry in the list; on its own axis it reads as
+        // the state of the list, which is what it is.
+        HorizontalAlignment = HorizontalAlignment.Center;
+
         Margin = new Thickness(0, 6, 0, 6);
 
         var image = new Image
         {
-            Width = 20,
-            Height = 20,
+            // Big enough to read as movement at a glance. At 20 it was a speck: the thing has to
+            // catch the eye of someone who has stopped looking at the screen, which is exactly
+            // the moment it exists for.
+            Width = 30,
+            Height = 30,
             Source = Load(),
 
             // Rotation happens about the middle of the control, so the gear turns on its own axis
@@ -83,7 +92,13 @@ public sealed class SpinningGear : StackPanel
             Text = message,
             FontSize = 12,
             VerticalAlignment = VerticalAlignment.Center,
-            Foreground = this.FindResource("TextSecondary") as IBrush,
+
+            // Asked of the application, not of this control. A control being built is not yet in
+            // the visual tree, so looking the resource up through itself returns null — and a
+            // TextBlock with no brush is invisible. That is what made this look off-centre: the
+            // gear and an unreadable label were centred together, so the gear sat left of middle
+            // by half a caption nobody could see.
+            Foreground = Application.Current?.FindResource("TextSecondary") as IBrush,
         };
 
         Children.Add(image);

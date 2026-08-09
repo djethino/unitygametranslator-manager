@@ -218,7 +218,7 @@ public sealed class ToolSettingsWindow : Window
             Width = 200,
         };
 
-        var copy = new Button { Content = "Copy", FontSize = 12 };
+        var copy = Glyphs.Button(Glyphs.Clipboard(), "Copy");
         copy.Click += async (_, _) =>
         {
             // Selecting six characters by hand and hitting Ctrl+C is work nobody should do when a
@@ -229,12 +229,12 @@ public sealed class ToolSettingsWindow : Window
 
             await clipboard.SetTextAsync(start.UserCode);
 
-            copy.Content = "Copied";
+            Glyphs.SetLabel(copy, "Copied");
             await Task.Delay(1500);
-            copy.Content = "Copy";
+            Glyphs.SetLabel(copy, "Copy");
         };
 
-        var open = new Button { Content = "Open the page", FontSize = 12 };
+        var open = Glyphs.Button(Glyphs.Site(), "Open the page");
         open.Click += (_, _) => OpenUrl(start.VerificationUri);
 
         var row = new StackPanel

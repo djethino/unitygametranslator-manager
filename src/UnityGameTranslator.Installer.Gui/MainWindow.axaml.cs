@@ -944,7 +944,7 @@ public partial class MainWindow : Window
 
         var open = new Button
         {
-            Content = FolderGlyph(),
+            Content = Glyphs.Folder(),
             Padding = new Avalonia.Thickness(4, 1),
             Background = Avalonia.Media.Brushes.Transparent,
             BorderThickness = new Avalonia.Thickness(0),
@@ -967,23 +967,6 @@ public partial class MainWindow : Window
 
         return row;
     }
-
-    /// <summary>
-    /// A folder drawn as a shape rather than typed as a character.
-    ///
-    /// An emoji would render differently on each system and is missing outright from some Linux
-    /// font stacks, and an icon font would be a dependency for one glyph.
-    /// </summary>
-    private static Control FolderGlyph() => new Avalonia.Controls.Shapes.Path
-    {
-        Data = Avalonia.Media.Geometry.Parse(
-            "M2,3 L6,3 L7.5,4.5 L13,4.5 A1,1 0 0,1 14,5.5 L14,12 A1,1 0 0,1 13,13 "
-            + "L2,13 A1,1 0 0,1 1,12 L1,4 A1,1 0 0,1 2,3 Z"),
-        Fill = Brush("TextMuted"),
-        Width = 15,
-        Height = 15,
-        Stretch = Avalonia.Media.Stretch.Uniform,
-    };
 
     /// <summary>
     /// Opens a folder in whatever the system uses for that.

@@ -136,6 +136,27 @@ public sealed class InstallerSettings
     /// </summary>
     [JsonPropertyName("settings_hotkey")] public string SettingsHotkey { get; set; } = "Ctrl+F10";
 
+    /// <summary>
+    /// Sync and notification preferences, written into the game's own "sync" block.
+    ///
+    /// These are facts about a person, not about a game: someone with twenty games does not want
+    /// to answer "should I download updates automatically" twenty times, and merge_strategy least
+    /// of all. Managing updates is this tool's job anyway.
+    /// </summary>
+    [JsonPropertyName("auto_download")] public bool AutoDownload { get; set; }
+
+    [JsonPropertyName("notify_updates")] public bool NotifyUpdates { get; set; } = true;
+
+    [JsonPropertyName("check_mod_updates")] public bool CheckModUpdates { get; set; } = true;
+
+    /// <summary>"ask", and the other values the mod accepts. Its default is to ask.</summary>
+    [JsonPropertyName("merge_strategy")] public string MergeStrategy { get; set; } = "ask";
+
+    [JsonPropertyName("notifications_enabled")] public bool NotificationsEnabled { get; set; } = true;
+
+    /// <summary>"top-right" and the other corners the mod knows.</summary>
+    [JsonPropertyName("notification_position")] public string NotificationPosition { get; set; } = "top-right";
+
     /// <summary>"stable" or "beta".</summary>
     [JsonPropertyName("channel")] public string Channel { get; set; } = "stable";
 

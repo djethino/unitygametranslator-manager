@@ -50,6 +50,12 @@ public sealed class SettingsWindow : Window
     private ComboBox _channel = null!;
     private CheckBox _online = null!;
     private CheckBox _modOnline = null!;
+    private CheckBox _autoDownload = null!;
+    private CheckBox _notifyUpdates = null!;
+    private CheckBox _checkModUpdates = null!;
+    private ComboBox _mergeStrategy = null!;
+    private CheckBox _notificationsEnabled = null!;
+    private ComboBox _notificationPosition = null!;
 
     private TextBox _apiKey = null!;
     private TextBlock _metrics = null!;
@@ -122,6 +128,12 @@ public sealed class SettingsWindow : Window
             DeeplApiKey = current.DeeplApiKey,
             DeeplUseFree = current.DeeplUseFree,
             ModOnlineMode = current.ModOnlineMode,
+            AutoDownload = current.AutoDownload,
+            NotifyUpdates = current.NotifyUpdates,
+            CheckModUpdates = current.CheckModUpdates,
+            MergeStrategy = current.MergeStrategy,
+            NotificationsEnabled = current.NotificationsEnabled,
+            NotificationPosition = current.NotificationPosition,
             ProxyMode = current.ProxyMode,
             ProxyUrl = current.ProxyUrl,
             ProxyUsername = current.ProxyUsername,
@@ -171,6 +183,7 @@ public sealed class SettingsWindow : Window
         layout.Children.Add(_aiCard);
         layout.Children.Add(_apiCard);
         layout.Children.Add(ModCard());
+        layout.Children.Add(SyncCard());
 
         layout.Children.Add(GroupHeading("This tool"));
         layout.Children.Add(NetworkCard());
@@ -289,6 +302,56 @@ public sealed class SettingsWindow : Window
             "A game someone has already translated needs none of this. The rest is for what "
             + "nobody has translated yet: your own machine, free, or a paid service with your own key.",
             Row("Backend", _backend));
+    }
+
+    /// <summary>
+    /// What the mod does about updates and what it shows while playing.
+    ///
+    /// Here rather than in the game because these are facts about a person: someone with twenty
+    /// games does not want to answer "download updates automatically?" twenty times, and least of
+    /// all what to do when a translation and their own edits both changed.
+    /// </summary>
+    private Control SyncCard()
+    {
+        _checkModUpdates = new CheckBox { Content = "Tell me when a new version of the mod is out",
+                                          IsChecked = _draft.CheckModUpdates };
+        _notifyUpdates = new CheckBox { Content = "Tell me when a translation I use is updated",
+                                       IsChecked = _draft.NotifyUpdates };
+        _autoDownload = new CheckBox { Content = "Download those updates without asking",
+                                      IsChecked = _draft.AutoDownload };
+
+        _mergeStrategy = new ComboBox { Width = 260 };
+        _mergeStrategy.Items.Add(new ComboBoxItem { Content = "Ask me every time", Tag = "ask" });
+        _mergeStrategy.Items.Add(new ComboBoxItem { Content = "Keep my own version", Tag = "local" });
+        _mergeStrategy.Items.Add(new ComboBoxItem { Content = "Take the newer one", Tag = "remote" });
+        Select(_mergeStrategy, _draft.MergeStrategy);
+
+        _notificationsEnabled = new CheckBox { Content = "Show notices while playing",
+                                              IsChecked = _draft.NotificationsEnabled };
+
+        _notificationPosition = new ComboBox { Width = 260 };
+        foreach (var (tag, label) in new[]
+                 {
+                     ("top-right", "Top right"), ("top-left", "Top left"),
+                     ("bottom-right", "Bottom right"), ("bottom-left", "Bottom left"),
+                 })
+        {
+            _notificationPosition.Items.Add(new ComboBoxItem { Content = label, Tag = tag });
+        }
+        Select(_notificationPosition, _draft.NotificationPosition);
+
+        var panel = new StackPanel { Spacing = 10 };
+        panel.Children.Add(_checkModUpdates);
+        panel.Children.Add(_notifyUpdates);
+        panel.Children.Add(_autoDownload);
+        panel.Children.Add(Row("When both changed", _mergeStrategy));
+        panel.Children.Add(Note(
+            "When a translation you use has been updated and you have edited it too. The mod does "
+            + "the merging - this only says whether it should stop and ask you first.", "TextMuted"));
+        panel.Children.Add(_notificationsEnabled);
+        panel.Children.Add(Row("Notice position", _notificationPosition));
+
+        return Card("Updates and notices", null, panel);
     }
 
     /// <summary>Only the card for the chosen backend is on screen; the other is gone entirely.</summary>
@@ -1476,6 +1539,12 @@ public sealed class SettingsWindow : Window
         if (Tag(_backend) == "google") _draft.TranslationBackend = Tag(_provider) ?? "google";
         _draft.DeeplUseFree = _deeplFree.IsChecked == true;
         _draft.ModOnlineMode = _modOnline.IsChecked == true;
+        _draft.AutoDownload = _autoDownload.IsChecked == true;
+        _draft.NotifyUpdates = _notifyUpdates.IsChecked == true;
+        _draft.CheckModUpdates = _checkModUpdates.IsChecked == true;
+        _draft.MergeStrategy = Tag(_mergeStrategy) ?? "ask";
+        _draft.NotificationsEnabled = _notificationsEnabled.IsChecked == true;
+        _draft.NotificationPosition = Tag(_notificationPosition) ?? "top-right";
         DraftWithNetwork();
         _draft.EnableAi = _draft.TranslationBackend == "ai";
         // Whatever is on screen is what gets saved. The field can only hold something captured,
@@ -1532,6 +1601,14 @@ public sealed class SettingsWindow : Window
         if ((_modOnline.IsChecked == true) != saved.ModOnlineMode)
             changes.Add($"mod goes online: {saved.ModOnlineMode} -> {_modOnline.IsChecked == true}");
 
+        Compare("merge strategy", Tag(_mergeStrategy), saved.MergeStrategy);
+        Compare("notice position", Tag(_notificationPosition), saved.NotificationPosition);
+
+        if ((_autoDownload.IsChecked == true) != saved.AutoDownload) changes.Add("auto-download");
+        if ((_notifyUpdates.IsChecked == true) != saved.NotifyUpdates) changes.Add("translation update notices");
+        if ((_checkModUpdates.IsChecked == true) != saved.CheckModUpdates) changes.Add("mod update notices");
+        if ((_notificationsEnabled.IsChecked == true) != saved.NotificationsEnabled) changes.Add("in-game notices");
+
         Compare("Google key", _draft.GoogleApiKey, saved.GoogleApiKey);
         Compare("DeepL key", _draft.DeeplApiKey, saved.DeeplApiKey);
 
@@ -1578,6 +1655,10 @@ public sealed class SettingsWindow : Window
 
         _online.IsCheckedChanged += (_, _) => RefreshApplyButton();
         _modOnline.IsCheckedChanged += (_, _) => RefreshApplyButton();
+        foreach (var box in new[] { _autoDownload, _notifyUpdates, _checkModUpdates, _notificationsEnabled })
+            box.IsCheckedChanged += (_, _) => RefreshApplyButton();
+        foreach (var combo in new[] { _mergeStrategy, _notificationPosition })
+            combo.SelectionChanged += (_, _) => RefreshApplyButton();
         _deeplFree.IsCheckedChanged += (_, _) => RefreshApplyButton();
         _provider.SelectionChanged += (_, _) => RefreshApplyButton();
         _providerKey.TextChanged += (_, _) => RefreshApplyButton();

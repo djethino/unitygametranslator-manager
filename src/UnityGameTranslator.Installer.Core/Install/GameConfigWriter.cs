@@ -125,6 +125,15 @@ public sealed class GameConfigWriter
             if (settings.Channel == "beta")
                 SetNested(root, applied, "sync", "notify_prereleases", true, "beta update notices");
 
+            // All inside the mod's own "sync" block, set one key at a time so everything else it
+            // holds — ignored_uuids, last_seen_mod_version, per-game state — survives untouched.
+            SetNested(root, applied, "sync", "auto_download", settings.AutoDownload, null);
+            SetNested(root, applied, "sync", "notify_updates", settings.NotifyUpdates, null);
+            SetNested(root, applied, "sync", "check_mod_updates", settings.CheckModUpdates, null);
+            SetNested(root, applied, "sync", "merge_strategy", settings.MergeStrategy, "update preferences");
+            SetNested(root, applied, "sync", "notifications_enabled", settings.NotificationsEnabled, null);
+            SetNested(root, applied, "sync", "notification_position", settings.NotificationPosition, "notifications");
+
             var wizardSkipped = skipWizard && settings.AnswersTheWizard;
             if (wizardSkipped) Set(root, applied, "first_run_completed", true, "first-run wizard skipped");
 

@@ -794,7 +794,8 @@ public partial class MainWindow : Window
         {
             panel.Children.Add(new TextBlock
             {
-                Text = "Nobody has published a translation for this game yet.",
+                Text = "Nobody has published a translation for this game yet — the mod builds one as "
+                     + "you play, and you can be the first to share it.",
                 FontSize = 12,
                 Opacity = 0.6,
                 TextWrapping = TextWrapping.Wrap,

@@ -326,8 +326,8 @@ public sealed class TranslationsWindow : Window
         {
             _status.Text = _report.OnlineSearchError is not null
                 ? $"Could not reach the community site ({_report.OnlineSearchError})."
-                : "Nobody has published a translation for this game yet. The mod can start one as "
-                  + "you play, and you can share it afterwards.";
+                : "Nobody has published a translation for this game yet — the mod builds one as you "
+                  + "play, and you can be the first to share it.";
             return;
         }
 

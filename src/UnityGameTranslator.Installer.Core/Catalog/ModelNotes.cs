@@ -18,7 +18,23 @@ public sealed class ModelNote
 
     [JsonPropertyName("note")] public string Note { get; set; } = "";
 
+    /// <summary>
+    /// The exact name to pull, when this is a model we would put in front of someone. Null makes
+    /// the entry a note only — right for a family name like "gemma" that matches many things.
+    /// </summary>
+    [JsonPropertyName("pull")] public string? Pull { get; set; }
+
+    [JsonPropertyName("download_gb")] public double? DownloadGb { get; set; }
+
+    /// <summary>
+    /// Card size below which this runs on the processor instead — minutes per line rather than
+    /// seconds. Filters what is offered first; never hides the rest.
+    /// </summary>
+    [JsonPropertyName("min_vram_gb")] public double? MinVramGb { get; set; }
+
     [JsonIgnore] public bool IsReference => Role == "reference";
+
+    [JsonIgnore] public bool CanBeInstalled => !string.IsNullOrWhiteSpace(Pull);
 }
 
 public sealed class ModelNotesDocument
@@ -129,6 +145,43 @@ public sealed class ModelNotesProvider
         var stamp = string.IsNullOrWhiteSpace(document?.Updated) ? "" : $" (as of {document!.Updated})";
 
         return $"{lead}{stamp}: {note.Note}";
+    }
+
+    /// <summary>
+    /// The models worth offering on this machine, best fit first.
+    ///
+    /// ⚠ When the card size is unknown, everything is returned with its requirements stated. A
+    /// tool that offers nothing because it failed to read a number is worse than one that asks —
+    /// and unknown VRAM is common enough (virtual machines, unusual drivers) to be the norm for
+    /// somebody.
+    ///
+    /// ⚠ Ordered by what the machine can run, never by language. Ranking models by "good at X"
+    /// would break the rule the whole project rests on.
+    /// </summary>
+    public static IReadOnlyList<ModelNote> Installable(ModelNotesDocument? document,
+                                                       long? videoMemoryBytes)
+    {
+        if (document is null) return Array.Empty<ModelNote>();
+
+        var offerable = document.Models.Where(note => note.CanBeInstalled).ToList();
+        if (videoMemoryBytes is not { } bytes) return offerable;
+
+        var availableGb = bytes / 1024.0 / 1024 / 1024;
+
+        // Fits first, largest of those first — a bigger model that still fits is generally the
+        // better translation. What does not fit stays visible, last, with its requirement shown:
+        // someone willing to wait is entitled to decide that for themselves.
+        return offerable
+            .OrderByDescending(note => note.MinVramGb is null || note.MinVramGb <= availableGb)
+            .ThenByDescending(note => note.MinVramGb ?? 0)
+            .ToList();
+    }
+
+    /// <summary>Whether this model fits the card, or null when the card size is unknown.</summary>
+    public static bool? Fits(ModelNote note, long? videoMemoryBytes)
+    {
+        if (videoMemoryBytes is not { } bytes || note.MinVramGb is not { } required) return null;
+        return bytes / 1024.0 / 1024 / 1024 >= required;
     }
 
     private static ModelNotesDocument? Deserialize(string json)

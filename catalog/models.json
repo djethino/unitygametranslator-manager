@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "updated": "2026-08-09",
 
   "_comment": [
@@ -12,7 +12,15 @@
     "  - only models someone on the project has actually run the instruction suite against",
     "  - 'note' says what was observed, in one sentence, with no superlative",
     "  - never a ranking: the suite is a heuristic on free text and the machine matters as much",
-    "    as the model. The person testing decides; this only tells them where to start."
+    "    as the model. The person testing decides; this only tells them where to start.",
+    "  - NEVER pick or rank by language. Sorting by 'good at Japanese' would break the rule the",
+    "    whole project is built on: every part of it stays language-agnostic.",
+    "",
+    "'pull' is what makes a model offerable for download. An entry without it is a note only —",
+    "which is right for a family name like 'gemma' that matches many things, and for anything we",
+    "would not put in front of someone as a starting point.",
+    "'min_vram_gb' is the card size below which the model runs on the processor instead, which",
+    "means minutes per line rather than seconds. It filters the offer; it never hides the list."
   ],
 
   "models": [
@@ -20,13 +28,25 @@
       "match": "qwen3.5",
       "runner": "ollama",
       "role": "reference",
-      "note": "What the mod is developed against. Follows the instruction suite in full, including the experimental source-language rule."
+      "note": "What the mod is developed against. Follows the instruction suite in full, including the experimental source-language rule.",
+      "pull": "qwen3.5:latest",
+      "download_gb": 5.2,
+      "min_vram_gb": 8
+    },
+    {
+      "match": "translategemma:4b",
+      "runner": "ollama",
+      "role": "tested",
+      "note": "Translation-specialised and light enough for a small card. Drops a placeholder sitting at the very end of a line.",
+      "pull": "translategemma:4b",
+      "download_gb": 3.3,
+      "min_vram_gb": 4
     },
     {
       "match": "translategemma",
       "runner": "ollama",
       "role": "tested",
-      "note": "Translation-specialised and light. Drops a placeholder sitting at the very end of a line."
+      "note": "Translation-specialised. The larger build was not better here than the small one."
     },
     {
       "match": "gemma",

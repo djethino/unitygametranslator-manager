@@ -452,6 +452,15 @@ public sealed class SettingsWindow : Window
 
         _aiStatus.Text = $"{server.Product} answered at {server.Url} — {server.Models.Count} model(s).";
 
+        // A server with nothing loaded is the state a fresh Ollama is left in, and the one that
+        // reads as "it worked" while translating nothing. Offering a model here is the difference
+        // between an engine and an engine with fuel.
+        if (server.Models.Count == 0)
+        {
+            await OfferModelAsync(server.Url);
+            return;
+        }
+
         foreach (var model in server.Models)
             _aiModel.Items.Add(new ComboBoxItem { Content = model, Tag = model });
 
@@ -560,6 +569,124 @@ public sealed class SettingsWindow : Window
 
         _ollamaPanel.Children.Add(install);
         _ollamaPanel.Children.Add(progress);
+    }
+
+    /// <summary>
+    /// Offers a model to a server that has none, sized to the machine.
+    ///
+    /// Ordered by what this card can actually run: a model that spills out of video memory falls
+    /// back to the processor and takes minutes per line, which someone will read as "the mod is
+    /// broken". What does not fit is still shown, last and labelled — refusing to offer it would
+    /// be deciding for them.
+    ///
+    /// ⚠ Never ordered or filtered by language. Every part of this project stays language-agnostic
+    /// and this is the screen where the temptation is strongest.
+    /// </summary>
+    private async Task OfferModelAsync(string serverUrl)
+    {
+        _ollamaPanel.Children.Clear();
+        _ollamaPanel.IsVisible = true;
+
+        _modelNotes ??= await new ModelNotesProvider(_platform)
+            .GetAsync(offline: !_draft.OnlineMode);
+
+        var vram = _platform.VideoMemoryBytes();
+        var candidates = ModelNotesProvider.Installable(_modelNotes, vram);
+
+        if (candidates.Count == 0)
+        {
+            _ollamaPanel.Children.Add(Note(
+                "This server has no model loaded yet, and we could not reach our list of models "
+                + "to suggest one. Any model pulled with Ollama works — the mod only needs a "
+                + "server that answers.", "StatusWarning"));
+            return;
+        }
+
+        _ollamaPanel.Children.Add(Note(
+            vram is { } bytes
+                ? $"No model on this server yet. Your graphics card has "
+                  + $"{bytes / 1024.0 / 1024 / 1024:F0} GB, so these are worth considering:"
+                : "No model on this server yet. We could not read your graphics card size, so "
+                  + "here is the whole list with what each one needs:",
+            "TextSecondary"));
+
+        var progress = Note("", "TextMuted");
+
+        foreach (var candidate in candidates)
+        {
+            var fits = ModelNotesProvider.Fits(candidate, vram);
+            var size = candidate.DownloadGb is { } gb ? $"{gb:F1} GB" : "size unknown";
+            var need = candidate.MinVramGb is { } min ? $", wants {min:F0} GB of video memory" : "";
+
+            var row = new StackPanel { Spacing = 2 };
+
+            var button = new Button
+            {
+                Content = $"Download {candidate.Pull} ({size})",
+                FontSize = 12,
+                Classes = { "primary" },
+            };
+
+            button.Click += async (_, _) =>
+            {
+                button.IsEnabled = false;
+                await PullModelAsync(serverUrl, candidate.Pull!, progress);
+                button.IsEnabled = true;
+            };
+
+            row.Children.Add(button);
+            row.Children.Add(Note(
+                $"{candidate.Note} ({size}{need})",
+                fits == false ? "StatusWarning" : "TextMuted"));
+
+            if (fits == false)
+            {
+                row.Children.Add(Note(
+                    "Larger than your card: it will run on the processor instead, which means "
+                    + "minutes per line rather than seconds. It still works.", "StatusWarning"));
+            }
+
+            _ollamaPanel.Children.Add(row);
+        }
+
+        _ollamaPanel.Children.Add(progress);
+    }
+
+    /// <summary>Pulls one model, saying where it is up to the whole way.</summary>
+    private async Task PullModelAsync(string serverUrl, string model, TextBlock progress)
+    {
+        var puller = new OllamaModelPuller(serverUrl);
+
+        puller.Progress += (status, done, total) => Dispatcher.UIThread.Post(() =>
+            progress.Text = done is { } d && total is { } t && t > 0
+                ? $"{status} — {d / 1024.0 / 1024 / 1024:F1} of {t / 1024.0 / 1024 / 1024:F1} GB"
+                : status);
+
+        progress.Foreground = Brush("TextMuted");
+        progress.Text = "Starting...";
+
+        var failure = await puller.PullAsync(model);
+
+        if (failure is null)
+        {
+            progress.Text = "Downloaded. Reading the server again.";
+            await DiscoverAsync();
+            Select(_aiModel, model);
+            return;
+        }
+
+        progress.Text = failure;
+        progress.Foreground = Brush("StatusError");
+
+        // Never a dead end: a download cut off by a firewall or a dropped line resumes where it
+        // stopped, and the person has to be able to say so from here.
+        var retry = new Button { Content = "Try again", FontSize = 12 };
+        retry.Click += async (_, _) =>
+        {
+            retry.IsEnabled = false;
+            await PullModelAsync(serverUrl, model, progress);
+        };
+        _ollamaPanel.Children.Add(retry);
     }
 
     private TextBlock Note(string text, string colour) => new()

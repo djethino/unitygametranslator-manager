@@ -38,6 +38,7 @@ public sealed class SettingsWindow : Window
     private TextBox _aiUrl = null!;
     private ComboBox _aiModel = null!;
     private TextBox _hotkey = null!;
+    private TextBlock _hotkeyProblem = null!;
     private ComboBox _channel = null!;
     private CheckBox _online = null!;
 
@@ -394,6 +395,24 @@ public sealed class SettingsWindow : Window
     {
         _hotkey = new TextBox { Width = 160, Text = _draft.SettingsHotkey };
 
+        _hotkeyProblem = new TextBlock
+        {
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            IsVisible = false,
+            Foreground = Brush("StatusWarning"),
+        };
+
+        // Checked as it is typed, because the alternative is discovering it in a game where the
+        // panel refuses to open and nothing explains why: the mod parses this into a Unity KeyCode
+        // and simply does nothing when that fails.
+        _hotkey.TextChanged += (_, _) =>
+        {
+            var problem = Hotkeys.Explain(_hotkey.Text?.Trim());
+            _hotkeyProblem.Text = problem ?? "";
+            _hotkeyProblem.IsVisible = problem is not null;
+        };
+
         _channel = new ComboBox { Width = 200 };
         _channel.Items.Add(new ComboBoxItem { Content = "Stable", Tag = "stable" });
         _channel.Items.Add(new ComboBoxItem { Content = "Beta (test releases)", Tag = "beta" });
@@ -407,6 +426,7 @@ public sealed class SettingsWindow : Window
 
         var panel = new StackPanel { Spacing = 10 };
         panel.Children.Add(Row("In-game hotkey", _hotkey));
+        panel.Children.Add(_hotkeyProblem);
         panel.Children.Add(Row("Updates", _channel));
         panel.Children.Add(_online);
 
@@ -1026,7 +1046,12 @@ public sealed class SettingsWindow : Window
         _draft.AiApiKey = string.IsNullOrWhiteSpace(_apiKey.Text) ? null : _apiKey.Text.Trim();
         DraftWithNetwork();
         _draft.EnableAi = _draft.TranslationBackend == "ai";
-        _draft.SettingsHotkey = _hotkey.Text?.Trim() ?? "Ctrl+F10";
+        // An unusable hotkey is not saved as-is. Keeping it would tick "reviewed" on a setting
+        // that cannot work, and the game would get a mod whose panel never opens.
+        var typedHotkey = _hotkey.Text?.Trim();
+        _draft.SettingsHotkey = Hotkeys.IsValid(typedHotkey) && !string.IsNullOrWhiteSpace(typedHotkey)
+            ? typedHotkey
+            : Hotkeys.Default;
         _draft.Channel = Tag(_channel) ?? "stable";
         _draft.OnlineMode = _online.IsChecked == true;
 

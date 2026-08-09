@@ -820,7 +820,11 @@ public partial class MainWindow : Window
         LoaderDescriptor? Chosen() =>
             (loaderPicker?.SelectedItem as ComboBoxItem)?.Tag as LoaderDescriptor;
 
-        var plan = engine.Plan(report, ReleaseChannel.Stable, Chosen());
+        // Reviewed settings only: before someone has opened the settings screen we know nothing
+        // about their language, and writing our defaults into their game would be deciding for
+        // them. Unreviewed, the mod's own first-run wizard asks instead — which is correct.
+        var plan = engine.Plan(report, ReleaseChannel.Stable, Chosen(),
+            _settings.Current.Reviewed ? _settings.Current : null);
         var installed = report.InstalledPluginVersion is not null;
 
         var primary = new Button
@@ -830,7 +834,8 @@ public partial class MainWindow : Window
             Classes = { "primary" },
         };
         primary.Click += async (_, _) =>
-            await RunInstallAsync(report, engine, engine.Plan(report, ReleaseChannel.Stable, Chosen()));
+            await RunInstallAsync(report, engine, engine.Plan(report, ReleaseChannel.Stable, Chosen(),
+                _settings.Current.Reviewed ? _settings.Current : null));
         buttons.Children.Add(primary);
 
         var uninstall = new Button

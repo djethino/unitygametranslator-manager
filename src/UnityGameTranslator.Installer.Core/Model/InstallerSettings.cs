@@ -124,5 +124,12 @@ public sealed class InstallerSettings
         Reviewed
         && !string.IsNullOrWhiteSpace(TargetLanguage)
         && !string.IsNullOrWhiteSpace(SettingsHotkey)
+
+        // Not merely present: usable. The mod parses this into a Unity KeyCode and, when that
+        // fails, its panel never opens and it says nothing. Skipping the first-run wizard on top
+        // of that would leave someone locked out of the mod with no screen to fix it on — so an
+        // unusable hotkey means the wizard runs, which is exactly the safety net it is for.
+        && Hotkeys.IsValid(SettingsHotkey)
+
         && (TranslationBackend != "ai" || !string.IsNullOrWhiteSpace(AiUrl));
 }

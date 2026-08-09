@@ -344,7 +344,12 @@ internal static class Program
         }
 
         var engine = new InstallEngine(platform, catalog, new ModReleaseClient());
-        var plan = engine.Plan(report, channel, chosen);
+        // Reviewed settings only: until someone has been through the settings screen, we have
+        // nothing to say about their language or their backend, and writing defaults into their
+        // game would look like we decided for them.
+        var configured = new SettingsStore(platform).Current;
+        var plan = engine.Plan(report, channel, chosen,
+            configured.Reviewed ? configured : null);
 
         if (plan is null)
         {

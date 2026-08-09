@@ -18,6 +18,14 @@ public sealed record InstallPlan(
     /// </summary>
     public string? StrayPluginDirectory { get; init; }
 
+    /// <summary>
+    /// The settings to write into this game's config.json, or null to leave it alone entirely.
+    ///
+    /// Null is a real case, not a degenerate one: reinstalling over a game someone has already
+    /// tuned by hand should not quietly reset their language or switch their AI back on.
+    /// </summary>
+    public InstallerSettings? Settings { get; init; }
+
     /// <summary>Human-readable summary shown before anything is written.</summary>
     public IEnumerable<string> Describe()
     {
@@ -72,8 +80,14 @@ public sealed class InstallEngine
     /// A loader the user picked instead of the recommendation. Ignored when a loader is already
     /// installed: replacing someone's loader would break every other mod they have.
     /// </param>
+    /// <param name="settings">
+    /// What to write into the game's config.json once installed, or null to leave it untouched.
+    /// Passed through the plan rather than read from disk here, so the caller stays in charge of
+    /// whether someone's existing configuration gets changed at all.
+    /// </param>
     public InstallPlan? Plan(GameReport report, ReleaseChannel channel = ReleaseChannel.Stable,
-                             LoaderDescriptor? loaderOverride = null)
+                             LoaderDescriptor? loaderOverride = null,
+                             InstallerSettings? settings = null)
     {
         if (report.Blockers.Count > 0) return null;
 
@@ -99,6 +113,7 @@ public sealed class InstallEngine
             Channel: channel)
         {
             StrayPluginDirectory = stray,
+            Settings = settings,
         };
     }
 
@@ -160,9 +175,21 @@ public sealed class InstallEngine
             }
 
             ReceiptStore.Write(plan.Game.Path, receipt);
+
+            // Written after the health check, and deliberately outside the rollback: config.json
+            // belongs to the mod and may predate us. Rolling it back would mean restoring a file
+            // we did not create, and a failure to write settings is not a reason to undo a
+            // perfectly good install — it is a reason to say so and let the mod's own wizard ask.
+            ConfigWriteResult? configured = null;
+            if (plan.Settings is not null)
+            {
+                Status?.Invoke("Applying your settings...");
+                configured = new GameConfigWriter().Apply(plan.Game.Path, plan.Loader, plan.Settings);
+            }
+
             Status?.Invoke("Done.");
 
-            return new InstallOutcome(true, BuildSuccessMessage(plan), receipt);
+            return new InstallOutcome(true, BuildSuccessMessage(plan, configured), receipt);
         }
         catch (Exception ex)
         {
@@ -324,9 +351,26 @@ public sealed class InstallEngine
         return null;
     }
 
-    private string BuildSuccessMessage(InstallPlan plan)
+    private string BuildSuccessMessage(InstallPlan plan, ConfigWriteResult? configured)
     {
         var lines = new List<string> { $"{plan.Game.Name} is ready." };
+
+        // Said plainly, because writing into someone's game without telling them what changed is
+        // how a tool loses trust — and because "why is my language wrong" is answered here.
+        if (configured is { Written: true, Applied.Count: > 0 })
+        {
+            lines.Add($"Applied your settings: {string.Join(", ", configured.Applied)}.");
+
+            lines.Add(configured.WizardSkipped
+                ? "The mod's first-run wizard is skipped: everything it asks is already answered."
+                : "The mod will still run its first-run wizard, since some of its questions have "
+                  + "no answer in your settings yet.");
+        }
+        else if (configured is { Written: false })
+        {
+            lines.Add($"Your settings could not be written ({configured.Failure}). The game is "
+                    + "installed and the mod will ask you its own questions on first launch.");
+        }
 
         if (_platform.NeedsDllOverride(plan.Game) && plan.Loader.ProtonDllOverride is not null)
         {

@@ -552,12 +552,25 @@ internal static class Program
             case OllamaState.InstalledButStopped:
                 Console.WriteLine($"Ollama is installed: {Sanitize.Path(status.ExecutablePath!)}");
                 Console.WriteLine("Starting it. Nothing is downloaded.");
-                if (await probe.StartAsync(status.ExecutablePath!))
+
+                var outcome = await probe.StartAsync(status.ExecutablePath!);
+                if (outcome.Started)
                 {
                     Console.WriteLine("It answers now.");
+                    if (outcome.HowToStop is not null)
+                        Console.WriteLine($"To stop it later: {outcome.HowToStop}");
                     return 0;
                 }
-                Console.Error.WriteLine("It would not start from here. Launch Ollama yourself and try again.");
+
+                if (outcome.Command is not null)
+                {
+                    Console.Error.WriteLine("This needs administrator rights, which we will not ask for. Run:");
+                    Console.Error.WriteLine($"    {outcome.Command}");
+                }
+                else
+                {
+                    Console.Error.WriteLine(outcome.Failure ?? "It would not start from here.");
+                }
                 return 4;
         }
 

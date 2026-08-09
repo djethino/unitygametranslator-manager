@@ -72,7 +72,10 @@ public sealed class OllamaInstaller
     /// </summary>
     private string? AssetFor() => _platform.OsId switch
     {
-        "windows" => _platform.HostArchitecture == GameArchitecture.X64
+        // One installer covers x64 and ARM64 alike: their setup script picks the right binary
+        // through IsArm64(). Refusing ARM64 here, as a first version did, turned a supported
+        // machine away for nothing.
+        "windows" => _platform.HostArchitecture is GameArchitecture.X64 or GameArchitecture.Arm64
             ? "OllamaSetup.exe"
             : null,
         _ => null,

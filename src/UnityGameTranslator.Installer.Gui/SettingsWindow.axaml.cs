@@ -506,18 +506,45 @@ public sealed class SettingsWindow : Window
                 start.IsEnabled = false;
                 start.Content = "Starting...";
 
-                if (await probe.StartAsync(status.ExecutablePath!))
+                var outcome = await probe.StartAsync(status.ExecutablePath!);
+
+                if (outcome.Started)
                 {
+                    // Said once, here, while it is relevant. Something we started on their behalf
+                    // has to come with the way to undo it: a background server nobody knows how to
+                    // stop is not a favour.
+                    if (outcome.HowToStop is not null)
+                        _ollamaPanel.Children.Add(Note($"To stop it later: {outcome.HowToStop}", "TextMuted"));
+
                     await DiscoverAsync();
+                    return;
+                }
+
+                start.Content = "Start Ollama";
+                start.IsEnabled = true;
+
+                if (outcome.Command is not null)
+                {
+                    // We could act but must not: this needs an administrator password, and asking
+                    // for one to start a translation helper would be out of proportion. The exact
+                    // command is worth more than an apology.
+                    _ollamaPanel.Children.Add(Note(
+                        "Starting it needs administrator rights, which we will not ask you for. "
+                        + "Run this in a terminal, then search again:", "StatusWarning"));
+                    _ollamaPanel.Children.Add(new TextBox
+                    {
+                        Text = outcome.Command,
+                        IsReadOnly = true,
+                        FontFamily = new FontFamily("Consolas, monospace"),
+                        FontSize = 12,
+                    });
                 }
                 else
                 {
-                    start.Content = "Start Ollama";
-                    start.IsEnabled = true;
                     _ollamaPanel.Children.Add(Note(
-                        "It would not start from here. Launching Ollama yourself and searching "
-                        + "again works — we would rather say so than keep retrying.",
-                        "StatusWarning"));
+                        outcome.Failure ?? "It would not start from here. Launching Ollama "
+                        + "yourself and searching again works — we would rather say so than keep "
+                        + "retrying.", "StatusWarning"));
                 }
             };
 

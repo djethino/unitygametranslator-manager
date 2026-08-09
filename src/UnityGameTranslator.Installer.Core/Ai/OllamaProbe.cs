@@ -20,6 +20,19 @@ public enum OllamaState
 public sealed record OllamaStatus(OllamaState State, string? ExecutablePath, string? Detail);
 
 /// <summary>
+/// What happened when we tried to start it, and what the user can do about it.
+///
+/// More than a boolean because "we cannot do this for you" is a legitimate outcome, not a
+/// failure: starting a systemd service needs a password we must never ask for or work around. In
+/// that case the exact command belongs on screen, which is worth more than a red message.
+/// </summary>
+public sealed record OllamaStartOutcome(
+    bool Started,
+    string? Command = null,
+    string? HowToStop = null,
+    string? Failure = null);
+
+/// <summary>
 /// Finds an existing Ollama before anything else is considered.
 ///
 /// This exists to protect what the user already has. The decision was explicit: never touch an
@@ -124,34 +137,104 @@ public sealed class OllamaProbe
     }
 
     /// <summary>
-    /// Starts the installed server and waits for it to answer.
+    /// The desktop application, on the systems that have one.
     ///
-    /// `ollama serve` is run detached and with no environment of our own: setting OLLAMA_HOST or
-    /// OLLAMA_MODELS here would silently override the configuration we are trying not to disturb.
-    /// The user's own settings apply, exactly as when they start it themselves.
+    /// On Windows this is what the official installer itself launches once it is done, and it is
+    /// what puts the icon next to the clock. Starting the bare server instead leaves nothing to
+    /// show for it: it outlives our own window and the only way left to stop it is the task
+    /// manager, which is a poor trade for a tool meant to make this easy.
+    ///
+    /// Linux has no such application at all — Ollama ships no GUI there.
+    /// </summary>
+    private string? FindDesktopApp()
+    {
+        if (_platform.OsId != "windows") return null;
+
+        var binary = FindExecutable();
+        var folder = binary is null ? null : Path.GetDirectoryName(binary);
+        if (folder is null) return null;
+
+        var app = Path.Combine(folder, "ollama app.exe");
+        return File.Exists(app) ? app : null;
+    }
+
+    /// <summary>
+    /// Whether the official Linux install is in charge here.
+    ///
+    /// It matters more than it looks. That install runs the server as its own "ollama" user with
+    /// its own model folder (/usr/share/ollama/.ollama). Starting a second server as the logged-in
+    /// user would fight it for port 11434 and read a different model folder — two servers, two
+    /// libraries, and a problem that did not exist before we helped.
+    /// </summary>
+    private static bool HasSystemdService() =>
+        File.Exists("/etc/systemd/system/ollama.service")
+        || File.Exists("/usr/lib/systemd/system/ollama.service");
+
+    /// <summary>
+    /// Starts what is installed, the way that system expects, and says how to stop it again.
+    ///
+    /// No environment of our own is ever set: an OLLAMA_HOST or OLLAMA_MODELS from us would
+    /// silently override the configuration we are trying not to disturb. The user's own settings
+    /// apply, exactly as when they start it themselves.
     ///
     /// ⚠ Never bound to 0.0.0.0. A January 2026 Censys/SentinelOne survey found thousands of
     /// Ollama servers exposed on the open internet for precisely that reason. The default binding
-    /// is local, and we do not change it.
+    /// is local and we do not touch it.
+    ///
+    /// ⚠ Never with sudo. Where a password is needed we stop and show the command instead — a
+    /// tool that asks for an administrator password to start a translation helper has no business
+    /// being trusted with one.
     /// </summary>
-    public async Task<bool> StartAsync(string executablePath, CancellationToken ct = default)
+    public async Task<OllamaStartOutcome> StartAsync(string executablePath,
+                                                     CancellationToken ct = default)
     {
-        try
-        {
-            var start = new ProcessStartInfo
-            {
-                FileName = executablePath,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
-            start.ArgumentList.Add("serve");
+        string howToStop;
 
-            using var process = Process.Start(start);
-            if (process is null) return false;
-        }
-        catch
+        if (_platform.OsId != "windows" && HasSystemdService())
         {
-            return false;
+            // Tried without elevation on purpose: some systems allow it through polkit, and where
+            // they do this simply works. Where they do not, the command goes on screen.
+            if (!TryRun("systemctl", new[] { "start", "ollama" }))
+            {
+                return new OllamaStartOutcome(false,
+                    Command: "sudo systemctl start ollama",
+                    HowToStop: "sudo systemctl stop ollama");
+            }
+
+            howToStop = "sudo systemctl stop ollama";
+        }
+        else
+        {
+            var app = FindDesktopApp();
+            var target = app ?? executablePath;
+
+            howToStop = app is not null
+                ? "Right-click the Ollama icon next to the clock and choose Quit."
+                : _platform.OsId == "windows"
+                    ? "It runs in the background with no icon: ending \"ollama.exe\" in the Task "
+                      + "Manager stops it."
+                    : "It runs in the background: \"pkill ollama\" stops it.";
+
+            try
+            {
+                var start = new ProcessStartInfo
+                {
+                    FileName = target,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                };
+
+                // The desktop app starts the server itself; only the bare binary needs telling.
+                if (app is null) start.ArgumentList.Add("serve");
+
+                using var process = Process.Start(start);
+                if (process is null)
+                    return new OllamaStartOutcome(false, Failure: "It would not start.");
+            }
+            catch (Exception ex)
+            {
+                return new OllamaStartOutcome(false, Failure: $"{ex.GetType().Name}: {ex.Message}");
+            }
         }
 
         // Loading takes a moment, and reporting failure too early would send someone installing a
@@ -161,9 +244,37 @@ public sealed class OllamaProbe
         {
             await Task.Delay(500, ct).ConfigureAwait(false);
             if (await probe.ListModelsAsync("http://localhost:11434", ct).ConfigureAwait(false) is not null)
-                return true;
+                return new OllamaStartOutcome(true, HowToStop: howToStop);
         }
 
-        return false;
+        return new OllamaStartOutcome(false,
+            Failure: "It was started but is not answering yet. Giving it a moment and searching "
+                   + "again usually settles it.");
+    }
+
+    /// <summary>Runs a command and reports whether it succeeded. Never elevated.</summary>
+    private static bool TryRun(string fileName, IEnumerable<string> arguments)
+    {
+        try
+        {
+            var start = new ProcessStartInfo
+            {
+                FileName = fileName,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardError = true,
+                RedirectStandardOutput = true,
+            };
+            foreach (var argument in arguments) start.ArgumentList.Add(argument);
+
+            using var process = Process.Start(start);
+            if (process is null) return false;
+
+            return process.WaitForExit(10_000) && process.ExitCode == 0;
+        }
+        catch
+        {
+            return false;
+        }
     }
 }

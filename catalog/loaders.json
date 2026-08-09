@@ -1,5 +1,5 @@
 {
-  "schema": 3,
+  "schema": 4,
   "generated_at": "2026-08-08T00:00:00Z",
   "_comment": [
     "Loader layouts and download locations. Fetched at runtime by the installer so that a",
@@ -14,7 +14,7 @@
     "",
     "Bumping a loader version = change 'version', the release 'tag', and the asset names.",
     "",
-    "Each warning carries the situation it applies to (os / runtimes / on_fresh_install). A note",
+        "Each warning carries the situation it applies to (os / runtimes / on_fresh_install). A note",
     "shown when it is not true teaches the reader to skip warnings, which is the one habit they",
     "must not have. Facts about platforms we do not offer belong in this comment, not on screen."
   ],

@@ -37,6 +37,7 @@ internal static class Program
                 "diagnose" => await DiagnoseAsync(offline),
                 "install" or "update" => await InstallAsync(args),
                 "uninstall" => await UninstallAsync(args),
+                "forget" => await ForgetAsync(args),
                 "-h" or "--help" or "help" => Help(),
                 _ => Unknown(command),
             };
@@ -58,6 +59,7 @@ internal static class Program
               install <path or name>       Set up the loader and the plugin
               update <path or name>        Same thing: reinstalls the current release
               uninstall <path or name>     Remove what was installed
+              forget <path or name>        Undo what you told us about a game
               catalog [--offline]          Show the loader catalog and where it came from
               diagnose                     Printable report, safe to paste in a public issue
               help                         This text
@@ -369,6 +371,36 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine(outcome.Message);
         return outcome.Success ? 0 : 4;
+    }
+
+    /// <summary>
+    /// Drops the answers the user gave for a game — a forced runtime, a forced architecture, a
+    /// refusal they overruled. The way back has to exist, or the first answer is permanent.
+    /// </summary>
+    private static async Task<int> ForgetAsync(string[] args)
+    {
+        var context = await ResolveGameAsync(args, offline: true);
+        if (context is null) return 1;
+
+        var (_, _, report, inventory) = context.Value;
+
+        if (inventory.Overrides.For(report.Game.Path) is null)
+        {
+            Console.WriteLine("Nothing was overridden for this game.");
+            return 0;
+        }
+
+        if (ReceiptStore.Read(report.Game.Path) is not null)
+        {
+            Console.WriteLine("Something is still installed here. Uninstall it first, or the " +
+                              "files stay behind and this tool will no longer offer to remove them.");
+        }
+
+        if (!Confirm(args, "Forget what you told us about this game?")) return 0;
+
+        inventory.Overrides.Clear(report.Game.Path);
+        Console.WriteLine("Done. It will be judged from its files again.");
+        return 0;
     }
 
     private static async Task<int> UninstallAsync(string[] args)

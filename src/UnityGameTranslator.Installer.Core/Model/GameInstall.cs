@@ -126,6 +126,12 @@ public sealed class GameInstall
     /// </summary>
     public ModdabilityVerdict? OverriddenVerdict { get; set; }
 
+    /// <summary>
+    /// Loader families this game's stripped runtime cannot host, with the reason. Empty for
+    /// almost every game. When it holds every known family, the game is refused outright.
+    /// </summary>
+    public List<Detection.CorlibProbe.BrokenFamily> BrokenLoaderFamilies { get; } = new();
+
     public bool IsUnity => DataDirectory is not null || ExecutablePath is not null;
 
     public bool IsModdable => Verdict == ModdabilityVerdict.Ok;

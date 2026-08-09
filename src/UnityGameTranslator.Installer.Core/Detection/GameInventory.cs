@@ -158,6 +158,7 @@ public sealed class GameInventory
             .OrderByDescending(l => l.Preference)
             .ToList();
 
+
         report.EligibleLoaders = candidates;
 
         if (report.InstalledLoader is not null)

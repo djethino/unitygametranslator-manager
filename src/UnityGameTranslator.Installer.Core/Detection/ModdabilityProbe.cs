@@ -62,10 +62,14 @@ public static class ModdabilityProbe
         if (game.Runtime == UnityRuntime.Mono)
         {
             var corlib = CorlibProbe.Check(game.DataDirectory);
+
+            game.BrokenLoaderFamilies.Clear();
+            game.BrokenLoaderFamilies.AddRange(corlib.Broken);
+
             if (corlib.IsStripped)
             {
                 game.Verdict = ModdabilityVerdict.StrippedRuntime;
-                game.VerdictDetail = corlib.MissingMember;
+                game.VerdictDetail = CorlibProbe.Describe(corlib.Broken);
                 return;
             }
         }
@@ -171,11 +175,12 @@ public static class ModdabilityProbe
             "Refused: could not tell whether this game uses Mono or IL2CPP. Installing the " +
             "wrong loader would stop the game from starting.",
         ModdabilityVerdict.StrippedRuntime =>
-            $"Refused: this game was built with its runtime library stripped, and " +
-            $"{game.VerdictDetail} is missing from it — " +
-            $"{CorlibProbe.NeededBy(game.VerdictDetail ?? "")} calls it before any mod runs. " +
-            "No mod loader can start here. This is how the game was built, not a limitation of " +
-            "the tool or of the mod.",
+            "Refused: this game was built with its runtime library stripped. Missing: " +
+            $"{game.VerdictDetail}. Every loader runs managed code and uses reflection before " +
+            "any mod does, and on a game stripped this hard they all fail — BepInEx 5, BepInEx 6 " +
+            "and MelonLoader were each tried on such a game, and so was swapping in unstripped " +
+            "runtime libraries. This is how the game was built, not a limitation of the tool or " +
+            "of the mod.",
         ModdabilityVerdict.ArchitectureUnknown =>
             "Refused: could not read whether this game is 32-bit or 64-bit. A 64-bit loader in a " +
             "32-bit game does not crash, it simply never runs — which looks exactly like a broken mod.",

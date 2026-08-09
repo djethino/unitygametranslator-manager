@@ -729,6 +729,15 @@ public partial class MainWindow : Window
             return panel;
         }
 
+        // A decision one can make but not unmake is a trap. Overruling a refusal is reversible
+        // by design, so the way back has to be as reachable as the way in.
+        if (report.Game.VerdictOverridden)
+        {
+            var reconsider = new Button { Content = "Treat as not possible again", FontSize = 12 };
+            reconsider.Click += async (_, _) => await ClearOverrideAsync(report);
+            panel.Children.Add(reconsider);
+        }
+
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
 
         LoaderDescriptor? Chosen() =>
@@ -780,6 +789,50 @@ public partial class MainWindow : Window
     /// can be removed, so a loader that turns out not to work costs time. An anti-cheat never
     /// reaches here — that cost is a banned account, and no uninstall undoes it.
     /// </summary>
+    /// <summary>
+    /// Puts a game back to refused. Warns first when something is still installed: the override
+    /// is what allowed that install, and taking it away while the files are still there would
+    /// leave a game the tool then declines to manage.
+    /// </summary>
+    private async Task ClearOverrideAsync(GameReport report)
+    {
+        var body = new StackPanel { Spacing = 10 };
+        body.Children.Add(new TextBlock
+        {
+            Text = "This game will be listed as not possible again, and the tool will stop " +
+                   "offering to install into it.",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("TextSecondary"),
+        });
+
+        var stillInstalled = ReceiptStore.Read(report.Game.Path) is not null;
+        if (stillInstalled)
+        {
+            body.Children.Add(new TextBlock
+            {
+                Text = "Something is still installed here. Uninstall it first, otherwise the " +
+                       "files stay behind and the tool will no longer offer to remove them.",
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("StatusWarning"),
+            });
+        }
+
+        if (!await ConfirmAsync($"Treat {report.Game.Name} as not possible?", body, "Confirm"))
+            return;
+
+        _inventory.Overrides.Clear(report.Game.Path);
+
+        // Re-read the game from the files, so the verdict comes back from detection rather than
+        // from a stale in-memory object that still believes it was overruled.
+        ModdabilityProbe.Evaluate(report.Game);
+        report.Game.VerdictOverridden = false;
+        report.Game.OverriddenVerdict = null;
+
+        RecomputeSituations();
+        RefreshList();
+        await ShowSelectedAsync();
+    }
+
     private async Task OverrideVerdictAsync(GameReport report)
     {
         var verdict = report.Game.Verdict;

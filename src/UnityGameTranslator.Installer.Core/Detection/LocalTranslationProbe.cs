@@ -85,27 +85,38 @@ public static class LocalTranslationProbe
         }
     }
 
-    /// <summary>Where the plugin was found, and which version it is.</summary>
-    public readonly record struct InstalledPlugin(string Directory, string? Version);
+    /// <summary>Where a plugin assembly was found, and whether that is the documented place.</summary>
+    public readonly record struct InstalledPlugin(string Directory, string? Version, bool IsCanonical);
 
     /// <summary>
     /// Finds the deployed plugin, wherever it actually sits.
     ///
-    /// The catalog says where a fresh install goes, and for MelonLoader that is the root of
-    /// Mods/ because its documentation states subdirectories are not scanned. Real installs are
-    /// not always there — a Mods/UnityGameTranslator/ subfolder is common in the wild — and a
-    /// game whose plugin we fail to find is reported as not set up, offering to install a mod
-    /// that is already running. Looking in both places costs nothing; being wrong costs a row
-    /// that contradicts what the player sees in their game.
+    /// The catalog holds the documented location; real installs are not always there. A
+    /// Mods/UnityGameTranslator/ subfolder is in use and does load — a MelonLoader 0.7.1 log
+    /// reads "Melon Assembly loaded: '.\Mods\UnityGameTranslator\UnityGameTranslator.dll'" — but
+    /// only on some setups, and MelonLoader's changelog says why: recursive folder scanning
+    /// arrived in 0.6.6, up to 0.7.0 a subfolder was only scanned when it held a manifest.json
+    /// ("Removed 'manifest.json' Requirement for Recursive Melon Subfolder scanning", 0.7.1), and
+    /// since 0.7.2 a config option can switch subfolder loading off entirely.
+    ///
+    /// It is a version question, not a Mono/IL2CPP one.
+    ///
+    /// So both places are searched, because a game whose plugin we miss is reported as not set up
+    /// and offers to install a mod that is already running. Where to WRITE is a separate
+    /// question, answered by IsCanonical rather than by wherever a copy happens to be.
     /// </summary>
     public static InstalledPlugin? FindInstalledPlugin(string gamePath, LoaderDescriptor descriptor)
     {
         var root = Path.Combine(gamePath, descriptor.PluginDir.Replace('/', Path.DirectorySeparatorChar));
 
-        foreach (var directory in new[] { root, Path.Combine(root, "UnityGameTranslator") })
+        var candidates = new[] { (Dir: root, Canonical: true),
+                                 (Dir: Path.Combine(root, "UnityGameTranslator"), Canonical: false) };
+
+        foreach (var (directory, canonical) in candidates)
         {
             var dll = Path.Combine(directory, PluginAssemblyName);
-            if (File.Exists(dll)) return new InstalledPlugin(directory, PeFile.ReadFileVersion(dll));
+            if (File.Exists(dll))
+                return new InstalledPlugin(directory, PeFile.ReadFileVersion(dll), canonical);
         }
 
         return null;

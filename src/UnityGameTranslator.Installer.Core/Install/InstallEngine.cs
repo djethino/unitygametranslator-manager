@@ -11,6 +11,13 @@ public sealed record InstallPlan(
     string PluginAssetPattern,
     ReleaseChannel Channel)
 {
+    /// <summary>
+    /// A plugin copy sitting outside the documented location, relative to the game. Reported so
+    /// the user can remove it: we never delete files we did not install, and two copies of the
+    /// assembly in one game leave the loader free to pick either.
+    /// </summary>
+    public string? StrayPluginDirectory { get; init; }
+
     /// <summary>Human-readable summary shown before anything is written.</summary>
     public IEnumerable<string> Describe()
     {
@@ -24,6 +31,12 @@ public sealed record InstallPlan(
             yield return $"Settings and translations live in {Loader.UserDataDir}/";
 
         yield return "Existing settings and translations are left untouched";
+
+        if (StrayPluginDirectory is { } stray)
+        {
+            yield return $"! A plugin copy is also in {stray}/ — remove it yourself afterwards, " +
+                         "two copies in one game let the loader pick either";
+        }
     }
 }
 
@@ -73,12 +86,20 @@ public sealed class InstallEngine
         var runtime = report.Game.Runtime == UnityRuntime.Il2Cpp ? "il2cpp" : "mono";
         if (!_catalog.PluginBuilds.TryGetValue($"{loader.Id}:{runtime}", out var pattern)) return null;
 
+        var existing = LocalTranslationProbe.FindInstalledPlugin(report.Game.Path, loader);
+        var stray = existing is { IsCanonical: false }
+            ? Path.GetRelativePath(report.Game.Path, existing.Value.Directory).Replace('\\', '/')
+            : null;
+
         return new InstallPlan(
             Game: report.Game,
             Loader: loader,
             InstallLoader: report.InstalledLoader is null,
             PluginAssetPattern: pattern,
-            Channel: channel);
+            Channel: channel)
+        {
+            StrayPluginDirectory = stray,
+        };
     }
 
     public async Task<InstallOutcome> ApplyAsync(InstallPlan plan, CancellationToken ct = default)
@@ -208,15 +229,23 @@ public sealed class InstallEngine
         var before = files.WrittenFiles.Count;
         var dirsBefore = files.CreatedDirectories.Count;
 
-        // Update where it already lives. Writing to the catalog's location while a copy sits in
-        // a different folder would leave two plugin assemblies in the same game, and the loader
-        // picking either one.
-        var existing = LocalTranslationProbe.FindInstalledPlugin(plan.Game.Path, plan.Loader);
-        var target = existing is { } found
-            ? Path.GetRelativePath(plan.Game.Path, found.Directory).Replace('\\', '/')
-            : plan.Loader.PluginDir;
+        // Always the documented location, never wherever a copy happens to be.
+        //
+        // A previous revision followed an existing install. That was wrong, and MelonLoader's
+        // changelog says exactly why a subfolder cannot be trusted: recursive scanning only
+        // arrived in 0.6.6, up to 0.7.0 it required a manifest.json in the folder, and since
+        // 0.7.2 a config option can turn it off. Three separate ways for the same layout to
+        // silently load nothing, all of them outside our control. The root of Mods/ works on
+        // every version and cannot be switched off.
+        CopyTree(archive.ExtractedPath, plan.Loader.PluginDir, files);
 
-        CopyTree(archive.ExtractedPath, target, files);
+        // A copy left somewhere else is not ours to delete — but two assemblies in one game means
+        // the loader may pick either, so it is named rather than left to be discovered.
+        if (plan.StrayPluginDirectory is { } stray)
+        {
+            Status?.Invoke($"Another plugin copy is still in {stray}. Remove it: with two of them " +
+                           "in one game, the loader may load either.");
+        }
 
         receipt.Plugin = new ReceiptPlugin
         {

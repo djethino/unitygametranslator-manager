@@ -79,14 +79,17 @@
       </Style.Resources>
     </Style>
 
-    <!-- A field recessed inside a card: the site other shade -->
-    <Style Selector="TextBox.recessed">
-      <Style.Resources>
-        <SolidColorBrush x:Key="TextControlBackground" Color="#222B3A" />
-        <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#28323F" />
-        <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#28323F" />
-      </Style.Resources>
-    </Style>
+    <!--
+      There is NO "recessed" variant here, and adding one this way would be a mistake.
+
+      Style.Resources is not scoped to the controls a selector matches: the resources are poured
+      into the surrounding scope, so a `TextBox.recessed` block quietly overrode the default for
+      every field in the window. Measuring caught it — the search box was rendering the recessed
+      shade while nothing carried that class.
+
+      When a field inside a card needs the darker shade, set it on that instance, or give it its
+      own ControlTheme. Do not reach for Style.Resources again.
+    -->
 
     <Style Selector="ComboBox">
       <Setter Property="CornerRadius" Value="{DynamicResource RadiusControl}" />

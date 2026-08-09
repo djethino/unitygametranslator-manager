@@ -32,6 +32,12 @@ public partial class MainWindow : Window
     private OnlineCatalogCache _online = null!;
     private CancellationTokenSource? _sweep;
 
+    /// <summary>
+    /// The account's place in the lineages it takes part in, read once and kept for the life of
+    /// this window. Dropped when the account changes — see <see cref="OpenToolSettingsAsync"/>.
+    /// </summary>
+    private readonly AccountLineages _lineages = new();
+
     /// <summary>Situation per game path, so a row can be redrawn without redoing the work.</summary>
     private readonly Dictionary<string, GameSituationInfo> _situations =
         new(StringComparer.OrdinalIgnoreCase);
@@ -80,7 +86,10 @@ public partial class MainWindow : Window
 
         var result = await Task.Run(() => new CatalogProvider(_platform).Get());
         _catalog = result.Document;
-        _inventory = new GameInventory(_platform, _catalog, new CatalogApiClient());
+        _inventory = new GameInventory(_platform, _catalog, new CatalogApiClient())
+        {
+            Lineages = _lineages,
+        };
 
         Status($"Catalog: {_catalog.Loaders.Count} loaders ({result.Source}). Scanning your drives...");
 
@@ -425,6 +434,11 @@ public partial class MainWindow : Window
         // Redrawn whatever was saved: signing in and out both happen in that window, and the
         // header would otherwise keep claiming the opposite until the next launch.
         ShowAccount();
+
+        // The roles belong to whoever was signed in. Keeping them after a sign-out would leave a
+        // card claiming "you are the Main here" to nobody in particular, and after a switch of
+        // account it would claim it for the wrong person.
+        _lineages.Forget();
 
         if (!window.Saved) return;
 
@@ -797,6 +811,12 @@ public partial class MainWindow : Window
         DetailPanel.Children.Add(new TextBlock { Text = "Reading...", Opacity = 0.6 });
 
         Busy(true, $"Reading {game.Name}...");
+
+        // One call for the whole library, and only the first selection pays for it. A failure is
+        // recorded rather than raised: not knowing one's role costs a line on a card, and must
+        // never stand between someone and installing the mod.
+        await _lineages.EnsureAsync(_settings.Current.ApiToken);
+
         var report = await _inventory.BuildReportAsync(game);
         Busy(false, "Ready.");
 
@@ -1037,6 +1057,82 @@ public partial class MainWindow : Window
         return grid;
     }
 
+    /// <summary>
+    /// Where the signed-in account stands in the lineage of the file installed here.
+    ///
+    /// Two positions and no more: whoever publishes leads it — a Main — and whoever contributes
+    /// privately writes a branch that the Main reviews. It matters to a manager because the two
+    /// have opposite next moves: a Main has contributions waiting on them, a branch is waiting on
+    /// somebody else. The mod says the same thing in game, from the same server answer, and the
+    /// colours match it — green for the Main, amber for a branch — so the two never seem to
+    /// disagree about the same file.
+    ///
+    /// Silent for a translation this account has no part in, which is the ordinary case: a player
+    /// who downloaded somebody's work owes no explanation for it. Silent, too, while the answer is
+    /// unread or the account signed out — the alternative would be a guess printed as a fact.
+    /// </summary>
+    private IEnumerable<Control> LineageNotes(GameReport report)
+    {
+        if (report.MyPosition is not { } position) yield break;
+
+        if (position.IsMain)
+        {
+            var waiting = position.BranchesCount ?? 0;
+
+            yield return new TextBlock
+            {
+                Text = position.Describe(),
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("StatusSuccess"),
+                Margin = new Avalonia.Thickness(0, 2, 0, 0),
+            };
+
+            // Reviewing happens on the site — merging a contribution means reading both files side
+            // by side, which is a screen, not a line on a card. Offered only when there is
+            // something to review: a button that leads to an empty page is worse than no button.
+            if (waiting > 0)
+            {
+                var review = Glyphs.Button(Glyphs.Site(), "Review them on the site");
+                review.Margin = new Avalonia.Thickness(0, 6, 0, 0);
+                review.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left;
+                review.Click += (_, _) =>
+                    OpenUrl($"{BuildInfo.WebsiteBaseUrl}/translations/{position.Uuid}/merge");
+
+                yield return review;
+            }
+
+            yield break;
+        }
+
+        // A branch. The Main's name is not in the account's own listing — but the published entry
+        // of this very lineage IS the Main, and the community search already carries who published
+        // it. Read from there rather than asked for again.
+        yield return new TextBlock
+        {
+            Text = position.Describe(report.MatchingOnline?.Author),
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("StatusWarning"),
+            Margin = new Avalonia.Thickness(0, 2, 0, 0),
+        };
+
+        // Only when the server said so. Null means the site is older than the field, and an
+        // installer that read silence as "the Main is fine" would reassure people wrongly.
+        if (position.MainMissing == true)
+        {
+            yield return new TextBlock
+            {
+                Text = LineagePosition.OrphanNote,
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("StatusWarning"),
+                Opacity = 0.9,
+                Margin = new Avalonia.Thickness(0, 2, 0, 0),
+            };
+        }
+    }
+
     private Control Translations(GameReport report)
     {
         var panel = new StackPanel { Spacing = 6, Margin = new Avalonia.Thickness(0, 10, 0, 0) };
@@ -1075,6 +1171,8 @@ public partial class MainWindow : Window
                 Foreground = Brush("StatusSuccess"),
             });
         }
+
+        foreach (var line in LineageNotes(report)) panel.Children.Add(line);
 
         // One button rather than a list of names: choosing between translations needs what they
         // are made of, who reviewed them and which language they came FROM — none of which fits

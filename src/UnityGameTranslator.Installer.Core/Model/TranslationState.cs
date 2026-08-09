@@ -137,6 +137,77 @@ public sealed class OnlineTranslation
     }
 }
 
+/// <summary>
+/// The signed-in account's own place in one translation lineage.
+///
+/// Two positions exist and no more: whoever publishes leads — a Main — and whoever contributes
+/// privately writes a branch, reviewed by that Main. A fork IS a main: it is published, it has its
+/// own contributors, and the only thing it is not is the first file of the lineage.
+///
+/// Absent entirely for a translation somebody else wrote and this player merely downloaded, which
+/// is the ordinary case and deserves no badge at all.
+/// </summary>
+public sealed class LineagePosition
+{
+    public required string Uuid { get; init; }
+
+    /// <summary>Published: this account leads the lineage.</summary>
+    public required bool IsMain { get; init; }
+
+    /// <summary>
+    /// Contributions waiting on this Main. Null on a branch — a branch has no branches to answer
+    /// about, which is a different thing from having none.
+    /// </summary>
+    public int? BranchesCount { get; init; }
+
+    /// <summary>
+    /// A branch whose Main is gone. Null means unknown, never "the Main is fine": an older site
+    /// does not send the field, and silence is not reassurance.
+    /// </summary>
+    public bool? MainMissing { get; init; }
+
+    public int SiteId { get; init; }
+    public string? SourceLanguage { get; init; }
+    public string? TargetLanguage { get; init; }
+    public string? GameName { get; init; }
+
+    /// <summary>
+    /// The one sentence that says where this account stands, written once for every screen that
+    /// shows it — the game card and the translation chooser both do, and two copies of a sentence
+    /// are two chances to end up telling the same person two different things about one file.
+    /// </summary>
+    /// <param name="mainOwner">
+    /// Who owns the Main, when the caller happens to know: the published entry of this lineage IS
+    /// the Main, so a community search already carries the name. Left out rather than guessed.
+    /// </param>
+    public string Describe(string? mainOwner = null)
+    {
+        if (!IsMain)
+        {
+            return mainOwner is null
+                ? "This is your branch: your changes are reviewed by the Main's owner."
+                : $"This is your branch: your changes are reviewed by {mainOwner}.";
+        }
+
+        var waiting = BranchesCount ?? 0;
+
+        return waiting == 0
+            ? "This translation is yours: you are its Main."
+            : $"This translation is yours, and {waiting} "
+              + (waiting == 1 ? "contribution is" : "contributions are")
+              + " waiting for your review.";
+    }
+
+    /// <summary>
+    /// Said only when <see cref="MainMissing"/> is true. Null is "we do not know" — an older site
+    /// does not send the field — and reading silence as reassurance would be the one mistake that
+    /// matters here.
+    /// </summary>
+    public const string OrphanNote =
+        "The Main it contributed to is gone. Your work is untouched, but nobody upstream is "
+        + "reviewing it any more — publishing it would give this translation a head again.";
+}
+
 /// <summary>Everything we know about a game, gathered in one place for display and decisions.</summary>
 public sealed class GameReport
 {
@@ -180,6 +251,16 @@ public sealed class GameReport
     /// they are already using.
     /// </summary>
     public OnlineTranslation? MatchingOnline { get; set; }
+
+    /// <summary>
+    /// Where the signed-in account stands in the lineage of the LOCAL file, when it stands
+    /// anywhere at all.
+    ///
+    /// Null covers three different situations on purpose — signed out, not read yet, and a
+    /// translation this account has no part in — because the screen says nothing in all three.
+    /// Telling them apart would only let the interface make a claim it cannot support.
+    /// </summary>
+    public LineagePosition? MyPosition { get; set; }
 
     /// <summary>Community entries that are NOT what the user already has locally.</summary>
     public IEnumerable<OnlineTranslation> AlternativeOnline =>

@@ -34,6 +34,15 @@ public sealed class GameInventory
     public CustomFolders Folders { get; } = null!;
 
     /// <summary>
+    /// Where the signed-in account stands in the lineages it takes part in.
+    ///
+    /// Set by whoever owns the session — the window — and left null everywhere else: the CLI and
+    /// the install engine have no account, and a report simply says nothing about roles rather
+    /// than carrying a second, quieter way of being signed in.
+    /// </summary>
+    public AccountLineages? Lineages { get; set; }
+
+    /// <summary>
     /// Every Unity game we can find: Steam first because it is the richest source, then the
     /// launcher defaults, then the folders the user added themselves.
     /// </summary>
@@ -137,6 +146,11 @@ public sealed class GameInventory
                     t => string.Equals(t.Uuid, localUuid, StringComparison.OrdinalIgnoreCase));
             }
         }
+
+        // Deliberately outside the community lookup: whether this account leads or contributes to
+        // the lineage of the local file is a fact about the account, and it holds even when the
+        // catalog search failed or the game is not published anywhere.
+        report.MyPosition = Lineages?.For(report.LocalTranslation?.Uuid);
 
         return report;
     }

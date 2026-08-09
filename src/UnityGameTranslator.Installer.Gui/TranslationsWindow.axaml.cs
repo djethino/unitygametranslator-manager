@@ -154,6 +154,43 @@ public sealed class TranslationsWindow : Window
                     : $"You already have {local.EntryCount} lines here{pair}, with nothing waiting to be "
                       + "uploaded.";
 
+        var card = new StackPanel { Spacing = 4 };
+
+        card.Children.Add(new TextBlock
+        {
+            Text = text,
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush(local?.LocalChanges > 0 ? "StatusWarning" : "TextSecondary"),
+        });
+
+        // Where the account stands in this very lineage, in the same words the game card uses —
+        // it changes what "replacing this file" means. Overwriting a stranger's translation costs
+        // a download; overwriting the Main one publishes costs the only copy of work other people
+        // are contributing to.
+        if (_report.MyPosition is { } position)
+        {
+            card.Children.Add(new TextBlock
+            {
+                Text = position.Describe(_report.MatchingOnline?.Author),
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush(position.IsMain ? "StatusSuccess" : "StatusWarning"),
+            });
+
+            if (position.MainMissing == true)
+            {
+                card.Children.Add(new TextBlock
+                {
+                    Text = LineagePosition.OrphanNote,
+                    FontSize = 12,
+                    TextWrapping = TextWrapping.Wrap,
+                    Opacity = 0.9,
+                    Foreground = Brush("StatusWarning"),
+                });
+            }
+        }
+
         return new Border
         {
             Background = Brush("SurfaceCard"),
@@ -161,13 +198,7 @@ public sealed class TranslationsWindow : Window
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(6),
             Padding = new Thickness(14),
-            Child = new TextBlock
-            {
-                Text = text,
-                FontSize = 12,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = Brush(local?.LocalChanges > 0 ? "StatusWarning" : "TextSecondary"),
-            },
+            Child = card,
         };
     }
 

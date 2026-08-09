@@ -51,6 +51,7 @@ public partial class MainWindow : Window
         RescanButton.Click += async (_, _) => await ScanAsync();
         AddFolderButton.Click += async (_, _) => await AddFolderAsync();
         FoldersButton.Click += async (_, _) => await ManageFoldersAsync();
+        SettingsButton.Click += async (_, _) => await OpenSettingsAsync();
         AboutButton.Click += async (_, _) => await new AboutWindow().ShowDialog(this);
         GameList.SelectionChanged += async (_, _) => await ShowSelectedAsync();
 
@@ -173,6 +174,41 @@ public partial class MainWindow : Window
             var checkedOnline = online is not null || !_settings.Current.OnlineMode;
 
             _situations[game.Path] = SituationReader.Read(report, language, checkedOnline);
+        }
+    }
+
+    /// <summary>
+    /// Opens the defaults, and re-reads the list when they change.
+    ///
+    /// The language lives in two places on purpose — the header, for a quick switch while
+    /// looking at the list, and the settings, because a screen called "defaults for every game"
+    /// that does not hold the language would send the reader looking for it. They stay in step
+    /// because the settings are a modal dialog: nothing can drift while it is open.
+    /// </summary>
+    private async Task OpenSettingsAsync()
+    {
+        var window = new SettingsWindow(_platform, _settings);
+        await window.ShowDialog(this);
+
+        if (!window.Saved) return;
+
+        SyncLanguageBox();
+        RecomputeSituations();
+        RefreshList();
+        await ShowSelectedAsync();
+    }
+
+    /// <summary>Puts the header picker back in step with what was just saved.</summary>
+    private void SyncLanguageBox()
+    {
+        var current = _settings.Current.TargetLanguage;
+        foreach (var item in LanguageBox.Items.OfType<ComboBoxItem>())
+        {
+            if (string.Equals(item.Tag as string, current, StringComparison.OrdinalIgnoreCase))
+            {
+                LanguageBox.SelectedItem = item;
+                return;
+            }
         }
     }
 

@@ -592,6 +592,37 @@ public partial class MainWindow : Window
             }
         }
 
+        // The game's own icon, when it has one. Purely to make a library look like a library:
+        // a column of names reads as a system tool, and these people are looking for THEIR games.
+        //
+        // The row keeps its exact shape when there is no icon — nothing is reserved, nothing is
+        // stood in for. A placeholder repeated down the list would be noise pretending to be
+        // information, and on Linux there is never an icon at all.
+        if (GameIcons.For(game.ExecutablePath) is { } icon)
+        {
+            var row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 10,
+            };
+
+            row.Children.Add(new Image
+            {
+                Source = icon,
+                Width = 28,
+                Height = 28,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+                Margin = new Avalonia.Thickness(0, 2, 0, 0),
+            });
+
+            // The text column takes what is left, so a long name still wraps and trims as before
+            // instead of pushing the icon out of view.
+            body.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
+            row.Children.Add(body);
+
+            return new ListBoxItem { Tag = game, Content = row };
+        }
+
         return new ListBoxItem
         {
             Tag = game,

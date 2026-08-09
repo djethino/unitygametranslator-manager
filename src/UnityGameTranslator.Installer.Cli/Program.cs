@@ -61,7 +61,8 @@ internal static class Program
               update <path or name>        Same thing: reinstalls the current release
               uninstall <path or name>     Remove what was installed
               forget <path or name>        Undo what you told us about a game
-              ai [--test]                  Find a local AI server, optionally translate one line
+              ai [--test] [--model M]      Find a local AI server, optionally translate one line
+              ai --compare a,b,c            Score several models on the job the mod asks of them
               catalog [--offline]          Show the loader catalog and where it came from
               diagnose                     Printable report, safe to paste in a public issue
               help                         This text
@@ -389,6 +390,9 @@ internal static class Program
     {
         var probe = new AiServerProbe();
 
+        if (ValueOf(args, "--compare") is { } list)
+            return await CompareAsync(probe, list.Split(',', StringSplitOptions.RemoveEmptyEntries));
+
         Console.WriteLine("Looking for a local AI server...");
         var servers = await probe.DiscoverAsync();
 
@@ -427,18 +431,81 @@ internal static class Program
             return 4;
         }
 
-        Console.WriteLine($"  answer : {trial.Output}");
+        // Shown on one line: the answer legitimately contains a [!nl] placeholder and may carry
+        // real line breaks, and a multi-line answer in the middle of a report is unreadable.
+        Console.WriteLine($"  answer : {trial.Output?.ReplaceLineEndings(" / ")}");
         Console.WriteLine($"  first  : {trial.Elapsed.TotalSeconds:F1}s"
                           + (trial.FirstRunWasCold ? " (model had to be loaded)" : " (model was already loaded)"));
         Console.WriteLine(trial.WarmElapsed is { } warm
             ? $"  then   : {warm.TotalSeconds:F1}s per line"
             : "  then   : not measured");
         Console.WriteLine($"  on GPU : {trial.OnGpu switch { true => "yes", false => "NO - running on the processor", _ => "unknown (this server does not say)" }}");
+        Console.WriteLine($"  VRAM   : {trial.VramText}");
+        Console.WriteLine($"  keeps placeholders : {Yes(trial.KeptPlaceholders)}");
+        Console.WriteLine($"  answers with the translation only : {Yes(trial.AnsweredWithTranslationOnly)}");
         Console.WriteLine();
         Console.WriteLine("This figure is optimistic: measured with no game running. In play the model");
         Console.WriteLine("shares the graphics card with the game, so expect it to be slower.");
         return 0;
     }
+
+    /// <summary>
+    /// Scores several models on the job the mod actually asks of them.
+    ///
+    /// Speed alone would rank a fast model that mangles placeholders above a slower one that
+    /// does not, and the first is unusable: the mod displays what comes back, verbatim, into a
+    /// running game. So the table carries fidelity first, then the cost of using it.
+    /// </summary>
+    private static async Task<int> CompareAsync(AiServerProbe probe, string[] models)
+    {
+        var servers = await probe.DiscoverAsync();
+        var server = servers.FirstOrDefault(s => s.Models.Count > 0);
+
+        if (server is null)
+        {
+            Console.Error.WriteLine("No local AI server answered.");
+            return 4;
+        }
+
+        Console.WriteLine($"Testing on {server.Product} at {server.Url}");
+        Console.WriteLine("Each model translates a line carrying the placeholders the mod uses.");
+        Console.WriteLine();
+        Console.WriteLine($"{"model",-24} {"keeps",-6} {"only",-6} {"per line",-9} {"VRAM",-8} {"GPU",-8}");
+        Console.WriteLine(new string('-', 66));
+
+        foreach (var model in models.Select(m => m.Trim()))
+        {
+            if (!server.Models.Any(m => m.StartsWith(model, StringComparison.OrdinalIgnoreCase)))
+            {
+                Console.WriteLine($"{model,-24} not installed on this server");
+                continue;
+            }
+
+            var trial = await probe.MeasureAsync(server.Url, model);
+
+            if (!trial.Succeeded)
+            {
+                Console.WriteLine($"{model,-24} failed ({trial.Detail})");
+                continue;
+            }
+
+            var perLine = trial.WarmElapsed ?? trial.Elapsed;
+            Console.WriteLine($"{model,-24} {Yes(trial.KeptPlaceholders),-6} "
+                              + $"{Yes(trial.AnsweredWithTranslationOnly),-6} "
+                              + $"{perLine.TotalSeconds,6:F1}s   {trial.VramText,-8} "
+                              + $"{trial.OnGpu switch { true => "yes", false => "NO", _ => "?" },-8}");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("keeps = placeholders came back untouched, in order. A model that fails this");
+        Console.WriteLine("        corrupts the game's text, and no amount of speed makes up for it.");
+        Console.WriteLine("only  = answered with the translation and nothing else.");
+        Console.WriteLine("Times are measured with no game running; in play the model shares the GPU.");
+        return 0;
+    }
+
+    private static string Yes(bool? value) =>
+        value switch { true => "yes", false => "NO", _ => "not checked" };
 
     private static async Task<int> ForgetAsync(string[] args)
     {

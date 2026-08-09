@@ -35,6 +35,29 @@ public sealed record AiTrial(
     /// loading the model" is telling the user something untrue about their own machine.
     /// </summary>
     public bool FirstRunWasCold { get; init; }
+
+    /// <summary>
+    /// Whether every placeholder came back untouched, in the same order.
+    ///
+    /// This is the criterion that decides whether a model can do this job at all. The mod wraps
+    /// line breaks, tags and variables as [!nl], [!t*0], [!v*0], [!STR*0] and instructs the model
+    /// to leave them alone; a model that drops or rewrites one corrupts the game's text, and no
+    /// amount of speed makes up for it. Null when the check could not be run.
+    /// </summary>
+    public bool? KeptPlaceholders { get; init; }
+
+    /// <summary>
+    /// Whether the answer was the translation alone. Models that add "Sure! Here is the
+    /// translation:" are unusable here: the mod displays what comes back, verbatim.
+    /// </summary>
+    public bool? AnsweredWithTranslationOnly { get; init; }
+
+    /// <summary>Video memory the model actually occupies, in bytes, when the server says so.</summary>
+    public long? VramBytes { get; init; }
+
+    public string VramText => VramBytes is { } bytes
+        ? $"{bytes / 1024.0 / 1024 / 1024:F1} GB"
+        : "unknown";
 }
 
 /// <summary>
@@ -134,29 +157,89 @@ public sealed class AiServerProbe
         var first = await TryTranslateAsync(baseUrl, model, ct).ConfigureAwait(false);
         if (!first.Succeeded) return first;
 
-        var again = await TryTranslateAsync(baseUrl, model, ct).ConfigureAwait(false);
+        // Several warm runs, and the BEST is kept.
+        //
+        // A single second run reported 61s for a model that answers the very same prompt in
+        // 0.6s. Comparing models back to back is exactly what causes it: each new model evicts
+        // the previous one, and a run that lands during an eviction measures the memory shuffle
+        // rather than the model. Averaging would carry the noise; the best run is the only one
+        // guaranteed not to include someone else's loading.
+        TimeSpan? bestWarm = null;
+
+        for (var run = 0; run < WarmRuns; run++)
+        {
+            var attempt = await TryTranslateAsync(baseUrl, model, ct).ConfigureAwait(false);
+            if (!attempt.Succeeded) continue;
+            if (bestWarm is null || attempt.Elapsed < bestWarm) bestWarm = attempt.Elapsed;
+        }
 
         return first with
         {
-            WarmElapsed = again.Succeeded ? again.Elapsed : null,
+            WarmElapsed = bestWarm,
             FirstRunWasCold = !alreadyLoaded,
         };
     }
 
+    /// <summary>How many warm runs to take the best of. Three is enough to shake off one hiccup.</summary>
+    private const int WarmRuns = 3;
+
+    /// <summary>Reasoning budgets to try, best first — the same ladder the mod walks.</summary>
+    private static readonly string?[] ReasoningEffortLadder = { "none", "low", null };
+
     public async Task<AiTrial> TryTranslateAsync(string baseUrl, string model,
                                                  CancellationToken ct = default)
     {
-        // A neutral sentence, not tied to any language pair: the point is to measure the round
-        // trip, not to judge the model's translation quality.
-        const string prompt = "Translate to French, answer with the translation only: Start Game";
+        // Walk the ladder until the server accepts one: a rejected parameter is answered with an
+        // error, not with a translation, and giving up on the first rung would report a perfectly
+        // good model as broken.
+        AiTrial? last = null;
 
+        foreach (var effort in ReasoningEffortLadder)
+        {
+            var attempt = await TryOnceAsync(baseUrl, model, effort, ct).ConfigureAwait(false);
+            if (attempt.Succeeded) return attempt;
+            last = attempt;
+        }
+
+        return last!;
+    }
+
+    private async Task<AiTrial> TryOnceAsync(string baseUrl, string model, string? effort,
+                                             CancellationToken ct)
+    {
+        // The rules the mod itself sends, in the same words, around a line carrying the
+        // placeholders it actually uses. Testing with a bare sentence would measure a job the
+        // model is never asked to do.
+        const string prompt = """
+            === TRANSLATION RULES ===
+            - Output the translation only, no explanation
+            - Keep it concise for UI
+            - Keep technical terms unchanged: API, URL, UUID, JSON, AI
+            - IMPORTANT: Keep [!nl] placeholders exactly where they are, do not remove or move them
+            - IMPORTANT: Keep [!v*0], [!v*1], etc. placeholders exactly as-is, do not modify them
+
+            Now, translate this to French:
+            Press [!v*0] to save[!nl]Your API key is required
+            """;
+
+        // Built like the mod builds it, and for the same reason it had to.
+        //
+        // Reasoning models spend their output budget thinking and return an EMPTY translation.
+        // The mod disables it through reasoning_effort, with a ladder because providers accept
+        // different values ("none" on Ollama, vLLM, LM Studio; "low" as the common denominator;
+        // nothing at all for models that reject the parameter). Temperature 0 for determinism.
+        //
+        // A first attempt here capped max_tokens at 32 and every reasoning model came back blank
+        // — the cap was spent before a single word of the answer. Measuring a model with settings
+        // the mod never uses measures nothing useful.
         var payload = JsonSerializer.Serialize(new
         {
             model,
             messages = new[] { new { role = "user", content = prompt } },
             stream = false,
-            max_tokens = 32,
-        });
+            temperature = 0.0,
+            reasoning_effort = effort,
+        }, new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
 
         var stopwatch = Stopwatch.StartNew();
 
@@ -175,8 +258,14 @@ public sealed class AiServerProbe
 
             var text = ReadFirstChoice(body);
             var onGpu = await IsResidentOnGpuAsync(baseUrl, model, ct).ConfigureAwait(false);
+            var vram = await VramBytesAsync(baseUrl, model, ct).ConfigureAwait(false);
 
-            return new AiTrial(text is not null, text, stopwatch.Elapsed, onGpu, null);
+            return new AiTrial(text is not null, text, stopwatch.Elapsed, onGpu, null)
+            {
+                VramBytes = vram,
+                KeptPlaceholders = text is null ? null : KeepsPlaceholders(text),
+                AnsweredWithTranslationOnly = text is null ? null : IsBareTranslation(text),
+            };
         }
         catch (Exception ex)
         {
@@ -223,6 +312,66 @@ public sealed class AiServerProbe
                 return size > 0 && vram >= size * 0.9;
             }
 
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Every placeholder present, once each, in the order they were sent.
+    ///
+    /// Order matters as much as presence: a model that keeps both tokens but swaps them still
+    /// puts the line break and the key in the wrong places on screen.
+    /// </summary>
+    private static bool KeepsPlaceholders(string answer)
+    {
+        string[] expected = { "[!v*0]", "[!nl]" };
+
+        var position = -1;
+        foreach (var token in expected)
+        {
+            var index = answer.IndexOf(token, StringComparison.Ordinal);
+            if (index <= position) return false;                       // missing, or out of order
+            if (answer.IndexOf(token, index + 1, StringComparison.Ordinal) >= 0) return false; // duplicated
+            position = index;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// The answer is the translation and nothing else. The mod displays what comes back
+    /// verbatim, so a preamble ends up on the player's screen.
+    /// </summary>
+    private static bool IsBareTranslation(string answer)
+    {
+        var trimmed = answer.Trim();
+
+        // A conversational opener, a code fence, or several paragraphs all mean the model
+        // answered about the task instead of performing it.
+        string[] tells = { "here is", "here's", "sure", "translation:", "```", "certainly" };
+        if (tells.Any(tell => trimmed.StartsWith(tell, StringComparison.OrdinalIgnoreCase))) return false;
+
+        return trimmed.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length <= 2;
+    }
+
+    /// <summary>Video memory the model occupies right now, when the server reports it.</summary>
+    public async Task<long?> VramBytesAsync(string baseUrl, string model, CancellationToken ct = default)
+    {
+        try
+        {
+            var json = await _http.GetStringAsync(Join(baseUrl, "api/ps"), ct).ConfigureAwait(false);
+            using var document = JsonDocument.Parse(json);
+            if (!document.RootElement.TryGetProperty("models", out var models)) return null;
+
+            foreach (var entry in models.EnumerateArray())
+            {
+                var name = entry.TryGetProperty("name", out var n) ? n.GetString() : null;
+                if (name is null || !name.StartsWith(model, StringComparison.OrdinalIgnoreCase)) continue;
+                if (entry.TryGetProperty("size_vram", out var vram)) return vram.GetInt64();
+            }
             return null;
         }
         catch

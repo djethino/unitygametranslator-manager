@@ -785,6 +785,11 @@ public sealed class SettingsWindow : Window
 
         _testButton.IsEnabled = _aiModel.SelectedItem is not null;
         ShowModelNote();
+
+        // The path a returning user takes, and the one that had none of this: a saved address goes
+        // straight here and never through the discovery branch, so the tested models were shown to
+        // everybody except the people who had already set the tool up.
+        await ShowTestedModelsAsync(_draft.AiUrl, models);
     }
 
     /// <summary>
@@ -828,13 +833,44 @@ public sealed class SettingsWindow : Window
         _aiModel.SelectedItem ??= _aiModel.Items.OfType<ComboBoxItem>().FirstOrDefault();
         _testButton.IsEnabled = _aiModel.SelectedItem is not null;
 
-        // Reachable even with models already installed, and that is the point.
-        //
-        // The list used to appear only on a server holding nothing, which quietly assumed that
-        // whoever has a model has the right one. Somebody running a model that mangles the game's
-        // placeholders is precisely the person this list is for, and they were the one person who
-        // could not see it. Offered as a button rather than opened: they came here for a setting,
-        // not for a catalogue.
+        _ = ShowTestedModelsAsync(server.Url, server.Models);
+    }
+
+    /// <summary>
+    /// What we have run ourselves, offered to somebody who already has models.
+    ///
+    /// The list used to appear only on a server holding nothing, which quietly assumed that
+    /// whoever has a model has the right one. Somebody running a model that mangles the game's
+    /// placeholders is precisely who it is for, and was the one person unable to reach it.
+    ///
+    /// Two situations, two behaviours. With a tested model among theirs, a button: they came for
+    /// a setting, not a catalogue. With none — the ordinary case for anyone who installed Ollama
+    /// before meeting us — the list opens by itself, because a button labelled "other models"
+    /// suggests we have something to say about the ones they have, and we have nothing.
+    /// </summary>
+    private async Task ShowTestedModelsAsync(string serverUrl, IReadOnlyList<string> installed)
+    {
+        _ollamaPanel.Children.Clear();
+
+        _modelNotes ??= await new ModelNotesProvider(_platform)
+            .GetAsync(offline: !_draft.OnlineMode);
+
+        // No list to show, and nothing to apologise for: the models on this server work or they
+        // do not, and that is settled by the test button, not by us.
+        if (_modelNotes is null)
+        {
+            _ollamaPanel.IsVisible = false;
+            return;
+        }
+
+        _ollamaPanel.IsVisible = true;
+
+        if (!installed.Any(model => ModelNotesProvider.For(_modelNotes, model) is not null))
+        {
+            await OfferModelAsync(serverUrl, alreadyHasModels: true, noneOfTheirsTested: true);
+            return;
+        }
+
         var others = new Button
         {
             Content = "Other models we have tested",
@@ -845,12 +881,10 @@ public sealed class SettingsWindow : Window
         others.Click += async (_, _) =>
         {
             others.IsEnabled = false;
-            await OfferModelAsync(server.Url, alreadyHasModels: true);
+            await OfferModelAsync(serverUrl, alreadyHasModels: true);
         };
 
-        _ollamaPanel.Children.Clear();
         _ollamaPanel.Children.Add(others);
-        _ollamaPanel.IsVisible = true;
     }
 
     /// <summary>
@@ -1013,7 +1047,12 @@ public sealed class SettingsWindow : Window
     /// shown to someone who already has one is a comparison, and calling it a fix would read as
     /// "yours is wrong" about a model we have never run.
     /// </param>
-    private async Task OfferModelAsync(string serverUrl, bool alreadyHasModels = false)
+    /// <param name="noneOfTheirsTested">
+    /// Said plainly, because it explains why this list appeared unasked — and because the reader
+    /// might otherwise take our silence about their models for approval of them.
+    /// </param>
+    private async Task OfferModelAsync(string serverUrl, bool alreadyHasModels = false,
+                                       bool noneOfTheirsTested = false)
     {
         _ollamaPanel.Children.Clear();
         _ollamaPanel.IsVisible = true;
@@ -1042,7 +1081,12 @@ public sealed class SettingsWindow : Window
             : "We could not read your graphics card size";
 
         _ollamaPanel.Children.Add(Note(
-            alreadyHasModels
+            noneOfTheirsTested
+                ? $"We have never run any of the models on this server, so we can tell you nothing "
+                  + $"about them — that is about us, not about them. {card}. Here is what we did "
+                  + "run, with the memory each one held. Pulling one changes nothing to what you "
+                  + "already have: Ollama keeps both."
+                : alreadyHasModels
                 ? $"What we have run ourselves, with the memory each one held here. {card}. "
                   + "Nothing to change if yours does the job — pulling a second one costs only "
                   + "disk space, and Ollama keeps both."

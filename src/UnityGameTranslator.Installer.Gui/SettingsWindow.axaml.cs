@@ -38,6 +38,9 @@ public sealed class SettingsWindow : Window
     private ComboBox _channel = null!;
     private CheckBox _online = null!;
 
+    private TextBox _apiKey = null!;
+    private TextBlock _metrics = null!;
+    private Button _connectButton = null!;
     private StackPanel _aiPanel = null!;
     private StackPanel _testOutput = null!;
     private TextBlock _aiStatus = null!;
@@ -63,6 +66,7 @@ public sealed class SettingsWindow : Window
             OnlineMode = current.OnlineMode,
             SettingsHotkey = current.SettingsHotkey,
             Channel = current.Channel,
+            AiApiKey = current.AiApiKey,
             DefaultPosture = current.DefaultPosture,
             Reviewed = current.Reviewed,
         };
@@ -146,7 +150,7 @@ public sealed class SettingsWindow : Window
     {
         _backend = new ComboBox { Width = 260 };
         _backend.Items.Add(new ComboBoxItem { Content = "Community translations only", Tag = "none" });
-        _backend.Items.Add(new ComboBoxItem { Content = "Translate with a local AI", Tag = "ai" });
+        _backend.Items.Add(new ComboBoxItem { Content = "Translate with an AI (yours, or an online one)", Tag = "ai" });
         _backend.Items.Add(new ComboBoxItem { Content = "Google Translate (your key)", Tag = "google" });
         _backend.Items.Add(new ComboBoxItem { Content = "DeepL (your key)", Tag = "deepl" });
         Select(_backend, _draft.TranslationBackend);
@@ -164,6 +168,16 @@ public sealed class SettingsWindow : Window
     {
         _aiUrl = new TextBox { Width = 300, Watermark = "http://localhost:11434" };
         _aiUrl.Text = _draft.AiUrl;
+
+        // One field for a server on this machine and for an online provider alike: the mod only
+        // ever knows an OpenAI-compatible address, so anything speaking that dialect fits here.
+        _apiKey = new TextBox
+        {
+            Width = 300,
+            Watermark = "leave empty for a server on your machine",
+            PasswordChar = '*',
+            Text = _draft.AiApiKey ?? "",
+        };
 
         _aiModel = new ComboBox { Width = 300 };
 
@@ -188,10 +202,40 @@ public sealed class SettingsWindow : Window
 
         _testOutput = new StackPanel { Spacing = 6 };
 
+        _connectButton = new Button { Content = "Test connection", FontSize = 12 };
+        _connectButton.Click += async (_, _) => await TestConnectionAsync();
+
+        _metrics = new TextBlock
+        {
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            IsVisible = false,
+            Foreground = Brush("TextSecondary"),
+        };
+
         _aiPanel = new StackPanel { Spacing = 10, IsVisible = Tag(_backend) == "ai" };
         _aiPanel.Children.Add(_aiStatus);
         _aiPanel.Children.Add(Row("Server", _aiUrl, refresh));
+        _aiPanel.Children.Add(Row("API key", _apiKey, _connectButton));
+        _aiPanel.Children.Add(new TextBlock
+        {
+            // Said plainly, once. We do not pick a provider, we resell nothing, and we are in no
+            // position to know what someone will be charged.
+            Text = "An online provider bills you directly, on your own account. We take no part in "
+                 + "that and cannot be held responsible for what it costs. Some providers do offer "
+                 + "free allowances - DeepL through a developer account, OpenRouter on some models - "
+                 + "but finding one and reading its terms is yours to do."
+                 + Environment.NewLine
+                 + "The key is stored encrypted and bound to this machine, so a copy of the file "
+                 + "taken elsewhere cannot be read. That protects a file that leaves; it does not "
+                 + "protect against something already running as you. Revoking the key at the "
+                 + "provider is the real defence.",
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("TextMuted"),
+        });
         _aiPanel.Children.Add(Row("Model", _aiModel, _testButton));
+        _aiPanel.Children.Add(_metrics);
         _aiPanel.Children.Add(new TextBlock
         {
             Text = "The test asks this model to do exactly what the mod asks of it, from easy to "
@@ -203,7 +247,7 @@ public sealed class SettingsWindow : Window
         });
         _aiPanel.Children.Add(_testOutput);
 
-        return Card("Local AI", null, _aiPanel);
+        return Card("AI translation", null, _aiPanel);
     }
 
     private Control ModCard()
@@ -265,6 +309,47 @@ public sealed class SettingsWindow : Window
     }
 
     /// <summary>
+    /// Checks that the address answers, before anything else is attempted.
+    ///
+    /// Separate from the model test on purpose: a wrong address, a rejected key and a model that
+    /// disobeys are three different problems with three different fixes, and folding them into
+    /// one red line sends people looking in the wrong place.
+    /// </summary>
+    private async Task TestConnectionAsync()
+    {
+        var url = _aiUrl.Text?.Trim();
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            _aiStatus.Text = "Enter an address first.";
+            return;
+        }
+
+        _connectButton.IsEnabled = false;
+        _aiStatus.Text = "Connecting...";
+        _aiModel.Items.Clear();
+        _testButton.IsEnabled = false;
+
+        var models = await _probe.ListModelsAsync(url, _apiKey.Text?.Trim());
+
+        if (models is null)
+        {
+            _aiStatus.Text = "No answer from that address. Check the URL, and the key if this is an "
+                           + "online provider: a rejected key looks exactly like a wrong address.";
+            _connectButton.IsEnabled = true;
+            return;
+        }
+
+        _aiStatus.Text = $"Connected - {models.Count} model(s) offered.";
+        foreach (var name in models)
+            _aiModel.Items.Add(new ComboBoxItem { Content = name, Tag = name });
+
+        Select(_aiModel, _draft.AiModel);
+        _aiModel.SelectedItem ??= _aiModel.Items.OfType<ComboBoxItem>().FirstOrDefault();
+        _testButton.IsEnabled = _aiModel.SelectedItem is not null;
+        _connectButton.IsEnabled = true;
+    }
+
+    /// <summary>
     /// Runs the instruction suite and shows every answer beside its verdict.
     ///
     /// Showing the answer is the point, not decoration: the checks are heuristics over free
@@ -280,6 +365,28 @@ public sealed class SettingsWindow : Window
 
         _testButton.IsEnabled = false;
         _testOutput.Children.Clear();
+
+        // Measured first, and shown on its own line: what a model costs to run is a different
+        // question from whether it obeys, and both decide whether someone keeps it.
+        _metrics.IsVisible = true;
+        _metrics.Text = "Measuring...";
+
+        var trial = await _probe.MeasureAsync(url, model);
+        var gpu = trial.OnGpu switch
+        {
+            true => "in use",
+            false => "NOT used - running on the processor",
+            _ => "unknown, this server does not report it",
+        };
+
+        _metrics.Text = trial.Succeeded
+            ? $"First line {trial.Elapsed.TotalSeconds:F1}s "
+              + (trial.FirstRunWasCold ? "(the model had to be loaded)" : "(it was already loaded)")
+              + $" - then {(trial.WarmElapsed ?? trial.Elapsed).TotalSeconds:F1}s per line"
+              + $" - {trial.VramText} of video memory - GPU {gpu}."
+              + Environment.NewLine
+              + "Measured with no game running. In play the model shares the graphics card, so expect slower."
+            : $"Could not measure ({trial.Detail}).";
 
         var language = string.Equals(Tag(_language), "auto", StringComparison.OrdinalIgnoreCase)
             ? _platform.SystemLanguage() ?? "en"
@@ -411,6 +518,7 @@ public sealed class SettingsWindow : Window
         _draft.TranslationBackend = Tag(_backend) ?? "none";
         _draft.AiUrl = _aiUrl.Text?.Trim() ?? "";
         _draft.AiModel = Tag(_aiModel) ?? "";
+        _draft.AiApiKey = string.IsNullOrWhiteSpace(_apiKey.Text) ? null : _apiKey.Text.Trim();
         _draft.EnableAi = _draft.TranslationBackend == "ai";
         _draft.SettingsHotkey = _hotkey.Text?.Trim() ?? "Ctrl+F10";
         _draft.Channel = Tag(_channel) ?? "stable";

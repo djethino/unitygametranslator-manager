@@ -1,6 +1,7 @@
 using System.Text.Json;
 using UnityGameTranslator.Installer.Core.Model;
 using UnityGameTranslator.Installer.Core.Platform;
+using UnityGameTranslator.Installer.Core.Security;
 
 namespace UnityGameTranslator.Installer.Core.Settings;
 
@@ -38,7 +39,15 @@ public sealed class SettingsStore
             {
                 var loaded = JsonSerializer.Deserialize<InstallerSettings>(
                     File.ReadAllText(_path), JsonOptions);
-                if (loaded is not null) return loaded;
+
+                if (loaded is not null)
+                {
+                    // Decrypted into memory, and the stored form left alone: a file written on
+                    // another machine cannot be read here, and must come back as "no key"
+                    // rather than as a crash or as garbage sent to a provider.
+                    loaded.AiApiKey = SecretProtection.Unprotect(loaded.AiApiKeyStored);
+                    return loaded;
+                }
             }
         }
         catch
@@ -58,6 +67,9 @@ public sealed class SettingsStore
 
             // Written beside the target then moved: a file half-written by a crash would come
             // back as defaults, silently discarding what the user chose.
+            // Encrypted on the way out, every time: the only path from memory to disk.
+            settings.AiApiKeyStored = SecretProtection.Protect(settings.AiApiKey);
+
             var temp = _path + ".tmp";
             File.WriteAllText(temp, JsonSerializer.Serialize(settings, JsonOptions));
             File.Move(temp, _path, overwrite: true);

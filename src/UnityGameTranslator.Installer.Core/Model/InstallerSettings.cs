@@ -54,6 +54,18 @@ public sealed class InstallerSettings
 
     [JsonPropertyName("enable_ai")] public bool EnableAi { get; set; }
 
+    /// <summary>
+    /// The API key as it sits on disk: always encrypted, never readable text.
+    ///
+    /// Two properties rather than one, on purpose. Callers need the key in clear to send a
+    /// request; the file must never hold it that way. Keeping them apart means nobody can
+    /// serialise the plaintext by accident — the only path to disk goes through the store.
+    /// </summary>
+    [JsonPropertyName("ai_api_key")] public string? AiApiKeyStored { get; set; }
+
+    /// <summary>The key in clear, in memory only. Never serialised.</summary>
+    [JsonIgnore] public string? AiApiKey { get; set; }
+
     /// <summary>Community features. Off means the catalog is never queried.</summary>
     [JsonPropertyName("online_mode")] public bool OnlineMode { get; set; } = true;
 

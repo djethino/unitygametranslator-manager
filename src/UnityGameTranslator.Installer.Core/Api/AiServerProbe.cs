@@ -111,11 +111,26 @@ public sealed class AiServerProbe
     /// Models offered by a server, or null when nothing answers. Uses the OpenAI-compatible
     /// endpoint the mod itself tests, so a server that works here works there.
     /// </summary>
-    public async Task<IReadOnlyList<string>?> ListModelsAsync(string baseUrl, CancellationToken ct = default)
+    public async Task<IReadOnlyList<string>?> ListModelsAsync(string baseUrl, CancellationToken ct = default) =>
+        await ListModelsAsync(baseUrl, null, ct).ConfigureAwait(false);
+
+    /// <summary>
+    /// Same, with a key. Online providers need one; a local server ignores it. The single
+    /// endpoint the mod tests, so a server that answers here answers there.
+    /// </summary>
+    public async Task<IReadOnlyList<string>?> ListModelsAsync(string baseUrl, string? apiKey,
+                                                              CancellationToken ct = default)
     {
         try
         {
-            var json = await _http.GetStringAsync(Join(baseUrl, "v1/models"), ct).ConfigureAwait(false);
+            using var request = new HttpRequestMessage(HttpMethod.Get, Join(baseUrl, "v1/models"));
+            if (!string.IsNullOrWhiteSpace(apiKey))
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+
+            using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode) return null;
+
+            var json = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
 
             using var document = JsonDocument.Parse(json);
             if (!document.RootElement.TryGetProperty("data", out var data)

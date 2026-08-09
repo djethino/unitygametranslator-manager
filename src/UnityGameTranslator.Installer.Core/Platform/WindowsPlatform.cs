@@ -181,6 +181,29 @@ public sealed class WindowsPlatform : IPlatform
         return full.EndsWith(Path.DirectorySeparatorChar) ? full : full + Path.DirectorySeparatorChar;
     }
 
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern int GetUserDefaultLocaleName(
+        System.Text.StringBuilder localeName, int capacity);
+
+    public string? SystemLanguage()
+    {
+        try
+        {
+            // LOCALE_NAME_MAX_LENGTH is 85; the value looks like "fr-FR".
+            var buffer = new System.Text.StringBuilder(85);
+            if (GetUserDefaultLocaleName(buffer, buffer.Capacity) == 0) return null;
+
+            var locale = buffer.ToString();
+            var dash = locale.IndexOf('-');
+            var language = dash > 0 ? locale[..dash] : locale;
+            return language.Length >= 2 ? language[..2].ToLowerInvariant() : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private static string Env(Environment.SpecialFolder folder) =>
         Environment.GetFolderPath(folder);
 

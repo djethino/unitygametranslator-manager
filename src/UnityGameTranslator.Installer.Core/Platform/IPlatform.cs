@@ -50,6 +50,17 @@ public interface IPlatform
 
     /// <summary>Is a process currently running out of this folder? Blocks writing to it.</summary>
     bool IsGameRunning(GameInstall game);
+
+    /// <summary>
+    /// The language the operating system is set to, as an ISO 639-1 code, or null when it cannot
+    /// be established.
+    ///
+    /// Asked of the OS rather than of CultureInfo on purpose: this tool builds with invariant
+    /// globalization, so CurrentUICulture is the invariant culture and reports "iv" — which
+    /// surfaced as "No iv translation yet" on every row. Dropping invariant mode would drag ICU
+    /// into a single-file build for one string, so the string is fetched where it actually lives.
+    /// </summary>
+    string? SystemLanguage();
 }
 
 /// <summary>A folder to scan, with what we already know about where it came from.</summary>

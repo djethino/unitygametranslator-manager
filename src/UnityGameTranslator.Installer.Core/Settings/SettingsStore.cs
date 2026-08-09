@@ -19,9 +19,11 @@ public sealed class SettingsStore
     };
 
     private readonly string _path;
+    private readonly IPlatform _platform;
 
     public SettingsStore(IPlatform platform)
     {
+        _platform = platform;
         _path = Path.Combine(platform.UserDataDirectory, InstallerSettings.FileName);
         Current = Load();
     }
@@ -80,7 +82,10 @@ public sealed class SettingsStore
             return Normalise(configured);
         }
 
-        return Normalise(System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName);
+        // Asked of the OS, not of CultureInfo: invariant globalization makes the latter answer
+        // "iv", which showed up as "No iv translation yet" on every row.
+        var system = _platform.SystemLanguage();
+        return system is not null ? Normalise(system) : "en";
     }
 
     private static string Normalise(string language) =>

@@ -114,6 +114,21 @@ public sealed class LinuxPlatform : IPlatform
 
     public bool NeedsDllOverride(GameInstall game) => game.RunsUnderProton;
 
+    public string? SystemLanguage()
+    {
+        // The desktop environment sets these; LC_ALL wins, then LANG, then LANGUAGE.
+        foreach (var name in new[] { "LC_ALL", "LC_MESSAGES", "LANG", "LANGUAGE" })
+        {
+            var value = Environment.GetEnvironmentVariable(name);
+            if (string.IsNullOrWhiteSpace(value)) continue;
+
+            // Shapes seen in the wild: "fr_FR.UTF-8", "fr_FR", "fr", "fr:en".
+            var code = value.Split(':', '.', '_', '@')[0].Trim();
+            if (code.Length >= 2 && char.IsLetter(code[0])) return code[..2].ToLowerInvariant();
+        }
+        return null;
+    }
+
     public bool IsGameRunning(GameInstall game)
     {
         if (string.IsNullOrEmpty(game.Path) || !Directory.Exists("/proc")) return false;

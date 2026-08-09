@@ -224,7 +224,13 @@ public partial class MainWindow : Window
 
         foreach (var (label, value) in filters)
         {
-            var button = new Button { Content = label, FontSize = 11, Tag = value };
+            var button = new Button
+            {
+                Content = label,
+                FontSize = 11,
+                Tag = value,
+                Margin = new Avalonia.Thickness(0, 0, 6, 6),
+            };
             button.Click += (_, _) =>
             {
                 _filter = value;

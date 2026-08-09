@@ -183,6 +183,53 @@ public sealed class AiServerProbe
     /// <summary>How many warm runs to take the best of. Three is enough to shake off one hiccup.</summary>
     private const int WarmRuns = 3;
 
+    /// <summary>
+    /// Runs the whole suite against a model and reports every answer, not only the verdicts.
+    ///
+    /// The checks are heuristics on free text: they will get some calls wrong in both
+    /// directions. Showing what the model actually said is what lets a human notice that, and
+    /// overrule us. We measure; the user decides whether to use the model.
+    /// </summary>
+    public async Task<IReadOnlyList<ModelTestResult>> RunSuiteAsync(
+        string baseUrl, string model, string targetLanguage,
+        Action<ModelTestResult>? onResult = null, CancellationToken ct = default)
+    {
+        var results = new List<ModelTestResult>();
+
+        foreach (var test in ModelTestSuite.Build(targetLanguage))
+        {
+            var prompt = test.Rule + Environment.NewLine + test.Source;
+            var answer = await AskAsync(baseUrl, model, prompt, ct).ConfigureAwait(false);
+
+            ModelTestResult result;
+
+            if (answer is null)
+            {
+                result = new ModelTestResult(test, null, false, "no answer");
+            }
+            else
+            {
+                // Judged on the translation, not on the whole answer. A model that repeats the
+                // rules makes every structural check lie in both directions at once, so the echo
+                // is reported as its own failure and the check is run on what it actually
+                // translated.
+                var echoed = ModelTestSuite.LooksLikeEchoedInstructions(answer);
+                var translation = echoed ? ModelTestSuite.ExtractTranslation(answer) : answer;
+
+                result = new ModelTestResult(test, answer, test.Check(test.Source, translation), null)
+                {
+                    EchoedInstructions = echoed,
+                    Translation = translation,
+                };
+            }
+
+            results.Add(result);
+            onResult?.Invoke(result);
+        }
+
+        return results;
+    }
+
     /// <summary>Reasoning budgets to try, best first — the same ladder the mod walks.</summary>
     private static readonly string?[] ReasoningEffortLadder = { "none", "low", null };
 
@@ -202,6 +249,58 @@ public sealed class AiServerProbe
         }
 
         return last!;
+    }
+
+    /// <summary>
+    /// Sends one instruction and returns the answer, walking the reasoning ladder like the mod.
+    /// </summary>
+    public async Task<string?> AskAsync(string baseUrl, string model, string prompt,
+                                        CancellationToken ct = default)
+    {
+        foreach (var effort in ReasoningEffortLadder)
+        {
+            var answer = await AskOnceAsync(baseUrl, model, prompt, effort, ct).ConfigureAwait(false);
+            if (answer is not null) return answer;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// One request, one answer, or null when the server refused it. The single place a chat
+    /// request is built: the timing wrapper and the test suite both go through here, so they
+    /// cannot drift into asking the model two different things.
+    /// </summary>
+    private async Task<string?> AskOnceAsync(string baseUrl, string model, string prompt,
+                                             string? effort, CancellationToken ct)
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            model,
+            messages = new[] { new { role = "user", content = prompt } },
+            stream = false,
+            temperature = 0.0,
+            reasoning_effort = effort,
+        }, new JsonSerializerOptions
+        {
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+        });
+
+        try
+        {
+            using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+            using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(2) };
+
+            var response = await client.PostAsync(Join(baseUrl, "v1/chat/completions"), content, ct)
+                                       .ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode) return null;
+
+            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            return ReadFirstChoice(body);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private async Task<AiTrial> TryOnceAsync(string baseUrl, string model, string? effort,

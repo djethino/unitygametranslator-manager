@@ -5,6 +5,7 @@ using UnityGameTranslator.Installer.Core.Diagnostics;
 using UnityGameTranslator.Installer.Core.Install;
 using UnityGameTranslator.Installer.Core.Model;
 using UnityGameTranslator.Installer.Core.Platform;
+using UnityGameTranslator.Installer.Core.Settings;
 
 namespace UnityGameTranslator.Installer.Cli;
 
@@ -63,6 +64,7 @@ internal static class Program
               forget <path or name>        Undo what you told us about a game
               ai [--test] [--model M]      Find a local AI server, optionally translate one line
               ai --compare a,b,c            Score several models on the job the mod asks of them
+              ai --suite --model M          Put one model through the mod's instructions, hardest last
               catalog [--offline]          Show the loader catalog and where it came from
               diagnose                     Printable report, safe to paste in a public issue
               help                         This text
@@ -390,6 +392,9 @@ internal static class Program
     {
         var probe = new AiServerProbe();
 
+        if (args.Contains("--suite", StringComparer.OrdinalIgnoreCase))
+            return await SuiteAsync(probe, args);
+
         if (ValueOf(args, "--compare") is { } list)
             return await CompareAsync(probe, list.Split(',', StringSplitOptions.RemoveEmptyEntries));
 
@@ -501,6 +506,73 @@ internal static class Program
         Console.WriteLine("        corrupts the game's text, and no amount of speed makes up for it.");
         Console.WriteLine("only  = answered with the translation and nothing else.");
         Console.WriteLine("Times are measured with no game running; in play the model shares the GPU.");
+        return 0;
+    }
+
+    /// <summary>
+    /// Runs the instruction suite and prints, for every case, the verdict AND what the model
+    /// answered.
+    ///
+    /// Showing the answer is not decoration. The checks are heuristics on free text and will be
+    /// wrong in both directions; a reader who can see the answer catches that and decides for
+    /// themselves. This tool reports, it does not certify.
+    /// </summary>
+    private static async Task<int> SuiteAsync(AiServerProbe probe, string[] args)
+    {
+        var servers = await probe.DiscoverAsync();
+        var server = servers.FirstOrDefault(s => s.Models.Count > 0);
+        if (server is null)
+        {
+            Console.Error.WriteLine("No local AI server answered.");
+            return 4;
+        }
+
+        var model = ValueOf(args, "--model") ?? server.Models[0];
+
+        // The language the user actually plays in, not a hardcoded one: an instruction suite run
+        // toward a language nobody uses says nothing about the model they will live with.
+        var settings = new SettingsStore(PlatformFactory.Create());
+        var language = ValueOf(args, "--lang") ?? settings.ResolveTargetLanguage();
+
+        Console.WriteLine($"{model} on {server.Product}, translating to {Languages.NameOf(language)}");
+        Console.WriteLine();
+
+        var passed = 0;
+        var total = 0;
+        var echoed = 0;
+
+        await probe.RunSuiteAsync(server.Url, model, language, result =>
+        {
+            total++;
+            if (result.Passed) passed++;
+
+            var mark = result.Passed ? "ok" : "KO";
+            Console.WriteLine($"[{mark}] {result.Test.Difficulty,-7} {result.Test.Name}");
+            Console.WriteLine($"       asked  : {result.Test.Source.ReplaceLineEndings(" / ")}");
+            Console.WriteLine($"       expect : {result.Test.Expectation}");
+            Console.WriteLine($"       answer : {result.Answer?.ReplaceLineEndings(" / ") ?? "(nothing)"}");
+
+            if (result.EchoedInstructions)
+            {
+                echoed++;
+                Console.WriteLine($"       !!     : the model repeated the instructions. That alone makes it");
+                Console.WriteLine($"                unusable as is — the mod prints this verbatim into the game.");
+                Console.WriteLine($"       judged : {result.Translation}");
+            }
+
+            Console.WriteLine();
+        });
+
+        Console.WriteLine($"{passed}/{total} instructions followed.");
+        if (echoed > 0)
+        {
+            Console.WriteLine($"{echoed}/{total} answers repeated the instructions back — on its own, a reason");
+            Console.WriteLine("not to use this model, whatever the marks above say.");
+        }
+        Console.WriteLine();
+        Console.WriteLine("Read the answers, not just the marks: these checks are heuristics on free");
+        Console.WriteLine("text and can be wrong either way. Whether this model is good enough is");
+        Console.WriteLine("your call, not the tool's.");
         return 0;
     }
 

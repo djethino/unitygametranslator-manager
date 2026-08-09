@@ -38,6 +38,7 @@ internal static class Program
                 "install" or "update" => await InstallAsync(args),
                 "uninstall" => await UninstallAsync(args),
                 "forget" => await ForgetAsync(args),
+                "ai" => await AiAsync(args),
                 "-h" or "--help" or "help" => Help(),
                 _ => Unknown(command),
             };
@@ -60,6 +61,7 @@ internal static class Program
               update <path or name>        Same thing: reinstalls the current release
               uninstall <path or name>     Remove what was installed
               forget <path or name>        Undo what you told us about a game
+              ai [--test]                  Find a local AI server, optionally translate one line
               catalog [--offline]          Show the loader catalog and where it came from
               diagnose                     Printable report, safe to paste in a public issue
               help                         This text
@@ -377,6 +379,67 @@ internal static class Program
     /// Drops the answers the user gave for a game — a forced runtime, a forced architecture, a
     /// refusal they overruled. The way back has to exist, or the first answer is permanent.
     /// </summary>
+    /// <summary>
+    /// Looks for a local AI server and, with --test, actually translates a line through it.
+    ///
+    /// The mod only ever needs an OpenAI-compatible URL, so this asks "what answers" rather than
+    /// "what is installed" — which also finds servers nobody thought to look for.
+    /// </summary>
+    private static async Task<int> AiAsync(string[] args)
+    {
+        var probe = new AiServerProbe();
+
+        Console.WriteLine("Looking for a local AI server...");
+        var servers = await probe.DiscoverAsync();
+
+        if (servers.Count == 0)
+        {
+            Console.WriteLine("None found on the usual ports.");
+            Console.WriteLine("A server on another port or another machine still works: enter its URL in the settings.");
+            return 0;
+        }
+
+        foreach (var server in servers)
+        {
+            Console.WriteLine($"  {server.Product,-22} {server.Url}");
+            foreach (var model in server.Models.Take(8)) Console.WriteLine($"      {model}");
+            if (server.Models.Count > 8) Console.WriteLine($"      ... and {server.Models.Count - 8} more");
+        }
+
+        if (!args.Contains("--test", StringComparer.OrdinalIgnoreCase)) return 0;
+
+        var chosen = servers.FirstOrDefault(s => s.Models.Count > 0);
+        if (chosen is null)
+        {
+            Console.WriteLine("No model to test with: pull one first.");
+            return 0;
+        }
+
+        var chosenModel = ValueOf(args, "--model") ?? chosen.Models[0];
+        Console.WriteLine();
+        Console.WriteLine($"Translating one line with {chosenModel}...");
+
+        var trial = await probe.MeasureAsync(chosen.Url, chosenModel);
+
+        if (!trial.Succeeded)
+        {
+            Console.WriteLine($"Failed after {trial.Elapsed.TotalSeconds:F1}s ({trial.Detail}).");
+            return 4;
+        }
+
+        Console.WriteLine($"  answer : {trial.Output}");
+        Console.WriteLine($"  first  : {trial.Elapsed.TotalSeconds:F1}s"
+                          + (trial.FirstRunWasCold ? " (model had to be loaded)" : " (model was already loaded)"));
+        Console.WriteLine(trial.WarmElapsed is { } warm
+            ? $"  then   : {warm.TotalSeconds:F1}s per line"
+            : "  then   : not measured");
+        Console.WriteLine($"  on GPU : {trial.OnGpu switch { true => "yes", false => "NO - running on the processor", _ => "unknown (this server does not say)" }}");
+        Console.WriteLine();
+        Console.WriteLine("This figure is optimistic: measured with no game running. In play the model");
+        Console.WriteLine("shares the graphics card with the game, so expect it to be slower.");
+        return 0;
+    }
+
     private static async Task<int> ForgetAsync(string[] args)
     {
         var context = await ResolveGameAsync(args, offline: true);

@@ -37,15 +37,8 @@
     -->
     <PublishTrimmed>false</PublishTrimmed>
 
-    <!--
-      Symbols inside the executable rather than beside it. "One file" was the requirement, and two
-      loose .pdb next to it would already break that promise for anyone unzipping it.
-
-      Embedding rather than dropping them: without symbols a crash report carries no line numbers,
-      and the diagnostic report a user pastes into an issue is most of what we get to work with —
-      there is no telemetry to fall back on. The cost is around a hundred kilobytes.
-    -->
-    <DebugType>embedded</DebugType>
+    <!-- DebugType lives in Directory.Build.props: it has to hold for every project, not just
+         this one, or the others drop their .pdb beside the published executable. -->
   </PropertyGroup>
 
   <ItemGroup>

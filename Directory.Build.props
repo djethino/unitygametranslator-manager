@@ -24,6 +24,14 @@
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!--
+      Symbols inside each assembly rather than beside it, for every project rather than only the
+      one that produces the executable. Set on the GUI alone, it left the Core project's .pdb next
+      to the published file — so "one file" was true of the build and false of the folder someone
+      actually unzips.
+    -->
+    <DebugType>embedded</DebugType>
   </PropertyGroup>
 
   <!-- Generate BuildInfo.g.cs so URLs and version live in exactly one place -->

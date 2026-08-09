@@ -4,8 +4,10 @@ Finds the Unity games on your machine, tells you what each one needs, and sets u
 [UnityGameTranslator](https://github.com/djethino/unitygametranslator) on it — mod loader
 included — without touching anything that was already there.
 
-> **Status: in development.** Detection works and is tested against real games. Installing,
-> updating and uninstalling are being built.
+> **Status: beta**, like the rest of the project. It finds games, installs and removes the mod
+> and its loader, writes your settings into each game and fetches community translations — all of
+> it against real games, not fixtures. What it has not had is a public release: nothing is signed
+> yet, and nobody outside the project has walked the whole interface.
 
 ## Why
 
@@ -22,7 +24,9 @@ can: **whether the community has already translated this game**.
 - Identifies the scripting backend (Mono / IL2CPP), the Unity version and the architecture
 - Detects a mod loader that is already installed — and never replaces it
 - Warns you, and refuses, when a game ships an anti-cheat
-- Shows the community translations available for that game, and whether you already have one
+- Shows the community translations available for that game, and installs the one you pick
+- Says where you stand on a translation you took part in: the one you publish, or a branch of it
+- Writes your settings into each game's own configuration, so the mod asks nothing on first run
 - Installs the loader and the matching plugin build, keeping your settings and translations
 - Uninstalls exactly what it installed, and nothing else
 
@@ -35,11 +39,17 @@ can: **whether the community has already translated this game**.
 
 ## Install
 
-Download the single executable for your system and run it. There is nothing to install — and if
-you want to keep it around, it offers to install itself properly.
+**There is no download yet.** No release has been published, so the only way to run it today is to
+build it from source — see [Building](#building) below. This section will say otherwise the day
+that changes, rather than promising a file that is not there.
 
-> **Windows SmartScreen** will warn you: the executable is not signed with a paid certificate.
-> You can verify the download against the published `.sha256`, and the whole source is here.
+When builds are published, it will be a single executable: nothing to install, and it offers to
+install itself properly if you want to keep it around.
+
+> **Windows SmartScreen will warn you** about that first build: it will not be signed with a paid
+> certificate, and an unknown executable with no reputation is exactly what SmartScreen exists to
+> flag. You will be able to check the download against its published `.sha256`, and the whole
+> source is here.
 
 ## Command line
 

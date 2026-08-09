@@ -15,11 +15,18 @@ using UnityGameTranslator.Installer.Core.Settings;
 namespace UnityGameTranslator.Installer.Gui;
 
 /// <summary>
-/// The defaults applied to every game.
+/// The mod's settings, decided once here and written into each game.
 ///
-/// Not a page of knobs for the tool itself: the target language especially is a fact about the
-/// person, not a per-game preference, and it is what turns "3 translations available" into "this
-/// game is playable in your language".
+/// ⚠ Not the installer's own preferences, and the name matters: "Settings" made people expect
+/// options for this tool. Almost everything here belongs to the MOD — it is answered once and
+/// written into each game's config.json, which is what lets the mod's first-run wizard be skipped
+/// and what lets an already-configured game be reconfigured without opening it.
+///
+/// The network card is the one exception, and it is grouped apart for that reason: it governs this
+/// tool, and is passed on to games as well because a proxy one needs is a proxy the other needs.
+///
+/// The target language especially is a fact about the person, not a per-game preference, and it is
+/// what turns "3 translations available" into "this game is playable in your language".
 ///
 /// Nothing is written until Save. The mod holds the same rule for its own settings, and it is
 /// worth keeping across the family: a screen that applies as you click gives you no way to
@@ -113,7 +120,7 @@ public sealed class SettingsWindow : Window
             Reviewed = current.Reviewed,
         };
 
-        Title = "Settings — defaults for every game";
+        Title = "Mod defaults — what gets written into your games";
         Width = 720;
         Height = 760;
         MinWidth = 640;
@@ -130,18 +137,22 @@ public sealed class SettingsWindow : Window
 
         layout.Children.Add(new TextBlock
         {
-            Text = "These apply to every game you set up. A game you have already configured is "
-                 + "not touched until you ask for it.",
+            Text = "Answer once here, and every game you set up starts configured — no first-run "
+                 + "questions inside the game. A game you have already configured is not touched "
+                 + "until you ask for it.",
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("TextSecondary"),
         });
 
+        layout.Children.Add(GroupHeading("Written into your games"));
         layout.Children.Add(LanguageCard());
         layout.Children.Add(BackendCard());
         layout.Children.Add(AiCard());
-        layout.Children.Add(NetworkCard());
         layout.Children.Add(ModCard());
+
+        layout.Children.Add(GroupHeading("This tool"));
+        layout.Children.Add(NetworkCard());
 
         var buttons = new StackPanel
         {
@@ -195,6 +206,22 @@ public sealed class SettingsWindow : Window
 
         return root;
     }
+
+    /// <summary>
+    /// Separates what leaves this window for a game from what stays in the tool.
+    ///
+    /// The distinction cannot live in the window's name alone, and getting it wrong has a cost:
+    /// someone has to know whether changing a value here will reach a game they have already set
+    /// up, or only affect the installer.
+    /// </summary>
+    private Control GroupHeading(string text) => new TextBlock
+    {
+        Text = text.ToUpperInvariant(),
+        FontSize = 11,
+        FontWeight = FontWeight.SemiBold,
+        Foreground = Brush("TextMuted"),
+        Margin = new Thickness(2, 8, 0, 0),
+    };
 
     // ---------------------------------------------------------------- cards
 
@@ -424,8 +451,10 @@ public sealed class SettingsWindow : Window
         panel.Children.Add(_netStatus);
 
         return Card("Network",
-            "Only worth touching if nothing reaches the internet. A company network usually needs "
-            + "a proxy here; at home, a firewall prompt is the more likely culprit.",
+            "Used by this tool, and passed on to your games as well - a proxy one needs is a proxy "
+            + "the other needs. Only worth touching if nothing reaches the internet: a company "
+            + "network usually needs a proxy here, while at home a firewall prompt is the more "
+            + "likely culprit.",
             panel);
     }
 

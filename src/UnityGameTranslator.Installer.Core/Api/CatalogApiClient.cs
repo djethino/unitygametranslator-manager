@@ -64,6 +64,39 @@ public sealed class CatalogApiClient
     }
 
     /// <summary>
+    /// Community translations for a game we have no Steam id for — Epic, GOG, anything installed
+    /// by hand. Without this most of a library is invisible to the catalog: the id only exists
+    /// for Steam, so games bought elsewhere would read "no translation yet" for ever.
+    ///
+    /// Uses q=, the same parameter the mod uses (ApiClient, the branch taken when there is no
+    /// Steam id). That matters more than it looks: the endpoint offers three different matchers
+    /// — steam_id exact, game= exact on the slug, q= a LIKE on the name — and picking a
+    /// different one would make the installer and the mod disagree about the very same game.
+    /// </summary>
+    public async Task<IReadOnlyList<OnlineTranslation>> SearchByNameAsync(
+        string gameName, CancellationToken ct = default)
+    {
+        LastError = null;
+        var name = gameName.Trim();
+        if (name.Length < 2) return Array.Empty<OnlineTranslation>();
+
+        var url = $"{BuildInfo.ApiBaseUrl}/translations?q={Uri.EscapeDataString(name)}";
+
+        try
+        {
+            var json = await _http.GetStringAsync(url, ct).ConfigureAwait(false);
+            var results = Parse(json, out var parseError);
+            if (parseError is not null) LastError = parseError;
+            return results;
+        }
+        catch (Exception ex)
+        {
+            LastError = $"{ex.GetType().Name}: {ex.Message}";
+            return Array.Empty<OnlineTranslation>();
+        }
+    }
+
+    /// <summary>
     /// The endpoint wraps its results in a "translations" envelope alongside a count. A bare
     /// array and a "data" envelope are also accepted, so a future pagination change does not
     /// silently reduce every search to zero results.

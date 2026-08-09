@@ -91,8 +91,36 @@
       own ControlTheme. Do not reach for Style.Resources again.
     -->
 
+    <!--
+      The picker gets the search field's shade too: it sits in the same toolbar and answers the
+      same kind of question. Fluent drives it through named resources, exactly like TextBox.
+    -->
     <Style Selector="ComboBox">
       <Setter Property="CornerRadius" Value="{DynamicResource RadiusControl}" />
+      <Setter Property="Padding" Value="12,6" />
+      <Style.Resources>
+        <SolidColorBrush x:Key="ComboBoxBackground" Color="#3C4758" />
+        <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#455164" />
+        <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="#455164" />
+        <SolidColorBrush x:Key="ComboBoxBackgroundFocused" Color="#455164" />
+        <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#4B5A70" />
+        <SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver" Color="#5A6A82" />
+        <SolidColorBrush x:Key="ComboBoxBorderBrushPressed" Color="#A855F7" />
+        <SolidColorBrush x:Key="ComboBoxBorderBrushFocused" Color="#A855F7" />
+        <SolidColorBrush x:Key="ComboBoxForeground" Color="#F3F4F6" />
+        <SolidColorBrush x:Key="ComboBoxForegroundPointerOver" Color="#F3F4F6" />
+        <SolidColorBrush x:Key="ComboBoxForegroundPressed" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="ComboBoxForegroundFocused" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="ComboBoxDropDownBackground" Color="#273141" />
+        <SolidColorBrush x:Key="ComboBoxDropDownBorderBrush" Color="#3C4758" />
+        <SolidColorBrush x:Key="ComboBoxDropDownForeground" Color="#F3F4F6" />
+        <SolidColorBrush x:Key="ComboBoxItemBackgroundPointerOver" Color="#3C4758" />
+        <SolidColorBrush x:Key="ComboBoxItemBackgroundSelected" Color="#382C55" />
+        <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedPointerOver" Color="#443466" />
+        <SolidColorBrush x:Key="ComboBoxItemForeground" Color="#D1D5DB" />
+        <SolidColorBrush x:Key="ComboBoxItemForegroundSelected" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="ComboBoxItemForegroundPointerOver" Color="#FFFFFF" />
+      </Style.Resources>
     </Style>
 
     <!--

@@ -5,7 +5,7 @@ using UnityGameTranslator.Installer.Core.Platform;
 namespace UnityGameTranslator.Installer.Core.Api;
 
 /// <summary>
-/// Remembers what the community catalog answered, per Steam app id.
+/// Remembers what the community catalog answered, per game.
 ///
 /// Saying "this game is playable in your language" on every row means knowing, for every game,
 /// what exists online. Asking at the moment a row is drawn would be dozens of calls at once
@@ -43,47 +43,57 @@ public sealed class OnlineCatalogCache
         _entries = Load();
     }
 
-    /// <summary>Whatever we already know, without asking anyone. Null when never fetched.</summary>
-    public IReadOnlyList<OnlineTranslation>? Peek(string? steamAppId) =>
-        steamAppId is not null && _entries.TryGetValue(steamAppId, out var entry)
-            ? entry.Translations
-            : null;
+    /// <summary>
+    /// How a game is looked up. Steam hands us an id, which matches exactly; everything else has
+    /// only its name, which the endpoint matches loosely. Same split the mod makes.
+    /// </summary>
+    public static string KeyFor(GameInstall game) =>
+        game.SteamAppId is { Length: > 0 } id
+            ? $"steam:{id}"
+            : $"name:{game.Name.Trim().ToLowerInvariant()}";
 
-    public bool IsStale(string steamAppId) =>
-        !_entries.TryGetValue(steamAppId, out var entry)
+    /// <summary>Whatever we already know, without asking anyone. Null when never fetched.</summary>
+    public IReadOnlyList<OnlineTranslation>? Peek(GameInstall game) =>
+        _entries.TryGetValue(KeyFor(game), out var entry) ? entry.Translations : null;
+
+    public bool IsStale(string key) =>
+        !_entries.TryGetValue(key, out var entry)
         || DateTimeOffset.UtcNow - entry.FetchedAt > _lifetime;
 
     /// <summary>
     /// Refreshes the games whose answers are missing or old, a few at a time, calling back as
     /// each one lands so rows can fill in progressively instead of after everything.
     /// </summary>
-    public async Task RefreshAsync(IEnumerable<string> steamAppIds,
+    public async Task RefreshAsync(IEnumerable<string> keys,
                                    Func<string, IReadOnlyList<OnlineTranslation>, Task> onUpdated,
                                    CancellationToken ct = default)
     {
-        var pending = steamAppIds.Where(IsStale).Distinct().ToList();
+        var pending = keys.Distinct().Where(IsStale).ToList();
         if (pending.Count == 0) return;
 
         var changed = false;
 
-        foreach (var appId in pending)
+        foreach (var key in pending)
         {
             if (ct.IsCancellationRequested) break;
 
-            var translations = await _api.SearchBySteamIdAsync(appId, ct).ConfigureAwait(false);
+            var value = key[(key.IndexOf(':') + 1)..];
+            var translations = key.StartsWith("steam:", StringComparison.Ordinal)
+                ? await _api.SearchBySteamIdAsync(value, ct).ConfigureAwait(false)
+                : await _api.SearchByNameAsync(value, ct).ConfigureAwait(false);
 
             // A failed lookup is not an empty catalog. Recording it as "no translations" would
             // turn one blocked request into a wrong answer that survives for hours.
             if (_api.LastError is not null) continue;
 
-            _entries[appId] = new Entry
+            _entries[key] = new Entry
             {
                 FetchedAt = DateTimeOffset.UtcNow,
                 Translations = translations.ToList(),
             };
             changed = true;
 
-            await onUpdated(appId, translations).ConfigureAwait(false);
+            await onUpdated(key, translations).ConfigureAwait(false);
 
             // The public endpoint is rate limited. Pacing here keeps a large library from
             // spending its allowance in the first two seconds and getting refused the rest.

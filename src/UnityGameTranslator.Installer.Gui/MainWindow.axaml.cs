@@ -105,8 +105,11 @@ public partial class MainWindow : Window
     {
         if (!_settings.Current.OnlineMode) return;
 
-        var ids = _games.Where(g => g.IsModdable && g.SteamAppId is not null)
-                        .Select(g => g.SteamAppId!)
+        // Every moddable game, not just the Steam ones: a library bought on Epic or installed
+        // by hand would otherwise read "no translation yet" for ever.
+        var ids = _games.Where(g => g.IsModdable)
+                        .Select(OnlineCatalogCache.KeyFor)
+                        .Distinct()
                         .ToList();
         if (ids.Count == 0) return;
 
@@ -144,7 +147,7 @@ public partial class MainWindow : Window
 
         foreach (var game in _games)
         {
-            var online = _online.Peek(game.SteamAppId);
+            var online = _online.Peek(game);
             var report = new GameReport { Game = game };
 
             var descriptor = _catalog.Loaders.FirstOrDefault(
@@ -167,9 +170,7 @@ public partial class MainWindow : Window
                 }
             }
 
-            var checkedOnline = online is not null
-                                || game.SteamAppId is null
-                                || !_settings.Current.OnlineMode;
+            var checkedOnline = online is not null || !_settings.Current.OnlineMode;
 
             _situations[game.Path] = SituationReader.Read(report, language, checkedOnline);
         }
@@ -180,7 +181,13 @@ public partial class MainWindow : Window
     private void BuildLanguageBox()
     {
         // "auto" first: following the system is a legitimate answer, and it is the mod's default.
-        LanguageBox.Items.Add(new ComboBoxItem { Content = "System language", Tag = "auto" });
+        // "auto" says which language it resolved to: "System language" alone leaves the reader
+        // guessing what the rest of the window is talking about.
+        var detected = _platform.SystemLanguage();
+        var autoLabel = detected is not null
+            ? $"System language ({Languages.NameOf(detected)})"
+            : "System language";
+        LanguageBox.Items.Add(new ComboBoxItem { Content = autoLabel, Tag = "auto" });
         foreach (var (code, name) in Languages.All())
             LanguageBox.Items.Add(new ComboBoxItem { Content = name, Tag = code });
 
@@ -380,22 +387,37 @@ public partial class MainWindow : Window
         if (previous is not null) SelectByPath(previous);
     }
 
+    /// <summary>
+    /// Filters ask about FACTS, not about the situation label.
+    ///
+    /// Tying them to the situation was wrong and hid most of the answer: "playable in my
+    /// language" only matched games that were not installed yet, so a game already set up with a
+    /// French translation disappeared from the very filter meant to find it. What the reader
+    /// means is "a translation exists in my language", whatever else is going on.
+    /// </summary>
     private bool MatchesFilter(GameInstall game)
     {
         if (_filter is null) return true;
-        if (!_situations.TryGetValue(game.Path, out var situation)) return false;
 
-        // "Already set up" covers everything installed, whatever else is true of it: someone
-        // filtering on it wants their configured games, not a subset defined by a technicality.
-        if (_filter == Situation.Ready)
+        var language = _settings.ResolveTargetLanguage();
+        var online = _online.Peek(game);
+        var inLanguage = online?.Any(t => Languages.Matches(t.TargetLanguage, language)) == true;
+
+        return _filter switch
         {
-            return situation.Situation is Situation.Ready
-                or Situation.UpdateAvailable
-                or Situation.UnpublishedWork;
-        }
-
-        return situation.Situation == _filter;
+            Situation.Blocked => !game.IsModdable,
+            Situation.TranslationAvailable => game.IsModdable && inLanguage,
+            Situation.NotTranslatedYet => game.IsModdable && online is not null && !inLanguage,
+            Situation.Ready => game.IsModdable && IsSetUp(game),
+            _ => true,
+        };
     }
+
+    private bool IsSetUp(GameInstall game) =>
+        _situations.TryGetValue(game.Path, out var situation)
+        && situation.Situation is Situation.Ready
+            or Situation.UpdateAvailable
+            or Situation.UnpublishedWork;
 
     /// <summary>
     /// A row states a situation and offers a verb, in the player's terms.

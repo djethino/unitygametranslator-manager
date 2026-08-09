@@ -12,8 +12,40 @@
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+
+    <!--
+      ⚠ Compression stays OFF, and this is not a size oversight.
+
+      A compressed bundle is a small stub followed by one large compressed blob it unpacks in
+      memory at startup. To a static heuristic that is the definition of a packer, which is what
+      malware uses to hide its contents. Measured on a real machine, 2026-08-09: the compressed
+      build was quarantined as Gen:Variant.Yogi.44836 the moment it was written, and the publish
+      itself failed with fifteen access errors as the file was taken away mid-build. The same
+      code with compression off was never touched.
+
+      An antivirus quarantining the installer does not produce a bug report. It produces someone
+      who concludes the project is shady and leaves, and we never hear about it. Forty-eight
+      megabytes of download is a far cheaper price — and it is paid once, at the download, since
+      the release archive is compressed anyway.
+    -->
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
+
+    <!--
+      Trimming is off for now: Avalonia resolves a good deal through reflection, and a trimmed
+      build that starts fine here can fail on a screen nobody opened before shipping. Worth
+      revisiting once the window has actually been walked through end to end.
+    -->
     <PublishTrimmed>false</PublishTrimmed>
+
+    <!--
+      Symbols inside the executable rather than beside it. "One file" was the requirement, and two
+      loose .pdb next to it would already break that promise for anyone unzipping it.
+
+      Embedding rather than dropping them: without symbols a crash report carries no line numbers,
+      and the diagnostic report a user pastes into an issue is most of what we get to work with —
+      there is no telemetry to fall back on. The cost is around a hundred kilobytes.
+    -->
+    <DebugType>embedded</DebugType>
   </PropertyGroup>
 
   <ItemGroup>

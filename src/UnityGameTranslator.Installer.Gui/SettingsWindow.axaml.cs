@@ -58,6 +58,7 @@ public sealed class SettingsWindow : Window
     private StackPanel _testOutput = null!;
     private TextBlock _aiStatus = null!;
     private Button _testButton = null!;
+    private Button _applyButton = null!;
 
     public bool Saved { get; private set; }
 
@@ -129,14 +130,44 @@ public sealed class SettingsWindow : Window
         var cancel = new Button { Content = "Cancel", IsCancel = true };
         cancel.Click += (_, _) => Close();
 
-        var save = new Button { Content = "Save", IsDefault = true, Classes = { "primary" } };
-        save.Click += (_, _) => Save();
+        // The mod's own wording, and for the same reason: "Apply (3)" answers "did it take what I
+        // changed?" before you click, and "Close" says there is nothing to apply — which is worth
+        // knowing on a screen where testing a model changes nothing worth saving. Same family of
+        // tools, same sentence.
+        _applyButton = new Button { IsDefault = true, Classes = { "primary" } };
+        _applyButton.Click += (_, _) =>
+        {
+            if (CountPendingChanges() == 0) { Close(); return; }
+            Save();
+        };
 
         buttons.Children.Add(cancel);
-        buttons.Children.Add(save);
-        layout.Children.Add(buttons);
+        buttons.Children.Add(_applyButton);
 
-        return new ScrollViewer { Content = layout };
+        // Fixed at the bottom, out of the scroll, like the publisher band on the About screen.
+        // A settings page long enough to scroll hides its own confirmation otherwise, and the way
+        // to save becomes something you have to go looking for.
+        var bar = new Border
+        {
+            // SurfaceBar, the colour the site gives its own fixed bars. A bar in the page colour
+            // would only be told apart by its hairline border, which is not enough to read as
+            // "this stays put while the rest scrolls".
+            Background = Brush("SurfaceBar"),
+            BorderBrush = Brush("BorderSubtle"),
+            BorderThickness = new Thickness(0, 1, 0, 0),
+            Padding = new Thickness(24, 12),
+            Child = buttons,
+        };
+
+        var root = new DockPanel();
+        DockPanel.SetDock(bar, Dock.Bottom);
+        root.Children.Add(bar);
+        root.Children.Add(new ScrollViewer { Content = layout });
+
+        WatchForChanges();
+        RefreshApplyButton();
+
+        return root;
     }
 
     // ---------------------------------------------------------------- cards
@@ -1150,6 +1181,58 @@ public sealed class SettingsWindow : Window
         _store.Save(_draft);
         Saved = true;
         Close();
+    }
+
+    /// <summary>
+    /// How many settings differ from what is currently saved.
+    ///
+    /// Compared against the store, not against the draft: the draft is edited in place by the
+    /// connection test, and counting against it would report zero changes right after someone
+    /// changed something.
+    /// </summary>
+    private int CountPendingChanges()
+    {
+        var saved = _store.Current;
+        var count = 0;
+
+        if (Tag(_language) != saved.TargetLanguage) count++;
+        if (Tag(_backend) != saved.TranslationBackend) count++;
+        if ((_aiUrl.Text ?? "") != (saved.AiUrl ?? "")) count++;
+        if ((_aiModel.SelectedItem as ComboBoxItem)?.Tag as string != saved.AiModel) count++;
+        if ((_apiKey.Text ?? "") != (saved.AiApiKey ?? "")) count++;
+        if ((_hotkey.Text ?? "") != (saved.SettingsHotkey ?? "")) count++;
+        if (Tag(_channel) != saved.Channel) count++;
+        if ((_online.IsChecked == true) != saved.OnlineMode) count++;
+
+        if (Tag(_proxyMode) != saved.ProxyMode) count++;
+        if ((_proxyUrl.Text ?? "") != (saved.ProxyUrl ?? "")) count++;
+        if ((_proxyUser.Text ?? "") != (saved.ProxyUsername ?? "")) count++;
+        if ((_proxyPassword.Text ?? "") != (saved.ProxyPassword ?? "")) count++;
+
+        return count;
+    }
+
+    /// <summary>"Apply (3)" while there is something to save, "Close" when there is not.</summary>
+    private void RefreshApplyButton()
+    {
+        var changes = CountPendingChanges();
+        _applyButton.Content = changes > 0 ? $"Apply ({changes})" : "Close";
+    }
+
+    /// <summary>
+    /// Recounts on every edit. Wired once, here, rather than at each control's creation: a count
+    /// that misses one field is worse than no count, because it says "nothing to save" about work
+    /// that would then be lost on Cancel.
+    /// </summary>
+    private void WatchForChanges()
+    {
+        foreach (var box in new[] { _language, _backend, _aiModel, _channel, _proxyMode })
+            box.SelectionChanged += (_, _) => RefreshApplyButton();
+
+        foreach (var field in new[] { _aiUrl, _apiKey, _hotkey, _proxyUrl, _proxyUser, _proxyPassword })
+            field.TextChanged += (_, _) => RefreshApplyButton();
+
+        _online.IsCheckedChanged += (_, _) => RefreshApplyButton();
     }
 
     // ---------------------------------------------------------------- helpers

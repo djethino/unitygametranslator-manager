@@ -794,7 +794,7 @@ public partial class MainWindow : Window
         {
             panel.Children.Add(new TextBlock
             {
-                Text = "This game was not found through Steam, so we cannot look it up automatically.",
+                Text = "Nobody has published a translation for this game yet.",
                 FontSize = 12,
                 Opacity = 0.6,
                 TextWrapping = TextWrapping.Wrap,

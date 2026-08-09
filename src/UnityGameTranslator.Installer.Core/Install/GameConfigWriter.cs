@@ -58,7 +58,19 @@ public sealed class GameConfigWriter
             var root = Load(path);
             var applied = new List<string>();
 
-            Set(root, applied, "target_language", settings.TargetLanguage, "language");
+            // ⚠ The mod stores a language NAME here, never an ISO code: GetSystemLanguageName
+            // returns "French", its dropdown lists names, and GetTargetLanguage hands the value
+            // straight to the API as ?lang= and to the AI prompt as "translate to ...".
+            //
+            // Writing "fr" produced a game that searched the catalogue for a language nobody
+            // publishes under and asked a model to "translate to fr". The tool keeps ISO codes
+            // internally — they are what a system reports and what makes a picker sane — and
+            // converts on the way out. "auto" is passed through: the mod resolves it itself.
+            var language = string.Equals(settings.TargetLanguage, "auto", StringComparison.OrdinalIgnoreCase)
+                ? "auto"
+                : Languages.NameOf(settings.TargetLanguage);
+
+            Set(root, applied, "target_language", language, "language");
             Set(root, applied, "translation_backend", settings.TranslationBackend, "translation backend");
             // Only written when the mod could act on it. An unparseable hotkey would replace a
             // working one with something that never fires, and the mod reports nothing when that

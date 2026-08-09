@@ -69,12 +69,24 @@ public static partial class UnityGameProbe
     /// <summary>
     /// A name a human can recognise, when no store gave us one.
     ///
-    /// The folder name is usually the best source — it carries the release name. When it is
-    /// generic, the *_Data folder is the fallback because Unity names it after the product, and
-    /// the parent folder is the last resort.
+    /// ⚠ The product name Unity itself recorded comes FIRST, and that matters far beyond tidiness:
+    /// the mod publishes translations under Application.productName, so any other spelling makes
+    /// the community lookup miss. Measured on real installs, 2026-08-09:
+    ///
+    ///   folder "LONESTARuBxQC"      → product "LONESTAR"
+    ///   folder "HyperEchelon6vYY3"  → product "Hyper Echelon"
+    ///
+    /// Both games had a published translation and both were reported as having none. Repacks and
+    /// store installers add suffixes, and folder names drop the spaces a title actually has —
+    /// neither can be searched for.
+    ///
+    /// The folder name stays as the fallback: it carries the release name, which is what a person
+    /// recognises when Unity recorded nothing usable.
     /// </summary>
     private static string DeriveName(string folder, string? dataDir)
     {
+        if (ReadProductName(dataDir) is { } product) return product;
+
         var folderName = new DirectoryInfo(folder).Name;
         if (!GenericFolderNames.Contains(folderName)) return folderName;
 
@@ -87,6 +99,37 @@ public static partial class UnityGameProbe
 
         var parent = Directory.GetParent(Path.GetFullPath(folder))?.Name;
         return string.IsNullOrEmpty(parent) ? folderName : parent;
+    }
+
+    /// <summary>
+    /// The product name as Unity wrote it, from &lt;Game&gt;_Data/app.info.
+    ///
+    /// The file holds two lines: company, then product. It is plain UTF-8 and Unity has written it
+    /// for years, but it is not guaranteed — so a missing or odd file means "no answer" and the
+    /// caller falls back, never an exception.
+    /// </summary>
+    private static string? ReadProductName(string? dataDir)
+    {
+        if (dataDir is null) return null;
+
+        try
+        {
+            var path = Path.Combine(dataDir, "app.info");
+            if (!File.Exists(path)) return null;
+
+            var lines = File.ReadAllLines(path);
+            if (lines.Length < 2) return null;
+
+            var product = lines[1].Trim();
+
+            // A blank or absurd value is worse than the folder name: it would show as an empty row
+            // and search for nothing.
+            return product.Length is > 1 and < 120 ? product : null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>The &lt;Game&gt;_Data folder. Some games nest it one level down.</summary>

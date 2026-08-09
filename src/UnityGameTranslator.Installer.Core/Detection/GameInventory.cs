@@ -115,10 +115,15 @@ public sealed class GameInventory
         if (game.ArchitectureIsAssumed)
             report.Warnings.Add($"The architecture ({game.Architecture}) is what you told us, not what we read.");
 
-        if (!offline && game.SteamAppId is not null && _api is not null)
+        // Steam id when we have one, the game's name otherwise — the same order the mod uses, and
+        // for the same reason: a game bought outside Steam, or installed by hand, has a published
+        // translation just as often. Looking up only Steam games reported "none found" for games
+        // whose translation was sitting on the site.
+        if (!offline && _api is not null && (game.SteamAppId is not null || !string.IsNullOrWhiteSpace(game.Name)))
         {
-            report.OnlineTranslations = await _api.SearchBySteamIdAsync(game.SteamAppId, ct)
-                                                  .ConfigureAwait(false);
+            report.OnlineTranslations = game.SteamAppId is not null
+                ? await _api.SearchBySteamIdAsync(game.SteamAppId, ct).ConfigureAwait(false)
+                : await _api.SearchByNameAsync(game.Name, ct).ConfigureAwait(false);
 
             // "No translation exists" and "the search failed" look identical to a user, and
             // only one of them is our problem. Keep them apart.

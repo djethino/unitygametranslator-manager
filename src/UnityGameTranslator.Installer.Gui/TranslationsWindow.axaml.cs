@@ -138,16 +138,20 @@ public sealed class TranslationsWindow : Window
     {
         var local = _report.LocalTranslation;
 
+        // Same reason as on the game card: the pair is what makes the list below comparable.
+        var languages = LocalTranslationProbe.DescribeLanguages(_report.Game.Path, _loader);
+        var pair = languages is null ? "" : $" ({languages})";
+
         var text = local is null
             ? "Nothing is installed for this game yet, so taking one costs you nothing."
             : local.EntryCount < 0
                 ? "There is a translation file here, but it could not be read. Taking another one "
                   + "will move it aside rather than delete it."
                 : local.LocalChanges > 0
-                    ? $"You already have {local.EntryCount} lines here, and {local.LocalChanges} of "
+                    ? $"You already have {local.EntryCount} lines here{pair}, and {local.LocalChanges} of "
                       + "them have not been uploaded anywhere. Taking another translation replaces "
                       + "the file — your copy is kept aside, but the mod is where you merge the two."
-                    : $"You already have {local.EntryCount} lines here, with nothing waiting to be "
+                    : $"You already have {local.EntryCount} lines here{pair}, with nothing waiting to be "
                       + "uploaded.";
 
         return new Border

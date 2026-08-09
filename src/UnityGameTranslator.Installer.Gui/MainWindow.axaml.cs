@@ -682,7 +682,19 @@ public partial class MainWindow : Window
         {
             var count = local.EntryCount < 0 ? "unreadable file" : $"{local.EntryCount} entries";
             var unsynced = local.LocalChanges > 0 ? $", {local.LocalChanges} not uploaded yet" : "";
-            panel.Children.Add(new TextBlock { Text = $"On this machine: {count}{unsynced}", FontSize = 12, Foreground = Brush("TextSecondary") });
+
+            // The pair comes first, as it does on every community entry below. Without it the two
+            // lines invite a comparison they do not support: a local file and a published one can
+            // share a target and differ on the source, and the reader had no way to see it.
+            var loaderId = report.InstalledLoader?.Id ?? report.RecommendedLoader?.Id;
+            var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == loaderId);
+            var languages = descriptor is null
+                ? null
+                : LocalTranslationProbe.DescribeLanguages(report.Game.Path, descriptor);
+
+            var prefix = languages is null ? "" : $"{languages}, ";
+
+            panel.Children.Add(new TextBlock { Text = $"On this machine: {prefix}{count}{unsynced}", FontSize = 12, Foreground = Brush("TextSecondary") });
         }
         else
         {

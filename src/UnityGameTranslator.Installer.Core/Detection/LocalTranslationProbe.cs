@@ -57,6 +57,29 @@ public static class LocalTranslationProbe
         }
     }
 
+    /// <summary>
+    /// The language pair of the file installed in a game, in the same shape the community cards
+    /// use: "English → Swedish".
+    ///
+    /// Written because its absence was actively misleading. A local file showing only "128 entries"
+    /// beside a community entry reading "English → Swedish" invites the reader to assume they are
+    /// the same pair — and here they were not: the local one detects its source, the published one
+    /// is fixed to English.
+    ///
+    /// "auto" is spelled out rather than hidden: it is a real answer, and the one that explains why
+    /// a source filter cannot be preselected from it.
+    /// </summary>
+    public static string? DescribeLanguages(string gamePath, LoaderDescriptor descriptor)
+    {
+        var (source, target) = ReadLanguages(gamePath, descriptor);
+
+        // Nothing configured at all: the mod has not been through its first run here, and saying
+        // "auto → auto" would dress that up as a choice somebody made.
+        if (source is null && target is null) return null;
+
+        return $"{source ?? "auto-detected"} → {target ?? "auto"}";
+    }
+
     /// <summary>One language field, with "auto" and blanks reported as "not set".</summary>
     private static string? Named(JsonElement root, string property)
     {

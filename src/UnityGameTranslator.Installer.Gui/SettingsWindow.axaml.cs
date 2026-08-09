@@ -60,6 +60,17 @@ public sealed class SettingsWindow : Window
     private Button _testButton = null!;
     private Button _applyButton = null!;
 
+    /// <summary>
+    /// True while the screen is filling itself in rather than being edited.
+    ///
+    /// The change counter must reflect what the person did, not what the window did to itself.
+    /// Discovering a server empties the model list and refills it, and for that instant nothing is
+    /// selected — which counts as "different from what is saved" and flashed "Apply (1)" on a
+    /// screen nobody had touched. The mod guards its own counter the same way, for the same
+    /// reason.
+    /// </summary>
+    private bool _populating;
+
     public bool Saved { get; private set; }
 
     public SettingsWindow(IPlatform platform, SettingsStore store)
@@ -562,6 +573,22 @@ public sealed class SettingsWindow : Window
 
     private async Task DiscoverAsync()
     {
+        _populating = true;
+        try
+        {
+            await DiscoverCoreAsync();
+        }
+        finally
+        {
+            // Released before the recount, so the button ends up showing the truth about the
+            // state the screen actually settled into.
+            _populating = false;
+            RefreshApplyButton();
+        }
+    }
+
+    private async Task DiscoverCoreAsync()
+    {
         _aiStatus.Text = "Looking for a local AI server...";
         _aiModel.Items.Clear();
         _testButton.IsEnabled = false;
@@ -916,6 +943,7 @@ public sealed class SettingsWindow : Window
 
         _connectButton.IsEnabled = false;
         _aiStatus.Text = "Connecting...";
+        _populating = true;
         _aiModel.Items.Clear();
         _testButton.IsEnabled = false;
 
@@ -936,6 +964,8 @@ public sealed class SettingsWindow : Window
             _aiStatus.Text = "No answer from that address. Check the URL, and the key if this is an "
                            + "online provider: a rejected key looks exactly like a wrong address.";
             _connectButton.IsEnabled = true;
+            _populating = false;
+            RefreshApplyButton();
             return;
         }
 
@@ -947,6 +977,9 @@ public sealed class SettingsWindow : Window
         _aiModel.SelectedItem ??= _aiModel.Items.OfType<ComboBoxItem>().FirstOrDefault();
         _testButton.IsEnabled = _aiModel.SelectedItem is not null;
         _connectButton.IsEnabled = true;
+
+        _populating = false;
+        RefreshApplyButton();
     }
 
     /// <summary>
@@ -1215,6 +1248,8 @@ public sealed class SettingsWindow : Window
     /// <summary>"Apply (3)" while there is something to save, "Close" when there is not.</summary>
     private void RefreshApplyButton()
     {
+        if (_populating) return;
+
         var changes = CountPendingChanges();
         _applyButton.Content = changes > 0 ? $"Apply ({changes})" : "Close";
     }

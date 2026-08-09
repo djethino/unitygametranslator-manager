@@ -503,7 +503,7 @@ public partial class MainWindow : Window
         {
             Content = installed ? "Reinstall / update" : "Install",
             IsEnabled = plan is not null,
-            Classes = { "accent" },
+            Classes = { "primary" },
         };
         primary.Click += async (_, _) =>
             await RunInstallAsync(report, engine, engine.Plan(report, ReleaseChannel.Stable, Chosen()));

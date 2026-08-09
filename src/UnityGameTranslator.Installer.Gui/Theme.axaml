@@ -21,16 +21,22 @@
     the interface agree. Status colours are shared by the site and the mod already.
   -->
 
-  <!-- Surfaces — Tailwind grays, as used by the site -->
-  <SolidColorBrush x:Key="SurfaceBase" Color="#111827" />      <!-- gray-900, page body -->
-  <SolidColorBrush x:Key="SurfaceBar" Color="#1A2332" />       <!-- header and status bar -->
-  <SolidColorBrush x:Key="SurfaceCard" Color="#1F2937" />      <!-- gray-800, the site's card -->
-  <SolidColorBrush x:Key="SurfaceCardHover" Color="#273449" />
-  <SolidColorBrush x:Key="SurfaceInput" Color="#1B2431" />     <!-- gray-800/80, form field recessed in a card -->
-  <SolidColorBrush x:Key="SurfaceControl" Color="#374151" />   <!-- gray-700, the site's search field -->
+  <!--
+    Surfaces — SAMPLED from a screenshot of the running site, not read off its classes.
 
-  <SolidColorBrush x:Key="BorderSubtle" Color="#374151" />     <!-- gray-700, the card's edge -->
-  <SolidColorBrush x:Key="BorderStrong" Color="#4B5563" />     <!-- gray-600, the input's edge -->
+    Reading `bg-gray-800` and using #1F2937 produced a window visibly darker and cooler than the
+    site: the page carries gradients and overlays, so what Tailwind declares is not what the
+    player sees. These are the values actually on screen.
+  -->
+  <SolidColorBrush x:Key="SurfaceBase" Color="#181E2D" />      <!-- page body -->
+  <SolidColorBrush x:Key="SurfaceBar" Color="#273141" />       <!-- nav bar, status bar -->
+  <SolidColorBrush x:Key="SurfaceCard" Color="#273141" />      <!-- the site's card -->
+  <SolidColorBrush x:Key="SurfaceCardHover" Color="#2F3A4C" />
+  <SolidColorBrush x:Key="SurfaceInput" Color="#222B3A" />     <!-- form field, recessed in a card -->
+  <SolidColorBrush x:Key="SurfaceControl" Color="#3C4758" />   <!-- the site's search field -->
+
+  <SolidColorBrush x:Key="BorderSubtle" Color="#3C4758" />     <!-- the card's edge -->
+  <SolidColorBrush x:Key="BorderStrong" Color="#4B5A70" />     <!-- the field's edge -->
 
   <!-- Text — the site's gray ramp -->
   <SolidColorBrush x:Key="TextPrimary" Color="#F3F4F6" />      <!-- gray-100 -->
@@ -38,10 +44,11 @@
   <SolidColorBrush x:Key="TextMuted" Color="#9CA3AF" />        <!-- gray-400 -->
 
   <!-- Accent: the site's purple -->
-  <SolidColorBrush x:Key="Accent" Color="#A855F7" />           <!-- purple-500 -->
+  <SolidColorBrush x:Key="Accent" Color="#9333EA" />           <!-- purple-600, the site button -->
+  <SolidColorBrush x:Key="AccentEdge" Color="#A855F7" />       <!-- purple-500, borders and highlights -->
   <SolidColorBrush x:Key="AccentDeep" Color="#7C3AED" />       <!-- violet-600 -->
   <SolidColorBrush x:Key="AccentSoft" Color="#C084FC" />       <!-- purple-400 -->
-  <SolidColorBrush x:Key="AccentSelected" Color="#2E2547" />   <!-- selected row, purple over the card -->
+  <SolidColorBrush x:Key="AccentSelected" Color="#382C55" />   <!-- selected row, purple over the card -->
 
   <LinearGradientBrush x:Key="AccentGradient" StartPoint="0%,0%" EndPoint="100%,100%">
     <GradientStop Color="#7C3AED" Offset="0" />

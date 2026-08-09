@@ -139,7 +139,26 @@ public static class Languages
         return languageName.Trim().Equals(NameOf(isoCode), StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>Every (code, name) pair, sorted by name, for a language picker.</summary>
+    /// <summary>
+    /// One entry per language, sorted by name, for a picker.
+    ///
+    /// ⚠ The table maps SEVERAL codes to the same name on purpose — "zh", "zh-cn" and "zh-hans"
+    /// all mean Simplified Chinese — because it also has to recognise whatever a system or an API
+    /// hands us. Listing it as-is put Simplified Chinese three times in the dropdown, with no way
+    /// to tell which one to pick.
+    ///
+    /// The shortest code wins, which is the rule the mod already applies when it builds its own
+    /// reverse lookup ("prefer zh over zh-cn"). Keeping the same rule matters beyond tidiness: the
+    /// code chosen here is written into the game's config.json, and the two must agree on which
+    /// one is canonical. It is also the form the website uses for its own files.
+    /// </summary>
     public static IEnumerable<(string Code, string Name)> All() =>
-        IsoToName.Select(p => (p.Key, p.Value)).OrderBy(p => p.Item2, StringComparer.OrdinalIgnoreCase);
+        IsoToName
+            .GroupBy(pair => pair.Value, StringComparer.OrdinalIgnoreCase)
+            .Select(group => (
+                Code: group.OrderBy(pair => pair.Key.Length)
+                           .ThenBy(pair => pair.Key, StringComparer.Ordinal)
+                           .First().Key,
+                Name: group.Key))
+            .OrderBy(pair => pair.Name, StringComparer.OrdinalIgnoreCase);
 }

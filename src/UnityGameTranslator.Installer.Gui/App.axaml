@@ -49,6 +49,16 @@
       <Setter Property="Background" Value="{DynamicResource AccentDeep}" />
       <Setter Property="Foreground" Value="#FFFFFF" />
     </Style>
+    <!--
+      Repainting the template presenter covers every state, disabled included: the button stopped
+      responding while still looking fully available, which reads as the application being stuck
+      rather than as the action being unavailable. Any state overridden here must be overridden
+      completely.
+    -->
+    <Style Selector="Button.primary:disabled /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource SurfaceControl}" />
+      <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
+    </Style>
 
     <!--
       Fields. The site makes a distinction worth keeping: a SEARCH field is a lighter grey,

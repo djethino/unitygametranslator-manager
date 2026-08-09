@@ -718,6 +718,17 @@ public partial class MainWindow : Window
             panel.Children.Add(row);
         }
 
+        // A refusal we are willing to let the user overrule gets a way forward. A dead button and
+        // a red paragraph, with nothing to click, is the same dead end as refusing forever.
+        if (!report.Game.IsModdable
+            && ModdabilityProbe.CanBeOverridden(report.Game.Verdict))
+        {
+            var tryAnyway = new Button { Content = "Let me try anyway...", FontSize = 12 };
+            tryAnyway.Click += async (_, _) => await OverrideVerdictAsync(report);
+            panel.Children.Add(tryAnyway);
+            return panel;
+        }
+
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
 
         LoaderDescriptor? Chosen() =>
@@ -761,6 +772,42 @@ public partial class MainWindow : Window
     }
 
     // ---------------------------------------------------------------- actions
+
+    /// <summary>
+    /// Lets the user overrule a refusal, after showing exactly what they are overruling.
+    ///
+    /// Offered only for refusals Core considers reversible: everything installed is recorded and
+    /// can be removed, so a loader that turns out not to work costs time. An anti-cheat never
+    /// reaches here — that cost is a banned account, and no uninstall undoes it.
+    /// </summary>
+    private async Task OverrideVerdictAsync(GameReport report)
+    {
+        var verdict = report.Game.Verdict;
+
+        var body = new StackPanel { Spacing = 12 };
+        body.Children.Add(new TextBlock
+        {
+            Text = ModdabilityProbe.Explain(report.Game),
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("TextSecondary"),
+        });
+        body.Children.Add(new TextBlock
+        {
+            Text = ModdabilityProbe.OverrideCaveat(verdict),
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("StatusWarning"),
+        });
+
+        if (!await ConfirmAsync($"Proceed with {report.Game.Name} anyway?", body, "Let me try"))
+            return;
+
+        _inventory.Overrides.Set(report.Game.Path, new GameOverride { IgnoreVerdict = true });
+        _inventory.Overrides.Apply(report.Game);
+
+        RecomputeSituations();
+        RefreshList();
+        await ShowSelectedAsync();
+    }
 
     private async Task RunInstallAsync(GameReport report, InstallEngine engine, InstallPlan? plan)
     {

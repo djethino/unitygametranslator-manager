@@ -83,6 +83,7 @@ public sealed class AboutWindow : Window
         links.Children.Add(close);
 
         layout.Children.Add(links);
+        layout.Children.Add(PublisherSignature());
 
         Content = new ScrollViewer { Content = layout };
     }
@@ -123,15 +124,66 @@ public sealed class AboutWindow : Window
             FontSize = 12,
             Foreground = this.FindResource("TextMuted") as IBrush,
         });
-        titles.Children.Add(new TextBlock
-        {
-            Text = "by ASymptOmatik Games",
-            FontSize = 12,
-            Foreground = this.FindResource("AccentSoft") as IBrush,
-        });
-
         row.Children.Add(titles);
         return row;
+    }
+
+    /// <summary>
+    /// The publisher's signature, at the foot of the window.
+    ///
+    /// Product identity at the top, publisher at the bottom: that separation is the whole point
+    /// of an About box. The full logo is used rather than the gear mark, because the gear is
+    /// ASymptOmatik and this is published by ASymptOmatik Games — only the full logo says so.
+    /// </summary>
+    private Control PublisherSignature()
+    {
+        var panel = new StackPanel
+        {
+            Spacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 8, 0, 0),
+        };
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Published by",
+            FontSize = 11,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Foreground = this.FindResource("TextMuted") as IBrush,
+        });
+
+        try
+        {
+            using var stream = AssetLoader.Open(
+                new Uri("avares://UnityGameTranslatorInstaller/Assets/asymptomatik-full.png"));
+
+            var logo = new Image
+            {
+                Source = new Bitmap(stream),
+                Height = 46,
+                Stretch = Stretch.Uniform,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Opacity = 0.9,
+                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+            };
+            ToolTip.SetTip(logo, "https://asymptomatikgames.com");
+            logo.PointerPressed += (_, _) => OpenUrl("https://asymptomatikgames.com");
+
+            panel.Children.Add(logo);
+        }
+        catch
+        {
+            // A missing logo falls back to the name, never to an empty space.
+            panel.Children.Add(new TextBlock
+            {
+                Text = "ASymptOmatik Games",
+                FontWeight = FontWeight.SemiBold,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Foreground = this.FindResource("TextSecondary") as IBrush,
+            });
+        }
+
+        return panel;
     }
 
     private Control Section(string title, string? intro, Credit[] credits)

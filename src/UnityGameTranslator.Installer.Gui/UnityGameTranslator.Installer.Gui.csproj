@@ -5,6 +5,8 @@
     <RootNamespace>UnityGameTranslator.Installer.Gui</RootNamespace>
     <AssemblyName>UnityGameTranslatorInstaller</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Same icon as the website: one identity across the ecosystem -->
+    <ApplicationIcon>Assets/app.ico</ApplicationIcon>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
 
     <PublishSingleFile>true</PublishSingleFile>
@@ -19,6 +21,10 @@
     <PackageReference Include="Avalonia.Desktop" Version="11.3.10" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.10" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.10" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
   </ItemGroup>
 
   <ItemGroup>

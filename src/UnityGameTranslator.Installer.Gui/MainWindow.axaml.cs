@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
@@ -39,6 +40,7 @@ public partial class MainWindow : Window
         RescanButton.Click += async (_, _) => await ScanAsync();
         AddFolderButton.Click += async (_, _) => await AddFolderAsync();
         FoldersButton.Click += async (_, _) => await ManageFoldersAsync();
+        AboutButton.Click += async (_, _) => await new AboutWindow().ShowDialog(this);
         GameList.SelectionChanged += async (_, _) => await ShowSelectedAsync();
 
         Loaded += async (_, _) => await ScanAsync();
@@ -228,7 +230,7 @@ public partial class MainWindow : Window
                 : $"cannot be modded — {game.VerdictDetail ?? game.Verdict.ToString()}",
             FontSize = 11,
             Opacity = game.IsModdable ? 0.6 : 0.85,
-            Foreground = game.IsModdable ? null : new SolidColorBrush(Color.Parse("#E0A030")),
+            Foreground = game.IsModdable ? null : Brush("StatusWarning"),
         };
 
         return new ListBoxItem
@@ -299,10 +301,10 @@ public partial class MainWindow : Window
         DetailPanel.Children.Add(Facts(report));
 
         foreach (var blocker in report.Blockers)
-            DetailPanel.Children.Add(Callout(blocker, "#7A2E2E"));
+            DetailPanel.Children.Add(Callout(blocker, "CalloutErrorBg", "StatusError"));
 
         foreach (var warning in report.Warnings)
-            DetailPanel.Children.Add(Callout(warning, "#5A4A20"));
+            DetailPanel.Children.Add(Callout(warning, "CalloutWarningBg", "StatusWarning"));
 
         DetailPanel.Children.Add(Translations(report));
         DetailPanel.Children.Add(Actions(report));
@@ -376,7 +378,7 @@ public partial class MainWindow : Window
                 Text = $"You already have this one: {mine}",
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
-                Foreground = new SolidColorBrush(Color.Parse("#6FBF73")),
+                Foreground = Brush("StatusSuccess"),
             });
         }
 
@@ -500,6 +502,7 @@ public partial class MainWindow : Window
         {
             Content = installed ? "Reinstall / update" : "Install",
             IsEnabled = plan is not null,
+            Classes = { "accent" },
         };
         primary.Click += async (_, _) =>
             await RunInstallAsync(report, engine, engine.Plan(report, ReleaseChannel.Stable, Chosen()));
@@ -694,11 +697,27 @@ public partial class MainWindow : Window
         await dialog.ShowDialog(this);
     }
 
-    private static Control Callout(string text, string background) => new Border
+    /// <summary>Looks a brush up in the shared palette (Theme.axaml).</summary>
+    private static IBrush? Brush(string key) =>
+        Application.Current?.FindResource(key) as IBrush;
+
+    /// <summary>
+    /// A message that needs to stand out, tinted rather than shouted: the hue laid over the base
+    /// surface, with a coloured edge. A flat saturated block would fight the rest of the window.
+    /// </summary>
+    private static Control Callout(string text, string backgroundKey, string edgeKey) => new Border
     {
-        Background = new SolidColorBrush(Color.Parse(background)),
+        Background = Brush(backgroundKey),
+        BorderBrush = Brush(edgeKey),
+        BorderThickness = new Avalonia.Thickness(3, 0, 0, 0),
         CornerRadius = new Avalonia.CornerRadius(4),
         Padding = new Avalonia.Thickness(12, 9),
-        Child = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, FontSize = 12 },
+        Child = new TextBlock
+        {
+            Text = text,
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 12,
+            Foreground = Brush("TextPrimary"),
+        },
     };
 }

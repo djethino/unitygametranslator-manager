@@ -4,23 +4,32 @@
         Title="UnityGameTranslator Installer"
         Width="1040" Height="680"
         MinWidth="820" MinHeight="520"
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="CenterScreen"
+        Icon="avares://UnityGameTranslatorInstaller/Assets/app.ico"
+        Background="{DynamicResource SurfaceBase}">
 
   <Grid RowDefinitions="Auto,*,Auto">
 
     <!-- Header -->
-    <Border Grid.Row="0" Padding="16,12" Background="#1E1E1E">
+    <Border Grid.Row="0" Padding="16,12" Background="{DynamicResource SurfaceBar}"
+            BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1">
       <Grid ColumnDefinitions="*,Auto">
-        <StackPanel Grid.Column="0" Spacing="2">
-          <TextBlock Text="Your Unity games" FontSize="18" FontWeight="SemiBold" />
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12">
+          <Image Source="avares://UnityGameTranslatorInstaller/Assets/icon-128.png"
+                 Width="34" Height="34" VerticalAlignment="Center" />
+          <StackPanel Spacing="2" VerticalAlignment="Center">
+          <TextBlock Text="Your Unity games" FontSize="18" FontWeight="SemiBold"
+                     Foreground="{DynamicResource TextPrimary}" />
           <TextBlock x:Name="SubtitleText" Opacity="0.6" FontSize="12"
-                     Text="Scanning..." />
+                     Text="Scanning..." Foreground="{DynamicResource TextMuted}" />
+          </StackPanel>
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
           <TextBox x:Name="SearchBox" Width="200" Watermark="Filter by name" />
           <Button x:Name="AddFolderButton" Content="Add a folder..." />
           <Button x:Name="FoldersButton" Content="My folders" />
           <Button x:Name="RescanButton" Content="Rescan" />
+          <Button x:Name="AboutButton" Content="About" />
         </StackPanel>
       </Grid>
     </Border>
@@ -28,7 +37,7 @@
     <!-- Body: games on the left, the selected game on the right -->
     <Grid Grid.Row="1" ColumnDefinitions="340,*">
 
-      <Border Grid.Column="0" BorderBrush="#333" BorderThickness="0,0,1,0">
+      <Border Grid.Column="0" BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,1,0">
         <ListBox x:Name="GameList" Background="Transparent" />
       </Border>
 
@@ -40,7 +49,8 @@
     </Grid>
 
     <!-- Status bar -->
-    <Border Grid.Row="2" Padding="16,8" Background="#1E1E1E">
+    <Border Grid.Row="2" Padding="16,8" Background="{DynamicResource SurfaceBar}"
+            BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,1,0,0">
       <Grid ColumnDefinitions="*,Auto">
         <TextBlock x:Name="StatusText" Grid.Column="0" VerticalAlignment="Center"
                    FontSize="12" Opacity="0.75" Text="Ready." TextTrimming="CharacterEllipsis" />

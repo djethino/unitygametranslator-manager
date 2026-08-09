@@ -2,7 +2,33 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="UnityGameTranslator.Installer.Gui.App"
              RequestedThemeVariant="Dark">
+
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://UnityGameTranslatorInstaller/Theme.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+
   <Application.Styles>
     <FluentTheme />
+
+    <!-- The accent drives the controls too, otherwise Fluent's default blue fights the identity -->
+    <Style Selector="Button.accent">
+      <Setter Property="Background" Value="{DynamicResource Accent}" />
+      <Setter Property="Foreground" Value="#FFFFFF" />
+      <Setter Property="Padding" Value="16,7" />
+    </Style>
+    <Style Selector="Button.accent:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AccentSoft}" />
+    </Style>
+    <Style Selector="Button.accent:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AccentDeep}" />
+    </Style>
+
+    <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AccentSelected}" />
+    </Style>
   </Application.Styles>
 </Application>

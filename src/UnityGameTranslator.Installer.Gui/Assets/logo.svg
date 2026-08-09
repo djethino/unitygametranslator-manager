@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Generator: Adobe Illustrator 26.2.1, SVG Export Plug-In . SVG Version: 6.00 Build 0)  -->
+
+<svg
+   version="1.1"
+   id="Calque_1"
+   x="0px"
+   y="0px"
+   viewBox="0 0 512 512"
+   style="enable-background:new 0 0 512 512;"
+   xml:space="preserve"
+   sodipodi:docname="logo.svg"
+   inkscape:version="1.4.2 (f4327f4, 2025-05-13)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"><defs
+   id="defs7" /><sodipodi:namedview
+   id="namedview7"
+   pagecolor="#ffffff"
+   bordercolor="#666666"
+   borderopacity="1.0"
+   inkscape:showpageshadow="2"
+   inkscape:pageopacity="0.0"
+   inkscape:pagecheckerboard="0"
+   inkscape:deskcolor="#d1d1d1"
+   inkscape:zoom="2.2792969"
+   inkscape:cx="256"
+   inkscape:cy="256"
+   inkscape:window-width="3440"
+   inkscape:window-height="1369"
+   inkscape:window-x="-8"
+   inkscape:window-y="-8"
+   inkscape:window-maximized="1"
+   inkscape:current-layer="Calque_1" />
+<style
+   type="text/css"
+   id="style1">
+	.st0{fill:#1F2937;stroke:#A855F7;stroke-width:8;}
+	.st1{opacity:0.4;fill:none;stroke:#A855F7;stroke-width:4;enable-background:new    ;}
+	.st2{fill:#A855F7;stroke:#1F2937;stroke-miterlimit:10;}
+	.st3{font-family:'Arial-BoldMT';}
+	.st4{font-size:158.0839px;}
+	.st5{font-family:'KozGoPr6N-Regular-90ms-RKSJ-H';}
+	.st6{font-size:135.5005px;}
+	.st7{fill:#A855F7;stroke:#A855F7;stroke-width:8;}
+	.st8{fill:#1F2937;stroke:#1F2937;}
+</style>
+<circle
+   class="st0"
+   cx="256"
+   cy="256"
+   r="200"
+   id="circle1" />
+<ellipse
+   class="st1"
+   cx="256"
+   cy="256"
+   rx="180"
+   ry="60"
+   id="ellipse1" />
+<ellipse
+   class="st1"
+   cx="256"
+   cy="256"
+   rx="180"
+   ry="120"
+   id="ellipse2" />
+<line
+   class="st1"
+   x1="256"
+   y1="56"
+   x2="256"
+   y2="456"
+   id="line2" />
+<ellipse
+   class="st1"
+   cx="256"
+   cy="256"
+   rx="60"
+   ry="180"
+   id="ellipse3" />
+<ellipse
+   class="st1"
+   cx="256"
+   cy="256"
+   rx="120"
+   ry="180"
+   id="ellipse4" />
+
+
+<g
+   transform="translate(208.6838,281.75493)"
+   id="g7">
+	<path
+   class="st7"
+   d="m -27.2,-94.9 h 138.9 c 23,0 41.7,18.7 41.7,41.7 V 2.3 c 0,23 -18.7,41.7 -41.7,41.7 H -27.2 c -23,0 -41.7,-18.7 -41.7,-41.7 v -55.5 c 0,-23 18.7,-41.7 41.7,-41.7 z"
+   id="path5" />
+	<circle
+   class="st8"
+   cx="0.60000002"
+   cy="-25.5"
+   r="22.200001"
+   id="circle5" />
+	<circle
+   class="st8"
+   cx="83.900002"
+   cy="-44.900002"
+   r="16.700001"
+   id="circle6" />
+	<circle
+   class="st8"
+   cx="120"
+   cy="-25.5"
+   r="16.700001"
+   id="circle7" />
+</g>
+</svg>

@@ -1,0 +1,62 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!--
+    One palette for three products.
+
+    The website, the mod and this installer are pieces of the same thing, and a family that does
+    not look like a family reads as three unrelated tools. So nothing here is invented:
+
+      * Surfaces come from the mod's UIStyles elevation scale (E0 to E4). It is a dark system
+        already tuned to stay readable on top of arbitrary game content, which is a harder
+        constraint than ours — it holds up here for free.
+      * The accent comes from the WEBSITE, which is the reference: purple-500 #A855F7, with
+        violet-600 #7C3AED for the gradient and pressed states. That is the pairing used by the
+        site's own icon, so the app icon and the interface agree.
+      * Status colours are the mod's, which already match the site's green / amber / red / blue.
+
+    The mod's accent sits at #8B5CF6 (violet-500), a touch cooler than the site's. That gap is
+    left alone rather than "fixed": the mod's value is tuned for legibility over a running game,
+    and the two read as the same family anyway.
+  -->
+
+  <!-- Surfaces, from darkest to most raised -->
+  <SolidColorBrush x:Key="SurfaceBase" Color="#101319" />      <!-- E0 window body -->
+  <SolidColorBrush x:Key="SurfaceBar" Color="#141923" />       <!-- E1 header and status bar -->
+  <SolidColorBrush x:Key="SurfaceCard" Color="#242C3B" />      <!-- E2 cards -->
+  <SolidColorBrush x:Key="SurfaceRow" Color="#2B3345" />       <!-- E3 list rows -->
+  <SolidColorBrush x:Key="SurfaceRowHover" Color="#384257" />
+  <SolidColorBrush x:Key="SurfaceControl" Color="#3A4559" />   <!-- E4 inputs -->
+
+  <SolidColorBrush x:Key="BorderSubtle" Color="#2A3243" />
+  <SolidColorBrush x:Key="BorderStrong" Color="#3E4A61" />
+
+  <!-- Text -->
+  <SolidColorBrush x:Key="TextPrimary" Color="#EDF2FA" />
+  <SolidColorBrush x:Key="TextSecondary" Color="#BAC4D9" />
+  <SolidColorBrush x:Key="TextMuted" Color="#929CB0" />
+
+  <!-- Accent: the website's purple -->
+  <SolidColorBrush x:Key="Accent" Color="#A855F7" />
+  <SolidColorBrush x:Key="AccentDeep" Color="#7C3AED" />
+  <SolidColorBrush x:Key="AccentSoft" Color="#C084FC" />
+  <SolidColorBrush x:Key="AccentSelected" Color="#4C3D85" />
+
+  <LinearGradientBrush x:Key="AccentGradient" StartPoint="0%,0%" EndPoint="100%,100%">
+    <GradientStop Color="#7C3AED" Offset="0" />
+    <GradientStop Color="#A855F7" Offset="1" />
+  </LinearGradientBrush>
+
+  <!-- Status, shared with the mod and the site -->
+  <SolidColorBrush x:Key="StatusSuccess" Color="#57CC7A" />
+  <SolidColorBrush x:Key="StatusWarning" Color="#F2BA4A" />
+  <SolidColorBrush x:Key="StatusError" Color="#F26969" />
+  <SolidColorBrush x:Key="StatusInfo" Color="#61BAFA" />
+  <SolidColorBrush x:Key="StatusNeutral" Color="#6B7380" />
+
+  <!-- Callout backgrounds: the status hue laid over the base, never a flat saturated block -->
+  <SolidColorBrush x:Key="CalloutErrorBg" Color="#3A1E23" />
+  <SolidColorBrush x:Key="CalloutWarningBg" Color="#33291A" />
+  <SolidColorBrush x:Key="CalloutInfoBg" Color="#1B2436" />
+
+</ResourceDictionary>

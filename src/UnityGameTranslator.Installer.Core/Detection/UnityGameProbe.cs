@@ -42,7 +42,15 @@ public static partial class UnityGameProbe
             Name = displayName ?? DeriveName(folder, dataDir),
             Path = Path.GetFullPath(folder),
             Store = store,
-            SteamAppId = steamAppId,
+
+            // The store scanner's id when there is one, the game's own file otherwise.
+            //
+            // steam_appid.txt is what the MOD reads first, and it is written by the game itself,
+            // so it survives being copied out of a Steam library — which is exactly when the
+            // scanners have nothing to say. Measured here: two of six games sitting outside a
+            // detected library carry one, and without it they are searched by name, on a title
+            // that may not even be in Latin script.
+            SteamAppId = steamAppId ?? ReadSteamAppId(folder),
             DataDirectory = dataDir,
             ExecutablePath = executable,
         };
@@ -125,6 +133,34 @@ public static partial class UnityGameProbe
             // A blank or absurd value is worse than the folder name: it would show as an empty row
             // and search for nothing.
             return product.Length is > 1 and < 120 ? product : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The app id the game states about itself, or null.
+    ///
+    /// Validated as digits rather than trusted: the file is written by whoever built the game, it
+    /// is sometimes left at Steamworks' own placeholder, and an id that is not a number would be
+    /// sent to the API as a search that can only fail.
+    /// </summary>
+    private static string? ReadSteamAppId(string folder)
+    {
+        try
+        {
+            var path = Path.Combine(folder, "steam_appid.txt");
+            if (!File.Exists(path)) return null;
+
+            var value = File.ReadAllText(path).Trim().TrimStart('﻿');
+
+            // 480 is Steam's public test app ("Spacewar"), shipped by mistake often enough to be
+            // worth naming: it identifies no real game and would match another game's catalogue.
+            if (value.Length is 0 or > 10 || !value.All(char.IsDigit) || value == "480") return null;
+
+            return value;
         }
         catch
         {

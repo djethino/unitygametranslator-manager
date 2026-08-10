@@ -1,6 +1,9 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using UnityGameTranslator.Installer.Core.Install;
+using UnityGameTranslator.Installer.Core.Platform;
 
 namespace UnityGameTranslator.Installer.Gui;
 
@@ -21,12 +24,22 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            var main = new MainWindow();
-            desktop.MainWindow = main;
-
-            if (OpenRemovalOnStart) main.OpenRemovalWhenReady();
+            // ⚠ Removing brings up the removal window ALONE — not the whole program with a question
+            // laid over it. Building the main window means scanning every drive for Unity games and
+            // asking the community site about them, which is a great deal of work, and network, to
+            // put someone through when they have said they want the thing gone. It also meant the
+            // program had every one of its parts running while trying to delete itself.
+            desktop.MainWindow = OpenRemovalOnStart
+                ? RemovalWindow()
+                : new MainWindow();
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static Window RemovalWindow()
+    {
+        var platform = PlatformFactory.Create();
+        return new SelfRemoveWindow(platform, new SelfInstaller(platform), standalone: true);
     }
 }

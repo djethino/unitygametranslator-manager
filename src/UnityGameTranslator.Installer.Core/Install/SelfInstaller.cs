@@ -339,21 +339,19 @@ public sealed class SelfInstaller
         if (installation.Registration is { } registration)
             _platform.UnregisterInstalled(registration);
 
-        // The running executable cannot be deleted while it runs — which is the ordinary case, since
-        // this is usually launched from Windows' own list of installed applications. It is renamed
-        // aside instead, exactly as an update does, and the mark is one the next start clears.
+        // The file we are running from is dealt with last and separately. Everything else goes now.
+        string? running = null;
+
         foreach (var file in installation.Files)
         {
-            if (IsRunning(file))
-            {
-                if (!TrySetAside(file)) problems.Add($"Could not remove {file} while it is running.");
-                continue;
-            }
-
+            if (IsRunning(file)) { running = file; continue; }
             Delete(file, problems);
         }
 
-        if (installation.CreatedDirectory) RemoveIfEmpty(installation.Directory, problems);
+        if (running is null)
+        {
+            if (installation.CreatedDirectory) RemoveIfEmpty(installation.Directory, problems);
+        }
 
         if (alsoSettings)
         {
@@ -373,7 +371,63 @@ public sealed class SelfInstaller
             Delete(ReceiptPath, problems);
         }
 
+        // Last, because it outlives us: nothing after this line is guaranteed to run.
+        if (running is not null) FinishAfterWeExit(running, installation, problems);
+
         return problems;
+    }
+
+    /// <summary>
+    /// Deletes the file we are running from, once we are no longer running.
+    ///
+    /// ⚠ The question this answers: can a program that has been asked to uninstall itself actually
+    /// finish the job? Windows refuses to delete a running executable, and the first version dodged
+    /// that by renaming it aside and stopping there — which left ninety megabytes and a folder
+    /// behind, for good, because nothing of ours ever runs again to clear them. A removal that
+    /// leaves the bulk of what it removed is not a removal.
+    ///
+    /// So the last act is to hand the job to the shell and get out of the way: a command that waits
+    /// a few seconds, deletes the file, and removes the folder if nothing else is in it. No helper
+    /// program of ours — there is nothing to ship and nothing to sign — and no scheduled reboot
+    /// operation, which a per-user installation has no right to ask for anyway.
+    ///
+    /// On anything but Windows this is not a problem at all: a running executable can be unlinked,
+    /// and the file simply goes.
+    /// </summary>
+    private static void FinishAfterWeExit(string executable, ToolInstallation installation,
+                                          List<string> problems)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Delete(executable, problems);
+            if (installation.CreatedDirectory) RemoveIfEmpty(installation.Directory, problems);
+            return;
+        }
+
+        // ping as the wait: timeout refuses to run without a console of its own, and this command
+        // is started without one. Two passes, because how long we take to close is not ours to know.
+        var folder = installation.CreatedDirectory ? $" & rd /q \"{installation.Directory}\"" : "";
+        var command = $"ping 127.0.0.1 -n 4 >nul & del /f /q \"{executable}\" "
+                      + $"& ping 127.0.0.1 -n 3 >nul & del /f /q \"{executable}\"{folder}";
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = $"/c {command}",
+                CreateNoWindow = true,
+                UseShellExecute = false,
+            });
+        }
+        catch (Exception ex)
+        {
+            // Said rather than swallowed: the person can delete the folder themselves, and they can
+            // only do that if they are told which one and why it is still there.
+            problems.Add($"Everything else is gone, but {executable} is still in use and could not "
+                         + $"be scheduled for deletion ({ex.Message}). Delete "
+                         + $"{installation.Directory} by hand once this window has closed.");
+        }
     }
 
     /// <summary>
@@ -423,18 +477,6 @@ public sealed class SelfInstaller
     private static bool IsRunning(string file) =>
         string.Equals(SelfUpdater.RunningExecutable, file, StringComparison.OrdinalIgnoreCase);
 
-    private static bool TrySetAside(string file)
-    {
-        try
-        {
-            File.Move(file, $"{file}{SelfUpdater.PreviousMarker}removed");
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
 
     private static void Delete(string path, List<string> problems)
     {

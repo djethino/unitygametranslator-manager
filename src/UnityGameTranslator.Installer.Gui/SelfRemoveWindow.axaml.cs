@@ -23,7 +23,7 @@ public sealed class SelfRemoveWindow : Window
 {
     public bool Removed { get; private set; }
 
-    public SelfRemoveWindow(IPlatform platform, SelfInstaller installer)
+    public SelfRemoveWindow(IPlatform platform, SelfInstaller installer, bool standalone = false)
     {
         Title = "Remove UnityGameTranslator Installer";
         Width = 620;
@@ -33,7 +33,14 @@ public sealed class SelfRemoveWindow : Window
         // Same ceiling as the install window and for the same reason: this one lists what goes, and
         // a window that grows past the screen takes its buttons with it.
         MaxHeight = 620;
-        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+
+        // Standalone is the path Windows' uninstall button takes: there is no window behind this
+        // one to centre on, because the point is that nothing else is running.
+        WindowStartupLocation = standalone
+            ? WindowStartupLocation.CenterScreen
+            : WindowStartupLocation.CenterOwner;
+
+        ShowInTaskbar = standalone;
         CanResize = false;
         Background = this.FindResource("SurfaceBase") as IBrush;
 

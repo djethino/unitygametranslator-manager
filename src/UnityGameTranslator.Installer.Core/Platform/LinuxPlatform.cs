@@ -105,6 +105,67 @@ public sealed class LinuxPlatform : IPlatform
 
     public string ExecutableFileName => "unitygametranslator-installer";
 
+    public IReadOnlyList<LauncherKind> LauncherKinds => [LauncherKind.Menu, LauncherKind.Desktop];
+
+    /// <summary>
+    /// A .desktop entry, which is what both the applications menu and the desktop actually are on
+    /// a freedesktop system — the same file, in two folders.
+    ///
+    /// ⚠ It has to be executable to be honoured on the desktop of most environments, which is the
+    /// kind of thing that fails silently: the file is there, it looks right, and double-clicking it
+    /// offers to open it in a text editor.
+    /// </summary>
+    public IReadOnlyList<string> CreateLauncher(LauncherKind kind, string executable)
+    {
+        var folder = kind == LauncherKind.Desktop
+            ? Path.Combine(Home, "Desktop")
+            : Path.Combine(Home, ".local", "share", "applications");
+
+        var path = Path.Combine(folder, "unitygametranslator-installer.desktop");
+
+        var entry = string.Join('\n',
+            "[Desktop Entry]",
+            "Type=Application",
+            "Name=UnityGameTranslator Installer",
+            "Comment=Set up UnityGameTranslator in your Unity games",
+            $"Exec=\"{executable}\"",
+            $"Path={Path.GetDirectoryName(executable)}",
+            "Terminal=false",
+            "Categories=Game;Utility;",
+            "");
+
+        try
+        {
+            Directory.CreateDirectory(folder);
+            File.WriteAllText(path, entry);
+
+            // Guarded rather than assumed: this class only ever runs on Linux, but the compiler
+            // cannot know that from here, and the check costs nothing next to a file write.
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(path,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                    | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
+            }
+
+            return [path];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Nothing to register. A desktop system's list of applications IS the .desktop file written
+    /// above, so claiming a second registration would mean inventing a place to clean up later.
+    /// </summary>
+    public string? RegisterInstalled(ToolInstallation installation) => null;
+
+    public void UnregisterInstalled(string registration)
+    {
+    }
+
     /// <summary>
     /// The .NET *Desktop* runtime is a Windows-only product. For a Proton game the runtime that
     /// matters lives inside the prefix, which we cannot inspect reliably — so we answer "unknown"

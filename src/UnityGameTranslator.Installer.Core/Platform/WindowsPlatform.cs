@@ -122,6 +122,140 @@ public sealed class WindowsPlatform : IPlatform
 
     public string ExecutableFileName => "UnityGameTranslatorInstaller.exe";
 
+    public IReadOnlyList<LauncherKind> LauncherKinds => [LauncherKind.Menu, LauncherKind.Desktop];
+
+    /// <summary>
+    /// Writes a .lnk through the shell's own shortcut object.
+    ///
+    /// A .lnk is a binary format nobody should be writing by hand, and the one component that has
+    /// created them correctly on every Windows since forever is the shell itself. Reached by late
+    /// binding rather than by a COM interop assembly: it is four calls, and adding a dependency to
+    /// a single-file build for four calls is a poor trade.
+    /// </summary>
+    public IReadOnlyList<string> CreateLauncher(LauncherKind kind, string executable)
+    {
+        var folder = kind == LauncherKind.Desktop
+            ? Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory)
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.StartMenu),
+                           "Programs");
+
+        if (string.IsNullOrEmpty(folder)) return [];
+
+        var path = Path.Combine(folder, "UnityGameTranslator Installer.lnk");
+
+        try
+        {
+            Directory.CreateDirectory(folder);
+
+            var shellType = Type.GetTypeFromProgID("WScript.Shell");
+            if (shellType is null) return [];
+
+            var shell = Activator.CreateInstance(shellType);
+            if (shell is null) return [];
+
+            var shortcut = shellType.InvokeMember("CreateShortcut",
+                System.Reflection.BindingFlags.InvokeMethod, null, shell, [path]);
+            if (shortcut is null) return [];
+
+            var type = shortcut.GetType();
+            void Set(string name, object value) => type.InvokeMember(name,
+                System.Reflection.BindingFlags.SetProperty, null, shortcut, [value]);
+
+            Set("TargetPath", executable);
+            Set("WorkingDirectory", Path.GetDirectoryName(executable) ?? "");
+            Set("Description", "Set up UnityGameTranslator in your Unity games");
+            Set("IconLocation", executable + ",0");
+
+            type.InvokeMember("Save", System.Reflection.BindingFlags.InvokeMethod, null, shortcut, null);
+
+            return File.Exists(path) ? [path] : [];
+        }
+        catch
+        {
+            // A locked shell, a policy, a folder we may not write to. The tool is installed and
+            // runnable either way; the caller says which part did not happen.
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// The per-user uninstall key — the same place Windows reads its "Installed apps" list from.
+    ///
+    /// ⚠ Per-user (HKCU) because the installation is per-user: writing to the machine-wide list
+    /// would need elevation and would claim an installation other accounts cannot actually run.
+    ///
+    /// One fixed key name, so calling this again updates the entry instead of adding another. That
+    /// is not a detail: a tool that appears three times in Windows' list after two updates looks
+    /// exactly like something that does not clean up after itself.
+    /// </summary>
+    public string? RegisterInstalled(ToolInstallation installation)
+    {
+        const string parent = @"Software\Microsoft\Windows\CurrentVersion\Uninstall";
+        const string name = "UnityGameTranslatorInstaller";
+
+        try
+        {
+            using var key = Registry.CurrentUser.CreateSubKey($@"{parent}\{name}", writable: true);
+            if (key is null) return null;
+
+            key.SetValue("DisplayName", "UnityGameTranslator Installer");
+            key.SetValue("DisplayVersion", installation.Version);
+            key.SetValue("Publisher", "ASymptOmatik Games");
+            key.SetValue("InstallLocation", installation.Directory);
+            key.SetValue("DisplayIcon", installation.Executable);
+
+            // Opens the removal window rather than deleting behind the person's back: the button
+            // in Windows' own settings has to lead to the same three questions as ours.
+            key.SetValue("UninstallString", $"\"{installation.Executable}\" --remove");
+
+            // No QuietUninstallString on purpose: there is no silent path, and advertising one we
+            // do not have would let Windows remove the tool without a word.
+            key.SetValue("NoModify", 1, RegistryValueKind.DWord);
+            key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
+            key.SetValue("URLInfoAbout", BuildInfo.WebsiteBaseUrl);
+
+            var size = SizeInKilobytes(installation);
+            if (size > 0) key.SetValue("EstimatedSize", size, RegistryValueKind.DWord);
+
+            return $@"HKCU\{parent}\{name}";
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public void UnregisterInstalled(string registration)
+    {
+        const string prefix = @"HKCU\";
+        if (!registration.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return;
+
+        try
+        {
+            Registry.CurrentUser.DeleteSubKeyTree(registration[prefix.Length..], throwOnMissingSubKey: false);
+        }
+        catch
+        {
+            // Already gone, or not ours to delete. Either way there is nothing left to do.
+        }
+    }
+
+    private static int SizeInKilobytes(ToolInstallation installation)
+    {
+        try
+        {
+            var total = installation.Files
+                .Where(File.Exists)
+                .Sum(file => new FileInfo(file).Length);
+
+            return (int)Math.Min(total / 1024, int.MaxValue);
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
     public bool? HasDotnetDesktopRuntime(string majorVersion)
     {
         // The shared framework folder is the ground truth; `dotnet --list-runtimes` needs the

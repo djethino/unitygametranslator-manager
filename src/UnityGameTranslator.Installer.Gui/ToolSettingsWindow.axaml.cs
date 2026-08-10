@@ -109,6 +109,7 @@ public sealed class ToolSettingsWindow : Window
 
         layout.Children.Add(AccountCard());
         layout.Children.Add(UpdatesCard());
+        layout.Children.Add(HomeCard());
         layout.Children.Add(NetworkCard());
         layout.Children.Add(FilesCard());
 
@@ -624,6 +625,101 @@ public sealed class ToolSettingsWindow : Window
         _updatePanel.Children.Add(working);
         _updatePanel.Children.Add(progress);
     }
+
+    // ---------------------------------------------------------------- where it lives
+
+    /// <summary>
+    /// Installed or portable, and the way in and out of both.
+    ///
+    /// The banner on the overview is the invitation; this is the permanent home for the question,
+    /// and the only place removal is offered. Both matter: someone who dismissed the banner still
+    /// has somewhere to go, and someone who installed the tool needs a way back that is not
+    /// "delete the folder and hope".
+    /// </summary>
+    private Control HomeCard()
+    {
+        var panel = new StackPanel { Spacing = 10 };
+        var installer = new SelfInstaller(_platform);
+        var installed = installer.Installed();
+
+        if (installed is null)
+        {
+            var plan = installer.Plan();
+
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Running from the file you downloaded.",
+                FontSize = 12,
+                Foreground = Brush("TextPrimary"),
+            });
+
+            panel.Children.Add(Note(plan.SourceExecutable, "TextMuted"));
+
+            if (plan.Refusal is { } refusal)
+            {
+                panel.Children.Add(Note(refusal, "StatusWarn"));
+            }
+            else
+            {
+                var keep = new Button { Content = "Keep it on this machine", FontSize = 12 };
+                keep.HorizontalAlignment = HorizontalAlignment.Left;
+                keep.Click += async (_, _) =>
+                {
+                    var window = new SelfInstallWindow(_platform, installer, plan);
+                    await window.ShowDialog(this);
+
+                    // Redrawn where it stands: the card has just become the other half of itself.
+                    if (window.Installed is not null) Rebuild();
+                };
+
+                panel.Children.Add(keep);
+            }
+
+            return Card("Where this tool lives", null, panel);
+        }
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = installer.RunningTheInstalledCopy()
+                ? "Installed on this machine, and this is that copy."
+                : "Installed on this machine — but this window is another copy of it.",
+            FontSize = 12,
+            Foreground = Brush("TextPrimary"),
+        });
+
+        panel.Children.Add(Note(installed.Directory, "TextMuted"));
+
+        if (!installer.RunningTheInstalledCopy())
+        {
+            // Worth saying because it changes what every other button here means: an update applied
+            // from this window lands on the file in front of them, not on the one in their menu.
+            panel.Children.Add(Note(
+                "Anything you change or update here applies to the copy you are running, not to "
+                + "the installed one.", "StatusWarn"));
+        }
+
+        var remove = new Button { Content = "Remove this tool...", FontSize = 12 };
+        remove.HorizontalAlignment = HorizontalAlignment.Left;
+        remove.Click += async (_, _) =>
+        {
+            var window = new SelfRemoveWindow(_platform, installer);
+            await window.ShowDialog(this);
+            if (window.Removed) Rebuild();
+        };
+
+        panel.Children.Add(remove);
+
+        return Card("Where this tool lives", null, panel);
+    }
+
+    /// <summary>
+    /// Redraws the whole window after something outside the draft has changed on disk.
+    ///
+    /// Installing or removing the tool is not a setting: it happens immediately and there is
+    /// nothing to Apply. What is on screen has to catch up, and rebuilding is honest — every card
+    /// reads its own state again rather than one of them being patched by hand.
+    /// </summary>
+    private void Rebuild() => Content = Build();
 
     private Control FilesCard()
     {

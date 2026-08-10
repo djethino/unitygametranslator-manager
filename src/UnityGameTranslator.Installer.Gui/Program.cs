@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Avalonia;
 using UnityGameTranslator.Installer.Cli;
+using UnityGameTranslator.Installer.Core.Install;
 using UnityGameTranslator.Installer.Core.Platform;
 using UnityGameTranslator.Installer.Core.Update;
 
@@ -24,11 +25,22 @@ internal static class Program
         // way back a tool without a signing certificate can honestly offer.
         SelfUpdater.ClearPreviousVersions();
 
-        if (CommandLine.Handles(args))
+        // Where Windows' own "Uninstall" button lands (the UninstallString we register). It opens
+        // the removal window rather than removing anything: pressing uninstall in a list of
+        // installed apps is a request to be asked, not an instruction to be obeyed silently. It is
+        // intercepted before the command line, which would otherwise see the leading dashes and
+        // answer "unknown command" into a console nobody asked for.
+        var removing = args.Any(a => a.Equals("--remove", StringComparison.OrdinalIgnoreCase));
+
+        if (!removing && CommandLine.Handles(args))
         {
             SpeakToTheTerminal();
             return CommandLine.RunAsync(args).GetAwaiter().GetResult();
         }
+
+        // Kept in step with the version actually running: an entry frozen at the version installed
+        // first would tell Windows something untrue after every self-update.
+        RefreshSystemEntry();
 
         // One window at a time. Two of them share one settings file, one set of receipts and one
         // catalogue cache, so the second to save quietly overwrites the first — and two copies
@@ -45,8 +57,22 @@ internal static class Program
             return 0;
         }
 
+        App.OpenRemovalOnStart = removing;
+
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
         return 0;
+    }
+
+    private static void RefreshSystemEntry()
+    {
+        try
+        {
+            new SelfInstaller(PlatformFactory.Create()).RefreshRegistrationIfStale();
+        }
+        catch
+        {
+            // Nothing here is worth failing a launch over.
+        }
     }
 
     private static SingleInstance? AcquireWindowRight()

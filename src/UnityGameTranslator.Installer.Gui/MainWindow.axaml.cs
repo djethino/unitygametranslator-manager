@@ -103,6 +103,18 @@ public partial class MainWindow : Window
             await ShowSelectedAsync();
         };
 
+        // Escape closes the card, like it closes everything else. Tunnelling rather than bubbling
+        // so it is heard even while the search box or the list has the focus, which is where the
+        // focus actually is when someone wants out.
+        AddHandler(KeyDownEvent, (_, e) =>
+        {
+            if (e.Key != Avalonia.Input.Key.Escape) return;
+            if (_selected is null) return;
+
+            CloseCard();
+            e.Handled = true;
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+
         _settings = new SettingsStore(_platform);
         _online = new OnlineCatalogCache(_platform);
 
@@ -1043,6 +1055,8 @@ public partial class MainWindow : Window
         DetailPanel.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
         DetailPanel.MaxWidth = 460;
 
+        if (PortableBanner() is { } banner) DetailPanel.Children.Add(banner);
+
         var language = Languages.NameOf(_settings.ResolveTargetLanguage());
         var moddable = _games.Count(g => g.IsModdable);
         var setUp = _games.Count(g => g.IsModdable && IsSetUp(g));
@@ -1101,6 +1115,175 @@ public partial class MainWindow : Window
         });
     }
 
+    /// <summary>
+    /// The offer to stay, at the top of the overview, whenever this copy is not installed.
+    ///
+    /// Standing rather than one-off, and here rather than anywhere else. A banner that appears once
+    /// and never again is a banner most people meet at the worst possible moment — the first
+    /// launch, before they know whether they are keeping the tool at all. Sitting above the summary
+    /// it is seen every time the overview is, costs one line, and waits.
+    ///
+    /// It is not a dialog and it does not block: the answer to "not now" is to go on reading the
+    /// page it sits on. Which is also why the way back to the overview had to exist first — an
+    /// invitation you can only see before your first click is not an invitation.
+    /// </summary>
+    private Control? PortableBanner()
+    {
+        var installer = new SelfInstaller(_platform);
+        if (installer.Installed() is not null) return null;
+
+        var plan = installer.Plan();
+        if (plan.Refusal is not null) return null;
+
+        var text = new StackPanel { Spacing = 2 };
+
+        text.Children.Add(new TextBlock
+        {
+            Text = "You are running the file you downloaded",
+            FontSize = 13,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = Brush("TextPrimary"),
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        text.Children.Add(new TextBlock
+        {
+            Text = "Keep it on this machine and it will be in your menu next time, with a proper "
+                 + "way to remove it. Nothing in your games changes either way.",
+            FontSize = 11,
+            Foreground = Brush("TextSecondary"),
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        var keep = new Button
+        {
+            Content = "Keep it here",
+            FontSize = 12,
+            Classes = { "primary" },
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Margin = new Avalonia.Thickness(14, 0, 0, 0),
+        };
+
+        keep.Click += async (_, _) => await OfferSelfInstallAsync(installer, plan);
+
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        Grid.SetColumn(text, 0);
+        Grid.SetColumn(keep, 1);
+        row.Children.Add(text);
+        row.Children.Add(keep);
+
+        return new Border
+        {
+            Background = Brush("SurfaceCard"),
+            BorderBrush = Brush("BorderSubtle"),
+            BorderThickness = new Avalonia.Thickness(1),
+            CornerRadius = new Avalonia.CornerRadius(8),
+            Padding = new Avalonia.Thickness(14, 12),
+            Margin = new Avalonia.Thickness(0, 0, 0, 6),
+            Child = row,
+        };
+    }
+
+    /// <summary>
+    /// Opens the removal window as soon as there is a window to open it over — the path taken when
+    /// the system's own uninstall button started us.
+    ///
+    /// Queued on Loaded rather than called straight away: a dialog needs a shown owner, and asking
+    /// for one during construction is how a tool ends up with a modal nobody can reach.
+    /// </summary>
+    public void OpenRemovalWhenReady() => Loaded += async (_, _) =>
+    {
+        var window = new SelfRemoveWindow(_platform, new SelfInstaller(_platform));
+        await window.ShowDialog(this);
+
+        // Removed means the files are gone, including quite possibly the one we are running from.
+        // Staying open would be a window belonging to a program that no longer exists.
+        if (window.Removed) Close();
+    };
+
+    private async Task OfferSelfInstallAsync(SelfInstaller installer, SelfInstallPlan plan)
+    {
+        var window = new SelfInstallWindow(_platform, installer, plan);
+        await window.ShowDialog(this);
+
+        if (window.Installed is not { } installed) return;
+
+        // The copy in front of them is still the downloaded one, and an update applied here would
+        // land on the file they are about to stop using. So the offer to move across is made now,
+        // while the reason is obvious, rather than left as a difference nobody notices.
+        var switchOver = await ConfirmationWindow.AskAsync(this,
+            "Open the copy you just installed?",
+            $"It is now in {installed.Directory}. This window is still the file you downloaded — "
+            + "switching over means updates and settings apply to the copy that stays. The "
+            + "downloaded file is left where it is; you can delete it whenever you like.",
+            "Open it");
+
+        if (!switchOver)
+        {
+            ShowOverview();
+            return;
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(installed.Executable)
+            {
+                UseShellExecute = true,
+                WorkingDirectory = installed.Directory,
+            });
+
+            // Ours goes away first, or the new one meets the lock this one is holding and closes
+            // again — which would read as a tool that refuses to open.
+            Close();
+        }
+        catch
+        {
+            // It could not be started. The one in front of them still works, so nothing is said
+            // beyond redrawing the page without the banner.
+            ShowOverview();
+        }
+    }
+
+    /// <summary>
+    /// The way back out of a game's card.
+    ///
+    /// There was none: picking a game replaced the overview, and nothing put it back — the summary
+    /// of the whole machine could be read exactly once, before the first click of the session.
+    /// Clearing the selection is the honest gesture rather than a second "Overview" button
+    /// somewhere: the card is on screen BECAUSE a game is selected on the left, so leaving it means
+    /// no game is selected, and the list shows that.
+    /// </summary>
+    private Control BackToOverview()
+    {
+        var back = new Button
+        {
+            Content = "← All games",
+            FontSize = 12,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+            Margin = new Avalonia.Thickness(0, 0, 0, 2),
+        };
+
+        ToolTip.SetTip(back, "Back to the summary of every game found (Esc)");
+        back.Click += (_, _) => CloseCard();
+
+        return back;
+    }
+
+    private void CloseCard()
+    {
+        if (_selected is null) return;
+
+        _selected = null;
+
+        // Guarded like every other selection we set ourselves: unguarded it would raise
+        // SelectionChanged and rebuild a card for a game nobody chose.
+        _restoringSelection = true;
+        GameList.SelectedItem = null;
+        _restoringSelection = false;
+
+        ShowOverview();
+    }
+
     private async Task ShowSelectedAsync()
     {
         if (GameList.SelectedItem is not ListBoxItem { Tag: GameInstall game }) return;
@@ -1137,6 +1320,7 @@ public partial class MainWindow : Window
         DetailPanel.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top;
         DetailPanel.MaxWidth = double.PositiveInfinity;
 
+        DetailPanel.Children.Add(BackToOverview());
         DetailPanel.Children.Add(Header(report));
 
         DetailPanel.Children.Add(Card(Facts(report)));

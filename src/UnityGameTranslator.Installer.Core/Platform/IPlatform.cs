@@ -36,6 +36,33 @@ public interface IPlatform
     string ExecutableFileName { get; }
 
     /// <summary>
+    /// The places a launcher can be put here. Offered as choices at self-install, so a system with
+    /// no desktop to speak of simply offers one fewer box rather than a box that does nothing.
+    /// </summary>
+    IReadOnlyList<LauncherKind> LauncherKinds { get; }
+
+    /// <summary>
+    /// Writes a launcher and returns the files it created, or an empty list when it could not.
+    ///
+    /// Failing to make a shortcut must never fail an installation: the tool is installed and
+    /// runnable either way, and the person can be told which part did not happen.
+    /// </summary>
+    IReadOnlyList<string> CreateLauncher(LauncherKind kind, string executable);
+
+    /// <summary>
+    /// Puts the tool in the system's own list of installed applications, and returns how to find
+    /// that entry again — or null when this system has no such list.
+    ///
+    /// ⚠ Must be idempotent: called again for the same installation it updates the entry rather
+    /// than adding a second one. A tool that appears three times in the system's list after two
+    /// updates is a tool people stop trusting.
+    /// </summary>
+    string? RegisterInstalled(ToolInstallation installation);
+
+    /// <summary>Removes that entry. Silent when it is already gone.</summary>
+    void UnregisterInstalled(string registration);
+
+    /// <summary>
     /// Is the given .NET Desktop Runtime major version present? MelonLoader IL2CPP needs 6.0
     /// and fails at game launch without it, so we check instead of promising.
     /// Returns null when we cannot tell — which is not the same as "no".

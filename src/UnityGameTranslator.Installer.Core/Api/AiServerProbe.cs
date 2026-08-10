@@ -255,6 +255,18 @@ public sealed class AiServerProbe
         string? gameContext = null, string? sourceCode = null)
     {
         var results = new List<ModelTestResult>();
+        LastPlacement = null;
+
+        // Everything else let go of the card first. Otherwise the first model measured keeps the
+        // room and the next one is quietly split with the processor — which is not a fact about
+        // that model, only about the order we happened to test in.
+        foreach (var resident in await ResidentAsync(baseUrl, ct).ConfigureAwait(false))
+        {
+            if (resident.StartsWith(model, StringComparison.OrdinalIgnoreCase)) continue;
+            await UnloadAsync(baseUrl, resident, ct).ConfigureAwait(false);
+        }
+
+        var placementRead = false;
 
         foreach (var test in ModelTestSuite.Build(targetLanguage, gameContext, sourceCode))
         {
@@ -294,12 +306,40 @@ public sealed class AiServerProbe
                 };
             }
 
+            // Read once, after the model is loaded and working — asking before the first request
+            // finds nothing resident, and asking on every test would add a call per line.
+            if (!placementRead)
+            {
+                placementRead = true;
+
+                if (await PlacementAsync(baseUrl, model, ct).ConfigureAwait(false) is { } placement)
+                {
+                    var total = placement.Size / 1024.0 / 1024 / 1024;
+                    var card = placement.OnCard / 1024.0 / 1024 / 1024;
+
+                    LastPlacement = placement.OnCard >= placement.Size * 0.99
+                        ? $"{total:F1} GB, entirely on the graphics card."
+                        : $"{total:F1} GB, of which only {card:F1} GB fits on the graphics card — "
+                          + "the rest runs on the processor, which is what makes lines take "
+                          + "seconds instead of tenths of a second.";
+                }
+            }
+
             results.Add(result);
             onResult?.Invoke(result);
         }
 
         return results;
     }
+
+    /// <summary>
+    /// Where the model sat during the last suite, in words. Null when the server does not say.
+    ///
+    /// It belongs beside the times rather than in a corner: a model split with the processor is
+    /// not a slow model, it is a model too big for this card, and the answer is a smaller one
+    /// rather than patience.
+    /// </summary>
+    public string? LastPlacement { get; private set; }
 
     /// <summary>What the whole chain cost and how it ended.</summary>
     private sealed record ModAttempt(string? Answer, int Attempts, TimeSpan Elapsed,
@@ -648,6 +688,97 @@ public sealed class AiServerProbe
         if (tells.Any(tell => trimmed.StartsWith(tell, StringComparison.OrdinalIgnoreCase))) return false;
 
         return trimmed.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length <= 2;
+    }
+
+    /// <summary>
+    /// Where the model actually sits, in the server's own numbers: how much it takes, and how much
+    /// of that is on the graphics card.
+    ///
+    /// This is the difference between a model that answers in half a second and one that takes
+    /// eight. When it does not fit, Ollama leaves part of it on the processor and says nothing —
+    /// the answers stay correct, they just arrive far too late to read while playing.
+    /// </summary>
+    public async Task<(long Size, long OnCard)?> PlacementAsync(string baseUrl, string model,
+                                                                CancellationToken ct = default)
+    {
+        try
+        {
+            var json = await _http.GetStringAsync(OllamaRoot(baseUrl) + "/api/ps", ct)
+                                  .ConfigureAwait(false);
+
+            using var document = JsonDocument.Parse(json);
+            if (!document.RootElement.TryGetProperty("models", out var models)) return null;
+
+            foreach (var entry in models.EnumerateArray())
+            {
+                var name = entry.TryGetProperty("name", out var n) ? n.GetString() : null;
+                if (name is null || !name.StartsWith(model, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var size = entry.TryGetProperty("size", out var s) ? s.GetInt64() : 0;
+                var vram = entry.TryGetProperty("size_vram", out var v) ? v.GetInt64() : 0;
+
+                return size > 0 ? (size, vram) : null;
+            }
+
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Every model the server currently holds in memory.</summary>
+    public async Task<IReadOnlyList<string>> ResidentAsync(string baseUrl,
+                                                           CancellationToken ct = default)
+    {
+        try
+        {
+            var json = await _http.GetStringAsync(OllamaRoot(baseUrl) + "/api/ps", ct)
+                                  .ConfigureAwait(false);
+
+            using var document = JsonDocument.Parse(json);
+            if (!document.RootElement.TryGetProperty("models", out var models)) return Array.Empty<string>();
+
+            return models.EnumerateArray()
+                         .Select(entry => entry.TryGetProperty("name", out var n) ? n.GetString() : null)
+                         .Where(name => name is not null)
+                         .Select(name => name!)
+                         .ToList();
+        }
+        catch
+        {
+            return Array.Empty<string>();
+        }
+    }
+
+    /// <summary>
+    /// Asks the server to let a model go right now.
+    ///
+    /// Ollama keeps a model in memory for five minutes after the last request, and evicts one only
+    /// when the next needs the room. Measuring several models one after another therefore measures
+    /// the evictions too: a run can pay for the previous model being pushed out, or find itself
+    /// half on the processor because the card was still occupied. Clearing between them is what
+    /// makes two models comparable.
+    ///
+    /// ⚠ Ollama's own endpoint, outside the OpenAI-compatible surface. Other servers ignore it,
+    /// which is why nothing here depends on it succeeding.
+    /// </summary>
+    public async Task UnloadAsync(string baseUrl, string model, CancellationToken ct = default)
+    {
+        try
+        {
+            var payload = JsonSerializer.Serialize(new { model, keep_alive = 0 });
+            using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+
+            await _http.PostAsync(OllamaRoot(baseUrl) + "/api/generate", content, ct)
+                       .ConfigureAwait(false);
+        }
+        catch
+        {
+            // A server that does not know this call is a server that manages its own memory.
+        }
     }
 
     /// <summary>Video memory the model occupies right now, when the server reports it.</summary>

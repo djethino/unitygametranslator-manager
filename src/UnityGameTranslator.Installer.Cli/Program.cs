@@ -740,6 +740,9 @@ internal static class Program
         if (ModelTestSuite.Summarise(outcomes) is { Length: > 0 } summary)
             Console.WriteLine(summary);
 
+        if (probe.LastPlacement is { } placement)
+            Console.WriteLine($"This model holds {placement}");
+
         // Experimental capabilities are listed apart, and phrased as what they unlock rather
         // than as a failure: the mod ships these options disabled, so a model that cannot do one
         // is not a worse model — it just means that option stays off. Models are getting better

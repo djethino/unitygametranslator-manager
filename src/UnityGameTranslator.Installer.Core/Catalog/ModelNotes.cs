@@ -56,21 +56,43 @@ public sealed class ModelMeasurements
     /// <summary>Video memory the model actually held, in GB, read from the server.</summary>
     [JsonPropertyName("vram_gb")] public double? VramGb { get; set; }
 
-    /// <summary>Draws that came back with every placeholder intact, out of how many.</summary>
-    [JsonPropertyName("kept")] public int? Kept { get; set; }
-    [JsonPropertyName("draws")] public int? Draws { get; set; }
-
     /// <summary>Instructions of the suite followed, out of how many.</summary>
     [JsonPropertyName("suite")] public int? Suite { get; set; }
     [JsonPropertyName("suite_of")] public int? SuiteOf { get; set; }
 
-    /// <summary>Whether it also followed the experimental source-language rule.</summary>
+    /// <summary>
+    /// What a line costs in waiting, in seconds: the usual one, and the worst of the run.
+    ///
+    /// Both matter and neither replaces the other. The usual figure is what playing feels like;
+    /// the worst is the line somebody notices and remembers. Measured end to end, retries
+    /// included, because that is the delay before the original text is replaced on screen.
+    /// </summary>
+    [JsonPropertyName("typical_s")] public double? TypicalSeconds { get; set; }
+    [JsonPropertyName("worst_s")] public double? WorstSeconds { get; set; }
+
+    /// <summary>
+    /// Lines the mod had to ask for again, and lines it gave up on, out of how many it tried.
+    ///
+    /// A retry is not a failure — the mod corrects most of them — but it spends the time and the
+    /// graphics card two or three times over, while the game is running. A refusal is text left in
+    /// its original language.
+    /// </summary>
+    [JsonPropertyName("retried")] public int? Retried { get; set; }
+    [JsonPropertyName("refused")] public int? Refused { get; set; }
+    [JsonPropertyName("lines")] public int? Lines { get; set; }
+
+    /// <summary>Whether it followed the experimental source-language rule in BOTH of its cases.</summary>
     [JsonPropertyName("strict_source")] public bool? StrictSource { get; set; }
 
-    /// <summary>Everything asked of it, every time. The bar for being put forward at all.</summary>
+    /// <summary>
+    /// Followed every instruction and gave up on nothing.
+    ///
+    /// Retries are deliberately not counted here: needing one is a cost, not a fault, and the mod
+    /// exists to absorb exactly that. What disqualifies is a line the model never got right.
+    /// </summary>
     [JsonIgnore]
-    public bool Flawless => Kept is { } kept && Draws is { } draws && kept == draws
-                            && Suite is { } suite && SuiteOf is { } of && suite == of;
+    public bool Flawless => Suite is { } suite && SuiteOf is { } of && suite == of
+                            && Refused is null or 0;
 }
 
 public sealed class ModelNote
@@ -130,6 +152,19 @@ public sealed class ModelNotesDocument
     /// a starting point and the button is the verdict.
     /// </summary>
     [JsonPropertyName("measured_in")] public string? MeasuredIn { get; set; }
+
+    /// <summary>
+    /// The graphics card the figures were taken on, and the reason it has to be said.
+    ///
+    /// Memory held is a fact about the model and travels; whether it FITS is a fact about the
+    /// card. On a large one everything sits on the card and answers in tenths of a second. On a
+    /// smaller one the same model is split with the processor and takes seconds a line — the
+    /// answers stay right, they simply arrive too late to read while playing.
+    ///
+    /// So the figure to compare is "held" against one's own card, and the tester says which of the
+    /// two happened on the machine in front of it.
+    /// </summary>
+    [JsonPropertyName("measured_on")] public string? MeasuredOn { get; set; }
 
     [JsonPropertyName("models")] public List<ModelNote> Models { get; set; } = new();
 }

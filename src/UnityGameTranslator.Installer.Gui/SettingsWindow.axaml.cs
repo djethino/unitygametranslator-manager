@@ -1122,13 +1122,28 @@ public sealed class SettingsWindow : Window
 
             var sameLanguage = string.Equals(mine, measuredIn, StringComparison.OrdinalIgnoreCase);
 
-            var caveat = Note(
-                sameLanguage
-                    ? $"Measured translating into {measuredIn}, as you are."
-                    : $"Measured translating into {measuredIn}, not {mine}. A model can hold the "
-                      + "game's markers in one language and lose them in another — \"Test this "
-                      + $"model\" above runs the same checks in {mine}.",
-                sameLanguage ? "TextMuted" : "StatusWarning");
+            var said = sameLanguage
+                ? $"Measured translating into {measuredIn}, as you are"
+                : $"Measured translating into {measuredIn}, not {mine} — a model can hold the "
+                  + "game's markers in one language and lose them in another";
+
+            // The card matters as much as the language, and differently: what a model HOLDS is a
+            // fact about the model and travels, whether it FITS is a fact about the card. On a big
+            // one everything sits on the card; on a smaller one the same model is split with the
+            // processor and takes seconds a line instead of tenths.
+            if (_modelNotes.MeasuredOn is { Length: > 0 } testedOn)
+            {
+                said += $", on a {testedOn}";
+
+                if (vram is { } ours)
+                {
+                    said += $". Yours has {ours / 1024.0 / 1024 / 1024:F0} GB, so compare that "
+                          + "against the memory each one holds below";
+                }
+            }
+
+            var caveat = Note(said + ". \"Test this model\" runs the same checks on your machine.",
+                              sameLanguage ? "TextMuted" : "StatusWarning");
 
             caveat.Opacity = 0.85;
             content.Children.Add(caveat);
@@ -1205,7 +1220,7 @@ public sealed class SettingsWindow : Window
         Put(Head("MODEL"), 0, 0);
         Put(Head("HELD"), 0, 1);
         Put(Head("DOWNLOAD"), 0, 2);
-        Put(Head("KEPT"), 0, 3);
+        Put(Head("PER LINE"), 0, 3);
         Put(Head("SUITE"), 0, 4);
 
         var line = 1;
@@ -1270,9 +1285,8 @@ public sealed class SettingsWindow : Window
 
             Put(Figure(candidate.DownloadGb is { } dl ? $"{dl:F1} GB" : "—"), line, 2);
 
-            Put(Figure(measured is { Kept: { } kept, Draws: { } draws } ? $"{kept}/{draws}" : "—",
-                       measured is { Kept: { } k, Draws: { } d } && k < d ? "StatusWarning" : "TextSecondary"),
-                line, 3);
+            // What a line costs in waiting, which is the figure somebody actually feels.
+            Put(Figure(measured?.TypicalSeconds is { } typical ? $"{typical:F1}s" : "—"), line, 3);
 
             Put(Figure(measured is { Suite: { } suite, SuiteOf: { } of } ? $"{suite}/{of}" : "—",
                        measured is { Suite: { } s, SuiteOf: { } o } && s < o ? "StatusWarning" : "TextSecondary"),
@@ -1604,6 +1618,19 @@ public sealed class SettingsWindow : Window
                     TextWrapping = TextWrapping.Wrap,
                     Margin = new Thickness(0, 2, 0, 0),
                     Foreground = Brush("TextSecondary"),
+                });
+            }
+
+            // Said with the times, because it usually explains them: a model split with the
+            // processor is not slow, it is too big for this card, and the answer is a smaller one.
+            if (_probe.LastPlacement is { } placement)
+            {
+                _testOutput.Children.Add(new TextBlock
+                {
+                    Text = $"This model holds {placement}",
+                    FontSize = 12,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = Brush(placement.Contains("processor") ? "StatusWarning" : "TextMuted"),
                 });
             }
 

@@ -660,6 +660,15 @@ internal static class Program
             ? "Game context: none (the mod's default wording)"
             : $"Game context: {gameContext}");
 
+        // Said before the results, not after: someone reading marks for a job that makes no sense
+        // will have drawn their conclusion long before a footnote.
+        if (ModelTestSuite.IsDegenerate(language))
+        {
+            Console.WriteLine();
+            Write("note   : ", ConsoleColor.Yellow);
+            Console.WriteLine(ModelTestSuite.DegenerateCaveat);
+        }
+
         // What we have run ourselves against this model, if anything — said before the suite so
         // it reads as background, not as a conclusion drawn from the marks below.
         var notes = await new ModelNotesProvider(PlatformFactory.Create())

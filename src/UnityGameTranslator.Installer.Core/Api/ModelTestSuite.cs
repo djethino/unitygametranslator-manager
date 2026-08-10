@@ -80,6 +80,31 @@ public static class ModelTestSuite
     /// <summary>The exact marker the mod expects for a line it must not translate.</summary>
     public const string SkipMarker = "AxNoTranslateXa";
 
+    /// <summary>
+    /// The language the test sentences themselves are written in.
+    ///
+    /// Named because it matters to one group of users: whoever translates INTO it is handed a
+    /// translation with nothing to translate, which is not a job the mod ever gives a model.
+    /// Measured rather than assumed — a translation-specialised model asked for English from
+    /// English answered in Portuguese and in Russian, and a small one dropped markers it holds
+    /// perfectly well when there is real work to do.
+    /// </summary>
+    public const string FixtureLanguage = "English";
+
+    /// <summary>
+    /// Whether this run asks a model to translate into the language the fixtures are already in.
+    /// </summary>
+    public static bool IsDegenerate(string targetLanguage) =>
+        string.Equals(Languages.NameOf(targetLanguage), FixtureLanguage,
+                      StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>What to tell someone in that case, in one place for both front ends.</summary>
+    public const string DegenerateCaveat =
+        "These sentences are already in " + FixtureLanguage + ", and you are translating into "
+        + FixtureLanguage + " — so nothing below is a real translation, and the mod will never ask "
+        + "this of a model. Read the marker results, which still hold; treat the rest as noise. "
+        + "Some models answer such a prompt in an unrelated language entirely.";
+
     /// <param name="gameContext">
     /// What the mod's own "describe this game" setting holds, or null for the default.
     ///

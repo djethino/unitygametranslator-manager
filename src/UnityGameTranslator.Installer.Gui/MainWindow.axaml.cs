@@ -12,6 +12,7 @@ using UnityGameTranslator.Installer.Core.Install;
 using UnityGameTranslator.Installer.Core.Model;
 using UnityGameTranslator.Installer.Core.Platform;
 using UnityGameTranslator.Installer.Core.Settings;
+using UnityGameTranslator.Installer.Core.Update;
 
 namespace UnityGameTranslator.Installer.Gui;
 
@@ -113,7 +114,81 @@ public partial class MainWindow : Window
         BuildLanguageBox();
         BuildFilterBar();
 
-        Loaded += async (_, _) => await ScanAsync();
+        Loaded += async (_, _) =>
+        {
+            await ScanAsync();
+
+            // After the scan, never before: the games are what someone opened the tool for, and a
+            // question put to GitHub must not delay the list by so much as a frame.
+            await LookForToolUpdateAsync();
+        };
+    }
+
+    // ---------------------------------------------------------------- this tool's own updates
+
+    /// <summary>
+    /// Asks once, at startup, whether a newer build of the tool exists — and says so with a notice
+    /// that leads somewhere rather than a box to dismiss.
+    ///
+    /// Silent when there is nothing new: "up to date" on every launch is a line people stop seeing,
+    /// and then it is not there when it matters.
+    ///
+    /// ⚠ NOT silent when the check failed, and that distinction was got wrong here first. A tool
+    /// that says nothing after a blocked request is telling someone it looked, when it did not —
+    /// and a firewall prompt that was refused, or never appeared, looks exactly like this. The same
+    /// rule as everywhere else in this window: name it, and put the way out one click away. There
+    /// is no automatic retry, on purpose — a connection a firewall is refusing does not become
+    /// available by being asked again a second later, and asking on a timer is how a tool ends up
+    /// looking like the thing the firewall was right to stop.
+    /// </summary>
+    private async Task LookForToolUpdateAsync()
+    {
+        var settings = _settings.Current;
+        if (!settings.OnlineMode || !settings.CheckToolUpdates) return;
+
+        SelfUpdateCheck result;
+        try
+        {
+            result = await new SelfUpdater(_platform).CheckAsync(settings.ToolReleaseChannel);
+        }
+        catch (Exception ex)
+        {
+            result = new SelfUpdateCheck(SelfUpdateState.CheckFailed, null, ex.Message);
+        }
+
+        switch (result.State)
+        {
+            case SelfUpdateState.Available when result.Offer is not null:
+                ShowUpdateNotice($"Update available: {result.Offer.NewVersion}",
+                    "Open Settings to see what changed and install it.",
+                    primary: true, result);
+                break;
+
+            case SelfUpdateState.UpToDate:
+                break;
+
+            default:
+                ShowUpdateNotice("Couldn't check for updates",
+                    $"{result.Message}\n\nA firewall, an antivirus or a company proxy blocking "
+                    + "this tool looks exactly like this. Open Settings to try again or to set up "
+                    + "a proxy.",
+                    primary: false, result);
+                break;
+        }
+    }
+
+    private void ShowUpdateNotice(string label, string tip, bool primary, SelfUpdateCheck found)
+    {
+        var notice = new Button { Content = label, FontSize = 12 };
+        if (primary) notice.Classes.Add("primary");
+
+        ToolTip.SetTip(notice, tip);
+
+        // The answer travels with the click: someone who opened this window to find out why must
+        // land on the reason, not on an empty panel and a button to press again.
+        notice.Click += (_, _) => OpenToolSettings(found);
+
+        UpdateSlot.Content = notice;
     }
 
     // ---------------------------------------------------------------- scanning
@@ -474,9 +549,12 @@ public partial class MainWindow : Window
     /// program does are two subjects, and someone changing a value has to know which one they are
     /// touching without reading a heading.
     /// </summary>
-    private async Task OpenToolSettingsAsync()
+    private void OpenToolSettings(SelfUpdateCheck? found) =>
+        _ = OpenToolSettingsAsync(found);
+
+    private async Task OpenToolSettingsAsync(SelfUpdateCheck? found = null)
     {
-        var window = new ToolSettingsWindow(_platform, _settings);
+        var window = new ToolSettingsWindow(_platform, _settings, found);
         await window.ShowDialog(this);
 
         // Redrawn whatever was saved: signing in and out both happen in that window, and the

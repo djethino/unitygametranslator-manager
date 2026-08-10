@@ -51,6 +51,9 @@
             <Button x:Name="SettingsButton" Content="Mod defaults" />
             <Button x:Name="ToolSettingsButton" Content="Settings" />
             <Button x:Name="AboutButton" Content="About" />
+            <!-- Empty unless there is something to say. A row that always carries "up to date"
+                 trains people to stop reading it, and then it is not there when it matters. -->
+            <ContentControl x:Name="UpdateSlot" VerticalAlignment="Center" />
             <ContentControl x:Name="AccountSlot" VerticalAlignment="Center" />
           </StackPanel>
         </Grid>

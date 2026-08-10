@@ -2,10 +2,13 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
 using UnityGameTranslator.Installer.Core.Api;
+using UnityGameTranslator.Installer.Core.Install;
 using UnityGameTranslator.Installer.Core.Model;
 using UnityGameTranslator.Installer.Core.Platform;
 using UnityGameTranslator.Installer.Core.Settings;
+using UnityGameTranslator.Installer.Core.Update;
 
 namespace UnityGameTranslator.Installer.Gui;
 
@@ -40,15 +43,28 @@ public sealed class ToolSettingsWindow : Window
     private Button _applyButton = null!;
     private CancellationTokenSource? _signIn;
 
+    private ComboBox _toolChannel = null!;
+    private CheckBox _checkToolUpdates = null!;
+    private StackPanel _updatePanel = null!;
+
+    /// <summary>
+    /// What the main window already found out at startup, so opening this from its notice does not
+    /// ask GitHub the same question again — and, when the check failed, lands on the reason rather
+    /// than on an empty panel.
+    /// </summary>
+    private readonly SelfUpdateCheck? _known;
+
     /// <summary>Kept for the one thing this window says about the machine: where its files live.</summary>
     private readonly IPlatform _platform;
 
     public bool Saved { get; private set; }
 
-    public ToolSettingsWindow(IPlatform platform, SettingsStore store)
+    public ToolSettingsWindow(IPlatform platform, SettingsStore store,
+                              SelfUpdateCheck? known = null)
     {
         _store = store;
         _platform = platform;
+        _known = known;
 
         var current = store.Current;
         _draft = new InstallerSettings
@@ -60,6 +76,8 @@ public sealed class ToolSettingsWindow : Window
             ProxyBypassLocal = current.ProxyBypassLocal,
             ProxyInGames = current.ProxyInGames,
             OnlineMode = current.OnlineMode,
+            ToolChannel = current.ToolChannel,
+            CheckToolUpdates = current.CheckToolUpdates,
         };
 
         Title = "Settings — this tool";
@@ -90,6 +108,7 @@ public sealed class ToolSettingsWindow : Window
         });
 
         layout.Children.Add(AccountCard());
+        layout.Children.Add(UpdatesCard());
         layout.Children.Add(NetworkCard());
         layout.Children.Add(FilesCard());
 
@@ -402,6 +421,200 @@ public sealed class ToolSettingsWindow : Window
     /// The path is written out as well as opened, because a machine where the file manager cannot
     /// be started is exactly the machine where the path matters most.
     /// </summary>
+    // ---------------------------------------------------------------- updates
+
+    /// <summary>
+    /// This tool's own updates.
+    ///
+    /// Its channel sits here rather than beside the mod's, because it is a different bet: a beta of
+    /// this program misbehaves while you are watching it, a beta of the mod is loaded into every
+    /// game you play and meets you mid-session.
+    ///
+    /// Nothing is ever applied without the button being pressed. Until there is a signing
+    /// certificate, a program that rewrites itself unannounced is indistinguishable — to a person
+    /// and to their antivirus — from something they would want stopped.
+    /// </summary>
+    private Control UpdatesCard()
+    {
+        var panel = new StackPanel { Spacing = 10 };
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"You are running {SelfUpdater.CurrentVersion}.",
+            FontSize = 12,
+            Foreground = Brush("TextPrimary"),
+        });
+
+        _toolChannel = new ComboBox
+        {
+            Width = 220,
+            ItemsSource = new[]
+            {
+                new ComboBoxItem { Content = "Stable releases", Tag = "stable" },
+                new ComboBoxItem { Content = "Also test builds (beta)", Tag = "beta" },
+            },
+        };
+        Select(_toolChannel, _draft.ToolChannel);
+
+        panel.Children.Add(Row("Updates", _toolChannel));
+        panel.Children.Add(Note(
+            "This is about the installer itself. Which build of the mod goes into your games is "
+            + "under Mod defaults, and the two are separate on purpose.", "TextMuted"));
+
+        _checkToolUpdates = new CheckBox
+        {
+            Content = "Look for a new version when the tool starts",
+            IsChecked = _draft.CheckToolUpdates,
+            FontSize = 12,
+        };
+        panel.Children.Add(_checkToolUpdates);
+
+        var check = new Button { Content = "Check now", FontSize = 12 };
+        check.HorizontalAlignment = HorizontalAlignment.Left;
+        check.Click += async (_, _) => await CheckForUpdateAsync(check);
+        panel.Children.Add(check);
+
+        _updatePanel = new StackPanel { Spacing = 8 };
+        panel.Children.Add(_updatePanel);
+
+        // Opened from the main window's notice: it already asked, so show the answer rather than
+        // making someone press a button to be told what they were just told.
+        if (_known is not null) ShowResult(_known);
+
+        return Card("Updating this tool", null, panel);
+    }
+
+    private void ShowResult(SelfUpdateCheck result)
+    {
+        switch (result.State)
+        {
+            case SelfUpdateState.Available when result.Offer is not null:
+                ShowOffer(result.Offer);
+                break;
+
+            case SelfUpdateState.UpToDate:
+                _updatePanel.Children.Clear();
+                _updatePanel.Children.Add(Note(result.Message ?? "You are up to date.", "StatusOk"));
+                break;
+
+            default:
+                // Failing to look is not the same as having nothing to find, and it never reads as
+                // if it were. The network card is right below, and Check now is the way back.
+                _updatePanel.Children.Clear();
+                _updatePanel.Children.Add(Note(
+                    (result.Message ?? "Could not check.")
+                    + " A firewall, an antivirus or a company proxy blocking this tool looks "
+                    + "exactly like this. Let it through and press Check now, or set up a proxy "
+                    + "below.", "StatusError"));
+                break;
+        }
+    }
+
+    private async Task CheckForUpdateAsync(Button trigger)
+    {
+        _updatePanel.Children.Clear();
+
+        var waiting = new SpinningGear("Asking GitHub what the latest version is...");
+        _updatePanel.Children.Add(waiting);
+        trigger.IsEnabled = false;
+
+        // The channel as it stands on screen, not as it was last saved: someone who just switched
+        // to beta and pressed Check expects to be told about betas. It is an action, not a setting,
+        // so it does not wait for Apply.
+        var channel = string.Equals(Tag(_toolChannel), "beta", StringComparison.OrdinalIgnoreCase)
+            ? ReleaseChannel.Beta
+            : ReleaseChannel.Stable;
+
+        var updater = new SelfUpdater(_platform);
+        var result = await updater.CheckAsync(channel);
+
+        _updatePanel.Children.Remove(waiting);
+        trigger.IsEnabled = true;
+
+        ShowResult(result);
+    }
+
+    private void ShowOffer(SelfUpdateOffer offer)
+    {
+        _updatePanel.Children.Clear();
+
+        var headline = $"Version {offer.NewVersion} is out"
+                       + (offer.IsPrerelease ? " (beta)" : "")
+                       + (offer.PublishedAt is { } date ? $", published {date:d MMMM yyyy}" : "")
+                       + ".";
+
+        _updatePanel.Children.Add(new TextBlock
+        {
+            Text = headline,
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("TextPrimary"),
+        });
+
+        var notes = new Button { Content = "What changed", FontSize = 12 };
+        notes.Click += (_, _) => OpenUrl(offer.ReleasePageUrl);
+
+        // Said before anything is downloaded rather than after: someone keeping the tool where they
+        // cannot write has nothing to gain from fifty megabytes first.
+        var updater = new SelfUpdater(_platform);
+        if (updater.WhyCannotApply() is { } blocked)
+        {
+            _updatePanel.Children.Add(Note(blocked, "StatusWarn"));
+            _updatePanel.Children.Add(notes);
+            return;
+        }
+
+        var size = offer.SizeBytes is { } bytes ? $" ({bytes / 1024d / 1024d:0.#} MB)" : "";
+        var apply = new Button
+        {
+            Content = $"Update to {offer.NewVersion}{size}",
+            FontSize = 12,
+            Classes = { "primary" },
+        };
+
+        var progress = Note("", "TextMuted");
+        var working = new SpinningGear("Downloading...") { IsVisible = false };
+
+        apply.Click += async (_, _) =>
+        {
+            apply.IsEnabled = false;
+            working.IsVisible = true;
+
+            updater.Progress += (done, total) => Dispatcher.UIThread.Post(() =>
+                progress.Text = total is { } t
+                    ? $"Downloading... {done / 1024d / 1024:F0} of {t / 1024d / 1024:F0} MB"
+                    : $"Downloading... {done / 1024d / 1024:F0} MB");
+
+            try
+            {
+                var result = await updater.ApplyAsync(offer);
+
+                _updatePanel.Children.Clear();
+                _updatePanel.Children.Add(Note(
+                    $"Updated to {result.Version}. Close the tool and open it again to run it — "
+                    + "the version you were using is kept beside it until then.", "StatusOk"));
+            }
+            catch (Exception ex)
+            {
+                working.IsVisible = false;
+                progress.Text = ex.Message;
+                progress.Foreground = Brush("StatusError");
+                apply.IsEnabled = true;
+            }
+        };
+
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Children = { apply, notes },
+        };
+
+        _updatePanel.Children.Add(buttons);
+        _updatePanel.Children.Add(working);
+        _updatePanel.Children.Add(progress);
+    }
+
     private Control FilesCard()
     {
         var panel = new StackPanel { Spacing = 8 };
@@ -440,6 +653,8 @@ public sealed class ToolSettingsWindow : Window
         _draft.ProxyPassword = string.IsNullOrWhiteSpace(_proxyPassword.Text) ? null : _proxyPassword.Text;
         _draft.ProxyInGames = _proxyInGames.IsChecked == true;
         _draft.OnlineMode = _online.IsChecked == true;
+        _draft.ToolChannel = Tag(_toolChannel) ?? "stable";
+        _draft.CheckToolUpdates = _checkToolUpdates.IsChecked == true;
         return _draft;
     }
 
@@ -454,6 +669,8 @@ public sealed class ToolSettingsWindow : Window
         settings.ProxyPassword = edited.ProxyPassword;
         settings.ProxyInGames = edited.ProxyInGames;
         settings.OnlineMode = edited.OnlineMode;
+        settings.ToolChannel = edited.ToolChannel;
+        settings.CheckToolUpdates = edited.CheckToolUpdates;
 
         _store.Save(settings);
         Saved = true;
@@ -475,8 +692,12 @@ public sealed class ToolSettingsWindow : Window
         Compare("proxy username", _proxyUser.Text, saved.ProxyUsername);
         Compare("proxy password", _proxyPassword.Text, saved.ProxyPassword);
 
+        Compare("this tool's update channel", Tag(_toolChannel), saved.ToolChannel);
+
         if ((_proxyInGames.IsChecked == true) != saved.ProxyInGames) changes.Add("proxy in games");
         if ((_online.IsChecked == true) != saved.OnlineMode) changes.Add("community catalog");
+        if ((_checkToolUpdates.IsChecked == true) != saved.CheckToolUpdates)
+            changes.Add("look for updates to this tool");
 
         return changes;
     }
@@ -502,6 +723,8 @@ public sealed class ToolSettingsWindow : Window
 
         _proxyInGames.IsCheckedChanged += (_, _) => RefreshApplyButton();
         _online.IsCheckedChanged += (_, _) => RefreshApplyButton();
+        _toolChannel.SelectionChanged += (_, _) => RefreshApplyButton();
+        _checkToolUpdates.IsCheckedChanged += (_, _) => RefreshApplyButton();
 
         ShowProxyFields();
     }

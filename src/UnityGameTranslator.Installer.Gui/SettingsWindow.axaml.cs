@@ -1487,19 +1487,16 @@ public sealed class SettingsWindow : Window
         var total = ModelTestSuite.Build(language).Count;
         waiting.Message = $"Running test 1 of {total}...";
 
-        // Before the marks, never after. Someone translating INTO the language these sentences are
-        // written in is being shown a translation with nothing to translate — a job the mod never
-        // asks — and they will have judged the model long before reading a footnote.
-        if (ModelTestSuite.IsDegenerate(language))
-        {
-            _testOutput.Children.Add(new Border
-            {
-                Background = Brush("CalloutWarningBg"),
-                CornerRadius = new CornerRadius(4),
-                Padding = new Thickness(10, 6),
-                Child = Note(ModelTestSuite.DegenerateCaveat, "StatusWarning"),
-            });
-        }
+        // Which language the sentences are in, said before the marks. It is never the reader's own
+        // — the sets exist for that — and naming it lets them judge whether the pair resembles
+        // their game: someone playing a Chinese game is not being shown their case here.
+        var from = ModelTestSuite.SourceFor(language);
+
+        _testOutput.Children.Add(Note(
+            $"Translating from {from.Language} into {Languages.NameOf(language)}. The sentences "
+            + "are never in the language you translate into: asking a model for English from "
+            + "English is a job the mod never gives it, and the answers say nothing.",
+            "TextMuted"));
 
         await _probe.RunSuiteAsync(url, model, language, result =>
         {

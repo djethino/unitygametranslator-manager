@@ -660,14 +660,11 @@ internal static class Program
             ? "Game context: none (the mod's default wording)"
             : $"Game context: {gameContext}");
 
-        // Said before the results, not after: someone reading marks for a job that makes no sense
-        // will have drawn their conclusion long before a footnote.
-        if (ModelTestSuite.IsDegenerate(language))
-        {
-            Console.WriteLine();
-            Write("note   : ", ConsoleColor.Yellow);
-            Console.WriteLine(ModelTestSuite.DegenerateCaveat);
-        }
+        // Which language it is translating FROM, named rather than assumed. It is chosen so it is
+        // never the target — asking for English from English is a job the mod never gives a model
+        // — and someone whose games are written in another language can say so with --source.
+        var from = ModelTestSuite.SourceFor(language, ValueOf(args, "--source"));
+        Console.WriteLine($"Translating from: {from.Language}");
 
         // What we have run ourselves against this model, if anything — said before the suite so
         // it reads as background, not as a conclusion drawn from the marks below.
@@ -683,7 +680,8 @@ internal static class Program
         var echoed = 0;
         var unlocked = new List<(ModelTest Test, bool Supported)>();
 
-        await probe.RunSuiteAsync(server.Url, model, language, gameContext: gameContext, onResult: result =>
+        await probe.RunSuiteAsync(server.Url, model, language, gameContext: gameContext,
+                                  sourceCode: ValueOf(args, "--source"), onResult: result =>
         {
             if (result.Test.UnlocksOption is not null)
             {

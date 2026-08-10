@@ -252,11 +252,11 @@ public sealed class AiServerProbe
     public async Task<IReadOnlyList<ModelTestResult>> RunSuiteAsync(
         string baseUrl, string model, string targetLanguage,
         Action<ModelTestResult>? onResult = null, CancellationToken ct = default,
-        string? gameContext = null)
+        string? gameContext = null, string? sourceCode = null)
     {
         var results = new List<ModelTestResult>();
 
-        foreach (var test in ModelTestSuite.Build(targetLanguage, gameContext))
+        foreach (var test in ModelTestSuite.Build(targetLanguage, gameContext, sourceCode))
         {
             var answer = await AskAsync(baseUrl, model, test.Rule, test.Source, ct)
                 .ConfigureAwait(false);

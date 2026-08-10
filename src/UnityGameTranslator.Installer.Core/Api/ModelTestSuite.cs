@@ -81,29 +81,16 @@ public static class ModelTestSuite
     public const string SkipMarker = "AxNoTranslateXa";
 
     /// <summary>
-    /// The language the test sentences themselves are written in.
+    /// Which language a given run translates FROM, so a report can name it.
     ///
-    /// Named because it matters to one group of users: whoever translates INTO it is handed a
-    /// translation with nothing to translate, which is not a job the mod ever gives a model.
-    /// Measured rather than assumed — a translation-specialised model asked for English from
-    /// English answered in Portuguese and in Russian, and a small one dropped markers it holds
-    /// perfectly well when there is real work to do.
+    /// It is never the target: that was the whole reason for holding these sentences in several
+    /// languages. Asking a model to translate English into English is a job the mod never gives
+    /// one, and it goes strangely — measured, a translation-specialised model answered in
+    /// Portuguese and then in Russian, and a small one dropped markers it holds perfectly well
+    /// when there is real work to do.
     /// </summary>
-    public const string FixtureLanguage = "English";
-
-    /// <summary>
-    /// Whether this run asks a model to translate into the language the fixtures are already in.
-    /// </summary>
-    public static bool IsDegenerate(string targetLanguage) =>
-        string.Equals(Languages.NameOf(targetLanguage), FixtureLanguage,
-                      StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>What to tell someone in that case, in one place for both front ends.</summary>
-    public const string DegenerateCaveat =
-        "These sentences are already in " + FixtureLanguage + ", and you are translating into "
-        + FixtureLanguage + " — so nothing below is a real translation, and the mod will never ask "
-        + "this of a model. Read the marker results, which still hold; treat the rest as noise. "
-        + "Some models answer such a prompt in an unrelated language entirely.";
+    public static Fixtures SourceFor(string targetLanguage, string? sourceCode = null) =>
+        Fixtures.ByCode(sourceCode) ?? Fixtures.For(targetLanguage);
 
     /// <param name="gameContext">
     /// What the mod's own "describe this game" setting holds, or null for the default.
@@ -112,58 +99,56 @@ public static class ModelTestSuite
     /// nobody could say whether filling it in helps or hurts. Running the suite twice answers that
     /// for a given model instead of leaving the field to folklore.
     /// </param>
-    public static IReadOnlyList<ModelTest> Build(string targetLanguage, string? gameContext = null)
+    /// <param name="sourceCode">
+    /// The language to translate FROM. Left null, it is chosen so it is never the target — which
+    /// is the whole reason these sets exist. Someone whose games are written in Chinese can name
+    /// Chinese here, because that is their real case and only they know it.
+    /// </param>
+    public static IReadOnlyList<ModelTest> Build(string targetLanguage, string? gameContext = null,
+                                                 string? sourceCode = null)
     {
         var language = Languages.NameOf(targetLanguage);
 
-        // Built from the source of each case, exactly as the mod builds it — see Rules. Writing
+        var from = Fixtures.ByCode(sourceCode) ?? Fixtures.For(targetLanguage);
+        var foreign = Fixtures.ForeignTo(from, targetLanguage);
+
+        // Built from the source of each case, exactly as the mod builds it — see Prompt. Writing
         // the rules by hand per test is what made this suite ask for things the mod never asks.
         string Rules(string source) => Prompt(language, source, gameContext);
 
-        return new List<ModelTest>
+        var tests = new List<ModelTest>
         {
             new("plain line", "easy",
-                "Start Game",
-                Rules("Start Game"),
+                from.PlainLine,
+                Rules(from.PlainLine),
                 (_, answer) => answer.Trim().Length > 0 && CountLines(answer) == 1)
             {
                 Expectation = "translates, one line, nothing else",
             },
 
             new("no invented punctuation", "easy",
-                "Loading",
-                Rules("Loading"),
-                (_, answer) => !answer.TrimEnd().EndsWith('.') && !answer.TrimEnd().EndsWith('!'))
+                from.NoPunctuation,
+                Rules(from.NoPunctuation),
+                // Tested against what THIS language ends sentences with. A Japanese model that
+                // adds 。 has done the very thing the check exists for, and looking only for a
+                // full stop would have let it through.
+                (_, answer) => !from.SentenceEnders.Any(
+                    end => answer.TrimEnd().EndsWith(end, StringComparison.Ordinal)))
             {
-                Expectation = "no full stop added where the source has none",
+                Expectation = "no sentence mark added where the source has none",
             },
 
             new("single word", "medium",
-                "Save",
-                Rules("Save"),
+                from.SingleWord,
+                Rules(from.SingleWord),
                 (_, answer) => CountLines(answer) == 1 && answer.Trim().Split(' ').Length <= 4)
             {
                 Expectation = "answers with a word, not a sentence about the word",
             },
 
-            // A menu label as games write them. Case is not decoration in a menu: a row of shouted
-            // labels with one sentence-cased entry among them looks broken, and the mod has no way
-            // to put the case back.
-            new("shouted label stays shouted", "medium",
-                "NEW GAME",
-                Rules("NEW GAME"),
-                (_, answer) =>
-                {
-                    var letters = answer.Trim().Where(char.IsLetter).ToList();
-                    return letters.Count > 0 && letters.All(char.IsUpper);
-                })
-            {
-                Expectation = "answers in capitals, as the source is",
-            },
-
             new("technical terms kept", "medium",
-                "Your API key is stored in JSON",
-                Rules("Your API key is stored in JSON"),
+                from.TechnicalTerms,
+                Rules(from.TechnicalTerms),
                 (_, answer) => answer.Contains("API", StringComparison.Ordinal)
                                && answer.Contains("JSON", StringComparison.Ordinal))
             {
@@ -171,8 +156,8 @@ public static class ModelTestSuite
             },
 
             new("keyboard shortcut kept", "medium",
-                "Press Ctrl+F10 to open settings",
-                Rules("Press Ctrl+F10 to open settings"),
+                from.Shortcut,
+                Rules(from.Shortcut),
                 (_, answer) => answer.Contains("Ctrl", StringComparison.Ordinal)
                                && answer.Contains("F10", StringComparison.Ordinal))
             {
@@ -180,16 +165,16 @@ public static class ModelTestSuite
             },
 
             new("one placeholder", "hard",
-                "Press [!v*0] to continue",
-                Rules("Press [!v*0] to continue"),
+                from.OnePlaceholder,
+                Rules(from.OnePlaceholder),
                 (_, answer) => HasExactlyOnce(answer, "[!v*0]"))
             {
                 Expectation = "[!v*0] comes back exactly once",
             },
 
             new("two placeholders in order", "hard",
-                "Press [!v*0] to save[!nl]Your API key is required",
-                Rules("Press [!v*0] to save[!nl]Your API key is required"),
+                from.TwoPlaceholders,
+                Rules(from.TwoPlaceholders),
                 (_, answer) => InOrder(answer, "[!v*0]", "[!nl]"))
             {
                 Expectation = "[!v*0] then [!nl], both once, in that order",
@@ -198,8 +183,8 @@ public static class ModelTestSuite
             // A name the game drops into a sentence. Its own rule in the mod, and never tested
             // until now: a model that translates the marker leaves the player reading a token.
             new("a name kept out of it", "hard",
-                "[!STR*0] has joined the crew",
-                Rules("[!STR*0] has joined the crew"),
+                from.NameInjected,
+                Rules(from.NameInjected),
                 (_, answer) => HasExactlyOnce(answer, "[!STR*0]"))
             {
                 Expectation = "[!STR*0] comes back untouched, not translated",
@@ -209,8 +194,8 @@ public static class ModelTestSuite
             // a coloured HUD. Nothing to translate at all, which is what makes it hard: models
             // answer such prompts with a sentence about the prompt.
             new("nothing but markers", "hard",
-                "[!t*0][!v*0][!t*1]",
-                Rules("[!t*0][!v*0][!t*1]"),
+                Fixtures.MarkersOnly,
+                Rules(Fixtures.MarkersOnly),
                 (_, answer) => InOrder(answer.Trim(), "[!t*0]", "[!v*0]", "[!t*1]")
                                && answer.Trim().Length <= 24)
             {
@@ -220,16 +205,16 @@ public static class ModelTestSuite
             // A blank line inside a text. The mod repairs a trailing one; this one it cannot,
             // and a paragraph that loses its break arrives as a wall.
             new("a blank line survives", "hard",
-                "Objective complete[!nl][!nl]Return to the ship",
-                Rules("Objective complete[!nl][!nl]Return to the ship"),
+                from.BlankLine,
+                Rules(from.BlankLine),
                 (_, answer) => Occurrences(answer, "[!nl]") == 2)
             {
                 Expectation = "two consecutive [!nl] come back as two, not one",
             },
 
             new("placeholder at the very end", "hard",
-                "Settings saved[!nl]",
-                Rules("Settings saved[!nl]"),
+                from.TrailingBreak,
+                Rules(from.TrailingBreak),
                 (_, answer) => HasExactlyOnce(answer, "[!nl]"))
             {
                 // The one failure the mod repairs by itself: it puts back trailing line breaks a
@@ -244,8 +229,8 @@ public static class ModelTestSuite
             // markers. Passing a ten-word label proves nothing about that.
 
             new("markup markers kept", "hard",
-                "[!t*0]Warning[!t*1]: shields at [!v*0] percent",
-                Rules("[!t*0]Warning[!t*1]: shields at [!v*0] percent"),
+                from.MarkupSpan,
+                Rules(from.MarkupSpan),
                 (_, answer) => InOrder(answer, "[!t*0]", "[!t*1]", "[!v*0]"))
             {
                 // The mod lifts every <color>, <b> and <sprite> out of the text before sending it
@@ -256,8 +241,8 @@ public static class ModelTestSuite
             },
 
             new("a paragraph, not a label", "stress",
-                Paragraph,
-                Rules(Paragraph),
+                from.Paragraph,
+                Rules(from.Paragraph),
                 (_, answer) => InOrder(answer,
                     "[!t*0]", "[!t*1]", "[!nl]", "[!v*0]", "[!v*1]", "[!v*2]"))
             {
@@ -272,8 +257,8 @@ public static class ModelTestSuite
             },
 
             new("markers in a row", "stress",
-                "[!t*0]Loaded[!t*1] [!v*0]/[!v*1]/[!v*2]/[!v*3]/[!v*4]/[!v*5]",
-                Rules("[!t*0]Loaded[!t*1] [!v*0]/[!v*1]/[!v*2]/[!v*3]/[!v*4]/[!v*5]"),
+                from.MarkersInRow,
+                Rules(from.MarkersInRow),
                 (_, answer) => InOrder(answer,
                     "[!t*0]", "[!t*1]", "[!v*0]", "[!v*1]", "[!v*2]", "[!v*3]", "[!v*4]", "[!v*5]"))
             {
@@ -282,24 +267,16 @@ public static class ModelTestSuite
                 Expectation = "six numbered markers come back in their original order, none merged",
             },
 
-            new("refuses to translate the wrong language", "experimental",
-                "Bonjour tout le monde",
-                // The critical rule sits ABOVE the usual blocks in the mod, it does not replace
-                // them: the model still has to translate normally when the language does match.
-                $"""
-                === CRITICAL RULE ===
-                Source language: English
-                - If text is NOT in English: reply ONLY with exactly: {SkipMarker}
-                - If text IS in English: translate to {language}
-
-                """ + Rules("Bonjour tout le monde"),
+            new("refuses another real language", "experimental",
+                foreign.PlainLine,
+                Strict(from, language) + Rules(foreign.PlainLine),
                 (_, answer) => answer.Trim() == SkipMarker)
             {
+                // The sentence is chosen so it is neither the source nor the target. A fixed one
+                // is eventually somebody's own language: this case used to hand a French sentence
+                // to every French player's model and ask it to refuse French while translating
+                // into French, and had done so quietly since the day it was written.
                 Expectation = $"answers exactly {SkipMarker} and nothing else",
-
-                // The mod's own documentation on this option: "Experimental, and off for a
-                // reason: asks the model to skip anything that is not in the source language.
-                // It can silently drop text that was fine."
                 UnlocksOption = "strict_source",
 
                 Caveat = "It stays experimental whatever this test says: one sentence is not a "
@@ -307,8 +284,60 @@ public static class ModelTestSuite
                        + "perfectly fine is dropped and nothing tells you. Switch it on knowing "
                        + "that, and keep an eye on what disappears.",
             },
+
+            // Last of all, and the only case that can never collide with anybody: a constructed
+            // language is neither a source nor a target here.
+            //
+            // Not a joke. Games carry invented languages, proper nouns and plain gibberish, and a
+            // model that confidently "translates" those is the one that will quietly rewrite them
+            // in a real game. Refusing what it cannot know is the behaviour being measured.
+            new("refuses what it cannot know", "experimental",
+                Fixtures.Klingon,
+                Strict(from, language) + Rules(Fixtures.Klingon),
+                (_, answer) => answer.Trim() == SkipMarker)
+            {
+                Expectation = $"answers exactly {SkipMarker}, rather than inventing a translation",
+                UnlocksOption = "strict_source",
+
+                Caveat = "A model that translates this anyway is telling you what it does with a "
+                       + "game's invented words and proper nouns: it rewrites them.",
+            },
         };
+
+        // Removed rather than failed. Asking a script with no capitals to answer in capitals is
+        // asking for something that does not exist, and a KO there would say nothing about the
+        // model — only about the language it was handed.
+        if (from.ShoutedLabel is { } shouted)
+        {
+            tests.Insert(3, new ModelTest("shouted label stays shouted", "medium",
+                shouted,
+                Rules(shouted),
+                (_, answer) =>
+                {
+                    var letters = answer.Trim().Where(char.IsLetter).ToList();
+                    return letters.Count > 0 && letters.All(char.IsUpper);
+                })
+            {
+                // Case is not decoration in a menu: a row of shouted labels with one sentence-cased
+                // entry among them looks broken, and the mod cannot put the case back.
+                Expectation = "answers in capitals, as the source is",
+            });
+        }
+
+        return tests;
     }
+
+    /// <summary>
+    /// The block the mod puts ABOVE everything else when strict_source is on. It does not replace
+    /// the usual rules: the model still has to translate normally when the language does match.
+    /// </summary>
+    private static string Strict(Fixtures from, string targetLanguage) => $"""
+        === CRITICAL RULE ===
+        Source language: {from.Language}
+        - If text is NOT in {from.Language}: reply ONLY with exactly: {SkipMarker}
+        - If text IS in {from.Language}: translate to {targetLanguage}
+
+        """;
 
     /// <summary>
     /// The system turn the mod would build for THIS text, rule for rule.

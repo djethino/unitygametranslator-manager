@@ -148,7 +148,26 @@ public sealed class SettingsWindow : Window
         Background = this.FindResource("SurfaceBase") as IBrush;
 
         Content = Build();
-        Opened += async (_, _) => await DiscoverAsync(reuseKnown: true);
+
+        // ⚠ Only when AI is the backend they have chosen. The search sweeps six ports on the
+        // machine, and it used to run on every visit whatever was selected — for somebody playing
+        // with community translations, or paying for DeepL, that is work they did not ask for, to
+        // fill in a card that is not even on screen: the AI card is hidden unless AI is chosen.
+        //
+        // The code already made this argument for a server that is configured ("probing it on every
+        // visit is a request the person did not ask for") and then went ahead and swept anyway for
+        // one that is not. Same reasoning, one step earlier.
+        if (Tag(_backend) == "llm")
+        {
+            Opened += async (_, _) => await DiscoverAsync(reuseKnown: true);
+        }
+        else
+        {
+            // ⚠ The search is also what marks the screen as settled, and skipping it left that flag
+            // raised for good — with the counter suppressed, so nothing anyone changed would ever
+            // be counted. The screen is settled the moment it is built when there is no search.
+            _populating = false;
+        }
     }
 
     private Control Build()
@@ -364,30 +383,33 @@ public sealed class SettingsWindow : Window
         _aiCard.IsVisible = backend == "llm";
         _apiCard.IsVisible = backend == "google";
 
-        if (backend == "llm") OfferWhatWasFound();
+        if (backend == "llm") _ = LookNowThatAiIsChosenAsync();
     }
 
     /// <summary>
-    /// Fills in the server found earlier — now that AI has actually been chosen.
+    /// Searches — now that AI has actually been chosen — and fills in what is found.
     ///
-    /// This is the other half of the discovery, and it waits here on purpose. Choosing AI is the
-    /// gesture that makes a found server relevant, so it is the moment its address may be written
-    /// into the form. Before that, the search is a fact reported in a line of text and nothing more.
+    /// This is the whole of the discovery, and it waits here on purpose. Choosing AI is the gesture
+    /// that makes a local server worth looking for, and the moment its address may be written into
+    /// the form. Before that, the machine is not swept at all.
     ///
     /// Never during population: setting the backend to what was saved raises this same event, and
-    /// filling in then would be the original fault wearing a different hat.
+    /// searching then would be the original fault wearing a different hat.
     /// </summary>
-    private void OfferWhatWasFound()
+    private async Task LookNowThatAiIsChosenAsync()
     {
         if (_populating) return;
+
+        // What was already found, or what was already configured, rather than sweeping again.
+        await DiscoverAsync(reuseKnown: true);
+
         if (_aiServers.Remembered is not { } servers || servers.Count == 0) return;
 
-        var server = servers[0];
+        if (string.IsNullOrWhiteSpace(_aiUrl.Text)) _aiUrl.Text = servers[0].Url;
 
-        if (string.IsNullOrWhiteSpace(_aiUrl.Text)) _aiUrl.Text = server.Url;
+        _aiModel.SelectedItem ??= _aiModel.Items.OfType<ComboBoxItem>().FirstOrDefault();
 
-        if (_aiModel.SelectedItem is null)
-            _aiModel.SelectedItem = _aiModel.Items.OfType<ComboBoxItem>().FirstOrDefault();
+        RefreshApplyButton();
     }
 
     /// <summary>
@@ -904,15 +926,11 @@ public sealed class SettingsWindow : Window
 
         var server = servers[0];
 
-        // ⚠ Nothing is filled in unless AI is the backend that was CHOSEN. Finding a server on the
-        // machine is a fact; writing its address into the form is a decision, and it was being made
-        // for the person: someone who opened this screen with "Community translations only" set
-        // found "Apply (2)" waiting on a form they had not touched, offering to save an AI server
-        // and a model they had not asked for. Pressing Apply — the natural way to leave — would
-        // have written it.
-        //
-        // What was found is still said out loud, which is the useful half. The other half happens
-        // when they pick AI, and picking it is a gesture they made.
+        // ⚠ Nothing is filled in unless AI is the backend that was CHOSEN — a second lock on the
+        // same door the search now stands behind. Finding a server is a fact; writing its address
+        // into the form is a decision, and it was being taken for the person: opening this screen
+        // with "Community translations only" set left "Apply (2)" waiting on a form nobody had
+        // touched, and Apply is the natural way to leave.
         var chosen = Tag(_backend) == "llm";
         if (chosen && string.IsNullOrWhiteSpace(_aiUrl.Text)) _aiUrl.Text = server.Url;
 

@@ -236,6 +236,51 @@ public sealed class SelfInstaller
     }
 
     /// <summary>
+    /// Copies THIS build over the installed one, keeping everything else as it stands.
+    ///
+    /// The case it serves: someone downloads a newer version, runs it, and the copy in their menu
+    /// is still the old one. Without this they would have to remove and reinstall, and the shortcut
+    /// they use every day would be recreated for no reason.
+    ///
+    /// Shortcuts are deliberately left alone rather than recreated: they point at a path that has
+    /// not changed. ⚠ And they must be carried over in the receipt — writing a fresh record with no
+    /// launchers would leave a shortcut on the machine that nothing knows about, so removing the
+    /// tool would leave it behind pointing at nothing.
+    /// </summary>
+    public ToolInstallation UpdateInstalled()
+    {
+        var installed = Installed()
+            ?? throw new InvalidOperationException("Nothing is installed to update.");
+
+        var source = SelfUpdater.RunningExecutable
+            ?? throw new InvalidOperationException(
+                "This build cannot tell where it is running from.");
+
+        if (NotASelfContainedBuild(source) is { } reason) throw new InvalidOperationException(reason);
+
+        var written = new List<string>();
+
+        foreach (var companion in Companions(source))
+        {
+            var destination = Path.Combine(installed.Directory, Path.GetFileName(companion));
+            File.Copy(companion, destination, overwrite: true);
+            written.Add(destination);
+        }
+
+        File.Copy(source, installed.Executable, overwrite: true);
+        written.Add(installed.Executable);
+        MakeExecutable(installed.Executable);
+
+        installed.Version = SelfUpdater.CurrentVersion;
+        installed.UpdatedAt = DateTimeOffset.UtcNow;
+        installed.Files = written;
+        installed.Registration = _platform.RegisterInstalled(installed);
+
+        Save(installed);
+        return installed;
+    }
+
+    /// <summary>
     /// Brings the system's entry back in step after the tool has updated itself.
     ///
     /// Without it, Windows' list of installed applications keeps showing the version that was

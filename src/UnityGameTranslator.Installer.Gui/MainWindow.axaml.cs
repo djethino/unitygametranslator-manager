@@ -1241,7 +1241,16 @@ public partial class MainWindow : Window
     private Control? PortableBanner()
     {
         var installer = new SelfInstaller(_platform);
-        if (installer.Installed() is not null) return null;
+
+        // Running the installed copy: there is nothing to say, and saying it anyway is how a notice
+        // becomes wallpaper.
+        if (installer.RunningTheInstalledCopy()) return null;
+
+        // Installed, but this is not that copy. Silence here was the gap: someone who keeps a
+        // downloaded file around opens it out of habit, changes settings in it, updates it — and
+        // every one of those lands on the copy they are about to close rather than on the one in
+        // their menu. The only place that was ever said was inside the settings window.
+        if (installer.Installed() is { } installed) return OtherCopyBanner(installer, installed);
 
         var plan = installer.Plan();
         if (plan.Refusal is not null) return null;
@@ -1298,6 +1307,128 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// What to say when this is a loose copy and another one is installed.
+    ///
+    /// Which of the two is newer decides the verb, and nothing else does:
+    ///
+    /// · the installed copy is as new or newer — there is no reason to be in this one at all, so
+    ///   the offer is to go across to it;
+    /// · this copy is newer — someone has downloaded a new version and is running it out of the
+    ///   folder. Sending them to the older installed copy would be sending them backwards, so the
+    ///   offer is to put this build over it, keeping the shortcut they already have.
+    ///
+    /// Both versions are named either way. "You are running another copy" without the two numbers
+    /// leaves the only useful question — which one is the good one — unanswered.
+    /// </summary>
+    private Control OtherCopyBanner(SelfInstaller installer, ToolInstallation installed)
+    {
+        var running = SelfUpdater.CurrentVersion;
+        var newer = Versions.Compare(running, installed.Version) > 0;
+
+        // A build that cannot install itself cannot update one either; going across still can.
+        var canUpdate = newer && installer.Plan().Refusal is null;
+
+        var text = new StackPanel { Spacing = 2 };
+
+        text.Children.Add(new TextBlock
+        {
+            Text = canUpdate
+                ? $"This copy is newer than the one installed ({running} against {installed.Version})"
+                : "You are running a loose copy, not the installed one",
+            FontSize = 13,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = Brush("TextPrimary"),
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        text.Children.Add(new TextBlock
+        {
+            Text = canUpdate
+                ? $"UnityGameTranslator Installer {installed.Version} is installed in "
+                  + $"{installed.Directory}. Putting this build over it keeps the shortcut you "
+                  + "already have, and your settings are shared by both either way."
+                : $"UnityGameTranslator Installer {installed.Version} is installed in "
+                  + $"{installed.Directory}, and this window is version {running} running from "
+                  + "somewhere else. Settings are shared, but an update applied here lands on this "
+                  + "file rather than on the copy in your menu.",
+            FontSize = 11,
+            Foreground = Brush("TextSecondary"),
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        var action = new Button
+        {
+            Content = canUpdate ? "Update the installed copy" : "Open the installed copy",
+            FontSize = 12,
+            Classes = { "primary" },
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Margin = new Avalonia.Thickness(14, 0, 0, 0),
+        };
+
+        action.Click += async (_, _) =>
+        {
+            if (!canUpdate) { SwitchTo(installed); return; }
+
+            action.IsEnabled = false;
+
+            try
+            {
+                var updated = installer.UpdateInstalled();
+
+                // Offered rather than done: they are still in the loose copy, and the point of
+                // updating the installed one is to end up in it.
+                var across = await ConfirmationWindow.AskAsync(this,
+                    $"Open the copy you just updated to {updated.Version}?",
+                    $"It is in {updated.Directory}, and it is what your shortcut points at. This "
+                    + "window is the file you downloaded; it is left exactly where it is.",
+                    "Open it");
+
+                if (across) SwitchTo(updated); else ShowOverview();
+            }
+            catch (Exception ex)
+            {
+                Status(ex.Message);
+                action.IsEnabled = true;
+            }
+        };
+
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        Grid.SetColumn(text, 0);
+        Grid.SetColumn(action, 1);
+        row.Children.Add(text);
+        row.Children.Add(action);
+
+        return OverviewBox(row);
+    }
+
+    /// <summary>
+    /// Starts the installed copy and stands down.
+    ///
+    /// Ours closes rather than lingering: two windows would both be holding the same settings file,
+    /// and the one instance lock means the new one would meet ours and close again — which reads as
+    /// a tool that refuses to open.
+    /// </summary>
+    private void SwitchTo(ToolInstallation installed)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(installed.Executable)
+            {
+                UseShellExecute = true,
+                WorkingDirectory = installed.Directory,
+            });
+
+            Close();
+        }
+        catch (Exception ex)
+        {
+            // It could not be started. The window in front of them still works, so this is a line
+            // in the status bar rather than a dialog.
+            Status($"Could not start {installed.Executable}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// Opens the removal window as soon as there is a window to open it over — the path taken when
     /// the system's own uninstall button started us.
     ///
@@ -1337,24 +1468,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        try
-        {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(installed.Executable)
-            {
-                UseShellExecute = true,
-                WorkingDirectory = installed.Directory,
-            });
-
-            // Ours goes away first, or the new one meets the lock this one is holding and closes
-            // again — which would read as a tool that refuses to open.
-            Close();
-        }
-        catch
-        {
-            // It could not be started. The one in front of them still works, so nothing is said
-            // beyond redrawing the page without the banner.
-            ShowOverview();
-        }
+        SwitchTo(installed);
     }
 
     /// <summary>

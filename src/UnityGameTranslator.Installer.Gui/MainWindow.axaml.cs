@@ -868,6 +868,15 @@ public partial class MainWindow : Window
 
         DetailPanel.Children.Clear();
 
+        // Centred, and only here. The panel is the scroll viewer's own content, so aligning it is
+        // enough — nothing needs to be wrapped. A dozen short lines pinned to the top left of a
+        // wide empty panel look like a page that failed to load; the same lines in the middle look
+        // like an answer. A game's report goes straight back to filling the panel from the top,
+        // where a long document belongs.
+        DetailPanel.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center;
+        DetailPanel.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
+        DetailPanel.MaxWidth = 460;
+
         var language = Languages.NameOf(_settings.ResolveTargetLanguage());
         var moddable = _games.Count(g => g.IsModdable);
         var setUp = _games.Count(g => g.IsModdable && IsSetUp(g));
@@ -883,6 +892,7 @@ public partial class MainWindow : Window
             FontWeight = FontWeight.SemiBold,
             Foreground = Brush("TextPrimary"),
             TextWrapping = TextWrapping.Wrap,
+            TextAlignment = TextAlignment.Center,
         });
 
         var facts = new List<string>
@@ -906,6 +916,7 @@ public partial class MainWindow : Window
                 Text = fact,
                 FontSize = 13,
                 TextWrapping = TextWrapping.Wrap,
+                TextAlignment = TextAlignment.Center,
                 Foreground = Brush("TextSecondary"),
                 Margin = new Avalonia.Thickness(0, 2, 0, 0),
             });
@@ -917,6 +928,7 @@ public partial class MainWindow : Window
                  + "and to set it up. The tags above the list narrow it down.",
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
+            TextAlignment = TextAlignment.Center,
             Opacity = 0.75,
             Foreground = Brush("TextMuted"),
             Margin = new Avalonia.Thickness(0, 14, 0, 0),
@@ -952,6 +964,12 @@ public partial class MainWindow : Window
     {
         var game = report.Game;
         DetailPanel.Children.Clear();
+
+        // Back to filling the panel from the top: a report is a document, and a centred document
+        // that grows past the viewport starts scrolled to its middle.
+        DetailPanel.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
+        DetailPanel.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top;
+        DetailPanel.MaxWidth = double.PositiveInfinity;
 
         DetailPanel.Children.Add(Header(report));
 

@@ -114,6 +114,57 @@ public static class ModelTestSuite
     public static Fixtures SourceFor(string targetLanguage, string? sourceCode = null) =>
         Fixtures.ByCode(sourceCode) ?? Fixtures.For(targetLanguage);
 
+    /// <summary>
+    /// The few figures worth printing under a run, and no others.
+    ///
+    /// Each answers a question somebody playing actually has: what a line usually costs them in
+    /// waiting, how bad the worst one got — that is the one they notice — how often the model had
+    /// to be asked again, which is time and graphics card taken from the game itself, and how many
+    /// lines it gave up on, which is text staying in a language they do not read.
+    ///
+    /// Deliberately absent: how long the suite took. Nobody plays a suite. A total that grows with
+    /// the number of tests measures our list, not their game, and it would invite comparing two
+    /// runs that counted different things.
+    /// </summary>
+    public static string Summarise(IReadOnlyList<ModelTestResult> results)
+    {
+        var lines = results.Where(r => r.Test.UnlocksOption is null && r.Elapsed > TimeSpan.Zero)
+                           .ToList();
+
+        if (lines.Count == 0) return "";
+
+        // The first line of a session pays for loading the model, once, and it dwarfs everything
+        // after it. Averaging it in would describe a wait nobody has twice.
+        var afterLoading = lines.Count > 1 ? lines.Skip(1).ToList() : lines;
+
+        var ordered = afterLoading.Select(r => r.Elapsed.TotalSeconds).OrderBy(seconds => seconds)
+                                  .ToList();
+
+        var typical = ordered[ordered.Count / 2];
+        var worst = ordered[^1];
+
+        var corrected = lines.Count(r => r.Attempts > 1);
+        var refused = lines.Count(r => !r.Accepted);
+
+        var summary = new System.Text.StringBuilder();
+
+        summary.Append($"A line usually takes {typical:F1}s and the slowest took {worst:F1}s — "
+                     + "that is the wait before the original text is replaced on screen. ");
+
+        summary.Append(corrected == 0
+            ? "Nothing had to be asked twice."
+            : $"{corrected} line(s) of {lines.Count} had to be asked again, which spends that time "
+              + "and that graphics card two or three times over, while the game is running.");
+
+        if (refused > 0)
+        {
+            summary.Append($" {refused} was refused even then, and would stay in its original "
+                         + "language until a later session.");
+        }
+
+        return summary.ToString();
+    }
+
     /// <param name="gameContext">
     /// What the mod's own "describe this game" setting holds, or null for the default.
     ///

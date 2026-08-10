@@ -47,6 +47,8 @@ public sealed class SettingsWindow : Window
     private ComboBox _backend = null!;
     private TextBox _aiUrl = null!;
     private ComboBox _aiModel = null!;
+    private ComboBox _testInto = null!;
+    private ComboBox _testFrom = null!;
     private TextBox _hotkey = null!;
     private TextBlock _hotkeyProblem = null!;
     private ComboBox _channel = null!;
@@ -490,7 +492,36 @@ public sealed class SettingsWindow : Window
         _ollamaPanel = new StackPanel { Spacing = 8, IsVisible = false };
         _aiPanel.Children.Add(_ollamaPanel);
 
-        _aiPanel.Children.Add(Row("Model", _aiModel, _refreshModels, _testButton));
+        _aiPanel.Children.Add(Row("Model", _aiModel, _refreshModels));
+
+        // The test gets its own line and its own two pickers, because it is its own act: it does
+        // not change a single setting, it answers "what would this model do in my game".
+        //
+        // Both default when the panel opens and are never written anywhere — exactly like the
+        // language pickers on the translations screen. Into starts on the language being set up,
+        // From on the language most games are written in, or the next one when that IS the target:
+        // asking a model for English from English is a job the mod never gives it.
+        _testInto = new ComboBox { Width = 150 };
+        _testFrom = new ComboBox { Width = 150 };
+
+        foreach (var (code, name) in Languages.All().OrderBy(l => l.Name, StringComparer.OrdinalIgnoreCase))
+            _testInto.Items.Add(new ComboBoxItem { Content = name, Tag = code });
+
+        _testInto.SelectionChanged += (_, _) => RefreshTestSources();
+        _testFrom.SelectionChanged += (_, _) => _testOutput.Children.Clear();
+
+        _aiPanel.Children.Add(Row("Test", _testInto, _testFrom, _testButton));
+        _aiPanel.Children.Add(new TextBlock
+        {
+            Text = "Into, and from. The sentences are never in the language you translate into.",
+            FontSize = 11,
+            Foreground = Brush("TextMuted"),
+        });
+
+        // Defaulted once, when the panel is built, and never written anywhere: this pair aims the
+        // test, it does not change the setting above.
+        Select(_testInto, _store.ResolveTargetLanguage());
+        RefreshTestSources();
         _aiPanel.Children.Add(_modelNote);
         _aiPanel.Children.Add(_metrics);
 
@@ -1351,6 +1382,34 @@ public sealed class SettingsWindow : Window
     };
 
     /// <summary>
+    /// Fills "From" with the sources we hold, minus the one being translated into.
+    ///
+    /// Offering it would let somebody ask a model to translate a language into itself, which the
+    /// mod never does and which answers nothing — measured, some models reply in a third language
+    /// entirely. So the list is rebuilt whenever "Into" moves, and any earlier result is cleared:
+    /// marks gathered for another pair are marks under the wrong heading.
+    /// </summary>
+    private void RefreshTestSources()
+    {
+        _testOutput.Children.Clear();
+
+        var into = Tag(_testInto) ?? _store.ResolveTargetLanguage();
+        var wanted = ModelTestSuite.SourceFor(into).Code;
+
+        _testFrom.Items.Clear();
+
+        foreach (var set in Fixtures.All)
+        {
+            if (string.Equals(set.Code, into, StringComparison.OrdinalIgnoreCase)) continue;
+
+            _testFrom.Items.Add(new ComboBoxItem { Content = set.Language, Tag = set.Code });
+        }
+
+        Select(_testFrom, wanted);
+        _testFrom.SelectedItem ??= _testFrom.Items.OfType<ComboBoxItem>().FirstOrDefault();
+    }
+
+    /// <summary>
     /// Says what we have run ourselves against the selected model, and nothing more.
     ///
     /// Never a recommendation, and never a ranking: the suite is a heuristic on free text, and
@@ -1473,32 +1532,31 @@ public sealed class SettingsWindow : Window
               + "Measured with no game running. In play the model shares the graphics card, so expect slower."
             : $"Could not measure ({trial.Detail}).";
 
-        var language = string.Equals(Tag(_language), "auto", StringComparison.OrdinalIgnoreCase)
-            ? _platform.SystemLanguage() ?? "en"
-            : Tag(_language) ?? "en";
+        // The pair the reader chose on this screen, not the setting being edited: this test asks
+        // "what would this model do", and that question is theirs to aim.
+        var language = Tag(_testInto) ?? _store.ResolveTargetLanguage();
+        var sourceCode = Tag(_testFrom);
 
         var passed = 0;
         var required = 0;
         var echoed = 0;
         var done = 0;
+        var outcomes = new List<ModelTestResult>();
 
         // Known before the first request, which is the point: "3 of 9" tells someone there is
         // more coming. A bare spinner would not.
-        var total = ModelTestSuite.Build(language).Count;
+        var total = ModelTestSuite.Build(language, sourceCode: sourceCode).Count;
         waiting.Message = $"Running test 1 of {total}...";
 
-        // Which language the sentences are in, said before the marks. It is never the reader's own
-        // — the sets exist for that — and naming it lets them judge whether the pair resembles
-        // their game: someone playing a Chinese game is not being shown their case here.
-        var from = ModelTestSuite.SourceFor(language);
+        var from = ModelTestSuite.SourceFor(language, sourceCode);
 
         _testOutput.Children.Add(Note(
-            $"Translating from {from.Language} into {Languages.NameOf(language)}. The sentences "
-            + "are never in the language you translate into: asking a model for English from "
-            + "English is a job the mod never gives it, and the answers say nothing.",
+            $"Translating from {from.Language} into {Languages.NameOf(language)}, the way the mod "
+            + "does it: up to three attempts on a line it refuses, and the line left alone if it "
+            + "still refuses. The times below are what you would wait in game.",
             "TextMuted"));
 
-        await _probe.RunSuiteAsync(url, model, language, result =>
+        await _probe.RunSuiteAsync(url, model, language, sourceCode: sourceCode, onResult: result =>
         {
             Dispatcher.UIThread.Post(() =>
             {
@@ -1509,6 +1567,7 @@ public sealed class SettingsWindow : Window
                 }
                 if (result.EchoedInstructions) echoed++;
 
+                outcomes.Add(result);
                 done++;
 
                 // Inserted above the gear so the gear stays last: results accumulate, and the
@@ -1533,6 +1592,20 @@ public sealed class SettingsWindow : Window
                 Margin = new Thickness(0, 8, 0, 0),
                 Foreground = Brush(passed == required ? "StatusSuccess" : "StatusWarning"),
             });
+
+            // The figures a player actually needs, and only those — what a line costs them in
+            // waiting, how often it had to be asked twice, and what stayed untranslated.
+            if (ModelTestSuite.Summarise(outcomes) is { Length: > 0 } summary)
+            {
+                _testOutput.Children.Add(new TextBlock
+                {
+                    Text = summary,
+                    FontSize = 12,
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(0, 2, 0, 0),
+                    Foreground = Brush("TextSecondary"),
+                });
+            }
 
             if (echoed > 0)
             {
@@ -1570,13 +1643,41 @@ public sealed class SettingsWindow : Window
 
         var body = new StackPanel { Spacing = 2 };
 
-        body.Children.Add(new TextBlock
+        // Verdict on the left, what it cost on the right. A model that gets there on the third
+        // attempt is not the model that gets there on the first, and the difference is a wait the
+        // player sits through with the original text still on screen.
+        var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+
+        var title = new TextBlock
         {
             Text = $"[{mark}]  {result.Test.Name}",
             FontWeight = FontWeight.SemiBold,
             FontSize = 12,
             Foreground = Brush(colour),
-        });
+        };
+
+        Grid.SetColumn(title, 0);
+        header.Children.Add(title);
+
+        var cost = result.Attempts > 1
+            ? $"{result.Elapsed.TotalSeconds:F1}s · {result.Attempts} attempts"
+            : $"{result.Elapsed.TotalSeconds:F1}s";
+
+        if (!result.Accepted) cost += " · refused, left untranslated";
+        else if (result.Repaired) cost += " · repaired by the mod";
+
+        var costText = new TextBlock
+        {
+            Text = cost,
+            FontSize = 11,
+            Foreground = Brush(result.Accepted ? "TextMuted" : "StatusError"),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        };
+
+        Grid.SetColumn(costText, 1);
+        header.Children.Add(costText);
+
+        body.Children.Add(header);
 
         body.Children.Add(new TextBlock
         {

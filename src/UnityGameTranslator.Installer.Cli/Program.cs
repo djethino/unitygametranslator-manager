@@ -679,10 +679,13 @@ internal static class Program
         var total = 0;
         var echoed = 0;
         var unlocked = new List<(ModelTest Test, bool Supported)>();
+        var outcomes = new List<ModelTestResult>();
 
         await probe.RunSuiteAsync(server.Url, model, language, gameContext: gameContext,
                                   sourceCode: ValueOf(args, "--source"), onResult: result =>
         {
+            outcomes.Add(result);
+
             if (result.Test.UnlocksOption is not null)
             {
                 unlocked.Add((result.Test, result.Passed));
@@ -733,6 +736,9 @@ internal static class Program
         });
 
         Console.WriteLine($"{passed}/{total} required instructions followed.");
+
+        if (ModelTestSuite.Summarise(outcomes) is { Length: > 0 } summary)
+            Console.WriteLine(summary);
 
         // Experimental capabilities are listed apart, and phrased as what they unlock rather
         // than as a failure: the mod ships these options disabled, so a model that cannot do one

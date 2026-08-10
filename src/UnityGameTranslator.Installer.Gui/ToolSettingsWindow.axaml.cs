@@ -869,21 +869,14 @@ public sealed class ToolSettingsWindow : Window
 
     // ---------------------------------------------------------------- helpers
 
-    private static void OpenUrl(string url)
-    {
-        try
-        {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url)
-            {
-                UseShellExecute = true,
-            });
-        }
-        catch
-        {
-            // No browser we are allowed to start. The address is on screen either way, which is
-            // why it is shown as text rather than hidden behind the button.
-        }
-    }
+    /// <summary>
+    /// ⚠ Through Shell, not around it. This window had a copy of this that went straight to
+    /// ShellExecute — and it is the window that opens the sign-in address the SERVER sends back,
+    /// which is the one address here that does not come from us. A copy of a helper is a copy of
+    /// its door, and this one had no lock on it. The address is shown as text beside the button
+    /// either way, so a refusal costs nothing.
+    /// </summary>
+    private static void OpenUrl(string url) => Shell.OpenUrl(url);
 
     private static IBrush? Brush(string key) => Application.Current?.FindResource(key) as IBrush;
 

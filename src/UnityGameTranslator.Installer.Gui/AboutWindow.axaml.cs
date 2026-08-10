@@ -300,15 +300,10 @@ public sealed class AboutWindow : Window
         return button;
     }
 
-    private static void OpenUrl(string url)
-    {
-        try
-        {
-            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-        }
-        catch
-        {
-            // No browser, or a locked-down session: nothing worth interrupting the user over.
-        }
-    }
+    /// <summary>
+    /// Through Shell, not around it. These addresses are all written into the program, but a second
+    /// way of handing a string to the shell is a second thing to remember about, and the last time
+    /// there were three of these the one on the risky path was the one nobody had looked at.
+    /// </summary>
+    private static void OpenUrl(string url) => Shell.OpenUrl(url);
 }

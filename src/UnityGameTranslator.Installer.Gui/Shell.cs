@@ -29,11 +29,28 @@ public static class Shell
         }
     }
 
+    /// <summary>
+    /// Opens a web page, and refuses to open anything else.
+    ///
+    /// ⚠ Not paranoia about our own site: handing a string to the shell means handing it to
+    /// ShellExecute, which runs whatever the string turns out to name. One of these addresses comes
+    /// off the network — the sign-in page, sent back by the server in the device flow — and
+    /// "file:///C:/Windows/System32/…" or a UNC path would be started as readily as a web page. A
+    /// server we trust today can be a server somebody else answers for tomorrow: a hijacked name, a
+    /// proxy in the middle, or an instance somebody self-hosts and points this tool at.
+    ///
+    /// So the gate is here rather than at each caller, because the next address read from somewhere
+    /// else will arrive through this same door.
+    /// </summary>
     public static void OpenUrl(string url)
     {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var parsed)) return;
+
+        if (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps) return;
+
         try
         {
-            Open(url);
+            Open(parsed.AbsoluteUri);
         }
         catch
         {

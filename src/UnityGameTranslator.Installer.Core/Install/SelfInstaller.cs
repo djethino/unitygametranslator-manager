@@ -353,8 +353,21 @@ public sealed class SelfInstaller
         var gone = new List<string>();
         var left = new List<string>();
 
+        // ⚠ Nothing here is deleted just because the receipt names it. The receipt is a JSON file in
+        // a folder the person can open, so a mistake in it — ours in a future version, or theirs
+        // with a text editor — would otherwise be a list of things to delete anywhere on the disk.
+        // A shortcut has to look like a shortcut, and a file has to be inside the folder we
+        // installed into. Anything else is reported rather than acted on.
         foreach (var launcher in installation.Launchers)
+        {
+            if (!LooksLikeOurLauncher(launcher))
+            {
+                left.Add($"{launcher} — left alone: it is not a shortcut this tool would have made");
+                continue;
+            }
+
             Take(launcher, "shortcut", gone, left);
+        }
 
         if (installation.Registration is { } registration)
         {
@@ -367,6 +380,12 @@ public sealed class SelfInstaller
 
         foreach (var file in installation.Files)
         {
+            if (!Inside(installation.Directory, file))
+            {
+                left.Add($"{file} — left alone: it is outside {installation.Directory}");
+                continue;
+            }
+
             if (IsRunning(file)) { running = file; continue; }
             Take(file, "file", gone, left);
         }
@@ -434,6 +453,23 @@ public sealed class SelfInstaller
             return;
         }
 
+        // ⚠ The one command in this program built by pasting strings together, so it is the one
+        // place where a path could stop being a path and start being an instruction. Quoting covers
+        // spaces and even ampersands, but not the percent sign: cmd pairs percent signs across the
+        // whole line to expand variables, and this line names the file twice, so two of them would
+        // pair up and leave a command that means something else entirely.
+        //
+        // A path we cannot quote for certain is not a path we send to a shell. Everything else has
+        // been removed by now; this says which folder is left and why, which is what someone needs
+        // in order to finish it themselves.
+        if (Unquotable(executable) || Unquotable(installation.Directory))
+        {
+            left.Add($"{executable} — in use, and its path contains a character this cannot safely "
+                     + $"hand to the shell. Delete {installation.Directory} by hand once this "
+                     + "window has closed.");
+            return;
+        }
+
         // ping as the wait: timeout refuses to run without a console of its own, and this command is
         // started without one. Sixty passes of roughly a second, giving up quietly after that.
         //
@@ -464,6 +500,50 @@ public sealed class SelfInstaller
             left.Add($"{executable} — in use, and the deletion could not be handed on ({ex.Message}). "
                      + $"Delete {installation.Directory} by hand once this window has closed.");
         }
+    }
+
+    /// <summary>
+    /// A path that cannot be put inside double quotes and still mean itself to cmd.
+    ///
+    /// A quote cannot appear in a Windows path at all, so it can only arrive through something that
+    /// has already gone wrong. A percent sign can, and it is the one that matters: cmd pairs them
+    /// across the line and expands what is between.
+    /// </summary>
+    private static bool Unquotable(string path) => path.Contains('"') || path.Contains('%');
+
+    /// <summary>
+    /// Is this file genuinely under that folder? Compared on the resolved paths, so "…\Installer\..\
+    /// ..\Windows\System32" answers no rather than being read as a name that starts the right way.
+    /// </summary>
+    private static bool Inside(string folder, string file)
+    {
+        try
+        {
+            var root = Path.GetFullPath(folder);
+            if (!root.EndsWith(Path.DirectorySeparatorChar)) root += Path.DirectorySeparatorChar;
+
+            return Path.GetFullPath(file).StartsWith(root, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            // A path the system will not even resolve is not one to delete on the strength of.
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// A shortcut we would have written: our name, and the extension the system uses for one.
+    ///
+    /// Shortcuts are the one thing that legitimately lives outside the installation folder — in the
+    /// Start menu, on the desktop — so they cannot be checked by where they are. They are checked
+    /// by what they are instead.
+    /// </summary>
+    private static bool LooksLikeOurLauncher(string path)
+    {
+        var name = Path.GetFileName(path);
+
+        return name.StartsWith("UnityGameTranslator", StringComparison.OrdinalIgnoreCase)
+               || name.StartsWith("unitygametranslator", StringComparison.Ordinal);
     }
 
     /// <summary>

@@ -723,5 +723,6 @@ public sealed class TranslationsWindow : Window
         block.IsVisible = true;
     }
 
-    private static IBrush? Brush(string key) => Application.Current?.FindResource(key) as IBrush;
+    /// <summary>Through Palette, which will not let an unknown key pass unnoticed.</summary>
+    private static IBrush? Brush(string key) => Palette.Of(key);
 }

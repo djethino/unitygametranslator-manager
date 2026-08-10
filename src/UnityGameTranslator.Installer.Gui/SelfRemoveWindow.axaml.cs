@@ -200,7 +200,7 @@ public sealed class SelfRemoveWindow : Window
         if (report.Gone.Count > 0)
         {
             panel.Children.Add(Text($"Removed ({report.Gone.Count})", 12, FontWeight.SemiBold,
-                                    "StatusOk"));
+                                    "StatusSuccess"));
 
             foreach (var item in report.Gone)
                 panel.Children.Add(Text(item, 11, FontWeight.Normal, "TextMuted"));

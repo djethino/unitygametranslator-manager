@@ -220,7 +220,7 @@ public sealed class SettingsWindow : Window
         {
             FontSize = 11,
             VerticalAlignment = VerticalAlignment.Center,
-            Foreground = Brush("StatusOk"),
+            Foreground = Brush("StatusSuccess"),
             IsVisible = false,
         };
 
@@ -376,6 +376,29 @@ public sealed class SettingsWindow : Window
         return Card("Updates and notices", null, panel);
     }
 
+    /// <summary>
+    /// The one line the AI card speaks through, and the colour that says which kind of line it is.
+    ///
+    /// ⚠ Everything used to come out in the same muted grey — "Connecting...", "Connected — 3
+    /// models" and "No answer from that address" alike. So a test against a port with nothing on it
+    /// answered in a sentence that looked exactly like the running commentary, and read as though
+    /// nothing had happened at all. The words were there; nothing marked them as a failure.
+    ///
+    /// Three states, three colours: what is happening is muted, what worked is green, what failed
+    /// is red. The same three the rest of this program already uses.
+    /// </summary>
+    private void Say(string text) => Say(text, "TextMuted");
+
+    private void SayWorked(string text) => Say(text, "StatusSuccess");
+
+    private void SayFailed(string text) => Say(text, "StatusError");
+
+    private void Say(string text, string colour)
+    {
+        _aiStatus.Text = text;
+        _aiStatus.Foreground = Brush(colour);
+    }
+
     /// <summary>Only the card for the chosen backend is on screen; the other is gone entirely.</summary>
     private void ShowBackendCards()
     {
@@ -483,7 +506,7 @@ public sealed class SettingsWindow : Window
 
         _aiStatus = new TextBlock
         {
-            Text = "Looking for a local AI server...",
+            Text = "Choose a local or online AI server, then test it.",
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("TextMuted"),
@@ -811,7 +834,7 @@ public sealed class SettingsWindow : Window
 
     private async Task DiscoverCoreAsync()
     {
-        _aiStatus.Text = "Looking for a local AI server...";
+        Say("Looking for a local AI server...");
         _aiModel.Items.Clear();
         _testButton.IsEnabled = false;
 
@@ -851,7 +874,7 @@ public sealed class SettingsWindow : Window
         _ollamaPanel.IsVisible = false;
         ShowModelNote();
 
-        _aiStatus.Text = $"Set to {_draft.AiUrl}. Checking it is still there...";
+        Say($"Set to {_draft.AiUrl}. Checking it is still there...");
 
         var models = await _probe.ListModelsAsync(_draft.AiUrl, _draft.AiApiKey);
 
@@ -859,9 +882,9 @@ public sealed class SettingsWindow : Window
         {
             // Not dressed up as a failure: a laptop away from its server, or a server not started
             // yet, is an ordinary situation and nothing here is broken.
-            _aiStatus.Text = $"Set to {_draft.AiUrl}, using {_draft.AiModel}. "
-                           + "It did not answer just now — it may simply not be running. Your "
-                           + "settings are unchanged.";
+            Say($"Set to {_draft.AiUrl}, using {_draft.AiModel}. "
+                + "It did not answer just now — it may simply not be running. Your "
+                + "settings are unchanged.");
             return;
         }
 
@@ -878,21 +901,21 @@ public sealed class SettingsWindow : Window
         if (stillThere)
         {
             Select(_aiModel, saved);
-            _aiStatus.Text = $"{_draft.AiUrl} answered — {models.Count} model(s), "
-                           + $"and {saved} is still there.";
+            SayWorked($"{_draft.AiUrl} answered — {models.Count} model(s), "
+                      + $"and {saved} is still there.");
         }
         else if (!string.IsNullOrWhiteSpace(saved))
         {
             // Said loudly, and the saved value is NOT quietly replaced: swapping in another model
             // would leave someone believing they are running the one they chose. The selection is
             // left empty so the choice is visibly theirs to make.
-            _aiStatus.Text = $"{_draft.AiUrl} answered, but \"{saved}\" is not among the "
-                           + $"{models.Count} model(s) it offers any more. Nothing was changed — "
-                           + "pick one below, or put that model back.";
+            SayFailed($"{_draft.AiUrl} answered, but \"{saved}\" is not among the "
+                      + $"{models.Count} model(s) it offers any more. Nothing was changed — "
+                      + "pick one below, or put that model back.");
         }
         else
         {
-            _aiStatus.Text = $"{_draft.AiUrl} answered — {models.Count} model(s). Choose one.";
+            SayWorked($"{_draft.AiUrl} answered — {models.Count} model(s). Choose one.");
         }
 
         _testButton.IsEnabled = _aiModel.SelectedItem is not null;
@@ -912,8 +935,8 @@ public sealed class SettingsWindow : Window
     {
         if (servers.Count == 0)
         {
-            _aiStatus.Text = "No local AI server answered on the usual ports. "
-                           + "One running elsewhere still works — type its address above.";
+            Say("No local AI server answered on the usual ports. "
+                + "One running elsewhere still works — type its address above.");
 
             // Nothing answered: this is the only moment we are allowed to talk about installing
             // anything. What we offer depends on what is already on the machine, so ask first.
@@ -934,7 +957,7 @@ public sealed class SettingsWindow : Window
         var chosen = Tag(_backend) == "llm";
         if (chosen && string.IsNullOrWhiteSpace(_aiUrl.Text)) _aiUrl.Text = server.Url;
 
-        _aiStatus.Text = $"{server.Product} answered at {server.Url} — {server.Models.Count} model(s).";
+        SayWorked($"{server.Product} answered at {server.Url} — {server.Models.Count} model(s).");
 
         // A server with nothing loaded is the state a fresh Ollama is left in, and the one that
         // reads as "it worked" while translating nothing. Offering a model here is the difference
@@ -1543,13 +1566,13 @@ public sealed class SettingsWindow : Window
         var url = _aiUrl.Text?.Trim();
         if (string.IsNullOrWhiteSpace(url))
         {
-            _aiStatus.Text = "Enter an address first.";
+            SayFailed("Enter an address first.");
             return;
         }
 
         _connectButton.IsEnabled = false;
         _refreshModels.IsEnabled = false;
-        _aiStatus.Text = asRefresh ? "Reading the model list..." : "Connecting...";
+        Say(asRefresh ? "Reading the model list..." : "Connecting...");
         _populating = true;
         _aiModel.Items.Clear();
         _testButton.IsEnabled = false;
@@ -1568,8 +1591,8 @@ public sealed class SettingsWindow : Window
 
         if (models is null)
         {
-            _aiStatus.Text = "No answer from that address. Check the URL, and the key if this is an "
-                           + "online provider: a rejected key looks exactly like a wrong address.";
+            SayFailed($"No answer from {url}. Check the address, and the key if this is an "
+                      + "online provider: a rejected key looks exactly like a wrong address.");
             _connectButton.IsEnabled = true;
             _refreshModels.IsEnabled = true;
             _populating = false;
@@ -1577,9 +1600,9 @@ public sealed class SettingsWindow : Window
             return;
         }
 
-        _aiStatus.Text = asRefresh
+        SayWorked(asRefresh
             ? $"{models.Count} model(s) on the server."
-            : $"Connected - {models.Count} model(s) offered.";
+            : $"Connected — {models.Count} model(s) offered.");
         foreach (var name in models)
             _aiModel.Items.Add(new ComboBoxItem { Content = name, Tag = name });
 
@@ -2086,8 +2109,8 @@ public sealed class SettingsWindow : Window
 
     // ---------------------------------------------------------------- helpers
 
-    private static IBrush? Brush(string key) =>
-        Application.Current?.FindResource(key) as IBrush;
+    /// <summary>Through Palette, which will not let an unknown key pass unnoticed.</summary>
+    private static IBrush? Brush(string key) => Palette.Of(key);
 
     private static string? Tag(ComboBox box) =>
         (box.SelectedItem as ComboBoxItem)?.Tag as string;

@@ -133,7 +133,7 @@ public sealed class ToolSettingsWindow : Window
         {
             FontSize = 11,
             VerticalAlignment = VerticalAlignment.Center,
-            Foreground = Brush("StatusOk"),
+            Foreground = Brush("StatusSuccess"),
             IsVisible = false,
         };
 
@@ -474,7 +474,7 @@ public sealed class ToolSettingsWindow : Window
         {
             panel.Children.Add(Note(
                 $"This build looks for its updates at {host}, not at GitHub. That is either a "
-                + "self-hosted setup or a build made for testing.", "StatusWarn"));
+                + "self-hosted setup or a build made for testing.", "StatusWarning"));
         }
 
         _toolChannel = new ComboBox
@@ -526,7 +526,7 @@ public sealed class ToolSettingsWindow : Window
 
             case SelfUpdateState.UpToDate:
                 _updatePanel.Children.Clear();
-                _updatePanel.Children.Add(Note(result.Message ?? "You are up to date.", "StatusOk"));
+                _updatePanel.Children.Add(Note(result.Message ?? "You are up to date.", "StatusSuccess"));
                 break;
 
             default:
@@ -591,7 +591,7 @@ public sealed class ToolSettingsWindow : Window
         var updater = new SelfUpdater(_platform);
         if (updater.WhyCannotApply() is { } blocked)
         {
-            _updatePanel.Children.Add(Note(blocked, "StatusWarn"));
+            _updatePanel.Children.Add(Note(blocked, "StatusWarning"));
             _updatePanel.Children.Add(notes);
             return;
         }
@@ -624,7 +624,7 @@ public sealed class ToolSettingsWindow : Window
                 _updatePanel.Children.Clear();
                 _updatePanel.Children.Add(Note(
                     $"Updated to {result.Version}. Close the tool and open it again to run it — "
-                    + "the version you were using is kept beside it until then.", "StatusOk"));
+                    + "the version you were using is kept beside it until then.", "StatusSuccess"));
             }
             catch (Exception ex)
             {
@@ -678,7 +678,7 @@ public sealed class ToolSettingsWindow : Window
 
             if (plan.Refusal is { } refusal)
             {
-                panel.Children.Add(Note(refusal, "StatusWarn"));
+                panel.Children.Add(Note(refusal, "StatusWarning"));
             }
             else
             {
@@ -716,7 +716,7 @@ public sealed class ToolSettingsWindow : Window
             // from this window lands on the file in front of them, not on the one in their menu.
             panel.Children.Add(Note(
                 "Anything you change or update here applies to the copy you are running, not to "
-                + "the installed one.", "StatusWarn"));
+                + "the installed one.", "StatusWarning"));
         }
 
         var remove = new Button { Content = "Remove this tool...", FontSize = 12 };
@@ -878,7 +878,8 @@ public sealed class ToolSettingsWindow : Window
     /// </summary>
     private static void OpenUrl(string url) => Shell.OpenUrl(url);
 
-    private static IBrush? Brush(string key) => Application.Current?.FindResource(key) as IBrush;
+    /// <summary>Through Palette, which will not let an unknown key pass unnoticed.</summary>
+    private static IBrush? Brush(string key) => Palette.Of(key);
 
     private static string? Tag(ComboBox box) => (box.SelectedItem as ComboBoxItem)?.Tag as string;
 

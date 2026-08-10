@@ -2350,8 +2350,8 @@ public partial class MainWindow : Window
     };
 
     /// <summary>Looks a brush up in the shared palette (Theme.axaml).</summary>
-    private static IBrush? Brush(string key) =>
-        Application.Current?.FindResource(key) as IBrush;
+    /// <summary>Through Palette, which will not let an unknown key pass unnoticed.</summary>
+    private static IBrush? Brush(string key) => Palette.Of(key);
 
     /// <summary>
     /// A message that needs to stand out, tinted rather than shouted: the hue laid over the base

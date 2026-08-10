@@ -22,7 +22,23 @@ namespace UnityGameTranslator.Installer.Core.Platform;
 /// </summary>
 public sealed class SingleInstance : IDisposable
 {
-    private const string FileName = "instance.lock";
+    /// <summary>
+    /// The lock file, kept OUT of the settings folder.
+    ///
+    /// ⚠ It used to live there, and that was a mistake with teeth: this file is held open for the
+    /// whole life of the process, so asking the tool to remove its own settings meant asking it to
+    /// delete a folder containing a file it was itself holding. The removal failed on its last
+    /// step, and the message named a file nobody could make sense of.
+    ///
+    /// It is not settings anyway — it says "a window is open right now", which is true of a moment
+    /// rather than of a person. See IPlatform.RuntimeStateDirectory for where each system puts
+    /// that, and why the answer is not the same everywhere.
+    ///
+    /// The user name is in the file name as well, because the Linux fallback is a shared /tmp:
+    /// without it, one person opening the tool would stop another from opening it at all.
+    /// </summary>
+    private static string LockPathIn(string runtimeDirectory) => Path.Combine(runtimeDirectory,
+        $"unitygametranslator-installer-{Environment.UserName}.lock");
 
     private readonly FileStream? _held;
 
@@ -50,8 +66,8 @@ public sealed class SingleInstance : IDisposable
         string path;
         try
         {
-            Directory.CreateDirectory(platform.UserDataDirectory);
-            path = Path.Combine(platform.UserDataDirectory, FileName);
+            Directory.CreateDirectory(platform.RuntimeStateDirectory);
+            path = LockPathIn(platform.RuntimeStateDirectory);
         }
         catch
         {

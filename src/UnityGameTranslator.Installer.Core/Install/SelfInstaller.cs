@@ -25,6 +25,22 @@ public sealed record SelfRemovalPlan(
     string SettingsDirectory);
 
 /// <summary>
+/// What a removal actually did, item by item.
+///
+/// Not a list of complaints: what went matters as much as what did not. Someone told only about
+/// the failure has no idea whether the tool is half removed or barely touched, and the answer
+/// changes what they should do next.
+/// </summary>
+public sealed record SelfRemovalReport(
+    IReadOnlyList<string> Gone,
+    IReadOnlyList<string> Left,
+    string? BeingDeletedAfterExit,
+    string? WhereItWas)
+{
+    public bool Complete => Left.Count == 0;
+}
+
+/// <summary>
 /// The tool putting itself on the machine, and taking itself off again.
 ///
 /// Portable first: the download runs where it lands and asks for nothing. This is the offer to
@@ -326,18 +342,25 @@ public sealed class SelfInstaller
     /// ⚠ Games are never touched, whatever is passed. What the tool put into a game is removed from
     /// that game's own card, one game at a time, with its own confirmation.
     /// </summary>
-    public IReadOnlyList<string> Remove(bool alsoSettings)
+    public SelfRemovalReport Remove(bool alsoSettings)
     {
         var installation = Installed();
-        if (installation is null) return ["Nothing to remove: this copy was never installed."];
+        if (installation is null)
+        {
+            return new SelfRemovalReport([], [], null, null);
+        }
 
-        var problems = new List<string>();
+        var gone = new List<string>();
+        var left = new List<string>();
 
         foreach (var launcher in installation.Launchers)
-            Delete(launcher, problems);
+            Take(launcher, "shortcut", gone, left);
 
         if (installation.Registration is { } registration)
+        {
             _platform.UnregisterInstalled(registration);
+            gone.Add("The entry in the system's list of installed apps");
+        }
 
         // The file we are running from is dealt with last and separately. Everything else goes now.
         string? running = null;
@@ -345,12 +368,12 @@ public sealed class SelfInstaller
         foreach (var file in installation.Files)
         {
             if (IsRunning(file)) { running = file; continue; }
-            Delete(file, problems);
+            Take(file, "file", gone, left);
         }
 
-        if (running is null)
+        if (running is null && installation.CreatedDirectory)
         {
-            if (installation.CreatedDirectory) RemoveIfEmpty(installation.Directory, problems);
+            RemoveIfEmpty(installation.Directory, gone, left);
         }
 
         if (alsoSettings)
@@ -358,23 +381,24 @@ public sealed class SelfInstaller
             try
             {
                 Directory.Delete(_platform.UserDataDirectory, recursive: true);
+                gone.Add(_platform.UserDataDirectory);
             }
             catch (Exception ex)
             {
-                problems.Add($"Could not remove the settings folder: {ex.Message}");
+                left.Add($"{_platform.UserDataDirectory} — {ex.Message}");
             }
         }
         else
         {
             // The tool is no longer installed, so the record of an installation must not survive to
             // say otherwise the next time the portable copy is opened.
-            Delete(ReceiptPath, problems);
+            Take(ReceiptPath, "record", gone, left);
         }
 
         // Last, because it outlives us: nothing after this line is guaranteed to run.
-        if (running is not null) FinishAfterWeExit(running, installation, problems);
+        if (running is not null) FinishAfterWeExit(running, installation, left);
 
-        return problems;
+        return new SelfRemovalReport(gone, left, running, installation.Directory);
     }
 
     /// <summary>
@@ -386,29 +410,42 @@ public sealed class SelfInstaller
     /// behind, for good, because nothing of ours ever runs again to clear them. A removal that
     /// leaves the bulk of what it removed is not a removal.
     ///
-    /// So the last act is to hand the job to the shell and get out of the way: a command that waits
-    /// a few seconds, deletes the file, and removes the folder if nothing else is in it. No helper
-    /// program of ours — there is nothing to ship and nothing to sign — and no scheduled reboot
-    /// operation, which a per-user installation has no right to ask for anyway.
+    /// So the last act is to hand the job to the shell and get out of the way: a command that keeps
+    /// trying to delete the file until it succeeds, then removes the folder if nothing else is in
+    /// it. No helper program of ours — there is nothing to ship and nothing to sign — and no
+    /// scheduled reboot operation, which a per-user installation has no right to ask for anyway.
+    ///
+    /// ⚠ It RETRIES rather than waiting a fixed few seconds, and that is not caution for its own
+    /// sake. It is started while the window is still up, and how long that window stays up is not
+    /// ours to know: the first version waited about six seconds, so anyone who stopped to read
+    /// something before closing came back to a folder still holding ninety megabytes. A minute of
+    /// patience costs nothing — the command is asleep for all of it.
     ///
     /// On anything but Windows this is not a problem at all: a running executable can be unlinked,
     /// and the file simply goes.
     /// </summary>
     private static void FinishAfterWeExit(string executable, ToolInstallation installation,
-                                          List<string> problems)
+                                          List<string> left)
     {
         if (!OperatingSystem.IsWindows())
         {
-            Delete(executable, problems);
-            if (installation.CreatedDirectory) RemoveIfEmpty(installation.Directory, problems);
+            Take(executable, "file", [], left);
+            if (installation.CreatedDirectory) RemoveIfEmpty(installation.Directory, [], left);
             return;
         }
 
-        // ping as the wait: timeout refuses to run without a console of its own, and this command
-        // is started without one. Two passes, because how long we take to close is not ours to know.
-        var folder = installation.CreatedDirectory ? $" & rd /q \"{installation.Directory}\"" : "";
-        var command = $"ping 127.0.0.1 -n 4 >nul & del /f /q \"{executable}\" "
-                      + $"& ping 127.0.0.1 -n 3 >nul & del /f /q \"{executable}\"{folder}";
+        // ping as the wait: timeout refuses to run without a console of its own, and this command is
+        // started without one. Sixty passes of roughly a second, giving up quietly after that.
+        //
+        // The folder is only removed when we made it, and rd without /s refuses a folder holding
+        // anything else — so a tool someone unpacked next to their own files takes nothing with it.
+        var done = installation.CreatedDirectory
+            ? $"rd /q \"{installation.Directory}\" & exit"
+            : "exit";
+
+        var command = $"for /l %i in (1,1,60) do (ping 127.0.0.1 -n 2 >nul "
+                      + $"& del /f /q \"{executable}\" 2>nul "
+                      + $"& if not exist \"{executable}\" ({done}))";
 
         try
         {
@@ -424,9 +461,8 @@ public sealed class SelfInstaller
         {
             // Said rather than swallowed: the person can delete the folder themselves, and they can
             // only do that if they are told which one and why it is still there.
-            problems.Add($"Everything else is gone, but {executable} is still in use and could not "
-                         + $"be scheduled for deletion ({ex.Message}). Delete "
-                         + $"{installation.Directory} by hand once this window has closed.");
+            left.Add($"{executable} — in use, and the deletion could not be handed on ({ex.Message}). "
+                     + $"Delete {installation.Directory} by hand once this window has closed.");
         }
     }
 
@@ -478,33 +514,47 @@ public sealed class SelfInstaller
         string.Equals(SelfUpdater.RunningExecutable, file, StringComparison.OrdinalIgnoreCase);
 
 
-    private static void Delete(string path, List<string> problems)
+    /// <summary>
+    /// Deletes one thing and records which side of the ledger it ended up on.
+    ///
+    /// A file that was already gone counts as gone: the person asked for it not to be there, and it
+    /// is not there. Reporting it as a failure would send someone looking for a problem that has
+    /// already been solved — by them, or by an earlier attempt.
+    /// </summary>
+    private static void Take(string path, string what, List<string> gone, List<string> left)
     {
         try
         {
             if (File.Exists(path)) File.Delete(path);
+            gone.Add(path);
         }
         catch (Exception ex)
         {
-            problems.Add($"Could not remove {path}: {ex.Message}");
+            left.Add($"{path} — {ex.Message}");
         }
     }
 
-    private static void RemoveIfEmpty(string directory, List<string> problems)
+    private static void RemoveIfEmpty(string directory, List<string> gone, List<string> left)
     {
         try
         {
-            if (!Directory.Exists(directory)) return;
+            if (!Directory.Exists(directory)) { gone.Add(directory); return; }
 
             // Only when nothing else is in there. A folder somebody else has been using is not ours
-            // to delete, even if we made it.
-            if (Directory.EnumerateFileSystemEntries(directory).Any()) return;
+            // to delete, even if we made it — and it is not a failure either, so it is said plainly
+            // rather than counted as something that went wrong.
+            if (Directory.EnumerateFileSystemEntries(directory).Any())
+            {
+                left.Add($"{directory} — left alone: it holds something that is not ours");
+                return;
+            }
 
             Directory.Delete(directory);
+            gone.Add(directory);
         }
         catch (Exception ex)
         {
-            problems.Add($"Could not remove {directory}: {ex.Message}");
+            left.Add($"{directory} — {ex.Message}");
         }
     }
 

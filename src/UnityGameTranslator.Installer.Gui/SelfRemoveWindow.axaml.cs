@@ -125,34 +125,48 @@ public sealed class SelfRemoveWindow : Window
             + "as they are — removing those is done from each game's own card, one at a time.",
             11, FontWeight.Normal, "TextMuted"));
 
-        var problem = Text("", 11, FontWeight.Normal, "StatusError");
-        problem.IsVisible = false;
-        layout.Children.Add(problem);
+        var outcome = new StackPanel { Spacing = 6, IsVisible = false };
+        layout.Children.Add(outcome);
 
         // Cancel carries both: Escape and Enter both mean "leave it alone". Removing is only ever
         // reached by aiming at it.
         var cancel = new Button { Content = "Keep it", IsCancel = true, IsDefault = true };
         cancel.Click += (_, _) => Close();
 
+        var openFolder = new Button { Content = "Open the folder", IsVisible = false };
         var remove = new Button { Content = "Remove", Classes = { "primary" } };
+
         remove.Click += (_, _) =>
         {
             remove.IsEnabled = false;
 
-            var problems = installer.Remove(settings.IsChecked == true);
+            var report = installer.Remove(settings.IsChecked == true);
             Removed = true;
 
-            if (problems.Count == 0)
+            if (report.Complete && report.BeingDeletedAfterExit is null)
             {
                 Close();
                 return;
             }
 
-            // Reported rather than swallowed: a removal that half worked is exactly what someone
-            // needs to know about, and the running executable is the usual reason.
-            problem.Text = string.Join(Environment.NewLine, problems);
-            problem.IsVisible = true;
+            ShowOutcome(outcome, report);
+
+            // ⚠ A dead end is the one thing this window must never be. It said "could not remove"
+            // and offered nothing but Close — so somebody was told their tool was half removed and
+            // left to work out the rest on their own. Trying again costs nothing (deleting what is
+            // already gone counts as gone), and the folder is one click away for the cases that
+            // need a human.
             cancel.Content = "Close";
+            remove.Content = "Try again";
+            remove.IsEnabled = report.Left.Count > 0;
+
+            if (report.WhereItWas is { } folder && Directory.Exists(folder))
+            {
+                openFolder.IsVisible = true;
+                openFolder.Click -= OpenTheFolder;
+                openFolder.Tag = folder;
+                openFolder.Click += OpenTheFolder;
+            }
         };
 
         layout.Children.Add(new StackPanel
@@ -160,10 +174,54 @@ public sealed class SelfRemoveWindow : Window
             Orientation = Orientation.Horizontal,
             Spacing = 8,
             HorizontalAlignment = HorizontalAlignment.Right,
-            Children = { cancel, remove },
+            Children = { openFolder, cancel, remove },
         });
 
         return layout;
+    }
+
+    private static void OpenTheFolder(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: string folder }) Shell.OpenFolder(folder);
+    }
+
+    /// <summary>
+    /// What went, and what did not, side by side.
+    ///
+    /// Both halves, because a list of failures alone cannot be read: someone told only that one
+    /// thing could not be deleted has no way of knowing whether the tool is nearly gone or barely
+    /// touched, and those call for different reactions.
+    /// </summary>
+    private void ShowOutcome(StackPanel panel, SelfRemovalReport report)
+    {
+        panel.Children.Clear();
+        panel.IsVisible = true;
+
+        if (report.Gone.Count > 0)
+        {
+            panel.Children.Add(Text($"Removed ({report.Gone.Count})", 12, FontWeight.SemiBold,
+                                    "StatusOk"));
+
+            foreach (var item in report.Gone)
+                panel.Children.Add(Text(item, 11, FontWeight.Normal, "TextMuted"));
+        }
+
+        if (report.BeingDeletedAfterExit is { } pending)
+        {
+            panel.Children.Add(Text(
+                $"{pending} is the file this window is running from, so it cannot be deleted while "
+                + "you are reading this. It goes on its own within a minute of you closing.",
+                11, FontWeight.Normal, "TextSecondary"));
+        }
+
+        if (report.Left.Count > 0)
+        {
+            panel.Children.Add(Text($"Still there ({report.Left.Count})", 12, FontWeight.SemiBold,
+                                    "StatusError"));
+
+            foreach (var item in report.Left)
+                panel.Children.Add(Text(item, 11, FontWeight.Normal, "TextMuted"));
+        }
     }
 
     private TextBlock Text(string text, double size, FontWeight weight, string colour) => new()

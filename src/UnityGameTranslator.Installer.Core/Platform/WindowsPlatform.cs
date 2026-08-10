@@ -116,6 +116,9 @@ public sealed class WindowsPlatform : IPlatform
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "UnityGameTranslator", "Installer");
 
+    /// <summary>%TEMP%, which Windows already gives each account separately.</summary>
+    public string RuntimeStateDirectory => Path.GetTempPath();
+
     public string SelfInstallDirectory => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Programs", "UnityGameTranslator Installer");

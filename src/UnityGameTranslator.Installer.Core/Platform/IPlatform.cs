@@ -29,6 +29,20 @@ public interface IPlatform
     /// <summary>Where the tool keeps its own state (catalog cache, known installs).</summary>
     string UserDataDirectory { get; }
 
+    /// <summary>
+    /// Where something true of this moment goes, as opposed to something true of this person: the
+    /// lock saying a window is open right now, and nothing that would be missed after a reboot.
+    ///
+    /// ⚠ Deliberately NOT UserDataDirectory. A file held open for the life of the process, sitting
+    /// in the folder "remove my settings" deletes, makes that removal fail on its last step — which
+    /// is exactly how this came to exist.
+    ///
+    /// The conventions differ, and the difference matters on one of them: %TEMP% on Windows and
+    /// $TMPDIR on macOS are per-user already, while /tmp on Linux is shared by everyone on the
+    /// machine. Linux has a place meant for this — $XDG_RUNTIME_DIR, per-user, cleared at logout.
+    /// </summary>
+    string RuntimeStateDirectory { get; }
+
     /// <summary>Where the portable executable would copy itself if the user accepts.</summary>
     string SelfInstallDirectory { get; }
 

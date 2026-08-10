@@ -97,6 +97,23 @@ public sealed class LinuxPlatform : IPlatform
     }
 
     /// <summary>
+    /// $XDG_RUNTIME_DIR, which is the place a freedesktop system sets aside for exactly this:
+    /// per-user, on a memory filesystem, and emptied when the session ends.
+    ///
+    /// ⚠ The fallback is /tmp, which is NOT per-user — it is shared by everyone on the machine. So
+    /// anything we put there carries the user name, or one person opening the tool would stop
+    /// another from opening it at all, with a message about a file they cannot even read.
+    /// </summary>
+    public string RuntimeStateDirectory
+    {
+        get
+        {
+            var runtime = Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR");
+            return string.IsNullOrEmpty(runtime) ? Path.GetTempPath() : runtime;
+        }
+    }
+
+    /// <summary>
     /// SteamOS keeps / read-only, so the tool can only ever live in the user's home. That is
     /// also the right place on any other distribution for a single-user tool.
     /// </summary>

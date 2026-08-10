@@ -363,6 +363,31 @@ public sealed class SettingsWindow : Window
         var backend = Tag(_backend);
         _aiCard.IsVisible = backend == "llm";
         _apiCard.IsVisible = backend == "google";
+
+        if (backend == "llm") OfferWhatWasFound();
+    }
+
+    /// <summary>
+    /// Fills in the server found earlier — now that AI has actually been chosen.
+    ///
+    /// This is the other half of the discovery, and it waits here on purpose. Choosing AI is the
+    /// gesture that makes a found server relevant, so it is the moment its address may be written
+    /// into the form. Before that, the search is a fact reported in a line of text and nothing more.
+    ///
+    /// Never during population: setting the backend to what was saved raises this same event, and
+    /// filling in then would be the original fault wearing a different hat.
+    /// </summary>
+    private void OfferWhatWasFound()
+    {
+        if (_populating) return;
+        if (_aiServers.Remembered is not { } servers || servers.Count == 0) return;
+
+        var server = servers[0];
+
+        if (string.IsNullOrWhiteSpace(_aiUrl.Text)) _aiUrl.Text = server.Url;
+
+        if (_aiModel.SelectedItem is null)
+            _aiModel.SelectedItem = _aiModel.Items.OfType<ComboBoxItem>().FirstOrDefault();
     }
 
     /// <summary>
@@ -878,7 +903,18 @@ public sealed class SettingsWindow : Window
         _ollamaPanel.IsVisible = false;
 
         var server = servers[0];
-        if (string.IsNullOrWhiteSpace(_aiUrl.Text)) _aiUrl.Text = server.Url;
+
+        // ⚠ Nothing is filled in unless AI is the backend that was CHOSEN. Finding a server on the
+        // machine is a fact; writing its address into the form is a decision, and it was being made
+        // for the person: someone who opened this screen with "Community translations only" set
+        // found "Apply (2)" waiting on a form they had not touched, offering to save an AI server
+        // and a model they had not asked for. Pressing Apply — the natural way to leave — would
+        // have written it.
+        //
+        // What was found is still said out loud, which is the useful half. The other half happens
+        // when they pick AI, and picking it is a gesture they made.
+        var chosen = Tag(_backend) == "llm";
+        if (chosen && string.IsNullOrWhiteSpace(_aiUrl.Text)) _aiUrl.Text = server.Url;
 
         _aiStatus.Text = $"{server.Product} answered at {server.Url} — {server.Models.Count} model(s).";
 
@@ -894,8 +930,12 @@ public sealed class SettingsWindow : Window
         foreach (var model in server.Models)
             _aiModel.Items.Add(new ComboBoxItem { Content = model, Tag = model });
 
+        // Listing them is offering; selecting one is choosing. The list is filled either way — a
+        // picker with nothing in it would be a dead end — but a model is only picked for somebody
+        // once they have said they want AI at all.
         Select(_aiModel, _draft.AiModel);
-        _aiModel.SelectedItem ??= _aiModel.Items.OfType<ComboBoxItem>().FirstOrDefault();
+        if (chosen) _aiModel.SelectedItem ??= _aiModel.Items.OfType<ComboBoxItem>().FirstOrDefault();
+
         _testButton.IsEnabled = _aiModel.SelectedItem is not null;
 
         _ = ShowTestedModelsAsync(server.Url, server.Models);

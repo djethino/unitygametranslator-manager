@@ -40,7 +40,15 @@ public sealed class SelfRemoveWindow : Window
     {
         var layout = new StackPanel { Spacing = 14, Margin = new Thickness(24) };
 
-        layout.Children.Add(Text("Remove this tool", 15, FontWeight.SemiBold, "TextPrimary"));
+        layout.Children.Add(Text("Remove UnityGameTranslator Installer", 15, FontWeight.SemiBold,
+                                 "TextPrimary"));
+
+        // Which of the two things bearing that name is going, said before anything else: this
+        // window can be reached from Windows' own list of installed applications, where nothing
+        // around it explains that the mod inside the games is a different matter.
+        layout.Children.Add(Text(
+            "The program that sets your games up. The mod already inside your games is a separate "
+            + "matter and is not affected.", 12, FontWeight.Normal, "TextSecondary"));
 
         var plan = installer.PlanRemoval();
 

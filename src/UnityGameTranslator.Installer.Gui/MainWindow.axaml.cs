@@ -181,9 +181,10 @@ public partial class MainWindow : Window
 
             default:
                 ShowUpdateNotice("Couldn't check for updates",
-                    $"{result.Message}\n\nA firewall, an antivirus or a company proxy blocking "
-                    + "this tool looks exactly like this. Open Settings to try again or to set up "
-                    + "a proxy.",
+                    "Updates to UnityGameTranslator Installer — this program, not the mod in your "
+                    + $"games.\n\n{result.Message}\n\nA firewall, an antivirus or a company proxy "
+                    + "blocking it looks exactly like this. Open Settings to try again or to set "
+                    + "up a proxy.",
                     primary: false, result);
                 break;
         }
@@ -1137,9 +1138,12 @@ public partial class MainWindow : Window
 
         var text = new StackPanel { Spacing = 2 };
 
+        // ⚠ The product is named here rather than called "this tool". The banner sits among a list
+        // of games, above figures about games, in a window whose heading is "Your Unity games" —
+        // read cold, "this tool" could as easily mean the mod that goes into them.
         text.Children.Add(new TextBlock
         {
-            Text = "You are running the file you downloaded",
+            Text = "UnityGameTranslator Installer is running from the file you downloaded",
             FontSize = 13,
             FontWeight = FontWeight.SemiBold,
             Foreground = Brush("TextPrimary"),
@@ -1148,8 +1152,9 @@ public partial class MainWindow : Window
 
         text.Children.Add(new TextBlock
         {
-            Text = "Keep it on this machine and it will be in your menu next time, with a proper "
-                 + "way to remove it. Nothing in your games changes either way.",
+            Text = "That is this window — the program that sets your games up, not the mod that "
+                 + "goes into them. Keep it on this machine and it will be in your menu next time, "
+                 + "with a proper way to remove it. Nothing in your games changes either way.",
             FontSize = 11,
             Foreground = Brush("TextSecondary"),
             TextWrapping = TextWrapping.Wrap,
@@ -1695,8 +1700,8 @@ public partial class MainWindow : Window
             panel.Children.Add(new TextBlock
             {
                 Text = $"Could not reach the community site ({report.OnlineSearchError}). " +
-                       "A firewall, an antivirus or a company proxy blocking this tool looks " +
-                       "exactly like this. Nothing was lost.",
+                       "A firewall, an antivirus or a company proxy blocking UnityGameTranslator " +
+                       "Installer looks exactly like this. Nothing was lost.",
                 FontSize = 12,
                 Opacity = 0.7,
                 TextWrapping = TextWrapping.Wrap,

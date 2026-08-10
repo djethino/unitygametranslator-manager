@@ -98,10 +98,12 @@ public sealed class ToolSettingsWindow : Window
     {
         var layout = new StackPanel { Spacing = 16, Margin = new Thickness(24) };
 
+        // Named once, at the top, so every card below can go on saying "this tool" without anyone
+        // having to work out which of the two programs is meant.
         layout.Children.Add(new TextBlock
         {
-            Text = "These are about this program. What gets written into your games is under "
-                 + "Mod defaults.",
+            Text = "These are about UnityGameTranslator Installer itself — this program. What gets "
+                 + "written into your games is under Mod defaults.",
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("TextSecondary"),
@@ -469,8 +471,8 @@ public sealed class ToolSettingsWindow : Window
 
         panel.Children.Add(Row("Updates", _toolChannel));
         panel.Children.Add(Note(
-            "This is about the installer itself. Which build of the mod goes into your games is "
-            + "under Mod defaults, and the two are separate on purpose.", "TextMuted"));
+            "This is about UnityGameTranslator Installer itself. Which build of the mod goes into "
+            + "your games is under Mod defaults, and the two are separate on purpose.", "TextMuted"));
 
         _checkToolUpdates = new CheckBox
         {

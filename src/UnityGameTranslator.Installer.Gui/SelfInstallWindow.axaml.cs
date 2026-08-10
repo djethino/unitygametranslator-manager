@@ -32,7 +32,7 @@ public sealed class SelfInstallWindow : Window
         _installer = installer;
         _plan = plan;
 
-        Title = "Keep this tool on your machine";
+        Title = "Keep UnityGameTranslator Installer on your machine";
         Width = 620;
         SizeToContent = SizeToContent.Height;
         MinHeight = 260;
@@ -47,11 +47,15 @@ public sealed class SelfInstallWindow : Window
     {
         var layout = new StackPanel { Spacing = 14, Margin = new Thickness(24) };
 
-        layout.Children.Add(Heading("Keep this tool on your machine"));
+        layout.Children.Add(Heading("Keep UnityGameTranslator Installer on your machine"));
 
+        // Named, and told apart from the mod. A dialog is read out of context by definition — it
+        // covers whatever it was opened from — so it cannot lean on the window behind it to say
+        // what "it" is.
         layout.Children.Add(Body(
-            "You are running the file you downloaded. Keeping it means copying it somewhere it "
-            + "belongs, so it is there next time without you having to find the download again."));
+            "This is the program that sets your games up, not the mod that goes into them. You are "
+            + "running the file you downloaded; keeping it means copying it somewhere it belongs, "
+            + "so it is there next time without you having to find the download again."));
 
         var written = new StackPanel { Spacing = 4 };
         written.Children.Add(Label("What gets written"));

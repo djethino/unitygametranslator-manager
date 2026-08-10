@@ -42,7 +42,23 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, GameSituationInfo> _situations =
         new(StringComparer.OrdinalIgnoreCase);
 
-    private Situation? _filter;
+    /// <summary>
+    /// What the list is being asked to show. Not a <see cref="Situation"/>: those describe a game,
+    /// and one of these describes the person — which games they take part in — so it could not be
+    /// expressed as one without inventing a state a game does not have.
+    /// </summary>
+    private enum Lens { All, Playable, NeedsTranslator, Ready, Mine, Blocked }
+
+    private Lens _lens = Lens.All;
+
+    /// <summary>
+    /// Games whose installed translation belongs to a lineage this account takes part in, by path.
+    ///
+    /// Gathered while the situations are computed, where the local file is read anyway. Asking the
+    /// question per row at filter time would re-read a file from disk on every keystroke in the
+    /// search box.
+    /// </summary>
+    private readonly HashSet<string> _mine = new(StringComparer.OrdinalIgnoreCase);
 
     public MainWindow()
     {
@@ -103,8 +119,14 @@ public partial class MainWindow : Window
             ? $"{_games.Count} Unity games found"
             : $"{_games.Count} Unity games found, {blocked} that cannot be modded";
 
+        // Read before the situations, not on the first click: "My translations" has to be able to
+        // answer as soon as the window is up, and this is one call for the whole library.
+        await _lineages.EnsureAsync(_settings.Current.ApiToken);
+
+        BuildFilterBar();
         RecomputeSituations();
         RefreshList();
+        ShowOverview();
         Busy(false, "Ready.");
 
         StartOnlineSweep();
@@ -160,6 +182,7 @@ public partial class MainWindow : Window
     {
         var language = _settings.ResolveTargetLanguage();
         _situations.Clear();
+        _mine.Clear();
 
         foreach (var game in _games)
         {
@@ -174,6 +197,10 @@ public partial class MainWindow : Window
                 report.InstalledPluginVersion =
                     LocalTranslationProbe.ReadInstalledPluginVersion(game.Path, descriptor);
                 report.LocalTranslation = LocalTranslationProbe.Read(game.Path, descriptor);
+
+                // Noted while the file is open anyway. Asked again at filter time it would mean
+                // re-reading a translation from disk on every keystroke in the search box.
+                if (_lineages.For(report.LocalTranslation?.Uuid) is not null) _mine.Add(game.Path);
             }
 
             if (online is not null)
@@ -439,6 +466,15 @@ public partial class MainWindow : Window
         // card claiming "you are the Main here" to nobody in particular, and after a switch of
         // account it would claim it for the wrong person.
         _lineages.Forget();
+        await _lineages.EnsureAsync(_settings.Current.ApiToken);
+
+        // "My translations" appears on signing in and goes away on signing out, so the bar has to
+        // be rebuilt — and the list with it, since what belongs to whom has just changed.
+        if (_lens == Lens.Mine && !_settings.Current.SignedIn) _lens = Lens.All;
+
+        BuildFilterBar();
+        RecomputeSituations();
+        RefreshList();
 
         if (!window.Saved) return;
 
@@ -505,14 +541,22 @@ public partial class MainWindow : Window
 
     private void BuildFilterBar()
     {
-        (string Label, Situation? Value)[] filters =
+        FilterBar.Children.Clear();
+
+        var filters = new List<(string Label, Lens Value)>
         {
-            ("All", null),
-            ("Playable in my language", Situation.TranslationAvailable),
-            ("Needs a translator", Situation.NotTranslatedYet),
-            ("Already set up", Situation.Ready),
-            ("Cannot be modded", Situation.Blocked),
+            ("All", Lens.All),
+            ("Playable in my language", Lens.Playable),
+            ("Needs a translator", Lens.NeedsTranslator),
+            ("Already set up", Lens.Ready),
         };
+
+        // Only offered when there is an account to answer it. A filter that can only ever return
+        // nothing is worse than an absent one: it reads as "you have none" rather than "we cannot
+        // know". The bar is rebuilt when the account changes, so it appears on signing in.
+        if (_settings.Current.SignedIn) filters.Add(("My translations", Lens.Mine));
+
+        filters.Add(("Cannot be modded", Lens.Blocked));
 
         foreach (var (label, value) in filters)
         {
@@ -525,7 +569,7 @@ public partial class MainWindow : Window
             };
             button.Click += (_, _) =>
             {
-                _filter = value;
+                _lens = value;
                 foreach (var other in FilterBar.Children.OfType<Button>())
                     other.Classes.Set("selected", ReferenceEquals(other, button));
                 RefreshList();
@@ -533,7 +577,8 @@ public partial class MainWindow : Window
             FilterBar.Children.Add(button);
         }
 
-        (FilterBar.Children.FirstOrDefault() as Button)?.Classes.Add("selected");
+        foreach (var button in FilterBar.Children.OfType<Button>())
+            button.Classes.Set("selected", (Lens?)button.Tag == _lens);
     }
 
     private async Task AddFolderAsync()
@@ -682,18 +727,23 @@ public partial class MainWindow : Window
     /// </summary>
     private bool MatchesFilter(GameInstall game)
     {
-        if (_filter is null) return true;
+        if (_lens == Lens.All) return true;
 
         var language = _settings.ResolveTargetLanguage();
         var online = _online.Peek(game);
         var inLanguage = online?.Any(t => Languages.Matches(t.TargetLanguage, language)) == true;
 
-        return _filter switch
+        return _lens switch
         {
-            Situation.Blocked => !game.IsModdable,
-            Situation.TranslationAvailable => game.IsModdable && inLanguage,
-            Situation.NotTranslatedYet => game.IsModdable && online is not null && !inLanguage,
-            Situation.Ready => game.IsModdable && IsSetUp(game),
+            Lens.Blocked => !game.IsModdable,
+            Lens.Playable => game.IsModdable && inLanguage,
+            Lens.NeedsTranslator => game.IsModdable && online is not null && !inLanguage,
+            Lens.Ready => game.IsModdable && IsSetUp(game),
+
+            // Where this account leads a translation or contributes to one. A fact about the
+            // person, which is why it needed a lens of its own rather than a game state.
+            Lens.Mine => _mine.Contains(game.Path),
+
             _ => true,
         };
     }
@@ -800,6 +850,78 @@ public partial class MainWindow : Window
     }
 
     // ---------------------------------------------------------------- detail
+
+    /// <summary>
+    /// What fills the right-hand side before anything is chosen.
+    ///
+    /// It used to hold "Select a game on the left." on an otherwise empty panel, which says
+    /// nothing about a scan that has just read a whole machine — and reads as though the tool were
+    /// waiting rather than finished. Selecting a game automatically was the other option and it is
+    /// worse: picking one for somebody implies it is the one that matters, and we have no idea
+    /// which of their games they came for.
+    ///
+    /// So it answers the questions the scan can actually answer, and says what to do next.
+    /// </summary>
+    private void ShowOverview()
+    {
+        if (_selected is not null) return;
+
+        DetailPanel.Children.Clear();
+
+        var language = Languages.NameOf(_settings.ResolveTargetLanguage());
+        var moddable = _games.Count(g => g.IsModdable);
+        var setUp = _games.Count(g => g.IsModdable && IsSetUp(g));
+
+        var playable = _games.Count(g => g.IsModdable
+            && _online.Peek(g)?.Any(t => Languages.Matches(t.TargetLanguage,
+                                                           _settings.ResolveTargetLanguage())) == true);
+
+        DetailPanel.Children.Add(new TextBlock
+        {
+            Text = $"{_games.Count} Unity games on this machine",
+            FontSize = 20,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = Brush("TextPrimary"),
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        var facts = new List<string>
+        {
+            $"{moddable} can take the mod.",
+            setUp > 0
+                ? $"{setUp} already have it."
+                : "None of them has it yet.",
+            playable > 0
+                ? $"{playable} already have a translation in {language} waiting on the community site."
+                : $"None has a published translation in {language} yet — which is where you would come in.",
+        };
+
+        if (_mine.Count > 0)
+            facts.Add($"{_mine.Count} carry a translation you take part in.");
+
+        foreach (var fact in facts)
+        {
+            DetailPanel.Children.Add(new TextBlock
+            {
+                Text = fact,
+                FontSize = 13,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextSecondary"),
+                Margin = new Avalonia.Thickness(0, 2, 0, 0),
+            });
+        }
+
+        DetailPanel.Children.Add(new TextBlock
+        {
+            Text = "Pick a game on the left to see what it needs, what the community has for it, "
+                 + "and to set it up. The tags above the list narrow it down.",
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
+            Opacity = 0.75,
+            Foreground = Brush("TextMuted"),
+            Margin = new Avalonia.Thickness(0, 14, 0, 0),
+        });
+    }
 
     private async Task ShowSelectedAsync()
     {

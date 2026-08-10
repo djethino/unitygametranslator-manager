@@ -184,6 +184,27 @@ public sealed class SelfInstaller
             Refusal: refusal);
     }
 
+    /// <summary>
+    /// Reasons not to offer this at all — and only ones that can be known without touching the disk.
+    ///
+    /// ⚠ There used to be a third: a test file written into the installation folder's parent and
+    /// deleted again, to prove the folder could be written to. Three things were wrong with it, and
+    /// the third is the one that matters.
+    ///
+    /// It ran on every drawing of the overview, to answer a question whose answer changes about
+    /// never. It wrote to disk to decide whether to ASK — and worse, it created
+    /// %LOCALAPPDATA%\Programs when that folder did not exist, so merely looking at the list of
+    /// games created a folder on the machine. This program's own rule is that nothing is written
+    /// until somebody says so, and the check meant to protect an installation was breaking it.
+    ///
+    /// So nothing is proven in advance. Install copies files; if the folder cannot be written to,
+    /// the copy fails and the window shows the reason the system gave — which is more accurate than
+    /// anything we would have guessed from a probe, and costs nothing until somebody asks for it.
+    ///
+    /// 🔸 Not the same trade as the updater's WhyCannotApply, which stays: that one exists to avoid
+    /// forty megabytes of download that could not be applied, and it probes a folder that already
+    /// exists because the running executable is in it.
+    /// </summary>
     private string? RefusalFor(string source, string target)
     {
         if (string.Equals(Path.GetFullPath(Path.GetDirectoryName(source) ?? ""),
@@ -192,21 +213,7 @@ public sealed class SelfInstaller
             return "This is already the installed copy.";
         }
 
-        if (NotASelfContainedBuild(source) is { } reason) return reason;
-
-        try
-        {
-            var probe = Path.Combine(Path.GetDirectoryName(target) ?? target,
-                                     $".ugt-write-probe-{Guid.NewGuid():N}");
-            Directory.CreateDirectory(Path.GetDirectoryName(probe)!);
-            File.WriteAllText(probe, string.Empty);
-            File.Delete(probe);
-            return null;
-        }
-        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
-        {
-            return $"{target} cannot be written to on this account.";
-        }
+        return NotASelfContainedBuild(source);
     }
 
     /// <summary>

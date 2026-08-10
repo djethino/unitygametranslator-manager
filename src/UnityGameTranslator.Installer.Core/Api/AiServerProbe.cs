@@ -258,14 +258,21 @@ public sealed class AiServerProbe
 
         foreach (var test in ModelTestSuite.Build(targetLanguage, gameContext, sourceCode))
         {
-            var answer = await AskAsync(baseUrl, model, test.Rule, test.Source, ct)
+            var attempt = await TranslateLikeTheModAsync(baseUrl, model, test.Rule, test.Source, ct)
                 .ConfigureAwait(false);
+
+            var answer = attempt.Answer;
 
             ModelTestResult result;
 
             if (answer is null)
             {
-                result = new ModelTestResult(test, null, false, "no answer");
+                result = new ModelTestResult(test, null, false, "no answer")
+                {
+                    Attempts = attempt.Attempts,
+                    Elapsed = attempt.Elapsed,
+                    Accepted = false,
+                };
             }
             else
             {
@@ -280,6 +287,10 @@ public sealed class AiServerProbe
                 {
                     EchoedInstructions = echoed,
                     Translation = translation,
+                    Attempts = attempt.Attempts,
+                    Elapsed = attempt.Elapsed,
+                    Accepted = attempt.Accepted,
+                    Repaired = attempt.Repaired,
                 };
             }
 
@@ -288,6 +299,115 @@ public sealed class AiServerProbe
         }
 
         return results;
+    }
+
+    /// <summary>What the whole chain cost and how it ended.</summary>
+    private sealed record ModAttempt(string? Answer, int Attempts, TimeSpan Elapsed,
+                                     bool Accepted, bool Repaired);
+
+    /// <summary>
+    /// Translates one line the way a game does: up to three attempts, judged by the mod's own
+    /// rules, timed from end to end.
+    ///
+    /// This is the number a player actually experiences — the delay between a line appearing in
+    /// its original language and being replaced. One request never was that number: a line the mod
+    /// refuses costs a second and a third, and when it still refuses, the line is simply left
+    /// alone. Both endings are timed here, because waiting four seconds for nothing is exactly the
+    /// case someone choosing a model needs to see.
+    ///
+    /// The three attempts differ as they do in the mod: a plain request; then a corrective
+    /// exchange carrying the failed answer back as an assistant turn with targeted feedback; then
+    /// a fresh request without that answer — to break the anchoring — with the required sequences
+    /// spelt into the system prompt and a little warmth in the temperature.
+    /// </summary>
+    private async Task<ModAttempt> TranslateLikeTheModAsync(string baseUrl, string model,
+                                                            string systemPrompt, string source,
+                                                            CancellationToken ct)
+    {
+        var frozen = ModPlaceholderRules.FrozenSequences(source);
+        var maxTokens = Math.Max(200, source.Length * 2);
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+        string? answer = null;
+        string? failed = null;
+        var errors = new List<string>();
+        var repaired = false;
+
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            object messages = attempt switch
+            {
+                0 => new object[]
+                {
+                    new { role = "system", content = systemPrompt },
+                    new { role = "user", content = source },
+                },
+
+                1 => new object[]
+                {
+                    new { role = "system", content = systemPrompt },
+                    new { role = "user", content = source },
+                    new { role = "assistant", content = failed ?? "" },
+                    new { role = "user", content = ModPlaceholderRules.Correction(errors, frozen) },
+                },
+
+                _ => new object[]
+                {
+                    new
+                    {
+                        role = "system",
+                        content = systemPrompt + "\n" + ModPlaceholderRules.MandatorySequences(frozen),
+                    },
+                    new { role = "user", content = source },
+                },
+            };
+
+            answer = await SendAsync(baseUrl, model, messages,
+                                     attempt == 2 ? 0.3 : 0.0, maxTokens, "none", ct)
+                .ConfigureAwait(false);
+
+            // A refused request is not a refused translation: the mod gives up here too rather
+            // than burning its retries on a server problem.
+            if (answer is null)
+            {
+                stopwatch.Stop();
+                return new ModAttempt(null, attempt + 1, stopwatch.Elapsed, false, false);
+            }
+
+            // Nothing to validate: the model was asked to skip this line and did.
+            if (answer.Contains(ModelTestSuite.SkipMarker, StringComparison.Ordinal))
+            {
+                stopwatch.Stop();
+                return new ModAttempt(answer, attempt + 1, stopwatch.Elapsed, true, false);
+            }
+
+            if (frozen.Count == 0)
+            {
+                stopwatch.Stop();
+                return new ModAttempt(answer, attempt + 1, stopwatch.Elapsed, true, false);
+            }
+
+            if (ModPlaceholderRules.Accepts(source, answer, frozen, out errors))
+            {
+                stopwatch.Stop();
+                return new ModAttempt(answer, attempt + 1, stopwatch.Elapsed, true, repaired);
+            }
+
+            // The repair a game makes for itself, and it has to pass the full check on its own.
+            if (ModPlaceholderRules.RepairTrailingBreaks(source, answer) is { } mended
+                && ModPlaceholderRules.Accepts(source, mended, frozen, out _))
+            {
+                stopwatch.Stop();
+                return new ModAttempt(mended, attempt + 1, stopwatch.Elapsed, true, true);
+            }
+
+            failed = answer;
+        }
+
+        // Three attempts, still refused: in a game this line stays in its original language for
+        // the session. The time was spent all the same, which is the point of timing it.
+        stopwatch.Stop();
+        return new ModAttempt(answer, 3, stopwatch.Elapsed, false, false);
     }
 
     /// <summary>Reasoning budgets to try, best first — the same ladder the mod walks.</summary>
@@ -355,12 +475,25 @@ public sealed class AiServerProbe
         // a single word of the answer.
         var maxTokens = Math.Max(200, (userContent ?? systemPrompt).Length * 2);
 
+        return await SendAsync(baseUrl, model, messages, 0.0, maxTokens, effort, ct)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// One request with the turns exactly as given, so the corrective retry can send an assistant
+    /// turn carrying the failed answer — which is what the mod does, and what no system+user
+    /// helper can express.
+    /// </summary>
+    private async Task<string?> SendAsync(string baseUrl, string model, object messages,
+                                          double temperature, int maxTokens, string? effort,
+                                          CancellationToken ct)
+    {
         var payload = JsonSerializer.Serialize(new
         {
             model,
             messages,
             stream = false,
-            temperature = 0.0,
+            temperature,
             max_tokens = maxTokens,
             reasoning_effort = effort,
         }, new JsonSerializerOptions

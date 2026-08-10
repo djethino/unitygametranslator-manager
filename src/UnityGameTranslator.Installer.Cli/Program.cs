@@ -704,7 +704,19 @@ internal static class Program
             Write($"[{mark}] ", result.Passed
                 ? ConsoleColor.Green
                 : experimental ? ConsoleColor.Yellow : ConsoleColor.Red);
-            Console.WriteLine($"{result.Test.Difficulty,-7} {result.Test.Name}");
+            // What the line cost, on the same row as its verdict. A model that passes every case
+            // on the third try is not the same model as one that passes on the first, and the
+            // difference is the wait a player sits through.
+            var cost = result.Attempts > 1
+                ? $"   {result.Elapsed.TotalSeconds:F1}s over {result.Attempts} attempts"
+                : $"   {result.Elapsed.TotalSeconds:F1}s";
+
+            if (!result.Accepted) cost += ", refused — left untranslated";
+            else if (result.Repaired) cost += ", repaired by the mod";
+
+            Console.Write($"{result.Test.Difficulty,-7} {result.Test.Name}");
+            Write(cost + Environment.NewLine,
+                  result.Accepted ? ConsoleColor.DarkGray : ConsoleColor.Red);
             Console.WriteLine($"       asked  : {result.Test.Source.ReplaceLineEndings(" / ")}");
             Console.WriteLine($"       expect : {result.Test.Expectation}");
             Console.WriteLine($"       answer : {result.Answer?.ReplaceLineEndings(" / ") ?? "(nothing)"}");

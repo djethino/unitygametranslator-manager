@@ -59,6 +59,28 @@ public sealed record ModelTestResult(
     /// the instructions. The structural checks run on this, and the report says so.
     /// </summary>
     public string? Translation { get; init; }
+
+    /// <summary>
+    /// How many requests this line cost, judged by the mod's own rules — one when it was accepted
+    /// straight away, up to three when it had to be corrected.
+    /// </summary>
+    public int Attempts { get; init; } = 1;
+
+    /// <summary>
+    /// End to end, every attempt included. This is the delay a player lives with: the time between
+    /// a line appearing in its original language and being replaced — or not being replaced at
+    /// all, which is timed too, because waiting for nothing is the case worth seeing.
+    /// </summary>
+    public TimeSpan Elapsed { get; init; }
+
+    /// <summary>
+    /// Whether a game would have used this answer. Deliberately separate from <see cref="Passed"/>:
+    /// ours is a per-case check written for a report, this is the mod's own acceptance rule.
+    /// </summary>
+    public bool Accepted { get; init; } = true;
+
+    /// <summary>The mod put back trailing line breaks the model had trimmed.</summary>
+    public bool Repaired { get; init; }
 }
 
 /// <summary>

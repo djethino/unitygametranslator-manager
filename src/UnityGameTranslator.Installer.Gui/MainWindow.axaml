@@ -69,10 +69,12 @@
 
       <Grid Grid.Column="0" RowDefinitions="Auto,*">
         <!--
-          A WrapPanel, not a horizontal strip: five filters do not fit across 370px, and a strip
-          clipped them instead of showing them. Wrapping costs a line and hides nothing.
+          Three columns rather than a wrap. Wrapping packed them by width, so the rows came out
+          ragged — four and two — and losing one tag with the account left a single orphan on the
+          second line. A grid keeps the columns aligned whatever the count: the empty cell reads as
+          deliberate where a lone wrapped tag reads as a mistake.
         -->
-        <WrapPanel Grid.Row="0" x:Name="FilterBar" Margin="10,10,10,2" />
+        <UniformGrid Grid.Row="0" x:Name="FilterBar" Columns="3" Margin="10,10,10,2" />
 
         <ListBox Grid.Row="1" x:Name="GameList" Classes="cards"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled" />

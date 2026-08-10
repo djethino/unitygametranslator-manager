@@ -575,6 +575,13 @@ public partial class MainWindow : Window
                 Tag = value,
                 Classes = { "filter" },
                 Margin = new Avalonia.Thickness(0, 0, 6, 6),
+
+                // Filling its cell, so the three columns line up and a tag's width says nothing
+                // about its importance. Centred inside, since a stretched button with left-aligned
+                // text drifts away from the column it belongs to.
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                Padding = new Avalonia.Thickness(6, 4),
             };
 
             ToolTip.SetTip(button, meaning);

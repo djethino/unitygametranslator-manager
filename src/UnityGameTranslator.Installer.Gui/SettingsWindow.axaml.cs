@@ -1081,6 +1081,28 @@ public sealed class SettingsWindow : Window
                     : $"No model on this server yet. {card}.",
             "TextSecondary"));
 
+        // Which language the figures were taken in, and — when it is not the reader's — that the
+        // button beside the model list answers the same questions in theirs. A table of marks
+        // gathered in another language reads as a verdict unless it says otherwise, and marker
+        // fidelity genuinely does move between languages.
+        if (_modelNotes?.MeasuredIn is { Length: > 0 } measuredIn)
+        {
+            var mine = Languages.NameOf(_store.ResolveTargetLanguage());
+
+            var sameLanguage = string.Equals(mine, measuredIn, StringComparison.OrdinalIgnoreCase);
+
+            var caveat = Note(
+                sameLanguage
+                    ? $"Measured translating into {measuredIn}, as you are."
+                    : $"Measured translating into {measuredIn}, not {mine}. A model can hold the "
+                      + "game's markers in one language and lose them in another — \"Test this "
+                      + $"model\" above runs the same checks in {mine}.",
+                sameLanguage ? "TextMuted" : "StatusWarning");
+
+            caveat.Opacity = 0.85;
+            content.Children.Add(caveat);
+        }
+
         var progress = Note("", "TextMuted");
 
         content.Children.Add(ModelTable(candidates, vram, serverUrl, progress));

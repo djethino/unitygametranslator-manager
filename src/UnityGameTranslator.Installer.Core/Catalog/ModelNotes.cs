@@ -118,6 +118,19 @@ public sealed class ModelNotesDocument
     /// <summary>The day this file was last touched, shown to the user verbatim.</summary>
     [JsonPropertyName("updated")] public string? Updated { get; set; }
 
+    /// <summary>
+    /// The language everything below was measured translating INTO.
+    ///
+    /// It has to be said, because it bounds every figure in the file: a model can hold its markers
+    /// in one language and lose them in another — the text is tokenised differently, comes out at
+    /// a different length, and may not even run in the same direction. Nothing here transfers
+    /// automatically to somebody translating into Japanese.
+    ///
+    /// This is also the answer to it: the tester runs in the reader's OWN language, so the file is
+    /// a starting point and the button is the verdict.
+    /// </summary>
+    [JsonPropertyName("measured_in")] public string? MeasuredIn { get; set; }
+
     [JsonPropertyName("models")] public List<ModelNote> Models { get; set; } = new();
 }
 

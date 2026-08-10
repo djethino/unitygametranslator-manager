@@ -930,11 +930,15 @@ public partial class MainWindow : Window
     {
         if (_games.Count == 0) return;
 
-        // ⚠ Nothing is asked of the machine while nobody is looking at the answer. The badge and
-        // the greyed buttons are only read from this window, so a window behind a game — which is
-        // exactly where it is while a game runs — has no use for them. It is asked again the
-        // instant the window comes forward, which is the only moment anyone could notice.
-        if (!IsActive || WindowState == WindowState.Minimized) return;
+        // ⚠ Minimised, not unfocused — and the difference was got wrong first. Focus seemed like
+        // the right cursor and is not: a window loses it the moment somebody types anywhere else,
+        // while still being read. On two screens, or side by side, the badge would have sat there
+        // stale on a window in plain view.
+        //
+        // Minimised is the state where there is genuinely nothing to read, and it is the state a
+        // full-screen game puts this window into. The rest of the time it costs a third of a per
+        // cent of one core, measured — which is not a price worth being wrong for.
+        if (WindowState == WindowState.Minimized) return;
 
         var games = _games.ToList();
         var sweep = await Task.Run(() => RunningGames.Sweep(games));

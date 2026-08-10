@@ -1054,9 +1054,26 @@ public partial class MainWindow : Window
         // where a long document belongs.
         DetailPanel.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center;
         DetailPanel.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
-        DetailPanel.MaxWidth = 460;
+
+        // ⚠ The cap moved from the panel to the summary INSIDE it, and that is the whole point of
+        // these two lines. The summary wants to be narrow — a dozen short centred lines read as an
+        // answer, which is why 460 was chosen. The banner wants the opposite: it is one sentence
+        // with a button beside it, and at 460 its title broke across three lines, which made a
+        // standing notice look like a paragraph of bad news.
+        //
+        // So they are capped separately rather than one width being made to serve both.
+        DetailPanel.MaxWidth = BannerWidth;
 
         if (PortableBanner() is { } banner) DetailPanel.Children.Add(banner);
+
+        var summary = new StackPanel
+        {
+            Spacing = 14,
+            MaxWidth = SummaryWidth,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+        };
+
+        DetailPanel.Children.Add(summary);
 
         var language = Languages.NameOf(_settings.ResolveTargetLanguage());
         var moddable = _games.Count(g => g.IsModdable);
@@ -1066,7 +1083,7 @@ public partial class MainWindow : Window
             && _online.Peek(g)?.Any(t => Languages.Matches(t.TargetLanguage,
                                                            _settings.ResolveTargetLanguage())) == true);
 
-        DetailPanel.Children.Add(new TextBlock
+        summary.Children.Add(new TextBlock
         {
             Text = $"{_games.Count} Unity games on this machine",
             FontSize = 20,
@@ -1092,7 +1109,7 @@ public partial class MainWindow : Window
 
         foreach (var fact in facts)
         {
-            DetailPanel.Children.Add(new TextBlock
+            summary.Children.Add(new TextBlock
             {
                 Text = fact,
                 FontSize = 13,
@@ -1103,7 +1120,7 @@ public partial class MainWindow : Window
             });
         }
 
-        DetailPanel.Children.Add(new TextBlock
+        summary.Children.Add(new TextBlock
         {
             Text = "Pick a game on the left to see what it needs, what the community has for it, "
                  + "and to set it up. The tags above the list narrow it down.",
@@ -1115,6 +1132,18 @@ public partial class MainWindow : Window
             Margin = new Avalonia.Thickness(0, 14, 0, 0),
         });
     }
+
+    /// <summary>
+    /// Wide enough for the banner's one sentence and its button to sit on a single line, and no
+    /// wider: past this the notice stops reading as a line and starts reading as a strip.
+    /// </summary>
+    private const double BannerWidth = 760;
+
+    /// <summary>
+    /// The summary's own width, unchanged. A dozen short lines centred read as an answer; the same
+    /// lines stretched across a wide panel read as a page that failed to lay itself out.
+    /// </summary>
+    private const double SummaryWidth = 460;
 
     /// <summary>
     /// The offer to stay, at the top of the overview, whenever this copy is not installed.
@@ -1141,9 +1170,16 @@ public partial class MainWindow : Window
         // ⚠ The product is named here rather than called "this tool". The banner sits among a list
         // of games, above figures about games, in a window whose heading is "Your Unity games" —
         // read cold, "this tool" could as easily mean the mod that goes into them.
+        //
+        // 🔸 The title carries the offer and the body carries the situation, rather than the other
+        // way round. That is not only a matter of register: the title has to survive on one line at
+        // the NARROWEST the window is allowed to be, where the banner has about 480 pixels beside
+        // its button — and the sentence describing the situation does not fit in that, while the
+        // offer does with room to spare. A title that wraps to three lines turns a standing notice
+        // into a paragraph of what looks like bad news.
         text.Children.Add(new TextBlock
         {
-            Text = "UnityGameTranslator Installer is running from the file you downloaded",
+            Text = "Keep UnityGameTranslator Installer on this machine?",
             FontSize = 13,
             FontWeight = FontWeight.SemiBold,
             Foreground = Brush("TextPrimary"),
@@ -1152,9 +1188,9 @@ public partial class MainWindow : Window
 
         text.Children.Add(new TextBlock
         {
-            Text = "That is this window — the program that sets your games up, not the mod that "
-                 + "goes into them. Keep it on this machine and it will be in your menu next time, "
-                 + "with a proper way to remove it. Nothing in your games changes either way.",
+            Text = "You are running the file you downloaded — the program that sets your games up, "
+                 + "not the mod that goes into them. Kept here it lands in your menu, with a proper "
+                 + "way to remove it. Nothing in your games changes either way.",
             FontSize = 11,
             Foreground = Brush("TextSecondary"),
             TextWrapping = TextWrapping.Wrap,

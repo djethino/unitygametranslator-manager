@@ -1156,8 +1156,11 @@ public partial class MainWindow : Window
     /// goes looking on purpose — this is for everyone else, who never opens settings and would
     /// otherwise have no idea there is a folder at all.
     ///
-    /// No border, unlike the offer above it. A second box would give a standing note the same
-    /// weight as a question waiting for an answer.
+    /// ⚠ Boxed like the offer above it, and that was a correction. Left bare it was the lighter of
+    /// the two by design — a standing note should not carry the weight of a question waiting for an
+    /// answer — but two blocks stacked in the same strip, one framed and one not, read as one
+    /// finished thing and one that was not got round to. The difference in weight is carried by the
+    /// text instead: muted, smaller, no heading.
     /// </summary>
     private Control DataFolderRow()
     {
@@ -1203,8 +1206,25 @@ public partial class MainWindow : Window
         row.Children.Add(text);
         row.Children.Add(open);
 
-        return row;
+        return OverviewBox(row);
     }
+
+    /// <summary>
+    /// The frame both blocks of the top strip share.
+    ///
+    /// One helper rather than the same six properties written twice: they sit one above the other,
+    /// so any drift between them is visible at a glance — which is exactly the kind of difference
+    /// nobody notices while writing it and everybody notices on screen.
+    /// </summary>
+    private Control OverviewBox(Control child) => new Border
+    {
+        Background = Brush("SurfaceCard"),
+        BorderBrush = Brush("BorderSubtle"),
+        BorderThickness = new Avalonia.Thickness(1),
+        CornerRadius = new Avalonia.CornerRadius(8),
+        Padding = new Avalonia.Thickness(14, 12),
+        Child = child,
+    };
 
     /// <summary>
     /// The offer to stay, at the top of the overview, whenever this copy is not installed.
@@ -1274,16 +1294,7 @@ public partial class MainWindow : Window
         row.Children.Add(text);
         row.Children.Add(keep);
 
-        return new Border
-        {
-            Background = Brush("SurfaceCard"),
-            BorderBrush = Brush("BorderSubtle"),
-            BorderThickness = new Avalonia.Thickness(1),
-            CornerRadius = new Avalonia.CornerRadius(8),
-            Padding = new Avalonia.Thickness(14, 12),
-            Margin = new Avalonia.Thickness(0, 0, 0, 6),
-            Child = row,
-        };
+        return OverviewBox(row);
     }
 
     /// <summary>

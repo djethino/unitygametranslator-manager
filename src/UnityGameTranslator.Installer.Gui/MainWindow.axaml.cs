@@ -53,7 +53,7 @@ public partial class MainWindow : Window
     /// and one of these describes the person — which games they take part in — so it could not be
     /// expressed as one without inventing a state a game does not have.
     /// </summary>
-    private enum Lens { All, Playable, NeedsTranslator, Ready, Mine, Blocked }
+    private enum Lens { All, Playable, NeedsTranslator, Ready, Mine, Running, Blocked }
 
     private Lens _lens = Lens.All;
 
@@ -710,6 +710,16 @@ public partial class MainWindow : Window
                                + "publish, or a branch of somebody else's.", Lens.Mine));
         }
 
+        // Before "not moddable", and only while something is running: a lens that can only ever
+        // return nothing reads as "you have none" rather than "there are none right now". It comes
+        // and goes with the games themselves, which is why the bar is rebuilt when the sweep
+        // changes its mind.
+        if (_running.Paths.Count > 0)
+        {
+            filters.Add(("Running", "Games open right now — they cannot be set up or removed until "
+                                  + "they are closed.", Lens.Running));
+        }
+
         filters.Add(("Not moddable", "Games no loader can start in, with the reason on each card.",
                      Lens.Blocked));
 
@@ -948,15 +958,37 @@ public partial class MainWindow : Window
         var was = _running;
         _running = sweep;
 
-        // Only the rows whose answer changed, and only their contents — an item belongs to the list
-        // that holds it, and handing one back through a new source is what brought the window down
-        // once already.
-        foreach (var (path, entry) in _rows.ToList())
+        // The tag comes and goes with the games themselves: offered while something is running,
+        // gone when nothing is. A filter that can only return nothing reads as "you have none"
+        // rather than "there are none right now".
+        if ((was.Paths.Count == 0) != (sweep.Paths.Count == 0))
         {
-            if (entry.Item.Tag is not GameInstall game) continue;
-            if (sweep.IsRunning(game) == was.IsRunning(game)) continue;
+            // Nothing running and that lens selected would leave an empty list and no way to see it
+            // was a filter doing it. Same treatment as "Mine" when somebody signs out.
+            if (_lens == Lens.Running && sweep.Paths.Count == 0) _lens = Lens.All;
 
-            entry.Item.Content = BuildRowContent(game);
+            BuildFilterBar();
+        }
+
+        // ⚠ Membership moves under this one lens, and only under it. Everywhere else a sweep changes
+        // what we KNOW about a game, never whether it belongs in the list — which is why rows are
+        // otherwise updated in place rather than rebuilt.
+        if (_lens == Lens.Running)
+        {
+            RefreshList();
+        }
+        else
+        {
+            // Only the rows whose answer changed, and only their contents — an item belongs to the
+            // list that holds it, and handing one back through a new source is what brought the
+            // window down once already.
+            foreach (var (path, entry) in _rows.ToList())
+            {
+                if (entry.Item.Tag is not GameInstall game) continue;
+                if (sweep.IsRunning(game) == was.IsRunning(game)) continue;
+
+                entry.Item.Content = BuildRowContent(game);
+            }
         }
 
         // The card carries buttons whose enabled state is exactly this question, so it is redrawn
@@ -1014,6 +1046,10 @@ public partial class MainWindow : Window
         return _lens switch
         {
             Lens.Blocked => !game.IsModdable,
+
+            // A state of this minute rather than of the game, which is why it is the one lens whose
+            // membership changes on its own — see LookForRunningGamesAsync.
+            Lens.Running => _running.IsRunning(game),
             Lens.Playable => game.IsModdable && inLanguage,
             Lens.NeedsTranslator => game.IsModdable && online is not null && !inLanguage,
             Lens.Ready => game.IsModdable && IsSetUp(game),
@@ -1932,14 +1968,32 @@ public partial class MainWindow : Window
 
         var text = new StackPanel { Spacing = 2, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
 
-        text.Children.Add(new TextBlock
+        // The name and, when it applies, the one word that changes what the rest of this card can
+        // do. In the title line rather than under it, and in the colour the row and the note below
+        // the buttons already use — three places saying the same thing in the same colour is one
+        // fact, where three different treatments would read as three.
+        //
+        // Inline so it wraps with the name: a long title on a narrow window would otherwise push
+        // the word out of view, which is the case where it is most needed.
+        var title = new TextBlock
         {
-            Text = game.Name,
             FontSize = 20,
             FontWeight = FontWeight.SemiBold,
             Foreground = Brush("TextPrimary"),
             TextWrapping = TextWrapping.Wrap,
-        });
+        };
+
+        title.Inlines?.Add(new Avalonia.Controls.Documents.Run(game.Name));
+
+        if (_running.IsRunning(game))
+        {
+            title.Inlines?.Add(new Avalonia.Controls.Documents.Run("  (running)")
+            {
+                Foreground = Brush("StatusWarning"),
+            });
+        }
+
+        text.Children.Add(title);
 
         text.Children.Add(FolderRow(game.Path, "the game"));
 

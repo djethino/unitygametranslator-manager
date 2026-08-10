@@ -543,22 +543,31 @@ public partial class MainWindow : Window
     {
         FilterBar.Children.Clear();
 
-        var filters = new List<(string Label, Lens Value)>
+        // Short on the tag, whole in the tooltip. Six tags at their full wording wrapped onto three
+        // lines in a 370px column, which costs a row of the game list to say what a hover already
+        // says — and the sentences were there for readers who did not need them by their second
+        // visit.
+        var filters = new List<(string Label, string Meaning, Lens Value)>
         {
-            ("All", Lens.All),
-            ("Playable in my language", Lens.Playable),
-            ("Needs a translator", Lens.NeedsTranslator),
-            ("Already set up", Lens.Ready),
+            ("All", "Every game found, whatever its state.", Lens.All),
+            ("In my language", "Games with a translation published in the language you are setting up.", Lens.Playable),
+            ("Untranslated", "Games nobody has published a translation for in your language yet — where you would come in.", Lens.NeedsTranslator),
+            ("Set up", "Games that already have the mod installed.", Lens.Ready),
         };
 
         // Only offered when there is an account to answer it. A filter that can only ever return
         // nothing is worse than an absent one: it reads as "you have none" rather than "we cannot
         // know". The bar is rebuilt when the account changes, so it appears on signing in.
-        if (_settings.Current.SignedIn) filters.Add(("My translations", Lens.Mine));
+        if (_settings.Current.SignedIn)
+        {
+            filters.Add(("Mine", "Games carrying a translation you take part in — the one you "
+                               + "publish, or a branch of somebody else's.", Lens.Mine));
+        }
 
-        filters.Add(("Cannot be modded", Lens.Blocked));
+        filters.Add(("Not moddable", "Games no loader can start in, with the reason on each card.",
+                     Lens.Blocked));
 
-        foreach (var (label, value) in filters)
+        foreach (var (label, meaning, value) in filters)
         {
             var button = new Button
             {
@@ -567,6 +576,8 @@ public partial class MainWindow : Window
                 Classes = { "filter" },
                 Margin = new Avalonia.Thickness(0, 0, 6, 6),
             };
+
+            ToolTip.SetTip(button, meaning);
             button.Click += (_, _) =>
             {
                 _lens = value;

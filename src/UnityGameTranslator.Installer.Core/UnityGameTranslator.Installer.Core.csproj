@@ -20,4 +20,11 @@
     <PackageReference Include="Microsoft.Win32.Registry" Version="5.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The rules this tool shares with the mod, held in one place rather than in two copies
+         that drift. It targets netstandard2.0 because the mod runs on Unity; net8.0 consumes
+         that without trouble, and the other direction would not work at all. -->
+    <ProjectReference Include="..\..\common\src\UnityGameTranslator.Common\UnityGameTranslator.Common.csproj" />
+  </ItemGroup>
+
 </Project>

@@ -1,6 +1,7 @@
 using UnityGameTranslator.Installer.Core.Install;
 using UnityGameTranslator.Installer.Core.Model;
 using UnityGameTranslator.Installer.Core.Platform;
+using UnityGameTranslator.Common;
 
 namespace UnityGameTranslator.Installer.Core.Update;
 

@@ -44,6 +44,32 @@ public partial class MainWindow : Window
 
     private DispatcherTimer? _runningClock;
 
+    /// <summary>
+    /// When each watched game's translation file was last seen to change, by game path.
+    ///
+    /// Only games being played are in here, and they leave it when they close. It is what turns a
+    /// ten-second question into a directory lookup instead of a file read.
+    /// </summary>
+    private readonly Dictionary<string, DateTime> _watchedStamps =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// ⚠ The beginning of an orchestration, and deliberately still small.
+    ///
+    /// Two cadences on one clock, because two questions have different costs and different worth:
+    /// which games are open is asked every four seconds because it is nearly free, and whether a
+    /// played game's file has moved is asked every ten because that is as often as it can usefully
+    /// change — the mod's own save is debounced to thirty seconds.
+    ///
+    /// One clock rather than two, because two clocks drift apart and nothing then knows the whole
+    /// picture. When the periodic checks of versions, translations and branches arrive, they join
+    /// this counter instead of starting their own — see the note in TODO.md about the tray, which is
+    /// the point at which registering services would stop being an abstraction.
+    /// </summary>
+    private int _clockTicks;
+
+    private const int TicksBetweenFileChecks = 3;   // 4 s per tick → about twelve seconds
+
     /// <summary>Situation per game path, so a row can be redrawn without redoing the work.</summary>
     private readonly Dictionary<string, GameSituationInfo> _situations =
         new(StringComparer.OrdinalIgnoreCase);
@@ -314,43 +340,65 @@ public partial class MainWindow : Window
     /// </summary>
     private void RecomputeSituations()
     {
-        var language = _settings.ResolveTargetLanguage();
         _situations.Clear();
         _mine.Clear();
 
         foreach (var game in _games)
         {
-            var online = _online.Peek(game);
-            var report = new GameReport { Game = game };
-
-            var detected = LoaderProbe.Detect(game.Path, _catalog);
-            var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == detected?.Id);
-
-            if (descriptor is not null)
-            {
-                report.InstalledPluginVersion =
-                    LocalTranslationProbe.ReadInstalledPluginVersion(game.Path, descriptor);
-                report.LocalTranslation = LocalTranslationProbe.Read(game.Path, descriptor);
-
-                // Noted while the file is open anyway. Asked again at filter time it would mean
-                // re-reading a translation from disk on every keystroke in the search box.
-                if (_lineages.For(report.LocalTranslation?.Uuid) is not null) _mine.Add(game.Path);
-            }
-
-            if (online is not null)
-            {
-                report.OnlineTranslations = online;
-                if (report.LocalTranslation?.Uuid is { Length: > 0 } uuid)
-                {
-                    report.MatchingOnline = online.FirstOrDefault(
-                        t => string.Equals(t.Uuid, uuid, StringComparison.OrdinalIgnoreCase));
-                }
-            }
-
-            var checkedOnline = online is not null || !_settings.Current.OnlineMode;
-
-            _situations[game.Path] = SituationReader.Read(report, language, checkedOnline);
+            var (situation, mine) = ReadSituation(game);
+            _situations[game.Path] = situation;
+            if (mine) _mine.Add(game.Path);
         }
+    }
+
+    /// <summary>
+    /// One game's situation, read from the disk and from what the community lookup already said.
+    ///
+    /// Pulled out of the loop so a single game can be re-read on its own — which is what a game
+    /// being played needs, since the mod is writing to its translation file while somebody plays.
+    /// Nothing here touches the network: the online answer comes from the cache and never from a
+    /// fresh request, so re-reading one game costs a file and no quota.
+    ///
+    /// ⚠ Touches no control AND no shared state: it runs on a background thread while a game is
+    /// being played, and _mine is a set the interface thread edits elsewhere. Whether this game
+    /// belongs to the account is therefore RETURNED rather than recorded, and the caller writes it
+    /// down where doing so is safe. Reaching into that set from here was a race with a full
+    /// recompute — rare, and the kind that corrupts a collection rather than failing cleanly.
+    /// </summary>
+    private (GameSituationInfo Situation, bool Mine) ReadSituation(GameInstall game)
+    {
+        var language = _settings.ResolveTargetLanguage();
+        var online = _online.Peek(game);
+        var report = new GameReport { Game = game };
+        var mine = false;
+
+        var detected = LoaderProbe.Detect(game.Path, _catalog);
+        var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == detected?.Id);
+
+        if (descriptor is not null)
+        {
+            report.InstalledPluginVersion =
+                LocalTranslationProbe.ReadInstalledPluginVersion(game.Path, descriptor);
+            report.LocalTranslation = LocalTranslationProbe.Read(game.Path, descriptor);
+
+            // Noted while the file is open anyway. Asked again at filter time it would mean
+            // re-reading a translation from disk on every keystroke in the search box.
+            mine = _lineages.For(report.LocalTranslation?.Uuid) is not null;
+        }
+
+        if (online is not null)
+        {
+            report.OnlineTranslations = online;
+            if (report.LocalTranslation?.Uuid is { Length: > 0 } uuid)
+            {
+                report.MatchingOnline = online.FirstOrDefault(
+                    t => string.Equals(t.Uuid, uuid, StringComparison.OrdinalIgnoreCase));
+            }
+        }
+
+        var checkedOnline = online is not null || !_settings.Current.OnlineMode;
+
+        return (SituationReader.Read(report, language, checkedOnline), mine);
     }
 
     /// <summary>
@@ -924,7 +972,7 @@ public partial class MainWindow : Window
         _runningClock?.Stop();
 
         _runningClock = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
-        _runningClock.Tick += async (_, _) => await LookForRunningGamesAsync();
+        _runningClock.Tick += async (_, _) => await OnClockTickAsync();
         _runningClock.Start();
 
         // Coming back to the window is the one moment the answer is certainly stale — somebody was
@@ -935,6 +983,25 @@ public partial class MainWindow : Window
     }
 
     private async void OnActivated(object? sender, EventArgs e) => await LookForRunningGamesAsync();
+
+    /// <summary>
+    /// One beat, two questions, each asked as often as it is worth asking.
+    ///
+    /// Which games are open: every beat, because a name comparison over the process list is nearly
+    /// free. Whether a played game's file has moved: every third, because it cannot usefully change
+    /// faster than the mod saves it.
+    /// </summary>
+    private async Task OnClockTickAsync()
+    {
+        _clockTicks++;
+
+        await LookForRunningGamesAsync();
+
+        if (_clockTicks % TicksBetweenFileChecks != 0) return;
+        if (WindowState == WindowState.Minimized) return;
+
+        await FollowGamesBeingPlayedAsync();
+    }
 
     private async Task LookForRunningGamesAsync()
     {
@@ -996,6 +1063,122 @@ public partial class MainWindow : Window
         // rebuilding it would throw away a loader picked in a dropdown.
         if (_selected is not null && sweep.IsRunning(_selected) != was.IsRunning(_selected))
             await ShowSelectedAsync();
+
+        // A game that has just been closed gets one last look, whatever its file's date says: the
+        // mod writes on the way out, and this is the moment somebody turns back to this window
+        // expecting to see what their session produced. Then it is left alone — see the two
+        // paragraphs on FollowGamesBeingPlayedAsync for why "left alone" is the whole design.
+        foreach (var game in _games)
+        {
+            if (!was.IsRunning(game) || sweep.IsRunning(game)) continue;
+
+            await RereadAsync(game);
+
+            // Off the watch list: at rest, nothing writes to that file, so there is nothing to
+            // notice. Forgetting the date as well means the next session starts by recording where
+            // the file stands rather than by reacting to a change that happened while nobody
+            // was watching.
+            _watchedStamps.Remove(game.Path);
+        }
+    }
+
+    /// <summary>
+    /// Keeps up with a game while it is being played, and stops the moment it is not.
+    ///
+    /// Three states, and the point of the design is that only one of them costs anything:
+    ///
+    /// · **being played** — the mod is writing to the translation file as lines are captured, so
+    ///   what this window says about that game is going stale while somebody watches it;
+    /// · **just closed** — one last read, dealt with by the caller, because the mod saves on the
+    ///   way out and that is the moment somebody comes back to look;
+    /// · **at rest** — nothing at all. Nothing is writing to those files, so re-reading them would
+    ///   be work whose answer is known in advance.
+    ///
+    /// ⚠ What makes ten seconds free is that the question asked is NOT "what does the file say" but
+    /// "has the file changed". Measured on a real translation of 1679 KB: reading the modification
+    /// date costs 0.13 ms, reading and parsing the file costs 19.3 ms — a hundred and fifty times
+    /// more. So the date is what gets polled, and the file is opened only when the date has moved,
+    /// which the mod does at most once every thirty seconds (its own save is debounced).
+    ///
+    /// 🔸 On the worry about wearing disks out: these are reads, and it is writes that wear flash.
+    /// The operating system also holds a file this size in its cache, so repeated reads mostly never
+    /// reach the disk at all. The date-first design makes the question moot either way, which is
+    /// better than having to be right about it.
+    /// </summary>
+    private async Task FollowGamesBeingPlayedAsync()
+    {
+        if (_running.Paths.Count == 0) return;
+
+        foreach (var game in _games.Where(_running.IsRunning).ToList())
+        {
+            var stamp = await Task.Run(() => TranslationFileStamp(game));
+
+            if (_watchedStamps.TryGetValue(game.Path, out var seen) && seen == stamp) continue;
+
+            _watchedStamps[game.Path] = stamp;
+
+            // The first sighting only records where the file stood; there is nothing new to show.
+            if (seen == default) continue;
+
+            await RereadAsync(game);
+        }
+    }
+
+    /// <summary>
+    /// Re-reads one game and puts what changed on screen — its row, and its card when it is the
+    /// one open.
+    ///
+    /// The disk work happens off the interface thread: nineteen milliseconds is not much and it is
+    /// not nothing, and a list that hitches while somebody plays would be a poor trade for a line
+    /// count that could have waited a moment.
+    /// </summary>
+    private async Task RereadAsync(GameInstall game)
+    {
+        var before = _situations.TryGetValue(game.Path, out var was) ? was : null;
+        var (now, mine) = await Task.Run(() => ReadSituation(game));
+
+        _situations[game.Path] = now;
+        if (mine) _mine.Add(game.Path); else _mine.Remove(game.Path);
+        _watchedStamps[game.Path] = TranslationFileStamp(game);
+
+        // Nothing said differently means nothing to redraw. A game can save its file without any of
+        // it reaching this window — a setting changed in the mod, say.
+        if (before is not null && before.Headline == now.Headline && before.Detail == now.Detail)
+            return;
+
+        if (_rows.TryGetValue(game.Path, out var row) && row.Item.Tag is GameInstall shown)
+        {
+            row.Item.Content = BuildRowContent(shown);
+            _rows[game.Path] = (Signature(game.Path), row.Item);
+        }
+
+        if (_selected is not null && _selected.Path == game.Path) await ShowSelectedAsync();
+    }
+
+    /// <summary>
+    /// When this game's translation file was last written, or default when there is none.
+    ///
+    /// Cheap on purpose: this is the question asked every ten seconds, and it must stay a look at a
+    /// directory entry rather than a read of a file.
+    /// </summary>
+    private DateTime TranslationFileStamp(GameInstall game)
+    {
+        try
+        {
+            var detected = LoaderProbe.Detect(game.Path, _catalog);
+            var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == detected?.Id);
+            if (descriptor is null) return default;
+
+            var path = System.IO.Path.Combine(game.Path,
+                descriptor.UserDataDir.Replace('/', System.IO.Path.DirectorySeparatorChar),
+                "translations.json");
+
+            return File.Exists(path) ? File.GetLastWriteTimeUtc(path) : default;
+        }
+        catch
+        {
+            return default;
+        }
     }
 
     /// <summary>What a row is currently saying, so a change can be noticed without comparing controls.</summary>

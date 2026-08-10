@@ -519,7 +519,7 @@ public sealed class SettingsWindow : Window
             // an address is already saved. This is how someone moves from an online provider back
             // to a server on their own machine.
             _aiServers.Forget();
-            await DiscoverAsync();
+            await DiscoverAsync(asked: true);
         };
 
         // Beside the list, because that is what it acts on. "Test connection" does the same
@@ -794,7 +794,12 @@ public sealed class SettingsWindow : Window
     /// probing six ports takes a couple of seconds, and nothing about the machine changed while
     /// this dialog was closed. False for "Search again" and after anything we did ourselves.
     /// </param>
-    private async Task DiscoverAsync(bool reuseKnown = false)
+    /// <param name="asked">
+    /// True when a person pressed the button that says "look for a local AI". What is found then
+    /// goes into the field, whatever was in it — because that is the request. Left false, a found
+    /// server only fills a field that is empty, so nothing anyone typed is taken away from them.
+    /// </param>
+    private async Task DiscoverAsync(bool reuseKnown = false, bool asked = false)
     {
         _populating = true;
         try
@@ -812,11 +817,11 @@ public sealed class SettingsWindow : Window
 
             if (reuseKnown && _aiServers.Remembered is { } known)
             {
-                ShowServers(known);
+                ShowServers(known, asked);
                 return;
             }
 
-            await DiscoverCoreAsync();
+            await DiscoverCoreAsync(asked);
         }
         finally
         {
@@ -832,7 +837,7 @@ public sealed class SettingsWindow : Window
         }
     }
 
-    private async Task DiscoverCoreAsync()
+    private async Task DiscoverCoreAsync(bool asked)
     {
         Say("Looking for a local AI server...");
         _aiModel.Items.Clear();
@@ -846,7 +851,7 @@ public sealed class SettingsWindow : Window
         var servers = await _probe.DiscoverAsync();
         _aiServers.Remember(servers);
 
-        ShowServers(servers);
+        ShowServers(servers, asked);
     }
 
     /// <summary>
@@ -931,7 +936,7 @@ public sealed class SettingsWindow : Window
     /// Puts a set of servers on screen. Split out so a remembered result and a fresh one produce
     /// exactly the same window — two code paths drawing the same thing is how they drift.
     /// </summary>
-    private void ShowServers(IReadOnlyList<AiServer> servers)
+    private void ShowServers(IReadOnlyList<AiServer> servers, bool asked)
     {
         if (servers.Count == 0)
         {
@@ -954,8 +959,13 @@ public sealed class SettingsWindow : Window
         // into the form is a decision, and it was being taken for the person: opening this screen
         // with "Community translations only" set left "Apply (2)" waiting on a form nobody had
         // touched, and Apply is the natural way to leave.
+        //
+        // 🔸 But pressing "Look for a local AI" IS that decision, so what turns up goes in the
+        // field even when something else was there. Only filling an EMPTY field made the button
+        // useless in the case it exists for: someone with a wrong address typed in, who searches
+        // and is shown a server that is answering while the box keeps the address that is not.
         var chosen = Tag(_backend) == "llm";
-        if (chosen && string.IsNullOrWhiteSpace(_aiUrl.Text)) _aiUrl.Text = server.Url;
+        if (chosen && (asked || string.IsNullOrWhiteSpace(_aiUrl.Text))) _aiUrl.Text = server.Url;
 
         SayWorked($"{server.Product} answered at {server.Url} — {server.Models.Count} model(s).");
 

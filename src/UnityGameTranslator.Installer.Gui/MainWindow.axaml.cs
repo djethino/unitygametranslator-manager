@@ -1142,10 +1142,154 @@ public partial class MainWindow : Window
     {
         OverviewTop.Children.Clear();
 
-        if (PortableBanner() is { } banner) OverviewTop.Children.Add(banner);
+        // Ordered by how much each one is asking of the person, and the last is not asking at all:
+        // where the tool lives, then what goes into the games, then an invitation, then a plain
+        // fact about a folder. ⚠ The middle two never appear together — see WhatGoesIntoGames.
+        if (PortableBanner() is { } portable) OverviewTop.Children.Add(portable);
+        if (WhatGoesIntoGames() is { } defaults) OverviewTop.Children.Add(defaults);
+
         OverviewTop.Children.Add(DataFolderRow());
 
         OverviewTop.IsVisible = true;
+    }
+
+    /// <summary>
+    /// The one thing to say about what will be written into the games — never two.
+    ///
+    /// Two states, and they are the same person at two moments, so only one is ever shown:
+    ///
+    /// · nobody has been through the defaults yet, so every game would be set up with whatever the
+    ///   program guessed. That is worth saying once, and it goes away for good the moment somebody
+    ///   applies anything;
+    /// · they have been through it and chose community translations only. That is a perfectly good
+    ///   answer, and it stays — which is why the second one is an invitation and not a warning.
+    ///
+    /// ⚠ The invitation says what becomes possible, not what somebody ought to do. Whether anyone
+    /// can translate at all depends on having a machine that can run a model, or the patience to
+    /// find a free API key, and neither is a thing to lean on people about: someone who plays with
+    /// what the community has published is using this exactly as intended.
+    /// </summary>
+    private Control? WhatGoesIntoGames()
+    {
+        var settings = _settings.Current;
+
+        if (!settings.Reviewed)
+        {
+            return Banner(
+                "Nothing has been decided about what goes into your games yet",
+                "Mod defaults holds the language, how lines get translated, and the in-game "
+                + "shortcut. Until you have been through it once, each game is set up with what "
+                + "this program guessed.",
+                "Open Mod defaults",
+                async () => await OpenSettingsAsync());
+        }
+
+        if (settings.TranslationBackend != "none") return null;
+
+        return Banner(
+            "You are playing with what the community has published",
+            "Which is the whole point of it, and enough on its own. If you ever want to go the "
+            + "other way, a game with no translation in your language can be started by anyone — "
+            + "the mod captures the lines as you play, and you decide what to do with them. It "
+            + "needs no AI and no account to begin.",
+            "See what people share",
+            () => { OpenUrl(BuildInfo.WebsiteBaseUrl); return Task.CompletedTask; });
+    }
+
+    /// <summary>
+    /// The row's "be the first" said again, on the card of the game it was said about.
+    ///
+    /// The list can only afford a few words, and a few words are easy to read past. Opening the
+    /// game is the moment somebody is actually considering it, so that is where the sentence has
+    /// room to say what taking it up would mean — and it is the same invitation, not a second one.
+    ///
+    /// ⚠ Only when the game can take the mod. Telling somebody to be the first to translate a game
+    /// this tool has just refused to touch would be an invitation to nothing, and the card already
+    /// says why it was refused.
+    /// </summary>
+    private Control? BeTheFirstBanner(GameReport report)
+    {
+        if (!report.Game.IsModdable) return null;
+
+        var language = _settings.ResolveTargetLanguage();
+
+        if (report.OnlineTranslations.Any(t => Languages.Matches(t.TargetLanguage, language)))
+            return null;
+
+        // Somebody already translating this game is not being invited to start it.
+        if (report.LocalTranslation is { EntryCount: > 0 }) return null;
+
+        var name = Languages.NameOf(language);
+
+        var text = new StackPanel { Spacing = 2 };
+
+        text.Children.Add(new TextBlock
+        {
+            Text = $"Nobody has published a {name} translation of this game — you could be first",
+            FontSize = 13,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = Brush("TextPrimary"),
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        text.Children.Add(new TextBlock
+        {
+            Text = "Set the mod up and play: it collects the lines the game shows you, and they "
+                 + "stay on your machine until you decide otherwise. Translating them can wait, "
+                 + "and sharing them is a separate choice again.",
+            FontSize = 11,
+            Foreground = Brush("TextSecondary"),
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        // The card's own shape rather than the strip's: it is a block on this game's page, among
+        // the others, and a box with different padding sitting between two cards reads as something
+        // that arrived from somewhere else. No button either — the way to take it up is the one the
+        // card already offers further down, and a second path to the same act invites the question
+        // of how the two differ.
+        return Card(text);
+    }
+
+    /// <summary>One shape for every notice in the strip, so none of them drifts from the others.</summary>
+    private Control Banner(string title, string body, string action, Func<Task> onClick)
+    {
+        var text = new StackPanel { Spacing = 2 };
+
+        text.Children.Add(new TextBlock
+        {
+            Text = title,
+            FontSize = 13,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = Brush("TextPrimary"),
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        text.Children.Add(new TextBlock
+        {
+            Text = body,
+            FontSize = 11,
+            Foreground = Brush("TextSecondary"),
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        var button = new Button
+        {
+            Content = action,
+            FontSize = 12,
+            Classes = { "primary" },
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Margin = new Avalonia.Thickness(14, 0, 0, 0),
+        };
+
+        button.Click += async (_, _) => await onClick();
+
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        Grid.SetColumn(text, 0);
+        Grid.SetColumn(button, 1);
+        row.Children.Add(text);
+        row.Children.Add(button);
+
+        return OverviewBox(row);
     }
 
     /// <summary>
@@ -1554,6 +1698,8 @@ public partial class MainWindow : Window
 
         DetailPanel.Children.Add(BackToOverview());
         DetailPanel.Children.Add(Header(report));
+
+        if (BeTheFirstBanner(report) is { } invitation) DetailPanel.Children.Add(invitation);
 
         DetailPanel.Children.Add(Card(Facts(report)));
 
@@ -2349,8 +2495,10 @@ public partial class MainWindow : Window
         Child = content,
     };
 
-    /// <summary>Looks a brush up in the shared palette (Theme.axaml).</summary>
-    /// <summary>Through Palette, which will not let an unknown key pass unnoticed.</summary>
+    /// <summary>
+    /// Looks a brush up in the shared palette (Theme.axaml), through Palette — which will not let
+    /// an unknown key pass unnoticed.
+    /// </summary>
     private static IBrush? Brush(string key) => Palette.Of(key);
 
     /// <summary>

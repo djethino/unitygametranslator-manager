@@ -100,9 +100,16 @@ public static class SituationReader
                 "Install and play");
         }
 
+        // ⚠ "Be the first" rather than the bare absence. The row used to state a lack and stop
+        // there, which reads as a door closed — nothing here for you — when it is the opposite:
+        // this is the one situation where a person can do something nobody else has. Three words,
+        // and they turn a dead end into an opening.
+        //
+        // Deliberately not a demand. Whether anyone takes it up depends on their machine, their
+        // patience and their languages, and none of that is ours to press on.
         return new GameSituationInfo(
             Situation.NotTranslatedYet,
-            $"No {Languages.NameOf(targetLanguage)} translation yet",
+            $"No {Languages.NameOf(targetLanguage)} translation yet — be the first",
             report.OnlineTranslations.Count > 0
                 ? $"{report.OnlineTranslations.Count} translation(s) in other languages"
                 : null,

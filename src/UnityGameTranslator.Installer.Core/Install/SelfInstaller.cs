@@ -135,6 +135,8 @@ public sealed class SelfInstaller
             return "This is already the installed copy.";
         }
 
+        if (NotASelfContainedBuild(source) is { } reason) return reason;
+
         try
         {
             var probe = Path.Combine(Path.GetDirectoryName(target) ?? target,
@@ -148,6 +150,39 @@ public sealed class SelfInstaller
         {
             return $"{target} cannot be written to on this account.";
         }
+    }
+
+    /// <summary>
+    /// Why a build cannot install itself, when it is not the one we ship.
+    ///
+    /// What ships is a single self-contained file: everything it needs is inside it, so copying it
+    /// elsewhere gives a copy that runs. A build straight out of the compiler is the opposite — the
+    /// executable is a small host beside a couple of hundred runtime files — and copying it alone
+    /// produces an installed copy that cannot start, in a folder the person now believes holds a
+    /// working tool.
+    ///
+    /// Told apart by what a bundled build does NOT leave on disk: its runtime configuration is
+    /// inside the bundle, so these two files exist only next to an unbundled one. The release
+    /// script already checks the other side of the same fact — that a publish produced exactly one
+    /// file — so the two agree by construction.
+    /// </summary>
+    private static string? NotASelfContainedBuild(string executable)
+    {
+        var folder = Path.GetDirectoryName(executable);
+        if (folder is null) return null;
+
+        var stem = Path.GetFileNameWithoutExtension(executable);
+
+        foreach (var suffix in new[] { ".deps.json", ".runtimeconfig.json" })
+        {
+            if (!File.Exists(Path.Combine(folder, stem + suffix))) continue;
+
+            return "This is a development build: its runtime files sit beside it rather than "
+                   + "inside it, so an installed copy would not start. Install from a published "
+                   + "build instead.";
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -297,27 +332,38 @@ public sealed class SelfInstaller
     }
 
     /// <summary>
-    /// The files that came out of the archive beside the executable.
+    /// What ships beside the executable, by name.
     ///
-    /// Read from the folder rather than listed here on purpose: prepare-release.ps1 decides what
-    /// ships, and a list written twice is a list that will disagree with itself. Anything the person
-    /// happened to put in the same folder travels too, which is the price of not keeping a second
-    /// list — and a small one, since the archive is normally unpacked on its own.
+    /// ⚠ A named list, and the first version of this was not — it took everything sitting in the
+    /// same folder, on the reasoning that prepare-release.ps1 decides what ships and a list written
+    /// twice is a list that will disagree with itself.
+    ///
+    /// That reasoning ignored where the file actually is. People unpack a zip into the folder they
+    /// downloaded it to, so "everything beside the executable" is routinely somebody's entire
+    /// Downloads folder — and offering to copy that into Programs is not a small price, it is a
+    /// different program. Seen for real on a development build, where the folder holds two hundred
+    /// runtime files.
+    ///
+    /// So the names are written here, and this is one contract in two files: add a file to the
+    /// Windows archive in prepare-release.ps1 and it belongs in this list too. Three names drifting
+    /// is a far smaller risk than the one it replaces.
     /// </summary>
+    private static readonly string[] ShippedBesideTheExecutable =
+    [
+        "LICENSE",
+        "THIRD_PARTY_LICENSES.md",
+        "ugt-installer.cmd",
+    ];
+
     private static IEnumerable<string> Companions(string executable)
     {
         var folder = Path.GetDirectoryName(executable);
         if (folder is null) yield break;
 
-        foreach (var file in Directory.EnumerateFiles(folder))
+        foreach (var name in ShippedBesideTheExecutable)
         {
-            if (string.Equals(file, executable, StringComparison.OrdinalIgnoreCase)) continue;
-
-            // Anything a previous update set aside is not part of the tool.
-            if (Path.GetFileName(file).Contains(SelfUpdater.PreviousMarker, StringComparison.Ordinal))
-                continue;
-
-            yield return file;
+            var path = Path.Combine(folder, name);
+            if (File.Exists(path)) yield return path;
         }
     }
 

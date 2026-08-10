@@ -36,6 +36,14 @@ public sealed class SelfInstallWindow : Window
         Width = 620;
         SizeToContent = SizeToContent.Height;
         MinHeight = 260;
+
+        // ⚠ A ceiling, and it is not decoration. This window grows to fit what it lists, and what
+        // it lists is a plan — so the day a plan is long, the window grows past the screen, the
+        // buttons go with it and there is no way to answer the question being asked. Seen for real
+        // on a build whose folder held two hundred runtime files. The list scrolls; the window
+        // stops.
+        MaxHeight = 620;
+
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         CanResize = false;
         Background = this.FindResource("SurfaceBase") as IBrush;
@@ -60,7 +68,18 @@ public sealed class SelfInstallWindow : Window
         var written = new StackPanel { Spacing = 4 };
         written.Children.Add(Label("What gets written"));
 
-        foreach (var file in _plan.Files) written.Children.Add(Path(file));
+        var paths = new StackPanel { Spacing = 2 };
+        foreach (var file in _plan.Files) paths.Children.Add(Path(file));
+
+        // The list is the one part that has no natural length, so it is the one part that scrolls.
+        // Everything else — the question, the boxes, the buttons — stays where it is, which is what
+        // makes the window answerable however long the plan turns out to be.
+        written.Children.Add(new ScrollViewer
+        {
+            Content = paths,
+            MaxHeight = 180,
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+        });
 
         if (_plan.RegistersWithTheSystem)
         {

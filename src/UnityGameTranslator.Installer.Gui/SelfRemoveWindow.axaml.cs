@@ -29,6 +29,10 @@ public sealed class SelfRemoveWindow : Window
         Width = 620;
         SizeToContent = SizeToContent.Height;
         MinHeight = 240;
+
+        // Same ceiling as the install window and for the same reason: this one lists what goes, and
+        // a window that grows past the screen takes its buttons with it.
+        MaxHeight = 620;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         CanResize = false;
         Background = this.FindResource("SurfaceBase") as IBrush;
@@ -73,16 +77,25 @@ public sealed class SelfRemoveWindow : Window
 
         var listing = new StackPanel { Spacing = 4 };
         listing.Children.Add(Text("What goes", 12, FontWeight.SemiBold, "TextPrimary"));
-        listing.Children.Add(Text(plan.Directory, 11, FontWeight.Normal, "TextMuted"));
+
+        var items = new StackPanel { Spacing = 2 };
+        items.Children.Add(Text(plan.Directory, 11, FontWeight.Normal, "TextMuted"));
 
         foreach (var launcher in plan.Launchers)
-            listing.Children.Add(Text(launcher, 11, FontWeight.Normal, "TextMuted"));
+            items.Children.Add(Text(launcher, 11, FontWeight.Normal, "TextMuted"));
 
         if (plan.Registration is not null)
         {
-            listing.Children.Add(Text("Its entry in the system's list of installed apps",
+            items.Children.Add(Text("Its entry in the system's list of installed apps",
                 11, FontWeight.Normal, "TextMuted"));
         }
+
+        listing.Children.Add(new ScrollViewer
+        {
+            Content = items,
+            MaxHeight = 160,
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+        });
 
         layout.Children.Add(listing);
 

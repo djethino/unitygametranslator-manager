@@ -1555,6 +1555,7 @@ public sealed class SettingsWindow : Window
         var required = 0;
         var echoed = 0;
         var done = 0;
+        var experimentalStarted = false;
         var outcomes = new List<ModelTestResult>();
 
         // Known before the first request, which is the point: "3 of 9" tells someone there is
@@ -1583,6 +1584,38 @@ public sealed class SettingsWindow : Window
 
                 outcomes.Add(result);
                 done++;
+
+                // The experimental cases are a different subject and had nothing to say so: they
+                // sat in the same list, in the same shape, as though a "cannot" there counted
+                // against the model. It does not — the mod ships that option off — and the score
+                // above does not include them. A heading is the cheapest way to stop the reader
+                // adding them up with the rest.
+                if (result.Test.UnlocksOption is not null && !experimentalStarted)
+                {
+                    experimentalStarted = true;
+
+                    _testOutput.Children.Insert(_testOutput.Children.Count - 1, new TextBlock
+                    {
+                        Text = "EXPERIMENTAL — not counted above",
+                        FontSize = 10,
+                        FontWeight = FontWeight.SemiBold,
+                        Foreground = Brush("TextMuted"),
+                        Margin = new Thickness(0, 10, 0, 0),
+                    });
+
+                    _testOutput.Children.Insert(_testOutput.Children.Count - 1, new TextBlock
+                    {
+                        Text = "These two decide one thing only: whether the mod's 'strict_source' "
+                             + "option would work with this model. It is off by default, so a "
+                             + "\"cannot\" here is not a defect — it means that option stays off. "
+                             + "Both must pass: refusing invented words while still translating "
+                             + "other real languages is not what the option promises.",
+                        FontSize = 11,
+                        TextWrapping = TextWrapping.Wrap,
+                        Foreground = Brush("TextMuted"),
+                        Margin = new Thickness(0, 0, 0, 4),
+                    });
+                }
 
                 // Inserted above the gear so the gear stays last: results accumulate, and the
                 // thing that says "more is coming" keeps sitting where the next one will land.
@@ -1686,9 +1719,11 @@ public sealed class SettingsWindow : Window
         Grid.SetColumn(title, 0);
         header.Children.Add(title);
 
-        var cost = result.Attempts > 1
-            ? $"{result.Elapsed.TotalSeconds:F1}s · {result.Attempts} attempts"
-            : $"{result.Elapsed.TotalSeconds:F1}s";
+        // The count is always written, even when it is one. Showing it only on retries left the
+        // reader unable to tell "asked once" from "we did not measure that" — and the silence read
+        // as the second.
+        var cost = $"{result.Elapsed.TotalSeconds:F1}s · "
+                 + (result.Attempts == 1 ? "1 request" : $"{result.Attempts} requests");
 
         if (!result.Accepted) cost += " · refused, left untranslated";
         else if (result.Repaired) cost += " · repaired by the mod";
@@ -1762,13 +1797,20 @@ public sealed class SettingsWindow : Window
             });
         }
 
+        // Set apart by its frame, not only by its wording: these two answer a different question
+        // from the rest, and a row that looks identical to a required one gets counted with them.
+        // Indented and marked down the left edge — enough to read as an aside, not so much as to
+        // look like a warning.
         return new Border
         {
             Background = Brush("SurfaceBase"),
-            BorderBrush = Brush("BorderSubtle"),
-            BorderThickness = new Thickness(1),
+            BorderBrush = Brush(experimental ? "StatusWarning" : "BorderSubtle"),
+            BorderThickness = experimental
+                ? new Thickness(3, 1, 1, 1)
+                : new Thickness(1),
             CornerRadius = new CornerRadius(6),
             Padding = new Thickness(10, 8),
+            Margin = experimental ? new Thickness(14, 0, 0, 0) : default,
             Child = body,
         };
     }

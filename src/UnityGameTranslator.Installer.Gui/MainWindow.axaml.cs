@@ -1054,26 +1054,9 @@ public partial class MainWindow : Window
         // where a long document belongs.
         DetailPanel.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center;
         DetailPanel.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
+        DetailPanel.MaxWidth = SummaryWidth;
 
-        // ⚠ The cap moved from the panel to the summary INSIDE it, and that is the whole point of
-        // these two lines. The summary wants to be narrow — a dozen short centred lines read as an
-        // answer, which is why 460 was chosen. The banner wants the opposite: it is one sentence
-        // with a button beside it, and at 460 its title broke across three lines, which made a
-        // standing notice look like a paragraph of bad news.
-        //
-        // So they are capped separately rather than one width being made to serve both.
-        DetailPanel.MaxWidth = BannerWidth;
-
-        if (PortableBanner() is { } banner) DetailPanel.Children.Add(banner);
-
-        var summary = new StackPanel
-        {
-            Spacing = 14,
-            MaxWidth = SummaryWidth,
-            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-        };
-
-        DetailPanel.Children.Add(summary);
+        BuildOverviewTop();
 
         var language = Languages.NameOf(_settings.ResolveTargetLanguage());
         var moddable = _games.Count(g => g.IsModdable);
@@ -1083,7 +1066,7 @@ public partial class MainWindow : Window
             && _online.Peek(g)?.Any(t => Languages.Matches(t.TargetLanguage,
                                                            _settings.ResolveTargetLanguage())) == true);
 
-        summary.Children.Add(new TextBlock
+        DetailPanel.Children.Add(new TextBlock
         {
             Text = $"{_games.Count} Unity games on this machine",
             FontSize = 20,
@@ -1109,7 +1092,7 @@ public partial class MainWindow : Window
 
         foreach (var fact in facts)
         {
-            summary.Children.Add(new TextBlock
+            DetailPanel.Children.Add(new TextBlock
             {
                 Text = fact,
                 FontSize = 13,
@@ -1120,7 +1103,7 @@ public partial class MainWindow : Window
             });
         }
 
-        summary.Children.Add(new TextBlock
+        DetailPanel.Children.Add(new TextBlock
         {
             Text = "Pick a game on the left to see what it needs, what the community has for it, "
                  + "and to set it up. The tags above the list narrow it down.",
@@ -1134,16 +1117,94 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Wide enough for the banner's one sentence and its button to sit on a single line, and no
-    /// wider: past this the notice stops reading as a line and starts reading as a strip.
-    /// </summary>
-    private const double BannerWidth = 760;
-
-    /// <summary>
-    /// The summary's own width, unchanged. A dozen short lines centred read as an answer; the same
-    /// lines stretched across a wide panel read as a page that failed to lay itself out.
+    /// The summary's width. A dozen short lines centred read as an answer; the same lines
+    /// stretched across a wide panel read as a page that failed to lay itself out.
+    ///
+    /// It applies to the summary alone. What sits in the row above takes the panel's full width,
+    /// which is why it lives outside this panel rather than inside it.
     /// </summary>
     private const double SummaryWidth = 460;
+
+    /// <summary>
+    /// The strip pinned above the overview: the offer to stay, and where this program keeps its
+    /// own files.
+    ///
+    /// Both belong at the top and neither belongs in the summary. The summary answers "what is on
+    /// this machine"; these two answer "what about this program", which is a different question and
+    /// a quieter one. Pinned in their own row they span the panel and align with the content below,
+    /// where centred with the summary they would drift into the middle and read as the main event.
+    ///
+    /// Cleared and rebuilt on every overview rather than toggled: the offer disappears the moment
+    /// the tool is installed, and a strip that remembers a state that has changed is worse than one
+    /// that is redrawn.
+    /// </summary>
+    private void BuildOverviewTop()
+    {
+        OverviewTop.Children.Clear();
+
+        if (PortableBanner() is { } banner) OverviewTop.Children.Add(banner);
+        OverviewTop.Children.Add(DataFolderRow());
+
+        OverviewTop.IsVisible = true;
+    }
+
+    /// <summary>
+    /// Where this program keeps what it remembers, and a way straight there.
+    ///
+    /// Practical and, more to the point, plain: a program that writes to a folder of its own should
+    /// say which one without being asked. It is in the settings as well, which is where someone
+    /// goes looking on purpose — this is for everyone else, who never opens settings and would
+    /// otherwise have no idea there is a folder at all.
+    ///
+    /// No border, unlike the offer above it. A second box would give a standing note the same
+    /// weight as a question waiting for an answer.
+    /// </summary>
+    private Control DataFolderRow()
+    {
+        var folder = _platform.UserDataDirectory;
+
+        var text = new StackPanel
+        {
+            Spacing = 1,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        };
+
+        text.Children.Add(new TextBlock
+        {
+            Text = "Everything this program remembers is in one folder — your settings, the folders "
+                 + "you added, and the translations it moved aside before replacing one.",
+            FontSize = 11,
+            Foreground = Brush("TextMuted"),
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        text.Children.Add(new TextBlock
+        {
+            Text = folder,
+            FontSize = 11,
+            Foreground = Brush("TextMuted"),
+            Opacity = 0.75,
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        var open = new Button
+        {
+            Content = "Open this folder",
+            FontSize = 11,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Margin = new Avalonia.Thickness(14, 0, 0, 0),
+        };
+
+        open.Click += (_, _) => Shell.OpenFolder(folder);
+
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        Grid.SetColumn(text, 0);
+        Grid.SetColumn(open, 1);
+        row.Children.Add(text);
+        row.Children.Add(open);
+
+        return row;
+    }
 
     /// <summary>
     /// The offer to stay, at the top of the overview, whenever this copy is not installed.
@@ -1360,6 +1421,11 @@ public partial class MainWindow : Window
         DetailPanel.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
         DetailPanel.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top;
         DetailPanel.MaxWidth = double.PositiveInfinity;
+
+        // The strip above belongs to the overview: it answers questions about this program, and a
+        // game's card is not the place to be asked them. Its row collapses, so the card gets the
+        // height back rather than keeping an empty band.
+        OverviewTop.IsVisible = false;
 
         DetailPanel.Children.Add(BackToOverview());
         DetailPanel.Children.Add(Header(report));

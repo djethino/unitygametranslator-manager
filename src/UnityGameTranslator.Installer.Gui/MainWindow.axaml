@@ -83,11 +83,24 @@
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
       </Grid>
 
-      <ScrollViewer Grid.Column="1">
-        <StackPanel x:Name="DetailPanel" Margin="20,16,24,24" Spacing="14">
-          <TextBlock Text="Select a game on the left." Foreground="{DynamicResource TextMuted}" />
-        </StackPanel>
-      </ScrollViewer>
+      <!--
+        Two rows rather than one scroller, so that what belongs at the top stays at the top.
+
+        The overview centres itself in the space it has, which is what makes a short summary read
+        as an answer. A standing notice cannot live inside that: centred with the rest it drifts to
+        the middle of the panel, where it reads as the main event rather than as a note. Pinned in
+        its own row it spans the panel, aligns with the content below, and stays out of the way.
+      -->
+      <Grid Grid.Column="1" RowDefinitions="Auto,*">
+        <StackPanel Grid.Row="0" x:Name="OverviewTop" Margin="20,16,24,0" Spacing="8"
+                    IsVisible="False" />
+
+        <ScrollViewer Grid.Row="1">
+          <StackPanel x:Name="DetailPanel" Margin="20,16,24,24" Spacing="14">
+            <TextBlock Text="Select a game on the left." Foreground="{DynamicResource TextMuted}" />
+          </StackPanel>
+        </ScrollViewer>
+      </Grid>
     </Grid>
 
     <!-- Status bar -->

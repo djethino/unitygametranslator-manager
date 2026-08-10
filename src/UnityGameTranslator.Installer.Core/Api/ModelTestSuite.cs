@@ -152,9 +152,12 @@ public static class ModelTestSuite
                      + "that is the wait before the original text is replaced on screen. ");
 
         summary.Append(corrected == 0
-            ? "Nothing had to be asked twice."
-            : $"{corrected} line(s) of {lines.Count} had to be asked again, which spends that time "
-              + "and that graphics card two or three times over, while the game is running.");
+            ? $"Nothing had to be asked twice — the mod allows up to "
+              + $"{ModPlaceholderRules.MaxAttempts} tries per line before giving up on it."
+            : $"{corrected} line(s) of {lines.Count} had to be asked again, out of the "
+              + $"{ModPlaceholderRules.MaxAttempts} tries the mod allows before leaving a line "
+              + "alone. Each extra try spends that time and that graphics card over again, while "
+              + "the game is running.");
 
         if (refused > 0)
         {

@@ -20,6 +20,16 @@ namespace UnityGameTranslator.Installer.Core.Api;
 /// </summary>
 public static class ModPlaceholderRules
 {
+    /// <summary>
+    /// How many times a game will ask before giving up on a line — the mod's own ceiling.
+    ///
+    /// Named here because two places need it and they must not drift: the loop that reproduces the
+    /// chain, and the report that shows "2 of 3 requests". Without the ceiling, a line that took
+    /// three requests looks like any other number rather than what it is — a line that came within
+    /// one attempt of being left in its original language.
+    /// </summary>
+    public const int MaxAttempts = 3;
+
     /// <summary>Every frozen token the mod sends: [!v*N], [!t*N], [!STR*N], [!nl].</summary>
     private static readonly Regex TokenPattern = new(
         @"\[!(?:v\*\d+|t\*\d+|STR\*\d+|nl)\]", RegexOptions.Compiled);

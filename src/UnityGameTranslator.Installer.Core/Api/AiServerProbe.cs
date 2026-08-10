@@ -373,7 +373,7 @@ public sealed class AiServerProbe
         var errors = new List<string>();
         var repaired = false;
 
-        for (var attempt = 0; attempt < 3; attempt++)
+        for (var attempt = 0; attempt < ModPlaceholderRules.MaxAttempts; attempt++)
         {
             object messages = attempt switch
             {
@@ -447,7 +447,7 @@ public sealed class AiServerProbe
         // Three attempts, still refused: in a game this line stays in its original language for
         // the session. The time was spent all the same, which is the point of timing it.
         stopwatch.Stop();
-        return new ModAttempt(answer, 3, stopwatch.Elapsed, false, false);
+        return new ModAttempt(answer, ModPlaceholderRules.MaxAttempts, stopwatch.Elapsed, false, false);
     }
 
     /// <summary>Reasoning budgets to try, best first — the same ladder the mod walks.</summary>

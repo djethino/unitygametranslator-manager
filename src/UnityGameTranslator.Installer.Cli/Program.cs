@@ -710,10 +710,10 @@ internal static class Program
             // What the line cost, on the same row as its verdict. A model that passes every case
             // on the third try is not the same model as one that passes on the first, and the
             // difference is the wait a player sits through.
-            // Always the count, even when it is one: shown only on retries, its absence read as
-            // "not measured" rather than as "asked once".
+            // Always the count, and always over the ceiling: three of three is a line that came
+            // within one attempt of being abandoned, which a bare "3" does not say.
             var cost = $"   {result.Elapsed.TotalSeconds:F1}s over "
-                     + (result.Attempts == 1 ? "1 request" : $"{result.Attempts} requests");
+                     + $"{result.Attempts} of {ModPlaceholderRules.MaxAttempts} requests";
 
             if (!result.Accepted) cost += ", refused — left untranslated";
             else if (result.Repaired) cost += ", repaired by the mod";

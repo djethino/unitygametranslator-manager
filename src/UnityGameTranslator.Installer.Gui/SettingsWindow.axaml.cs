@@ -1733,11 +1733,12 @@ public sealed class SettingsWindow : Window
         Grid.SetColumn(title, 0);
         header.Children.Add(title);
 
-        // The count is always written, even when it is one. Showing it only on retries left the
-        // reader unable to tell "asked once" from "we did not measure that" — and the silence read
-        // as the second.
+        // Always written, and always over the ceiling. The count alone hid two things: that a line
+        // asked once is a line that went well, and that a line asked three times came within one
+        // attempt of being left in its original language. Nothing here is worth hiding — the way
+        // the mod works is the thing being measured.
         var cost = $"{result.Elapsed.TotalSeconds:F1}s · "
-                 + (result.Attempts == 1 ? "1 request" : $"{result.Attempts} requests");
+                 + $"{result.Attempts} of {ModPlaceholderRules.MaxAttempts} requests";
 
         if (!result.Accepted) cost += " · refused, left untranslated";
         else if (result.Repaired) cost += " · repaired by the mod";

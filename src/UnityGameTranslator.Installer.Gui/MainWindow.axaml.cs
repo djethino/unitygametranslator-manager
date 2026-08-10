@@ -39,6 +39,11 @@ public partial class MainWindow : Window
     /// </summary>
     private readonly AccountLineages _lineages = new();
 
+    /// <summary>Which games are open right now. Never null: an unswept machine is an empty answer.</summary>
+    private RunningGames _running = RunningGames.None;
+
+    private DispatcherTimer? _runningClock;
+
     /// <summary>Situation per game path, so a row can be redrawn without redoing the work.</summary>
     private readonly Dictionary<string, GameSituationInfo> _situations =
         new(StringComparer.OrdinalIgnoreCase);
@@ -230,6 +235,12 @@ public partial class MainWindow : Window
         _games.Clear();
         _games.AddRange(found.OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase));
 
+        // Before the rows are built, so the first thing drawn is already right rather than correct
+        // itself four seconds later.
+        var toSweep = _games.ToList();
+        _running = await Task.Run(() => RunningGames.Sweep(toSweep));
+        WatchForRunningGames();
+
         var blocked = _games.Count(g => !g.IsModdable);
         SubtitleText.Text = blocked == 0
             ? $"{_games.Count} Unity games found"
@@ -368,6 +379,23 @@ public partial class MainWindow : Window
         SyncLanguageBox();
         RecomputeSituations();
         RefreshList();
+        await ShowWhateverIsOnTheRightAsync();
+    }
+
+    /// <summary>
+    /// Redraws the right-hand side, whichever of its two faces is showing.
+    ///
+    /// ⚠ It used to redraw the game's card and nothing else, so with no game selected — the state
+    /// somebody is in when they open the settings from the overview — nothing was redrawn at all.
+    /// The notice saying nothing had been decided about the games stayed up after deciding it.
+    ///
+    /// Worth noticing that this only became visible once applying stopped closing the window: the
+    /// two changes are a day apart and the second one exposed the first.
+    /// </summary>
+    private async Task ShowWhateverIsOnTheRightAsync()
+    {
+        if (_selected is null) { ShowOverview(); return; }
+
         await ShowSelectedAsync();
     }
 
@@ -587,6 +615,12 @@ public partial class MainWindow : Window
         BuildFilterBar();
         RecomputeSituations();
         RefreshList();
+
+        // The strip above the summary answers questions about this program — where it lives, which
+        // channel it follows — and every one of them can have changed in that window. Redrawn even
+        // when nothing was saved: installing or removing the tool happens immediately, with no
+        // Apply of its own.
+        await ShowWhateverIsOnTheRightAsync();
 
         if (!window.Saved) return;
 
@@ -859,6 +893,61 @@ public partial class MainWindow : Window
         _restoringSelection = false;
     }
 
+    /// <summary>
+    /// Watches for games opening and closing, while this window is open and no longer.
+    ///
+    /// ⚠ A clock, which this project avoids on principle — and here there is nothing else. Windows
+    /// will tell you when a process YOU HOLD ends, but there is no cheap way to be told that some
+    /// process started, and "some process" is the half that matters: someone launches a game and
+    /// the buttons must go grey without them wondering why they failed.
+    ///
+    /// So it is a clock made cheap enough to be uninteresting. Measured on a real machine: 20 ms
+    /// for 764 processes and 38 games, because the sweep needs no handle to read a name and only
+    /// opens one for a process whose name could be a game (see RunningGames). Four seconds between
+    /// looks is slower than a person can notice and far below anything a machine would feel.
+    ///
+    /// Off the interface thread, because 20 ms is small and not zero, and a list that stutters
+    /// every four seconds would be a worse bargain than the badge is worth.
+    /// </summary>
+    private void WatchForRunningGames()
+    {
+        _runningClock?.Stop();
+
+        _runningClock = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+        _runningClock.Tick += async (_, _) => await LookForRunningGamesAsync();
+        _runningClock.Start();
+    }
+
+    private async Task LookForRunningGamesAsync()
+    {
+        if (_games.Count == 0) return;
+
+        var games = _games.ToList();
+        var sweep = await Task.Run(() => RunningGames.Sweep(games));
+
+        if (!sweep.Differs(_running)) return;
+
+        var was = _running;
+        _running = sweep;
+
+        // Only the rows whose answer changed, and only their contents — an item belongs to the list
+        // that holds it, and handing one back through a new source is what brought the window down
+        // once already.
+        foreach (var (path, entry) in _rows.ToList())
+        {
+            if (entry.Item.Tag is not GameInstall game) continue;
+            if (sweep.IsRunning(game) == was.IsRunning(game)) continue;
+
+            entry.Item.Content = BuildRowContent(game);
+        }
+
+        // The card carries buttons whose enabled state is exactly this question, so it is redrawn
+        // when the game it is about has started or stopped — and left alone otherwise, since
+        // rebuilding it would throw away a loader picked in a dropdown.
+        if (_selected is not null && sweep.IsRunning(_selected) != was.IsRunning(_selected))
+            await ShowSelectedAsync();
+    }
+
     /// <summary>What a row is currently saying, so a change can be noticed without comparing controls.</summary>
     private string Signature(string path) =>
         _situations.TryGetValue(path, out var situation) ? situation.ToString() : "";
@@ -955,6 +1044,19 @@ public partial class MainWindow : Window
         };
 
         var body = new StackPanel { Spacing = 3, Children = { title } };
+
+        // Said first, because it changes what every other line on this row is worth: a game that is
+        // open cannot be set up or removed until it is closed, whatever its situation says.
+        if (_running.IsRunning(game))
+        {
+            body.Children.Add(new TextBlock
+            {
+                Text = "Running now",
+                FontSize = 11,
+                FontWeight = FontWeight.SemiBold,
+                Foreground = Brush("StatusWarning"),
+            });
+        }
 
         if (_situations.TryGetValue(game.Path, out var situation))
         {
@@ -2280,10 +2382,16 @@ public partial class MainWindow : Window
             _settings.Current.Reviewed ? _settings.Current : null);
         var installed = report.InstalledPluginVersion is not null;
 
+        // ⚠ Writing into a folder the game is holding open fails, and it fails halfway: some files
+        // replaced, some refused. The engines already check this at the moment they run, which is
+        // the check that must exist — but a button that cannot work should not look like one that
+        // can. Greyed out here, with the reason above them, so nobody spends a click finding out.
+        var running = _running.IsRunning(report.Game);
+
         var primary = new Button
         {
             Content = installed ? "Reinstall / update" : "Install",
-            IsEnabled = plan is not null,
+            IsEnabled = plan is not null && !running,
             Classes = { "primary" },
         };
         primary.Click += async (_, _) =>
@@ -2294,12 +2402,23 @@ public partial class MainWindow : Window
         var uninstall = new Button
         {
             Content = "Uninstall...",
-            IsEnabled = ReceiptStore.Read(report.Game.Path) is not null,
+            IsEnabled = ReceiptStore.Read(report.Game.Path) is not null && !running,
         };
         uninstall.Click += async (_, _) => await RunUninstallAsync(report);
         buttons.Children.Add(uninstall);
 
         panel.Children.Add(buttons);
+
+        if (running)
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = "The game is running. Close it and this comes back on its own.",
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("StatusWarning"),
+            });
+        }
 
         if (plan is null && report.Blockers.Count == 0)
         {
@@ -2487,9 +2606,19 @@ public partial class MainWindow : Window
 
     // ---------------------------------------------------------------- chrome
 
+    /// <summary>
+    /// ⚠ IsIndeterminate is turned off as well as hidden, and that is not tidiness.
+    ///
+    /// An indeterminate progress bar is an animation, and an animation whose control is merely
+    /// invisible goes on running: its clock keeps ticking, the layout keeps being invalidated, and
+    /// the window keeps redrawing for something nobody can see. Measured on a window sitting idle
+    /// with nothing happening — eighteen per cent of a core, for a four-pixel stripe that was not
+    /// on screen. This is a program somebody is invited to leave open.
+    /// </summary>
     private void Busy(bool busy, string message)
     {
         BusyBar.IsVisible = busy;
+        BusyBar.IsIndeterminate = busy;
         Status(message);
     }
 

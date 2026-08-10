@@ -157,6 +157,17 @@ public static class CommandLine
         Console.WriteLine();
         Console.WriteLine($"{shown} game(s) shown out of {games.Count} Unity game(s) found in {elapsed.TotalSeconds:F1}s.");
 
+        // Timed and printed because the window repeats it on a clock: a sweep whose cost nobody
+        // measured is a promise that it is cheap, and this is the number that keeps the promise.
+        var sweepStarted = DateTimeOffset.UtcNow;
+        var running = RunningGames.Sweep(games);
+        var sweepTook = DateTimeOffset.UtcNow - sweepStarted;
+
+        Console.WriteLine($"Running now: {running.Paths.Count} of them "
+                          + $"(looked in {sweepTook.TotalMilliseconds:F0} ms).");
+
+        foreach (var path in running.Paths) Console.WriteLine($"  {path}");
+
         var hidden = games.Count - shown;
         if (hidden > 0 && !showAll)
         {

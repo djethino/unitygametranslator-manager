@@ -110,9 +110,13 @@
         <TextBlock x:Name="StatusText" Grid.Column="0" VerticalAlignment="Center"
                    FontSize="12" Text="Ready." TextTrimming="CharacterEllipsis"
                    Foreground="{DynamicResource TextSecondary}" />
+        <!-- Neither visible nor animating until there is something to wait for: an indeterminate
+             bar keeps its animation clock running even when hidden, and this window is meant to be
+             left open. Measured: eighteen per cent of a core for a stripe nobody could see.
+             See MainWindow.Busy, which turns both on together. -->
         <ProgressBar x:Name="BusyBar" Grid.Column="1" Width="160" Height="4"
                      Foreground="{DynamicResource Accent}"
-                     IsIndeterminate="True" IsVisible="False" />
+                     IsIndeterminate="False" IsVisible="False" />
       </Grid>
     </Border>
   </Grid>

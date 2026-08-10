@@ -3,7 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using UnityGameTranslator.Installer.Core.Detection;
 using UnityGameTranslator.Installer.Core.Model;
-using UnityGameTranslator.Installer.Core.Security;
+using UnityGameTranslator.Common;
 
 namespace UnityGameTranslator.Installer.Core.Install;
 
@@ -92,19 +92,19 @@ public sealed class GameConfigWriter
                 // identity as the mod's own TokenProtection — that mirror exists exactly so this
                 // line can work. Written in its protected form: the plaintext never reaches disk.
                 if (!string.IsNullOrWhiteSpace(settings.AiApiKey))
-                    Set(root, applied, "ai_api_key", SecretProtection.Protect(settings.AiApiKey), "API key");
+                    Set(root, applied, "ai_api_key", Secrets.Protect(settings.AiApiKey), "API key");
             }
             else if (settings.TranslationBackend == "google")
             {
                 // Without the key the backend is written but cannot translate a line, and the
                 // failure appears in the game with nothing to explain it.
                 if (!string.IsNullOrWhiteSpace(settings.GoogleApiKey))
-                    Set(root, applied, "google_api_key", SecretProtection.Protect(settings.GoogleApiKey), "Google key");
+                    Set(root, applied, "google_api_key", Secrets.Protect(settings.GoogleApiKey), "Google key");
             }
             else if (settings.TranslationBackend == "deepl")
             {
                 if (!string.IsNullOrWhiteSpace(settings.DeeplApiKey))
-                    Set(root, applied, "deepl_api_key", SecretProtection.Protect(settings.DeeplApiKey), "DeepL key");
+                    Set(root, applied, "deepl_api_key", Secrets.Protect(settings.DeeplApiKey), "DeepL key");
 
                 // Free and paid DeepL are different hosts; guessing wrong fails every request.
                 Set(root, applied, "deepl_use_free", settings.DeeplUseFree, null);
@@ -128,7 +128,7 @@ public sealed class GameConfigWriter
                 Set(root, applied, "proxy_bypass_local", settings.ProxyBypassLocal, null);
 
                 if (!string.IsNullOrWhiteSpace(settings.ProxyPassword))
-                    Set(root, applied, "proxy_password", SecretProtection.Protect(settings.ProxyPassword), null);
+                    Set(root, applied, "proxy_password", Secrets.Protect(settings.ProxyPassword), null);
             }
 
             // The channel picked here decides which plugin build is installed; the mod has its own

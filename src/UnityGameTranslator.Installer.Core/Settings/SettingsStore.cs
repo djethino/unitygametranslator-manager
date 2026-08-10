@@ -1,7 +1,7 @@
 using System.Text.Json;
 using UnityGameTranslator.Installer.Core.Model;
 using UnityGameTranslator.Installer.Core.Platform;
-using UnityGameTranslator.Installer.Core.Security;
+using UnityGameTranslator.Common;
 
 namespace UnityGameTranslator.Installer.Core.Settings;
 
@@ -45,11 +45,11 @@ public sealed class SettingsStore
                     // Decrypted into memory, and the stored form left alone: a file written on
                     // another machine cannot be read here, and must come back as "no key"
                     // rather than as a crash or as garbage sent to a provider.
-                    loaded.AiApiKey = SecretProtection.Unprotect(loaded.AiApiKeyStored);
-                    loaded.ProxyPassword = SecretProtection.Unprotect(loaded.ProxyPasswordStored);
-                    loaded.GoogleApiKey = SecretProtection.Unprotect(loaded.GoogleApiKeyStored);
-                    loaded.DeeplApiKey = SecretProtection.Unprotect(loaded.DeeplApiKeyStored);
-                    loaded.ApiToken = SecretProtection.Unprotect(loaded.ApiTokenStored);
+                    loaded.AiApiKey = Secrets.Unprotect(loaded.AiApiKeyStored);
+                    loaded.ProxyPassword = Secrets.Unprotect(loaded.ProxyPasswordStored);
+                    loaded.GoogleApiKey = Secrets.Unprotect(loaded.GoogleApiKeyStored);
+                    loaded.DeeplApiKey = Secrets.Unprotect(loaded.DeeplApiKeyStored);
+                    loaded.ApiToken = Secrets.Unprotect(loaded.ApiTokenStored);
 
                     // A token belongs to the server that issued it. If the tool now points
                     // somewhere else, keeping it would send someone's credential to a site that
@@ -124,11 +124,11 @@ public sealed class SettingsStore
             // Written beside the target then moved: a file half-written by a crash would come
             // back as defaults, silently discarding what the user chose.
             // Encrypted on the way out, every time: the only path from memory to disk.
-            settings.AiApiKeyStored = SecretProtection.Protect(settings.AiApiKey);
-            settings.ProxyPasswordStored = SecretProtection.Protect(settings.ProxyPassword);
-            settings.GoogleApiKeyStored = SecretProtection.Protect(settings.GoogleApiKey);
-            settings.DeeplApiKeyStored = SecretProtection.Protect(settings.DeeplApiKey);
-            settings.ApiTokenStored = SecretProtection.Protect(settings.ApiToken);
+            settings.AiApiKeyStored = Secrets.Protect(settings.AiApiKey);
+            settings.ProxyPasswordStored = Secrets.Protect(settings.ProxyPassword);
+            settings.GoogleApiKeyStored = Secrets.Protect(settings.GoogleApiKey);
+            settings.DeeplApiKeyStored = Secrets.Protect(settings.DeeplApiKey);
+            settings.ApiTokenStored = Secrets.Protect(settings.ApiToken);
 
             var temp = _path + ".tmp";
             File.WriteAllText(temp, JsonSerializer.Serialize(settings, JsonOptions));

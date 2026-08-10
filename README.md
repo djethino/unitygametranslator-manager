@@ -55,14 +55,20 @@ install itself properly if you want to keep it around.
 
 The same engine, without the interface. Useful for support and for scripting.
 
+It is the same file: run the executable with a command and it answers on the console instead of
+opening the window. There is nothing extra to download, and nothing to keep in step.
+
 ```
-ugt-installer scan [--all]        List the Unity games found on this machine
-ugt-installer report <game>       Everything known about one game
-ugt-installer catalog             Show the loader catalog and where it came from
-ugt-installer diagnose            Printable report, safe to paste into an issue
+UnityGameTranslatorInstaller scan [--all]   List the Unity games found on this machine
+UnityGameTranslatorInstaller report <game>  Everything known about one game
+UnityGameTranslatorInstaller catalog        Show the loader catalog and where it came from
+UnityGameTranslatorInstaller diagnose       Printable report, safe to paste into an issue
 ```
 
-Add `--offline` to any command to skip every network call.
+On Linux the file is named `unitygametranslator-installer`.
+
+Add `--offline` to any command to skip every network call. Run it with no command, or drop a game
+folder onto it, and you get the window.
 
 ## Supported systems
 
@@ -109,8 +115,11 @@ Requires the .NET 8 SDK.
 
 ```bash
 dotnet build -c Release
-dotnet run --project src/UnityGameTranslator.Installer.Cli -- scan
+dotnet run --project src/UnityGameTranslator.Installer.Gui -- scan
 ```
+
+Both faces live in the same project because they live in the same file: `Gui` is the executable,
+`Cli` is a library it links in.
 
 ## Project layout
 
@@ -122,8 +131,8 @@ src/
 │   ├── Catalog/                          Loader catalog, fetched and cached
 │   ├── Api/                              Read-only, anonymous calls to the community site
 │   └── Model/                            Shared types
-├── UnityGameTranslator.Installer.Cli/    Command line front-end
-└── UnityGameTranslator.Installer.Gui/    Graphical front-end (Avalonia)
+├── UnityGameTranslator.Installer.Cli/    Command line face (a library, not a program)
+└── UnityGameTranslator.Installer.Gui/    The executable: window, and the entry point of both
 ```
 
 Same shape as the mod: one shared trunk holding all the logic, thin adapters for what genuinely

@@ -1,21 +1,19 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <!--
+      A library, not a program of its own. The tool ships as ONE executable with two faces: given
+      a known command it runs this front-end, given nothing it opens the window.
+
+      Two binaries was the obvious shape and the wrong one. Everything downstream doubles: two
+      files in the archive, two to replace when the tool updates itself (with a moment where one
+      is new and the other old), two to sign the day we can afford it, two names to teach. The
+      price of one binary is a console that flashes when the window is opened from the desktop —
+      paid once per launch, in exchange for a tool that is a single file everywhere else.
+    -->
+    <OutputType>Library</OutputType>
     <RootNamespace>UnityGameTranslator.Installer.Cli</RootNamespace>
-    <AssemblyName>ugt-installer</AssemblyName>
-
-    <!-- Self-contained single file: the point is that a user downloads one thing and it runs.
-         Requiring a .NET runtime install would reintroduce exactly the friction this tool
-         exists to remove — and on SteamOS the root filesystem is read-only anyway. -->
-    <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>true</SelfContained>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
-
-    <!-- Trimming stays off: the JSON layer uses reflection, and a trimmed build that silently
-         drops a converter would fail at the worst possible moment. -->
-    <PublishTrimmed>false</PublishTrimmed>
+    <AssemblyName>UnityGameTranslator.Installer.Cli</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>

@@ -23,8 +23,11 @@ This allows us to maintain the dual licensing model while keeping the project su
 The most useful bug report for this tool is the output of:
 
 ```
-ugt-installer diagnose
+UnityGameTranslatorInstaller diagnose
 ```
+
+(the same file you double-click; given a command it answers on the console. On Linux it is named
+`unitygametranslator-installer`.)
 
 It lists what was detected and what was expected, with your user name, home directory and game
 library stripped out. Nothing is sent anywhere — you paste it yourself, or not.

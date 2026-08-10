@@ -16,10 +16,38 @@ namespace UnityGameTranslator.Installer.Cli;
 /// Not a lesser version of the GUI: it is how the detection logic gets tested against real game
 /// folders, and how a user sends a usable report when something goes wrong. Every decision it
 /// prints comes from Core, so what the GUI will show is what this shows.
+///
+/// ⚠ This is a library, not a program of its own. The tool ships as ONE executable with two
+/// faces: run with a known command it behaves as this front-end, run with nothing it opens the
+/// window. Two binaries would mean two files to replace on every update and two things to sign,
+/// for one product.
 /// </summary>
-internal static class Program
+public static class CommandLine
 {
-    private static async Task<int> Main(string[] args)
+    /// <summary>
+    /// Every verb this front-end answers to.
+    ///
+    /// Held in one place because two callers need it: the dispatch below, and the decision of
+    /// whether the arguments are a command at all. A folder dropped onto the executable is not a
+    /// command — sending it here would print "Unknown command" into a console that vanishes,
+    /// which reads as "the tool did nothing".
+    /// </summary>
+    private static readonly HashSet<string> Commands = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "scan", "report", "catalog", "diagnose", "install", "update", "uninstall",
+        "forget", "ai", "urls", "help", "-h", "--help",
+    };
+
+    /// <summary>
+    /// True when these arguments ask for the command line rather than the window.
+    ///
+    /// Anything unrecognised opens the window on purpose: a person who double-clicks the
+    /// executable, or drops a game folder on it, wants the tool — not an error message.
+    /// </summary>
+    public static bool Handles(string[] args) =>
+        args.Length > 0 && (Commands.Contains(args[0]) || args[0].StartsWith('-'));
+
+    public static async Task<int> RunAsync(string[] args)
     {
         // Game names are routinely Chinese, Japanese or Cyrillic. A console left on the legacy
         // code page turns them into mojibake, which makes the tool look broken on exactly the

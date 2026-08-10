@@ -1,7 +1,18 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
+    <!--
+      Console subsystem, even though this is the window. One executable wears both faces, and the
+      subsystem is a property of the FILE, not of the run: it has to be chosen once for both.
+
+      Console wins because a command line that the shell does not wait for is not a command line.
+      A window-subsystem binary returns the prompt immediately, so the model test suite (minutes of
+      work) looks like it did nothing, output lands after the next prompt, Ctrl+C does not reach it
+      and a pipe gets nothing. Against that, the console face costs a black window that appears and is
+      hidden again at startup (see Program.HideOwnConsoleWindow, which is careful never to hide a
+      terminal it did not create).
+    -->
+    <OutputType>Exe</OutputType>
     <RootNamespace>UnityGameTranslator.Installer.Gui</RootNamespace>
     <AssemblyName>UnityGameTranslatorInstaller</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -55,6 +66,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\UnityGameTranslator.Installer.Core\UnityGameTranslator.Installer.Core.csproj" />
+    <!-- The command line face, linked in rather than shipped beside: one file to download, one to
+         replace when the tool updates itself. -->
+    <ProjectReference Include="..\UnityGameTranslator.Installer.Cli\UnityGameTranslator.Installer.Cli.csproj" />
   </ItemGroup>
 
 </Project>

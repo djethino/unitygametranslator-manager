@@ -40,11 +40,15 @@ public sealed class ToolSettingsWindow : Window
     private Button _applyButton = null!;
     private CancellationTokenSource? _signIn;
 
+    /// <summary>Kept for the one thing this window says about the machine: where its files live.</summary>
+    private readonly IPlatform _platform;
+
     public bool Saved { get; private set; }
 
     public ToolSettingsWindow(IPlatform platform, SettingsStore store)
     {
         _store = store;
+        _platform = platform;
 
         var current = store.Current;
         _draft = new InstallerSettings
@@ -87,6 +91,7 @@ public sealed class ToolSettingsWindow : Window
 
         layout.Children.Add(AccountCard());
         layout.Children.Add(NetworkCard());
+        layout.Children.Add(FilesCard());
 
         var cancel = new Button { Content = "Cancel", IsCancel = true };
         cancel.Click += (_, _) => Close();
@@ -384,6 +389,45 @@ public sealed class ToolSettingsWindow : Window
         {
             return (false, Core.Net.Http.Describe(ex, "GitHub"));
         }
+    }
+
+    /// <summary>
+    /// Where this tool keeps its own files, with a way to go there.
+    ///
+    /// Everything it writes about itself is in one folder and nowhere else, which is worth both
+    /// saying and showing: someone who wants to start clean, or to hand a settings file to
+    /// support, or simply to leave nothing behind when they are done with the tool, should not
+    /// have to be told a path by a stranger on a forum.
+    ///
+    /// The path is written out as well as opened, because a machine where the file manager cannot
+    /// be started is exactly the machine where the path matters most.
+    /// </summary>
+    private Control FilesCard()
+    {
+        var panel = new StackPanel { Spacing = 8 };
+        var folder = _platform.UserDataDirectory;
+
+        panel.Children.Add(Note(
+            "Everything this tool remembers is in one folder: your settings, the folders you "
+            + "added, the games you overruled, the catalogues it caches, and the translations it "
+            + "moved aside before replacing one. Deleting it puts the tool back to how it "
+            + "arrived — it touches nothing in your games.", "TextSecondary"));
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = folder,
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("TextMuted"),
+        });
+
+        var open = Glyphs.Button(Glyphs.Folder(), "Open this folder");
+        open.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left;
+        open.Click += (_, _) => Shell.OpenFolder(folder);
+
+        panel.Children.Add(open);
+
+        return Card("This tool's files", null, panel);
     }
 
     // ---------------------------------------------------------------- saving

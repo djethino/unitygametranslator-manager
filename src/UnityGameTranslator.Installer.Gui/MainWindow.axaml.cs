@@ -465,21 +465,7 @@ public partial class MainWindow : Window
         };
     }
 
-    private static void OpenUrl(string url)
-    {
-        try
-        {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url)
-            {
-                UseShellExecute = true,
-            });
-        }
-        catch
-        {
-            // No browser we may start. Nothing to report: the button simply does nothing rather
-            // than raising an error about a convenience.
-        }
-    }
+    private static void OpenUrl(string url) => Shell.OpenUrl(url);
 
     /// <summary>
     /// This tool's own settings — account and network.
@@ -1236,23 +1222,7 @@ public partial class MainWindow : Window
     /// UseShellExecute on the path itself: Windows opens Explorer, Linux hands it to the desktop's
     /// own handler, macOS to Finder. Spawning explorer.exe by name would work on one system only.
     /// </summary>
-    private static void OpenFolder(string path)
-    {
-        try
-        {
-            if (!System.IO.Directory.Exists(path)) return;
-
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path)
-            {
-                UseShellExecute = true,
-            });
-        }
-        catch
-        {
-            // A locked-down desktop, no file manager. The path is written beside the button, which
-            // is why it is shown as text rather than hidden behind it.
-        }
-    }
+    private static void OpenFolder(string path) => Shell.OpenFolder(path);
 
     private static Control Facts(GameReport report)
     {

@@ -20,6 +20,12 @@
 
     <!-- Where mod releases are published -->
     <ModReleasesApi>https://api.github.com/repos/djethino/unitygametranslator/releases</ModReleasesApi>
+
+    <!-- Where this tool's own releases are published. Separate from the mod's on purpose: the two
+         are versioned apart, and someone testing a beta of the installer has not thereby agreed to
+         put a beta of the mod into their games. -->
+    <ToolRepo>djethino/unitygametranslator-installer</ToolRepo>
+    <ToolReleasesApi>https://api.github.com/repos/djethino/unitygametranslator-installer/releases</ToolReleasesApi>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -52,6 +58,8 @@ namespace UnityGameTranslator.Installer {
         public const string WebsiteBaseUrl = "$(WebsiteBaseUrl)"%3B
         public const string SseBaseUrl = "$(SseBaseUrl)"%3B
         public const string ModReleasesApi = "$(ModReleasesApi)"%3B
+        public const string ToolRepo = "$(ToolRepo)"%3B
+        public const string ToolReleasesApi = "$(ToolReleasesApi)"%3B
     }
 }
       </BuildInfoContent>

@@ -58,15 +58,18 @@ public sealed class InstallEngine
 {
     private readonly IPlatform _platform;
     private readonly LoaderCatalogDocument _catalog;
-    private readonly ModReleaseClient _releases;
+    private readonly GitHubReleaseClient _releases;
     private readonly GitHubAssets _assets;
 
     public InstallEngine(IPlatform platform, LoaderCatalogDocument catalog,
-                         ModReleaseClient? releases = null, GitHubAssets? assets = null)
+                         GitHubReleaseClient? releases = null, GitHubAssets? assets = null)
     {
         _platform = platform;
         _catalog = catalog;
-        _releases = releases ?? new ModReleaseClient();
+
+        // The MOD's releases: this engine puts a plugin into a game. The tool's own updates go
+        // through SelfUpdater, which reads the other repository.
+        _releases = releases ?? GitHubReleaseClient.ForMod();
         _assets = assets ?? new GitHubAssets();
     }
 

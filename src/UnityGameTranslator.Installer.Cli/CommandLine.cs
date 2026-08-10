@@ -7,6 +7,7 @@ using UnityGameTranslator.Installer.Core.Install;
 using UnityGameTranslator.Installer.Core.Model;
 using UnityGameTranslator.Installer.Core.Platform;
 using UnityGameTranslator.Installer.Core.Settings;
+using UnityGameTranslator.Installer.Core.Update;
 
 namespace UnityGameTranslator.Installer.Cli;
 
@@ -35,7 +36,7 @@ public static class CommandLine
     private static readonly HashSet<string> Commands = new(StringComparer.OrdinalIgnoreCase)
     {
         "scan", "report", "catalog", "diagnose", "install", "update", "uninstall",
-        "forget", "ai", "urls", "help", "-h", "--help",
+        "forget", "ai", "urls", "self-update", "help", "-h", "--help",
     };
 
     /// <summary>
@@ -70,6 +71,7 @@ public static class CommandLine
                 "forget" => await ForgetAsync(args),
                 "ai" => await AiAsync(args),
                 "urls" => Urls(args),
+                "self-update" => await SelfUpdateAsync(args),
                 "-h" or "--help" or "help" => Help(),
                 _ => Unknown(command),
             };
@@ -98,6 +100,7 @@ public static class CommandLine
                   [--context "..."]         ...with the game description the mod would send
               ai --ollama [--yes]           Start an installed Ollama, or price installing one
               urls <address>                Show which endpoints an address resolves to
+              self-update [--check]        Update this tool itself (--check only looks)
               catalog [--offline]          Show the loader catalog and where it came from
               diagnose                     Printable report, safe to paste in a public issue
               help                         This text
@@ -384,7 +387,7 @@ public static class CommandLine
             Console.WriteLine();
         }
 
-        var engine = new InstallEngine(platform, catalog, new ModReleaseClient());
+        var engine = new InstallEngine(platform, catalog, GitHubReleaseClient.ForMod());
         // Reviewed settings only: until someone has been through the settings screen, we have
         // nothing to say about their language or their backend, and writing defaults into their
         // game would look like we decided for them.
@@ -957,6 +960,104 @@ public static class CommandLine
 
         var report = await inventory.BuildReportAsync(game, offline);
         return (platform, catalog.Document, report, inventory);
+    }
+
+    /// <summary>
+    /// Updates the tool itself.
+    ///
+    /// The same two steps the window will offer: look, then say yes. Nothing is downloaded before
+    /// the answer, and the previous binary stays under its own name until the new one has started
+    /// once — so a build that will not run leaves the working one right beside it.
+    /// </summary>
+    private static async Task<int> SelfUpdateAsync(string[] args)
+    {
+        var platform = PlatformFactory.Create();
+        var settings = new SettingsStore(platform).Current;
+
+        var channel = args.Contains("--beta", StringComparer.OrdinalIgnoreCase)
+            ? ReleaseChannel.Beta
+            : settings.ToolReleaseChannel;
+
+        Console.WriteLine($"Running  : {SelfUpdater.CurrentVersion}");
+        Console.WriteLine($"From     : {SelfUpdater.RunningExecutable ?? "unknown"}");
+        Console.WriteLine($"Channel  : {(channel == ReleaseChannel.Beta ? "beta" : "stable")}");
+        Console.WriteLine();
+
+        var updater = new SelfUpdater(platform);
+        var check = await updater.CheckAsync(channel);
+
+        switch (check.State)
+        {
+            case SelfUpdateState.UpToDate:
+                Console.WriteLine(check.Message);
+                return 0;
+
+            case SelfUpdateState.CheckFailed:
+                // Not the same as "up to date", and it must not be reported as one.
+                Console.Error.WriteLine(check.Message);
+                return 1;
+
+            case SelfUpdateState.NoBuildForThisSystem:
+            case SelfUpdateState.CannotBeVerified:
+                Console.Error.WriteLine(check.Message);
+                return 1;
+        }
+
+        var offer = check.Offer!;
+        Console.WriteLine($"Available: {offer.NewVersion}{(offer.IsPrerelease ? " (beta)" : "")}");
+        if (offer.PublishedAt is { } published)
+            Console.WriteLine($"Published: {published:yyyy-MM-dd}");
+        if (offer.SizeBytes is { } size)
+            Console.WriteLine($"Download : {size / 1024d / 1024d:0.#} MB");
+        Console.WriteLine($"Notes    : {offer.ReleasePageUrl}");
+        Console.WriteLine();
+
+        // Said before the download rather than after it: someone who keeps the tool somewhere they
+        // cannot write to should not pay for fifty megabytes to find out.
+        if (updater.WhyCannotApply() is { } blocked)
+        {
+            Console.Error.WriteLine(blocked);
+            return 1;
+        }
+
+        if (args.Contains("--check", StringComparer.OrdinalIgnoreCase))
+        {
+            Console.WriteLine("Looking only. Run without --check to apply it.");
+            return 0;
+        }
+
+        if (!Confirm(args, $"Replace {offer.CurrentVersion} with {offer.NewVersion}?"))
+        {
+            Console.WriteLine("Cancelled. Nothing was downloaded.");
+            return 0;
+        }
+
+        var lastShown = -1;
+        updater.Progress += (done, total) =>
+        {
+            if (total is not > 0) return;
+            var percent = (int)(done * 100 / total.Value);
+            if (percent == lastShown) return;
+            lastShown = percent;
+            Console.Write($"\r  downloading… {percent}%   ");
+        };
+
+        try
+        {
+            var result = await updater.ApplyAsync(offer);
+            Console.WriteLine();
+            Console.WriteLine($"Updated to {result.Version}.");
+            Console.WriteLine($"The version you were running is beside it as "
+                              + $"{Path.GetFileName(result.PreviousCopy)}; it is removed the next "
+                              + "time the new one starts.");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine();
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
     }
 
     /// <summary>Reads "--name value" from the arguments, or null when absent.</summary>

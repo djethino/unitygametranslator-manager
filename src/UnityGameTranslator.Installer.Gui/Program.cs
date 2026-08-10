@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Avalonia;
 using UnityGameTranslator.Installer.Cli;
+using UnityGameTranslator.Installer.Core.Update;
 
 namespace UnityGameTranslator.Installer.Gui;
 
@@ -17,6 +18,11 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        // Reaching this line is the proof an update worked: the new binary started. Until it does,
+        // the version it replaced is still sitting beside it under its own name, which is the only
+        // way back a tool without a signing certificate can honestly offer.
+        SelfUpdater.ClearPreviousVersions();
+
         if (CommandLine.Handles(args))
             return CommandLine.RunAsync(args).GetAwaiter().GetResult();
 

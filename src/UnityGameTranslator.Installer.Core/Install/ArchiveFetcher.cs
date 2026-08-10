@@ -1,3 +1,4 @@
+using System.Formats.Tar;
 using System.IO.Compression;
 using UnityGameTranslator.Installer.Core.Model;
 using UnityGameTranslator.Installer.Core.Net;
@@ -46,7 +47,7 @@ public sealed class ArchiveFetcher
                                                  string label, CancellationToken ct = default)
     {
         Directory.CreateDirectory(_stagingRoot);
-        var archivePath = Path.Combine(_stagingRoot, SafeFileName(label) + ".zip");
+        var archivePath = Path.Combine(_stagingRoot, SafeFileName(label) + ExtensionOf(url));
 
         await DownloadAsync(url, archivePath, ct).ConfigureAwait(false);
 
@@ -94,13 +95,34 @@ public sealed class ArchiveFetcher
     }
 
     /// <summary>
-    /// Unpacks while refusing entries that would escape the destination. A zip is attacker
+    /// The archive format, read from the address rather than guessed from the bytes.
+    ///
+    /// Loaders ship zips; this tool's own Linux build ships a tar.gz, because a zip cannot carry
+    /// the execute bit (see prepare-release.ps1). Both go through the same unpacking rules below.
+    /// </summary>
+    private static string ExtensionOf(string url)
+    {
+        var path = Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.AbsolutePath : url;
+
+        if (path.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase)) return ".tar.gz";
+        if (path.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase)) return ".tar.gz";
+        return ".zip";
+    }
+
+    /// <summary>
+    /// Unpacks while refusing entries that would escape the destination. An archive is attacker
     /// controlled by definition, and "../../windows/system32" is the oldest trick there is.
     /// </summary>
     private static void ExtractSafely(string archivePath, string destination)
     {
         var root = Path.GetFullPath(destination);
         if (!root.EndsWith(Path.DirectorySeparatorChar)) root += Path.DirectorySeparatorChar;
+
+        if (archivePath.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase))
+        {
+            ExtractTarSafely(archivePath, root);
+            return;
+        }
 
         using var archive = ZipFile.OpenRead(archivePath);
         foreach (var entry in archive.Entries)
@@ -122,6 +144,52 @@ public sealed class ArchiveFetcher
 
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             entry.ExtractToFile(target, overwrite: true);
+        }
+    }
+
+    /// <summary>
+    /// Same rules as the zip path, plus one of its own: only plain files and folders come out.
+    ///
+    /// A tar can carry symbolic and hard links, and a link is an escape route that survives the
+    /// path check — the entry itself sits inside the folder while pointing anywhere on the disk.
+    /// Nothing we publish contains one, so anything else is refused rather than interpreted.
+    ///
+    /// The entry's mode is applied as it goes down (that is what ExtractToFile does on Unix), which
+    /// is the whole reason this format exists here: the executable arrives executable.
+    /// </summary>
+    private static void ExtractTarSafely(string archivePath, string root)
+    {
+        using var file = File.OpenRead(archivePath);
+        using var gzip = new GZipStream(file, CompressionMode.Decompress);
+        using var reader = new TarReader(gzip);
+
+        while (reader.GetNextEntry() is { } entry)
+        {
+            var target = Path.GetFullPath(Path.Combine(root, entry.Name));
+
+            if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"Archive entry escapes its folder: '{entry.Name}'. Refusing to extract.");
+            }
+
+            switch (entry.EntryType)
+            {
+                case TarEntryType.Directory:
+                    Directory.CreateDirectory(target);
+                    break;
+
+                case TarEntryType.RegularFile:
+                case TarEntryType.V7RegularFile:
+                    Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                    entry.ExtractToFile(target, overwrite: true);
+                    break;
+
+                default:
+                    throw new InvalidOperationException(
+                        $"Archive entry '{entry.Name}' is a {entry.EntryType}, not a file. " +
+                        "Refusing to extract.");
+            }
         }
     }
 

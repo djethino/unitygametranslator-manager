@@ -37,10 +37,17 @@ public sealed record ResolvedDownload(string Url, string? Sha256, IntegrityLevel
 public sealed class GitHubAssets
 {
     private readonly HttpClient _http;
+    private readonly string _apiBase;
     private readonly Dictionary<string, Dictionary<string, string>> _cache = new();
 
-    public GitHubAssets(HttpClient? http = null)
+    /// <summary>
+    /// <paramref name="apiBase"/> exists so this can be pointed at something other than GitHub —
+    /// which is how the self-update path gets exercised end to end before a single release has
+    /// been published. Left alone it is GitHub, as it is everywhere in the product.
+    /// </summary>
+    public GitHubAssets(HttpClient? http = null, string? apiBase = null)
     {
+        _apiBase = (apiBase ?? "https://api.github.com").TrimEnd('/');
         _http = http ?? Http.Create(TimeSpan.FromSeconds(30));
         if (!_http.DefaultRequestHeaders.UserAgent.Any())
         {
@@ -63,7 +70,7 @@ public sealed class GitHubAssets
 
         try
         {
-            var url = $"https://api.github.com/repos/{repo}/releases/tags/{Uri.EscapeDataString(tag)}";
+            var url = $"{_apiBase}/repos/{repo}/releases/tags/{Uri.EscapeDataString(tag)}";
             var json = await _http.GetStringAsync(url, ct).ConfigureAwait(false);
 
             using var document = JsonDocument.Parse(json);

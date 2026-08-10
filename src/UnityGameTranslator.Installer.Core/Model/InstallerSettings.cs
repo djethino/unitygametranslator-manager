@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using UnityGameTranslator.Installer.Core.Install;
 
 namespace UnityGameTranslator.Installer.Core.Model;
 
@@ -196,8 +197,38 @@ public sealed class InstallerSettings
     /// <summary>"top-right" and the other corners the mod knows.</summary>
     [JsonPropertyName("notification_position")] public string NotificationPosition { get; set; } = "top-right";
 
-    /// <summary>"stable" or "beta".</summary>
+    /// <summary>
+    /// "stable" or "beta" — for the MOD. Which plugin builds are installed into games, and what
+    /// the mod itself notifies about from inside them (its sync.notify_prereleases).
+    /// </summary>
     [JsonPropertyName("channel")] public string Channel { get; set; } = "stable";
+
+    /// <summary>
+    /// "stable" or "beta" — for THIS TOOL, and deliberately not the same setting as the mod's.
+    ///
+    /// They look like one choice and are two risks. Trying a beta of the installer costs the
+    /// person one program that might misbehave while they watch it; putting a beta of the mod into
+    /// their games costs them a plugin loaded into every game they play, which they will meet
+    /// mid-session. Someone can reasonably want the first and not the second.
+    /// </summary>
+    [JsonPropertyName("tool_channel")] public string ToolChannel { get; set; } = "stable";
+
+    /// <summary>
+    /// Whether this tool looks for its own updates.
+    ///
+    /// On by default, like any other program that talks to the internet — and never applied
+    /// without a yes, so "on" means "you will be told", not "it will change under you". Turning it
+    /// off is honoured to the letter: no request is made at all. OnlineMode being off has the
+    /// same effect, since that setting means the tool makes no calls whatsoever.
+    /// </summary>
+    [JsonPropertyName("check_tool_updates")] public bool CheckToolUpdates { get; set; } = true;
+
+    /// <summary>The tool's channel as the release client wants it.</summary>
+    [JsonIgnore]
+    public ReleaseChannel ToolReleaseChannel =>
+        string.Equals(ToolChannel, "beta", StringComparison.OrdinalIgnoreCase)
+            ? ReleaseChannel.Beta
+            : ReleaseChannel.Stable;
 
     /// <summary>
     /// What to do when a game could go either way: a translation exists AND could be improved.

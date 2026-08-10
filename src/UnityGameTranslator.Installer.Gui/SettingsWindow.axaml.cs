@@ -1082,17 +1082,19 @@ public sealed class SettingsWindow : Window
             "TextSecondary"));
 
         var progress = Note("", "TextMuted");
-        var lightest = ModelNotesProvider.LightestFlawless(candidates);
 
-        content.Children.Add(ModelTable(candidates, vram, lightest, serverUrl, progress));
+        content.Children.Add(ModelTable(candidates, vram, serverUrl, progress));
         content.Children.Add(progress);
 
         // An expander rather than a block dropped on the screen: it opens where it is relevant and
         // — the part that was missing — closes again. Open by itself only when there is nothing
         // else to go on, closed when it is a comparison somebody may not want.
-        var lightestText = lightest?.Measured?.VramGb is { } gb
-            ? $", from {gb:F1} GB of video memory"
-            : "";
+        var smallest = candidates.Select(note => note.Measured?.VramGb)
+                                 .Where(gb => gb is not null)
+                                 .DefaultIfEmpty(null)
+                                 .Min();
+
+        var lightestText = smallest is { } gb ? $", from {gb:F1} GB of video memory" : "";
 
         _ollamaPanel.Children.Add(new Expander
         {
@@ -1121,7 +1123,7 @@ public sealed class SettingsWindow : Window
     /// mark on none.
     /// </summary>
     private Control ModelTable(IReadOnlyList<ModelNote> candidates, long? vram,
-                               ModelNote? lightest, string serverUrl, TextBlock progress)
+                               string serverUrl, TextBlock progress)
     {
         var grid = new Grid
         {
@@ -1158,7 +1160,7 @@ public sealed class SettingsWindow : Window
         foreach (var candidate in candidates)
         {
             var fits = ModelNotesProvider.Fits(candidate, vram);
-            var standout = ModelNotesProvider.Standout(candidate, lightest);
+            var standout = ModelNotesProvider.Standout(candidate);
             var measured = candidate.Measured;
 
             grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));

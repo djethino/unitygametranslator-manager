@@ -539,8 +539,9 @@ internal static class Program
 
         Console.WriteLine();
         Console.WriteLine("keeps = of how many answers the placeholders came back untouched, in order.");
-        Console.WriteLine("        Anything short of all of them corrupts the game's text sooner or");
-        Console.WriteLine("        later, and no amount of speed makes up for it.");
+        Console.WriteLine("        The mod checks this itself and retries up to three times, so a model");
+        Console.WriteLine("        that misses costs you those extra calls — and when it keeps missing,");
+        Console.WriteLine("        the line is left untranslated rather than shown mangled.");
         Console.WriteLine("only  = answered with the translation and nothing else.");
         Console.WriteLine("Times are measured with no game running; in play the model shares the GPU.");
         return 0;

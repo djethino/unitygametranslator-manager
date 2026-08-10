@@ -244,58 +244,48 @@ public sealed class ModelNotesProvider
         if (document is null) return Array.Empty<ModelNote>();
 
         var offerable = document.Models.Where(note => note.CanBeInstalled).ToList();
-        var lightest = LightestFlawless(offerable);
 
-        // Two entries earn their place at the top, and both are answers to a question somebody
-        // actually asks: "which one do you use?" and "what is the smallest that still works?".
-        // Neither is a score — one is a fact about this project, the other the lowest measured
-        // memory among models that did everything asked of them, every time.
-        static int Rank(ModelNote note, ModelNote? lightest, bool fits) =>
+        // Nothing is withheld for scoring badly. Every one of these was run and every figure is
+        // shown, so a reader can weigh a model that misses one rare shape against one that misses
+        // nothing and wants three times the memory. Hiding the imperfect ones sounded prudent
+        // until the measurements came in: it left the smallest cards with no choice at all, on the
+        // grounds that we knew better than the person who owns the machine.
+        static int Rank(ModelNote note, bool fits) =>
             !fits ? 3
             : note.IsReference ? 0
-            : ReferenceEquals(note, lightest) ? 1
+            : note.Measured is { Flawless: true } ? 1
             : 2;
 
         if (videoMemoryBytes is not { } bytes)
         {
             return offerable
-                .OrderBy(note => Rank(note, lightest, true))
+                .OrderBy(note => Rank(note, true))
                 .ThenByDescending(note => note.MinVramGb ?? 0)
                 .ToList();
         }
 
         var availableGb = bytes / 1024.0 / 1024 / 1024;
 
-        // What fits comes first whatever its standing: a reference model that spills out of this
-        // card is not a recommendation, it is a trap — it falls back to the processor and takes
-        // minutes a line. What does not fit stays visible, last, with its requirement shown,
-        // because someone willing to wait is entitled to decide that themselves.
+        // What fits comes first whatever its standing: a model that spills out of this card is not
+        // a recommendation, it is a trap — it falls back to the processor and takes minutes a
+        // line. What does not fit stays visible, last, with its requirement shown, because someone
+        // willing to wait is entitled to decide that themselves.
         return offerable
-            .OrderBy(note => Rank(note, lightest, note.MinVramGb is null || note.MinVramGb <= availableGb))
+            .OrderBy(note => Rank(note, note.MinVramGb is null || note.MinVramGb <= availableGb))
             .ThenByDescending(note => note.MinVramGb ?? 0)
             .ToList();
     }
 
     /// <summary>
-    /// The smallest model that did everything asked of it, every time.
-    ///
-    /// Deliberately not "the smallest": one that mangles a placeholder now and then is not a
-    /// lighter option, it is a broken one, and offering it as the small choice would push the
-    /// people with the least room towards the worst outcome.
-    /// </summary>
-    public static ModelNote? LightestFlawless(IEnumerable<ModelNote> notes) =>
-        notes.Where(note => note.CanBeInstalled
-                            && note.Measured is { Flawless: true, VramGb: not null })
-             .OrderBy(note => note.Measured!.VramGb)
-             .FirstOrDefault();
-
-    /// <summary>
     /// Why an entry is shown first, in the words the reader gets. Null for everything else —
     /// a badge on every row is a badge on none.
+    ///
+    /// "Missed nothing" is a statement about a suite of fifteen sentences and four repetitions of
+    /// one line, not a certificate. It is worded as a past observation for that reason.
     /// </summary>
-    public static string? Standout(ModelNote note, ModelNote? lightest) =>
+    public static string? Standout(ModelNote note) =>
         note.IsReference ? "What we develop against"
-        : ReferenceEquals(note, lightest) ? "Smallest that passed everything"
+        : note.Measured is { Flawless: true } ? "Missed nothing"
         : null;
 
     /// <summary>Whether this model fits the card, or null when the card size is unknown.</summary>

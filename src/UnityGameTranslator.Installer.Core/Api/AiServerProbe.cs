@@ -40,10 +40,14 @@ public sealed record AiTrial(
     /// <summary>
     /// Whether every placeholder came back untouched, in the same order.
     ///
-    /// This is the criterion that decides whether a model can do this job at all. The mod wraps
-    /// line breaks, tags and variables as [!nl], [!t*0], [!v*0], [!STR*0] and instructs the model
-    /// to leave them alone; a model that drops or rewrites one corrupts the game's text, and no
-    /// amount of speed makes up for it. Null when the check could not be run.
+    /// The mod wraps line breaks, tags and variables as [!nl], [!t*0], [!v*0], [!STR*0] and asks
+    /// the model to leave them alone.
+    ///
+    /// It does NOT ship what comes back blindly: it validates these markers, retries up to three
+    /// times, repairs a trailing line break itself, and if the model still fails it leaves the
+    /// line untranslated rather than caching a mangled one. So the cost of a model that misses is
+    /// up to three times the calls — time and GPU taken from the game — and, when it persists,
+    /// text left in its original language. Visible, not silent. Null when the check could not run.
     /// </summary>
     public bool? KeptPlaceholders { get; init; }
 

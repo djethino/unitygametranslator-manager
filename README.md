@@ -70,7 +70,25 @@ Add `--offline` to any command to skip every network call.
 |---|---|
 | Windows | Supported |
 | Linux / SteamOS (Steam Deck) | Supported, including games running through Proton |
-| macOS | Not yet. Only Mono games could ever work — IL2CPP modding is not possible there |
+| macOS | Not yet, and for reasons of ours rather than of the loaders — see below |
+
+### Why not macOS
+
+Not because of what can be modded there. That line used to say only Mono games could ever work,
+which conflated two different things and was never checked.
+
+A native macOS game being Mono or IL2CPP only decides which loader could suit it — and if none
+does, the catalog offers none and the game takes the ordinary "no loader fits here" path, with the
+reason, exactly as on the other systems. A Windows game running through a translation layer is a
+Windows game with Windows loaders, which is the same case as Proton on Linux, already supported.
+
+What actually stops us is our own code. There is no macOS adapter: nothing knows where Steam keeps
+its library there, or where this tool should keep its settings. More basic still, a Unity game is
+laid out differently — its data sits in `Game.app/Contents/Resources/Data`, while every probe here
+looks for a `*_Data` folder beside the executable. Our detection would find nothing at all,
+whatever the engine.
+
+Those are jobs, not obstacles. They are simply not done.
 
 ## The loader catalog
 

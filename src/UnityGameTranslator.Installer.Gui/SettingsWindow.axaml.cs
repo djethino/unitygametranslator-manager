@@ -1863,7 +1863,42 @@ public sealed class SettingsWindow : Window
         // here and nowhere else: it means a human has actually looked at these values.
         _draft.Reviewed = true;
 
-        _store.Save(_draft);
+        // Written onto the LIVE settings, never in place of them.
+        //
+        // The draft is a copy made field by field so that Cancel can mean cancel — and it copied
+        // the twenty-two this window edits, which is every field this window knows about. Saving
+        // it wholesale therefore erased everything it did not know about: the account token, the
+        // name behind it, the server that issued it, and the proxy — all of which moved to the
+        // other window and stopped being copied here the day they moved.
+        //
+        // That is why signing out kept happening "for no reason": it happened on Apply, in a
+        // window that has nothing to do with the account. Applying what this screen owns onto what
+        // is already stored cannot lose a setting it has never heard of, which is the only version
+        // of this that stays correct as fields are added.
+        var stored = _store.Current;
+
+        stored.TargetLanguage = _draft.TargetLanguage;
+        stored.TranslationBackend = _draft.TranslationBackend;
+        stored.AiUrl = _draft.AiUrl;
+        stored.AiModel = _draft.AiModel;
+        stored.AiApiKey = _draft.AiApiKey;
+        stored.GoogleApiKey = _draft.GoogleApiKey;
+        stored.DeeplApiKey = _draft.DeeplApiKey;
+        stored.DeeplUseFree = _draft.DeeplUseFree;
+        stored.EnableAi = _draft.EnableAi;
+        stored.ModOnlineMode = _draft.ModOnlineMode;
+        stored.AutoDownload = _draft.AutoDownload;
+        stored.NotifyUpdates = _draft.NotifyUpdates;
+        stored.CheckModUpdates = _draft.CheckModUpdates;
+        stored.MergeStrategy = _draft.MergeStrategy;
+        stored.NotificationsEnabled = _draft.NotificationsEnabled;
+        stored.NotificationPosition = _draft.NotificationPosition;
+        stored.SettingsHotkey = _draft.SettingsHotkey;
+        stored.Channel = _draft.Channel;
+        stored.DefaultPosture = _draft.DefaultPosture;
+        stored.Reviewed = true;
+
+        _store.Save(stored);
         Saved = true;
         Close();
     }

@@ -100,6 +100,19 @@ public sealed class SettingsStore
             settings.ProxyPassword,
             settings.ProxyBypassLocal);
 
+    /// <summary>
+    /// ⚠ APPLY WHAT A SCREEN OWNS ONTO <see cref="Current"/> AND SAVE THAT — never a copy of your
+    /// own making.
+    ///
+    /// The whole object is persisted, so saving a partial copy erases every field the copy did not
+    /// think to carry. It happened: the defaults window built a copy of the twenty-two values it
+    /// edits, and each Apply silently wiped the account token, the name behind it and the server
+    /// that issued it — signing people out from a window that has nothing to do with accounts, at
+    /// a moment they could not connect to anything they had done.
+    ///
+    /// Writing onto Current cannot lose a setting a screen has never heard of, which is the only
+    /// version of this that stays correct as fields are added.
+    /// </summary>
     public void Save(InstallerSettings settings)
     {
         Current = settings;

@@ -444,6 +444,11 @@ public sealed class SettingsWindow : Window
             Content = "Test this model",
             FontSize = 12,
             IsEnabled = false,
+
+            // Sits on the pickers' own line rather than centred on their labels: the two beside it
+            // carry a word above them, and a button floating half a line up reads as belonging to
+            // neither.
+            VerticalAlignment = VerticalAlignment.Bottom,
         };
         _testButton.Click += async (_, _) => await RunSuiteAsync();
 
@@ -510,11 +515,20 @@ public sealed class SettingsWindow : Window
         _testInto.SelectionChanged += (_, _) => RefreshTestSources();
         _testFrom.SelectionChanged += (_, _) => _testOutput.Children.Clear();
 
-        _aiPanel.Children.Add(Row("Test", _testInto, _testFrom, _testButton));
+        // Each picker carries its own word. They were laid out bare under a single "Test" label
+        // with a caption naming them in order, which asked the reader to work out which was which
+        // — and the two are not interchangeable.
+        _aiPanel.Children.Add(Row("Test",
+            Labelled("Into", _testInto),
+            Labelled("From", _testFrom),
+            _testButton));
+
         _aiPanel.Children.Add(new TextBlock
         {
-            Text = "Into, and from. The sentences are never in the language you translate into.",
+            Text = "The sentences are never written in the language you translate into: asking a "
+                 + "model for English from English is a job the mod never gives it.",
             FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("TextMuted"),
         });
 
@@ -1964,6 +1978,26 @@ public sealed class SettingsWindow : Window
             }
         }
         box.SelectedItem ??= box.Items.OfType<ComboBoxItem>().FirstOrDefault();
+    }
+
+    /// <summary>
+    /// A control with its word above it, for the places where several sit side by side on one row
+    /// and the row's own label cannot name them all.
+    /// </summary>
+    private Control Labelled(string label, Control control)
+    {
+        var stack = new StackPanel { Spacing = 2 };
+
+        stack.Children.Add(new TextBlock
+        {
+            Text = label,
+            FontSize = 10,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = Brush("TextMuted"),
+        });
+
+        stack.Children.Add(control);
+        return stack;
     }
 
     private Control Row(string label, params Control[] controls)

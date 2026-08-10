@@ -916,11 +916,25 @@ public partial class MainWindow : Window
         _runningClock = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
         _runningClock.Tick += async (_, _) => await LookForRunningGamesAsync();
         _runningClock.Start();
+
+        // Coming back to the window is the one moment the answer is certainly stale — somebody was
+        // away, and away is where games get started and stopped. Asked once here rather than
+        // waited for, so what they see on returning is already right.
+        Activated -= OnActivated;
+        Activated += OnActivated;
     }
+
+    private async void OnActivated(object? sender, EventArgs e) => await LookForRunningGamesAsync();
 
     private async Task LookForRunningGamesAsync()
     {
         if (_games.Count == 0) return;
+
+        // ⚠ Nothing is asked of the machine while nobody is looking at the answer. The badge and
+        // the greyed buttons are only read from this window, so a window behind a game — which is
+        // exactly where it is while a game runs — has no use for them. It is asked again the
+        // instant the window comes forward, which is the only moment anyone could notice.
+        if (!IsActive || WindowState == WindowState.Minimized) return;
 
         var games = _games.ToList();
         var sweep = await Task.Run(() => RunningGames.Sweep(games));

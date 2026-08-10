@@ -120,6 +120,34 @@ internal static class Program
 
     public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<App>()
         .UsePlatformDetect()
+
+        // ⚠ How the window is put on screen, chosen by measuring rather than by taking the default.
+        //
+        // A window doing NOTHING cost three and a half per cent of a core, and none of it was ours:
+        // an empty Avalonia window with a single line of text cost the same. It is the composition
+        // path — the default keeps a compositor ticking whether or not anything changed. Measured
+        // here, on an idle window, four ways:
+        //
+        //     WinUIComposition (the default) .... 3.67 %
+        //     DirectComposition ................ 98.71 %   ⚠ never
+        //     LowLatencyDxgiSwapChain ........... 0.51 %
+        //     RedirectionSurface ................ 0.78 %
+        //
+        // So the swap chain, with the redirection surface behind it for any machine that cannot do
+        // it — a list, not a demand, because a rendering path that fails is a window nobody sees.
+        // The GPU is still used either way; this is not a retreat to software drawing.
+        //
+        // 🔸 What it gives up is a transparent or acrylic window, which this program does not have
+        // and does not want. If one is ever wanted, this is where the cost of it will be.
+        .With(new Win32PlatformOptions
+        {
+            CompositionMode =
+            [
+                Win32CompositionMode.LowLatencyDxgiSwapChain,
+                Win32CompositionMode.RedirectionSurface,
+            ],
+        })
+
         // Inter ships with the app: game names are routinely Chinese, Japanese or Cyrillic, and
         // a missing glyph turns the list into boxes on exactly the games that need translating.
         .WithInterFont()

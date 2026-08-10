@@ -24,9 +24,10 @@ internal static class Program
         SelfUpdater.ClearPreviousVersions();
 
         if (CommandLine.Handles(args))
+        {
+            SpeakToTheTerminal();
             return CommandLine.RunAsync(args).GetAwaiter().GetResult();
-
-        HideOwnConsoleWindow();
+        }
 
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
         return 0;
@@ -40,61 +41,110 @@ internal static class Program
         .LogToTrace();
 
     /// <summary>
-    /// Puts away the console Windows hands a console-subsystem program, but ONLY when it is ours.
+    /// Borrows the console of whoever started us, so the command line face has somewhere to write.
     ///
-    /// The executable declares itself a console program so that its command line face behaves like
-    /// every other command: the shell waits for it, output arrives in order, Ctrl+C stops it, and
-    /// a pipe works. A window-subsystem binary gets none of that — the prompt comes back at once
-    /// and a run of several minutes looks like a run that did nothing.
+    /// ⚠ THE WHOLE REASON THIS EXISTS. The file declares itself a window program, so Windows hands
+    /// it no console at all — which is the point: opening the window must not put a black rectangle
+    /// on someone's screen. The first attempt did the opposite (console program, hide the console
+    /// afterwards) and it does not work on Windows 11: when the console host is Windows Terminal,
+    /// GetConsoleWindow returns a hidden stand-in of the pseudo-console, not the window a person
+    /// can see, so hiding it hides nothing and an empty terminal stays on screen for the whole
+    /// session. Measured on the user's machine, not deduced.
     ///
-    /// ⚠ The ownership test is the whole point of this method. Launched from a terminal, the
-    /// console on the other end of GetConsoleWindow is the PERSON'S terminal: hiding it would make
-    /// their shell disappear while they watch. So we only hide a console we are alone in, which is
-    /// the one Windows created for us when the icon was double-clicked. When the count cannot be
-    /// read we leave it alone — a console left visible behind the window is untidy; a terminal
-    /// swallowed by our tool is a bug someone has to reboot out of.
+    /// So the window face gets no console ever, and the command line face attaches to the one it
+    /// was launched from.
+    ///
+    /// 🔸 What this costs, and it is real: a window-subsystem program does not hold the shell, so
+    /// typing a command by hand gives the prompt back immediately while the output keeps arriving
+    /// under it. Scripts are unaffected — a redirected or captured stream is inherited whatever the
+    /// subsystem, and the caller waits for end-of-stream as usual, which is why our own end-to-end
+    /// tests read this exactly as they did before.
     /// </summary>
-    private static void HideOwnConsoleWindow()
+    private static void SpeakToTheTerminal()
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return;
 
         try
         {
-            var window = NativeConsole.GetConsoleWindow();
-            if (window == IntPtr.Zero) return;
+            // Asked BEFORE attaching, and this ordering is the whole trick. A handle already
+            // present means the caller gave us somewhere to write — a pipe when our output is being
+            // captured, or their console handle when it is not — and in both cases the streams must
+            // be left exactly as they are. Nothing means we were handed nothing, which is when the
+            // console we are about to attach to becomes the answer.
+            //
+            // ⚠ Console.IsOutputRedirected is NOT the test to use here: with no handle at all it
+            // reports "redirected", so trusting it would skip the rebinding in precisely the case
+            // that needs it, and the command would print into nowhere.
+            // ⚠ And when there IS one, we attach to nothing at all: AttachConsole replaces the
+            // process's standard handles with the console's, which quietly destroys a redirection
+            // the caller had already set up. Measured, not read: with the attach done first,
+            // `tool help > file` produced an empty file every time, through cmd and through a
+            // batch shim alike.
+            if (HasStandardHandle()) return;
 
-            var processes = new uint[4];
-            var attached = NativeConsole.GetConsoleProcessList(processes, (uint)processes.Length);
-            if (attached != 1) return;
+            // ATTACH_PARENT_PROCESS. Fails harmlessly when the parent has no console — someone who
+            // double-clicked the file and passed arguments through a shortcut, for instance.
+            if (!NativeConsole.AttachConsole(unchecked((uint)-1))) return;
 
-            NativeConsole.ShowWindow(window, NativeConsole.SW_HIDE);
+            Console.SetOut(new StreamWriter(OpenConsole(Console.OpenStandardOutput, "CONOUT$",
+                                                        FileAccess.Write)) { AutoFlush = true });
+            Console.SetError(new StreamWriter(OpenConsole(Console.OpenStandardError, "CONOUT$",
+                                                          FileAccess.Write)) { AutoFlush = true });
+
+            // Without this, every question the command line asks reads end-of-input and answers
+            // itself "no" — which for self-update means quietly declining on the person's behalf.
+            Console.SetIn(new StreamReader(OpenConsole(Console.OpenStandardInput, "CONIN$",
+                                                       FileAccess.Read)));
         }
         catch (DllNotFoundException)
         {
-            // Wine, or a Windows build without the usual console host. Nothing to hide.
+            // Wine, or a Windows without the usual console host: nothing to attach to.
         }
         catch (EntryPointNotFoundException)
         {
         }
+        catch (IOException)
+        {
+            // A standard handle that cannot be opened. The command still runs; it just has nowhere
+            // to speak, which is better than refusing to run at all.
+        }
+    }
+
+    /// <summary>Did whoever started us hand us a stream to write to?</summary>
+    private static bool HasStandardHandle()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return true;
+
+        var handle = NativeConsole.GetStdHandle(NativeConsole.StdOutput);
+        return handle != IntPtr.Zero && handle != new IntPtr(-1);
+    }
+
+    /// <summary>
+    /// The console stream, by whichever of the two routes works.
+    ///
+    /// Attaching normally gives the process its standard handles, and then the framework's own
+    /// opener is enough. When it does not, Stream.Null comes back — a stream that swallows
+    /// everything without complaining, which would leave someone staring at a command that printed
+    /// nothing and returned zero. The console devices are opened by name in that case.
+    /// </summary>
+    private static Stream OpenConsole(Func<Stream> standard, string device, FileAccess access)
+    {
+        var stream = standard();
+        if (stream != Stream.Null) return stream;
+
+        return File.Open(device, FileMode.Open, access, FileShare.ReadWrite);
     }
 }
 
 [SupportedOSPlatform("windows")]
 internal static class NativeConsole
 {
-    internal const int SW_HIDE = 0;
+    internal const int StdOutput = -11;
 
-    [DllImport("kernel32.dll")]
-    internal static extern IntPtr GetConsoleWindow();
-
-    /// <summary>
-    /// How many processes share this console. One means we were given a fresh one and may close
-    /// it; more means we are a guest in someone else's terminal.
-    /// </summary>
-    [DllImport("kernel32.dll")]
-    internal static extern uint GetConsoleProcessList([Out] uint[] processList, uint count);
-
-    [DllImport("user32.dll")]
+    [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    internal static extern bool ShowWindow(IntPtr window, int command);
+    internal static extern bool AttachConsole(uint processId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern IntPtr GetStdHandle(int handle);
 }

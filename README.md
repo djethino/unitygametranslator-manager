@@ -55,17 +55,21 @@ install itself properly if you want to keep it around.
 
 The same engine, without the interface. Useful for support and for scripting.
 
-It is the same file: run the executable with a command and it answers on the console instead of
-opening the window. There is nothing extra to download, and nothing to keep in step.
+It is the same program: given a command it answers on the console instead of opening the window.
+There is nothing extra to download, and nothing to keep in step.
 
 ```
-UnityGameTranslatorInstaller scan [--all]   List the Unity games found on this machine
-UnityGameTranslatorInstaller report <game>  Everything known about one game
-UnityGameTranslatorInstaller catalog        Show the loader catalog and where it came from
-UnityGameTranslatorInstaller diagnose       Printable report, safe to paste into an issue
+ugt-installer scan [--all]        List the Unity games found on this machine
+ugt-installer report <game>       Everything known about one game
+ugt-installer catalog             Show the loader catalog and where it came from
+ugt-installer diagnose            Printable report, safe to paste into an issue
+ugt-installer self-update         Update this tool itself
 ```
 
-On Linux the file is named `unitygametranslator-installer`.
+On Windows `ugt-installer.cmd` sits beside the executable and is the way to run commands: the
+executable is a window program, so that opening the tool never puts a console on your screen, and
+going through the small batch file is what keeps `> log.txt` and exit codes working from a
+PowerShell prompt. On Linux there is no such thing — run `unitygametranslator-installer` directly.
 
 Add `--offline` to any command to skip every network call. Run it with no command, or drop a game
 folder onto it, and you get the window.

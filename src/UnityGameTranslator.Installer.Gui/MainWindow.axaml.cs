@@ -1206,6 +1206,15 @@ public partial class MainWindow : Window
     /// ⚠ Only when the game can take the mod. Telling somebody to be the first to translate a game
     /// this tool has just refused to touch would be an invitation to nothing, and the card already
     /// says why it was refused.
+    ///
+    /// 🔸 Both routes are named, and by hand comes first. "Be the first" with no idea of what that
+    /// involves is a slogan; naming the two ways in is what makes it a proposition somebody can
+    /// weigh. By hand first because it needs nothing at all — the mod edits captured lines in the
+    /// game itself — where the AI route needs a machine that can run a model. Someone whose machine
+    /// cannot should not read the harder path as the only path.
+    ///
+    /// Still no button. The way to take it up is the one this card already offers further down, and
+    /// the AI is set up in a screen of its own, which the sentence names so it can be found.
     /// </summary>
     private Control? BeTheFirstBanner(GameReport report)
     {
@@ -1234,9 +1243,11 @@ public partial class MainWindow : Window
 
         text.Children.Add(new TextBlock
         {
-            Text = "Set the mod up and play: it collects the lines the game shows you, and they "
-                 + "stay on your machine until you decide otherwise. Translating them can wait, "
-                 + "and sharing them is a separate choice again.",
+            Text = "Set the mod up and play: it collects the lines the game shows you as it shows "
+                 + "them. From there it is your choice — write the translations yourself in the "
+                 + "game, line by line, or set up a local AI under Mod defaults and let it take a "
+                 + "first pass you can correct. Either way the file stays on your machine until "
+                 + "you decide to share it.",
             FontSize = 11,
             Foreground = Brush("TextSecondary"),
             TextWrapping = TextWrapping.Wrap,

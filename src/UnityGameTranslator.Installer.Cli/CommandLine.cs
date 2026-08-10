@@ -981,6 +981,12 @@ public static class CommandLine
         Console.WriteLine($"Running  : {SelfUpdater.CurrentVersion}");
         Console.WriteLine($"From     : {SelfUpdater.RunningExecutable ?? "unknown"}");
         Console.WriteLine($"Channel  : {(channel == ReleaseChannel.Beta ? "beta" : "stable")}");
+
+        // Silent for a normal build. A build pointed elsewhere otherwise reports a network failure
+        // that reads exactly like a firewall, whoever is looking at it.
+        if (SelfUpdater.UnusualReleaseHost is { } host)
+            Console.WriteLine($"Releases : {host} — not GitHub. Self-hosted or a test build.");
+
         Console.WriteLine();
 
         var updater = new SelfUpdater(platform);

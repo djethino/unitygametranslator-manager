@@ -445,6 +445,16 @@ public sealed class ToolSettingsWindow : Window
             Foreground = Brush("TextPrimary"),
         });
 
+        // Only ever shown by a build compiled against something other than GitHub. Without it, such
+        // a build reports "could not reach the release list" and every reader — including the
+        // people who made it — reads a firewall problem.
+        if (SelfUpdater.UnusualReleaseHost is { } host)
+        {
+            panel.Children.Add(Note(
+                $"This build looks for its updates at {host}, not at GitHub. That is either a "
+                + "self-hosted setup or a build made for testing.", "StatusWarn"));
+        }
+
         _toolChannel = new ComboBox
         {
             Width = 220,

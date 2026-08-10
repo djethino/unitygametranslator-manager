@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Avalonia;
 using UnityGameTranslator.Installer.Cli;
+using UnityGameTranslator.Installer.Core.Platform;
 using UnityGameTranslator.Installer.Core.Update;
 
 namespace UnityGameTranslator.Installer.Gui;
@@ -29,8 +30,66 @@ internal static class Program
             return CommandLine.RunAsync(args).GetAwaiter().GetResult();
         }
 
+        // One window at a time. Two of them share one settings file, one set of receipts and one
+        // catalogue cache, so the second to save quietly overwrites the first — and two copies
+        // updating the tool at once would each rename the running binary.
+        //
+        // Only the window is guarded: asking a question on the command line while the window is
+        // open has to keep working, and it does.
+        using var single = AcquireWindowRight();
+        if (single is null)
+        {
+            // The person double-clicked and expects to see the tool. Showing them the copy they
+            // already have is the answer; doing nothing at all would read as a launch that failed.
+            RaiseExistingWindow();
+            return 0;
+        }
+
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
         return 0;
+    }
+
+    private static SingleInstance? AcquireWindowRight()
+    {
+        try
+        {
+            return SingleInstance.TryAcquire(PlatformFactory.Create());
+        }
+        catch (PlatformNotSupportedException)
+        {
+            // A system we have no adapter for. Whatever complains about that, it will not be this.
+            return SingleInstance.Unguarded();
+        }
+    }
+
+    /// <summary>
+    /// Brings the copy that is already running to the front.
+    ///
+    /// Windows only, and best effort on purpose: there is no portable way to raise someone else's
+    /// window, and the alternative — refusing to start with an error box — would be worse on the
+    /// systems where it cannot be done. There, the second launch simply ends.
+    /// </summary>
+    private static void RaiseExistingWindow()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return;
+        if (SingleInstance.HolderProcessId is not { } id) return;
+
+        try
+        {
+            using var holder = System.Diagnostics.Process.GetProcessById(id);
+            var window = holder.MainWindowHandle;
+            if (window == IntPtr.Zero) return;
+
+            NativeWindow.ShowWindow(window, NativeWindow.SW_RESTORE);
+            NativeWindow.SetForegroundWindow(window);
+        }
+        catch (ArgumentException)
+        {
+            // It ended between the lock failing and now. Nothing to raise, and nothing wrong.
+        }
+        catch (InvalidOperationException)
+        {
+        }
     }
 
     public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<App>()
@@ -147,4 +206,18 @@ internal static class NativeConsole
 
     [DllImport("kernel32.dll", SetLastError = true)]
     internal static extern IntPtr GetStdHandle(int handle);
+}
+
+[SupportedOSPlatform("windows")]
+internal static class NativeWindow
+{
+    internal const int SW_RESTORE = 9;
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool ShowWindow(IntPtr window, int command);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool SetForegroundWindow(IntPtr window);
 }

@@ -65,7 +65,16 @@ public sealed class GitHubReleaseClient
         var json = await _http.GetStringAsync(_releasesApi, ct).ConfigureAwait(false);
 
         using var document = JsonDocument.Parse(json);
-        if (document.RootElement.ValueKind != JsonValueKind.Array) return null;
+
+        // An answer that is not a list at all is a broken answer, and it throws — an empty list is
+        // a perfectly good one meaning "nothing published", and returns null. Folding the two
+        // together made a repository with no releases yet report a failure to everyone reading it.
+        if (document.RootElement.ValueKind != JsonValueKind.Array)
+        {
+            throw new InvalidOperationException(
+                "The release list did not come back as a list. Something is answering for GitHub "
+                + "that is not GitHub — a captive portal or a company proxy, most likely.");
+        }
 
         PublishedRelease? best = null;
 

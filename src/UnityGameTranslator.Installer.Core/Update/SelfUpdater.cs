@@ -104,6 +104,34 @@ public sealed class SelfUpdater
     public static string CurrentVersion => BuildInfo.Version;
 
     /// <summary>
+    /// Where this build looks for its own releases, when that is NOT GitHub. Null for a normal
+    /// build, so the ordinary case says nothing.
+    ///
+    /// ⚠ Worth its three lines: a build compiled against another address is indistinguishable on
+    /// screen from a broken network — "could not reach the release list" reads as a firewall
+    /// whatever the address was. It cost a real half hour of looking for a firewall problem that
+    /// did not exist, on a test build that had overwritten the normal one. Someone self-hosting
+    /// deserves the same answer for the same reason.
+    /// </summary>
+    public static string? UnusualReleaseHost
+    {
+        get
+        {
+            try
+            {
+                var host = new Uri(BuildInfo.ToolReleasesApi).Host;
+                return host.Equals("api.github.com", StringComparison.OrdinalIgnoreCase)
+                    ? null
+                    : host;
+            }
+            catch (UriFormatException)
+            {
+                return BuildInfo.ToolReleasesApi;
+            }
+        }
+    }
+
+    /// <summary>
     /// The file this process is running from, or null when it cannot be established.
     ///
     /// ProcessPath rather than the assembly location: in a single-file build the assembly has no
@@ -175,8 +203,12 @@ public sealed class SelfUpdater
 
         if (release is null)
         {
-            return new SelfUpdateCheck(SelfUpdateState.CheckFailed, null,
-                "The release list came back empty.");
+            // Nothing published on this channel — which is an answer, not a failure. Before the
+            // first release exists this is what everyone gets, and reporting it as "could not
+            // check" would have every one of them looking for a network problem.
+            return new SelfUpdateCheck(SelfUpdateState.UpToDate, null,
+                $"Nothing published on the {Describe(channel)} channel yet, so {CurrentVersion} "
+                + "is what there is.");
         }
 
         if (!Versions.IsNewer(CurrentVersion, release.Version))

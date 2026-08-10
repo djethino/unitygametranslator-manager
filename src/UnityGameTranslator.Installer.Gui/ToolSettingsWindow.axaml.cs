@@ -41,6 +41,7 @@ public sealed class ToolSettingsWindow : Window
     private CheckBox _online = null!;
     private TextBlock _netStatus = null!;
     private Button _applyButton = null!;
+    private TextBlock _saved = null!;
     private CancellationTokenSource? _signIn;
 
     private ComboBox _toolChannel = null!;
@@ -118,6 +119,24 @@ public sealed class ToolSettingsWindow : Window
         var cancel = new Button { Content = "Cancel", IsCancel = true };
         cancel.Click += (_, _) => Close();
 
+        // ⚠ Applying does NOT close the window, and that is the correction. Saving and closing in
+        // one gesture answers a question nobody asked: someone who presses Apply is saying "keep
+        // this", not "keep this and I am done here" — and being thrown out mid-way through a screen
+        // they were still reading turns one settled decision into a lost place.
+        //
+        // What tells them it worked is the button itself: it counts what is pending, so going from
+        // "Apply (3)" back to "Close" IS the receipt. The line beside it says so in words, because a
+        // label changing is easy to miss when you were looking at the setting you just changed.
+        //
+        // 🔸 The same shape exists in the Mod defaults window. Change one, change the other.
+        _saved = new TextBlock
+        {
+            FontSize = 11,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = Brush("StatusOk"),
+            IsVisible = false,
+        };
+
         _applyButton = new Button { Content = "Close", IsDefault = true, Classes = { "primary" } };
         _applyButton.Click += (_, _) =>
         {
@@ -128,9 +147,9 @@ public sealed class ToolSettingsWindow : Window
         var buttons = new StackPanel
         {
             Orientation = Orientation.Horizontal,
-            Spacing = 8,
+            Spacing = 12,
             HorizontalAlignment = HorizontalAlignment.Right,
-            Children = { cancel, _applyButton },
+            Children = { _saved, cancel, _applyButton },
         };
 
         var bar = new Border
@@ -780,9 +799,16 @@ public sealed class ToolSettingsWindow : Window
         settings.ToolChannel = edited.ToolChannel;
         settings.CheckToolUpdates = edited.CheckToolUpdates;
 
+        var count = CountPendingChanges();
+
         _store.Save(settings);
         Saved = true;
-        Close();
+
+        _saved.Text = count == 1 ? "1 change applied" : $"{count} changes applied";
+        _saved.IsVisible = true;
+
+        // Reads the store again, which now matches what is on screen — so the button says "Close".
+        RefreshApplyButton();
     }
 
     private IReadOnlyList<string> PendingChanges()
@@ -816,6 +842,10 @@ public sealed class ToolSettingsWindow : Window
     {
         var changes = PendingChanges();
         _applyButton.Content = changes.Count > 0 ? $"Apply ({changes.Count})" : "Close";
+
+        // The moment something is pending again, what was applied a minute ago is no longer the
+        // state of this screen, and saying so would be a lie of omission.
+        if (changes.Count > 0) _saved.IsVisible = false;
 
         ToolTip.SetTip(_applyButton, changes.Count > 0
             ? string.Join(Environment.NewLine, changes)

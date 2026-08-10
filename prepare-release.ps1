@@ -14,7 +14,13 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Moved for the duration and given back afterwards, whether this ends well or badly. A script that
+# leaves the caller somewhere else is a script whose next line fails on a relative path — which is
+# exactly how this was noticed.
+$callerLocation = Get-Location
 Set-Location $PSScriptRoot
+trap { Set-Location $callerLocation; break }
 
 # A tar.gz written from Windows, with the execute bit set on the binary.
 #
@@ -184,3 +190,5 @@ Get-ChildItem $releasesDir -File | Sort-Object Name | ForEach-Object {
 }
 Write-Host '  (attach the .sha256 files alongside their archive on the GitHub release)' -ForegroundColor DarkGray
 Write-Host '  (the tool checks its own updates against these — a release without them cannot be applied)' -ForegroundColor DarkGray
+
+Set-Location $callerLocation

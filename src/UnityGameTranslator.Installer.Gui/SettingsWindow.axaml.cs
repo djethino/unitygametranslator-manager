@@ -77,6 +77,7 @@ public sealed class SettingsWindow : Window
     private TextBlock _aiStatus = null!;
     private Button _testButton = null!;
     private Button _applyButton = null!;
+    private TextBlock _saved = null!;
 
     /// <summary>
     /// True while the screen is filling itself in rather than being edited.
@@ -187,6 +188,23 @@ public sealed class SettingsWindow : Window
         var cancel = new Button { Content = "Cancel", IsCancel = true };
         cancel.Click += (_, _) => Close();
 
+        // ⚠ Applying does NOT close the window. Someone pressing Apply is saying "keep this", not
+        // "keep this and I am done here" — and this screen in particular is long enough that being
+        // thrown out of it after one decision means finding your place again.
+        //
+        // The button is the receipt: it counts what is pending, so going from "Apply (3)" back to
+        // "Close" is the answer. The line beside it says it in words, since a label changing is easy
+        // to miss when you were looking at the setting you just changed.
+        //
+        // 🔸 Same shape in the Settings window for the tool itself. Change one, change the other.
+        _saved = new TextBlock
+        {
+            FontSize = 11,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = Brush("StatusOk"),
+            IsVisible = false,
+        };
+
         // The mod's own wording, and for the same reason: "Apply (3)" answers "did it take what I
         // changed?" before you click, and "Close" says there is nothing to apply — which is worth
         // knowing on a screen where testing a model changes nothing worth saving. Same family of
@@ -201,6 +219,8 @@ public sealed class SettingsWindow : Window
             Save();
         };
 
+        buttons.Spacing = 12;
+        buttons.Children.Add(_saved);
         buttons.Children.Add(cancel);
         buttons.Children.Add(_applyButton);
 
@@ -1898,9 +1918,16 @@ public sealed class SettingsWindow : Window
         stored.DefaultPosture = _draft.DefaultPosture;
         stored.Reviewed = true;
 
+        var count = CountPendingChanges();
+
         _store.Save(stored);
         Saved = true;
-        Close();
+
+        _saved.Text = count == 1 ? "1 change applied" : $"{count} changes applied";
+        _saved.IsVisible = true;
+
+        // Reads the store again, which now matches what is on screen — so the button says "Close".
+        RefreshApplyButton();
     }
 
     /// <summary>
@@ -1963,6 +1990,10 @@ public sealed class SettingsWindow : Window
 
         var changes = PendingChanges();
         _applyButton.Content = changes.Count > 0 ? $"Apply ({changes.Count})" : "Close";
+
+        // The moment something is pending again, what was applied a minute ago is no longer the
+        // state of this screen, and leaving the note up would be a lie of omission.
+        if (changes.Count > 0) _saved.IsVisible = false;
 
         // What exactly is pending, on hover. A count alone is a claim; this is the evidence — and
         // on a screen with a dozen fields it is the difference between trusting the number and

@@ -1,4 +1,5 @@
 using UnityGameTranslator.Installer.Core.Model;
+using UnityGameTranslator.Common;
 
 namespace UnityGameTranslator.Installer.Core.Detection;
 

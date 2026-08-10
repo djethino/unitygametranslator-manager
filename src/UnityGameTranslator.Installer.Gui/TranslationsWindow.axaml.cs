@@ -9,6 +9,7 @@ using UnityGameTranslator.Installer.Core.Install;
 using UnityGameTranslator.Installer.Core.Model;
 using UnityGameTranslator.Installer.Core.Platform;
 using UnityGameTranslator.Installer.Core.Settings;
+using UnityGameTranslator.Common;
 
 namespace UnityGameTranslator.Installer.Gui;
 

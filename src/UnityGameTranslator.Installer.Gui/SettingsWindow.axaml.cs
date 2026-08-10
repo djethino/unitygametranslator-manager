@@ -11,6 +11,7 @@ using UnityGameTranslator.Installer.Core.Install;
 using UnityGameTranslator.Installer.Core.Model;
 using UnityGameTranslator.Installer.Core.Platform;
 using UnityGameTranslator.Installer.Core.Settings;
+using UnityGameTranslator.Common;
 
 namespace UnityGameTranslator.Installer.Gui;
 
@@ -599,7 +600,7 @@ public sealed class SettingsWindow : Window
         _testInto = new ComboBox { Width = 150 };
         _testFrom = new ComboBox { Width = 150 };
 
-        foreach (var (code, name) in Languages.All().OrderBy(l => l.Name, StringComparer.OrdinalIgnoreCase))
+        foreach (var (code, name) in Languages.All())
             _testInto.Items.Add(new ComboBoxItem { Content = name, Tag = code });
 
         _testInto.SelectionChanged += (_, _) => RefreshTestSources();

@@ -24,6 +24,16 @@ public sealed record SelfRemovalPlan(
     string? Registration,
     string SettingsDirectory);
 
+/// <summary>An installation as the disk describes it, rather than as the receipt remembers it.</summary>
+public sealed record SelfInstallationState(ToolInstallation? Record, IReadOnlyList<string> Missing)
+{
+    /// <summary>There is an installation, and every piece of it is where it should be.</summary>
+    public bool Sound => Record is not null && Missing.Count == 0;
+
+    /// <summary>There is a record, but pieces of what it describes are gone.</summary>
+    public bool NeedsRepair => Record is not null && Missing.Count > 0;
+}
+
 /// <summary>
 /// What a removal actually did, item by item.
 ///
@@ -81,6 +91,37 @@ public sealed class SelfInstaller
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// The installation checked against what is actually on the machine, item by item.
+    ///
+    /// ⚠ A receipt is a memory, not a fact. "Installed" used to mean "there is a receipt and its
+    /// executable exists", and that is true of a folder somebody copied files into by hand — no
+    /// shortcut, no entry in the system's list, nothing that a removal could ever find again. Seen
+    /// for real: after a removal, files copied back, and the tool offered to switch to an
+    /// installation that was not one.
+    ///
+    /// So every piece the receipt names is looked for, and what is missing is named. What that is
+    /// worth on screen is one word: repair, rather than a switch to somewhere broken.
+    /// </summary>
+    public SelfInstallationState Inspect()
+    {
+        var installation = Installed();
+        if (installation is null) return new SelfInstallationState(null, []);
+
+        var missing = new List<string>();
+
+        foreach (var file in installation.Files)
+            if (!File.Exists(file)) missing.Add(file);
+
+        foreach (var launcher in installation.Launchers)
+            if (!File.Exists(launcher)) missing.Add(launcher);
+
+        if (installation.Registration is { } registration && !_platform.IsRegistered(registration))
+            missing.Add("its entry in the system's list of installed apps");
+
+        return new SelfInstallationState(installation, missing);
     }
 
     /// <summary>
@@ -390,10 +431,9 @@ public sealed class SelfInstaller
             Take(file, "file", gone, left);
         }
 
-        if (running is null && installation.CreatedDirectory)
-        {
-            RemoveIfEmpty(installation.Directory, gone, left);
-        }
+        // Whoever made the folder, it goes if our files were the only thing in it — see
+        // FinishAfterWeExit for why "only when we created it" was the wrong test.
+        if (running is null) RemoveIfEmpty(installation.Directory, gone, left);
 
         if (alsoSettings)
         {
@@ -449,7 +489,7 @@ public sealed class SelfInstaller
         if (!OperatingSystem.IsWindows())
         {
             Take(executable, "file", [], left);
-            if (installation.CreatedDirectory) RemoveIfEmpty(installation.Directory, [], left);
+            RemoveIfEmpty(installation.Directory, [], left);
             return;
         }
 
@@ -473,11 +513,15 @@ public sealed class SelfInstaller
         // ping as the wait: timeout refuses to run without a console of its own, and this command is
         // started without one. Sixty passes of roughly a second, giving up quietly after that.
         //
-        // The folder is only removed when we made it, and rd without /s refuses a folder holding
-        // anything else — so a tool someone unpacked next to their own files takes nothing with it.
-        var done = installation.CreatedDirectory
-            ? $"rd /q \"{installation.Directory}\" & exit"
-            : "exit";
+        // ⚠ The folder goes whatever the receipt says about who made it. It used to be attempted
+        // only when we had created it, which sounds careful and is wrong in the ordinary case:
+        // install, remove, install again, and the second install finds the folder already there, so
+        // it records that it did not make it — and the second removal leaves an empty folder behind
+        // for good. Somebody watched exactly that happen.
+        //
+        // rd without /s is the guard that actually matters: it refuses any folder holding anything
+        // else, so nothing of anybody's is taken by this, whoever made the folder.
+        var done = $"rd /q \"{installation.Directory}\" & exit";
 
         var command = $"for /l %i in (1,1,60) do (ping 127.0.0.1 -n 2 >nul "
                       + $"& del /f /q \"{executable}\" 2>nul "

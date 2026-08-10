@@ -160,7 +160,12 @@ public sealed class SelfRemoveWindow : Window
             remove.Content = "Try again";
             remove.IsEnabled = report.Left.Count > 0;
 
-            if (report.WhereItWas is { } folder && Directory.Exists(folder))
+            // ⚠ Only when something genuinely needs a person, which the scheduled file does not.
+            // Offering it beside a green "everything went" was contradictory on its face — and
+            // worse than contradictory: the folder is about to be deleted by a command waiting for
+            // this window to close, and a file manager holding that folder open is exactly what
+            // stops it. The button invited someone to break the last step.
+            if (report.Left.Count > 0 && report.WhereItWas is { } folder && Directory.Exists(folder))
             {
                 openFolder.IsVisible = true;
                 openFolder.Click -= OpenTheFolder;

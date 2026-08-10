@@ -1424,7 +1424,7 @@ public partial class MainWindow : Window
         // into a paragraph of what looks like bad news.
         text.Children.Add(new TextBlock
         {
-            Text = "Keep UnityGameTranslator Installer on this machine?",
+            Text = "Install UnityGameTranslator Installer on this machine?",
             FontSize = 13,
             FontWeight = FontWeight.SemiBold,
             Foreground = Brush("TextPrimary"),
@@ -1441,9 +1441,13 @@ public partial class MainWindow : Window
             TextWrapping = TextWrapping.Wrap,
         });
 
+        // ⚠ "Keep it here" read both ways — as "install it" and as "leave it where it is, portable"
+        // — and the second reading is the one somebody had, on a banner whose whole purpose is the
+        // first. A word everybody already knows beats a gentler one that can mean its own opposite;
+        // what "install" involves here is listed in full before anything is written.
         var keep = new Button
         {
-            Content = "Keep it here",
+            Content = "Install it",
             FontSize = 12,
             Classes = { "primary" },
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
@@ -1477,6 +1481,13 @@ public partial class MainWindow : Window
     /// </summary>
     private Control OtherCopyBanner(SelfInstaller installer, ToolInstallation installed)
     {
+        // ⚠ Before anything about versions: is that installation still whole? Files copied back into
+        // the folder by hand look installed to a receipt and are not — no shortcut, no entry in the
+        // system's list. Offering to switch to it would send somebody into a copy nothing can find
+        // or remove again.
+        var state = installer.Inspect();
+        if (state.NeedsRepair) return RepairBanner(installer, installed, state);
+
         var running = SelfUpdater.CurrentVersion;
         var newer = Versions.Compare(running, installed.Version) > 0;
 
@@ -1552,6 +1563,64 @@ public partial class MainWindow : Window
         Grid.SetColumn(action, 1);
         row.Children.Add(text);
         row.Children.Add(action);
+
+        return OverviewBox(row);
+    }
+
+    /// <summary>
+    /// An installation with pieces missing, and the one word that fits: repair.
+    ///
+    /// What is missing is listed rather than summarised. "Something is wrong with your
+    /// installation" is the kind of sentence that leaves somebody unable to tell whether it matters
+    /// — three files or one shortcut are very different situations, and only they can judge which
+    /// of the two they are in.
+    ///
+    /// Repairing opens the same window as installing, which lists everything that will be written
+    /// and lets the shortcuts be ticked again. Nothing else would be honest: putting the missing
+    /// pieces back silently is still writing to somebody's machine.
+    /// </summary>
+    private Control RepairBanner(SelfInstaller installer, ToolInstallation installed,
+                                 SelfInstallationState state)
+    {
+        var text = new StackPanel { Spacing = 2 };
+
+        text.Children.Add(new TextBlock
+        {
+            Text = state.Missing.Count == 1
+                ? "The installed copy is missing a piece"
+                : $"The installed copy is missing {state.Missing.Count} pieces",
+            FontSize = 13,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = Brush("TextPrimary"),
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        text.Children.Add(new TextBlock
+        {
+            Text = $"{installed.Directory} — missing: {string.Join(", ", state.Missing)}. "
+                 + "Until it is put back, that copy may not start, and the system may have no way "
+                 + "to remove it.",
+            FontSize = 11,
+            Foreground = Brush("TextSecondary"),
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        var repair = new Button
+        {
+            Content = "Repair it",
+            FontSize = 12,
+            Classes = { "primary" },
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Margin = new Avalonia.Thickness(14, 0, 0, 0),
+        };
+
+        repair.Click += async (_, _) => await OfferSelfInstallAsync(installer, installer.Plan());
+
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        Grid.SetColumn(text, 0);
+        Grid.SetColumn(repair, 1);
+        row.Children.Add(text);
+        row.Children.Add(repair);
 
         return OverviewBox(row);
     }

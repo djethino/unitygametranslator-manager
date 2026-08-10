@@ -183,6 +183,9 @@ public sealed class LinuxPlatform : IPlatform
     {
     }
 
+    /// <summary>Nothing was registered, so nothing can be missing. See RegisterInstalled.</summary>
+    public bool IsRegistered(string registration) => true;
+
     /// <summary>
     /// The .NET *Desktop* runtime is a Windows-only product. For a Proton game the runtime that
     /// matters lives inside the prefix, which we cannot inspect reliably — so we answer "unknown"

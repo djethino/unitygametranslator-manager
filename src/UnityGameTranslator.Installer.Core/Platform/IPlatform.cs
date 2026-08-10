@@ -77,6 +77,15 @@ public interface IPlatform
     void UnregisterInstalled(string registration);
 
     /// <summary>
+    /// Is that entry still there? False when it was removed behind our back — by an uninstall that
+    /// was interrupted, or by somebody tidying the registry.
+    ///
+    /// Asked because a receipt is a memory and this is the fact. A folder somebody copied files
+    /// into by hand looks installed from the receipt's point of view and is not installed at all.
+    /// </summary>
+    bool IsRegistered(string registration);
+
+    /// <summary>
     /// Is the given .NET Desktop Runtime major version present? MelonLoader IL2CPP needs 6.0
     /// and fails at game launch without it, so we check instead of promising.
     /// Returns null when we cannot tell — which is not the same as "no".

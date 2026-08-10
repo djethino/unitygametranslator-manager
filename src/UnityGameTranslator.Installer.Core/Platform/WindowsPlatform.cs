@@ -228,6 +228,24 @@ public sealed class WindowsPlatform : IPlatform
         }
     }
 
+    public bool IsRegistered(string registration)
+    {
+        const string prefix = @"HKCU\";
+        if (!registration.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return false;
+
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(registration[prefix.Length..]);
+            return key is not null;
+        }
+        catch
+        {
+            // Unreadable is not the same as absent, and claiming an installation is broken on the
+            // strength of a permissions error would send somebody repairing what is not wrong.
+            return true;
+        }
+    }
+
     public void UnregisterInstalled(string registration)
     {
         const string prefix = @"HKCU\";

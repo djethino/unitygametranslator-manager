@@ -682,7 +682,7 @@ public sealed class ToolSettingsWindow : Window
             }
             else
             {
-                var keep = new Button { Content = "Keep it on this machine", FontSize = 12 };
+                var keep = new Button { Content = "Install it on this machine", FontSize = 12 };
                 keep.HorizontalAlignment = HorizontalAlignment.Left;
                 keep.Click += async (_, _) =>
                 {
@@ -699,16 +699,38 @@ public sealed class ToolSettingsWindow : Window
             return Card("Where this tool lives", null, panel);
         }
 
+        var state = installer.Inspect();
+
         panel.Children.Add(new TextBlock
         {
-            Text = installer.RunningTheInstalledCopy()
-                ? "Installed on this machine, and this is that copy."
-                : "Installed on this machine — but this window is another copy of it.",
+            Text = state.NeedsRepair
+                ? "Installed on this machine, but pieces of it are missing."
+                : installer.RunningTheInstalledCopy()
+                    ? "Installed on this machine, and this is that copy."
+                    : "Installed on this machine — but this window is another copy of it.",
             FontSize = 12,
             Foreground = Brush("TextPrimary"),
         });
 
         panel.Children.Add(Note(installed.Directory, "TextMuted"));
+
+        // Named one by one, because "something is missing" leaves nobody able to judge whether it
+        // matters to them.
+        if (state.NeedsRepair)
+        {
+            panel.Children.Add(Note("Missing: " + string.Join(", ", state.Missing), "StatusWarning"));
+
+            var repair = new Button { Content = "Repair the installation...", FontSize = 12 };
+            repair.HorizontalAlignment = HorizontalAlignment.Left;
+            repair.Click += async (_, _) =>
+            {
+                var window = new SelfInstallWindow(_platform, installer, installer.Plan());
+                await window.ShowDialog(this);
+                if (window.Installed is not null) Rebuild();
+            };
+
+            panel.Children.Add(repair);
+        }
 
         if (!installer.RunningTheInstalledCopy())
         {

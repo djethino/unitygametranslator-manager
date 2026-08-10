@@ -60,7 +60,14 @@ public partial class MainWindow : Window
     /// </summary>
     private readonly HashSet<string> _mine = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Rows already built, with what they were saying when they were built.</summary>
+    /// <summary>
+    /// The rows currently in the list, by game path, with what each was saying when it was built.
+    ///
+    /// ⚠ These belong to the ListBox. They are here to be UPDATED in place, never to be handed
+    /// back through a new ItemsSource: an item carries its visual parent, and reusing one across
+    /// two sources leaves the virtualising panel unable to anchor it — the window then goes down
+    /// with no message at all.
+    /// </summary>
     private readonly Dictionary<string, (string Signature, ListBoxItem Item)> _rows =
         new(StringComparer.OrdinalIgnoreCase);
 
@@ -185,7 +192,14 @@ public partial class MainWindow : Window
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
                     RecomputeSituations();
-                    RefreshList();
+
+                    // Contents only while a sweep is running. A lookup changes what we know about
+                    // a game, never whether it exists — except under a filter, where learning
+                    // something can move a game in or out of the visible set, and then the list
+                    // genuinely has to be rebuilt.
+                    if (_lens == Lens.All) RefreshRowContents();
+                    else RefreshList();
+
                     Status($"Checking community translations... {progress}/{ids.Count}");
                 });
             }, token);
@@ -745,10 +759,17 @@ public partial class MainWindow : Window
         var filter = SearchBox.Text ?? "";
         var previous = _selected?.Path;
 
+        _rows.Clear();
+
         var items = _games
             .Where(g => filter.Length == 0 || g.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
             .Where(MatchesFilter)
-            .Select(Row)
+            .Select(game =>
+            {
+                var item = BuildListItem(game);
+                _rows[game.Path] = (Signature(game.Path), item);
+                return item;
+            })
             .ToList();
 
         GameList.ItemsSource = items;
@@ -761,29 +782,33 @@ public partial class MainWindow : Window
         _restoringSelection = false;
     }
 
+    /// <summary>What a row is currently saying, so a change can be noticed without comparing controls.</summary>
+    private string Signature(string path) =>
+        _situations.TryGetValue(path, out var situation) ? situation.ToString() : "";
+
     /// <summary>
-    /// The row for a game, built once and kept until what it says changes.
+    /// Updates what the rows say, without touching the list that holds them.
     ///
-    /// The community sweep answers one game at a time and refreshes the list on each answer, so
-    /// every row used to be thrown away and rebuilt dozens of times over a few seconds. A control
-    /// replaced under the pointer loses its hover, which is why the cursor blinked while the scan
-    /// ran: it was passing over a row that no longer existed.
+    /// The community sweep answers one game at a time. Rebuilding the whole list on each answer
+    /// threw every row away dozens of times in a few seconds, and a control replaced under the
+    /// pointer loses its hover — that was the blinking cursor. Handing the same rows back instead
+    /// was worse: an item belongs to the list that holds it, and reusing one across a new source
+    /// left it with a stale parent, which brought the window down silently.
     ///
-    /// Keyed on what the row actually shows — the situation record prints all of its members — so
-    /// a row is rebuilt when its words change and left alone otherwise.
+    /// So the rows stay exactly where they are and only their contents change. Membership cannot
+    /// move here: a sweep changes what we know about a game, never whether it exists.
     /// </summary>
-    private ListBoxItem Row(GameInstall game)
+    private void RefreshRowContents()
     {
-        var signature = _situations.TryGetValue(game.Path, out var situation)
-            ? situation.ToString()
-            : "";
+        foreach (var (path, entry) in _rows.ToList())
+        {
+            var signature = Signature(path);
+            if (signature == entry.Signature) continue;
+            if (entry.Item.Tag is not GameInstall game) continue;
 
-        if (_rows.TryGetValue(game.Path, out var cached) && cached.Signature == signature)
-            return cached.Item;
-
-        var item = BuildListItem(game);
-        _rows[game.Path] = (signature, item);
-        return item;
+            entry.Item.Content = BuildRowContent(game);
+            _rows[path] = (signature, entry.Item);
+        }
     }
 
     /// <summary>
@@ -830,7 +855,19 @@ public partial class MainWindow : Window
     /// answer "what is this" while someone scanning this list is asking "what can I do". They
     /// live in the card on the right, where they serve diagnosis.
     /// </summary>
-    private ListBoxItem BuildListItem(GameInstall game)
+    private ListBoxItem BuildListItem(GameInstall game) =>
+        new() { Tag = game, Content = BuildRowContent(game) };
+
+    /// <summary>
+    /// What a row shows, separate from the row itself.
+    ///
+    /// Split apart so the sweep can replace what a row SAYS without replacing the row: a
+    /// ListBoxItem belongs to the list that holds it, and handing the same instance back through a
+    /// new ItemsSource leaves it with a stale visual parent — the virtualising panel then fails to
+    /// anchor it and the window goes down without a word. Measured, not deduced: that was this
+    /// morning's crash.
+    /// </summary>
+    private Control BuildRowContent(GameInstall game)
     {
         var title = new TextBlock
         {
@@ -893,14 +930,10 @@ public partial class MainWindow : Window
             body.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
             row.Children.Add(body);
 
-            return new ListBoxItem { Tag = game, Content = row };
+            return row;
         }
 
-        return new ListBoxItem
-        {
-            Tag = game,
-            Content = body,
-        };
+        return body;
     }
 
     private void SelectByPath(string path)

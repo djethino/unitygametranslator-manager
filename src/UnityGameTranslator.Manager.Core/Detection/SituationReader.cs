@@ -66,6 +66,14 @@ public static class SituationReader
                     "Update");
             }
 
+            // What we put there ourselves being out of date, which nothing used to notice: this
+            // enum has always promised "a newer plugin OR a newer translation" and only ever
+            // delivered the second, so a game could sit on a plugin four versions old and read
+            // "Ready to play". Deliberately after the translation, which is what the player sees
+            // on screen, and after unpublished work, which is the only one of the three where
+            // waiting costs something that cannot be recovered.
+            if (Behind(report) is { } behind) return behind;
+
             var readyDetail = local is { EntryCount: > 0 }
                 ? $"{local.EntryCount} lines"
                 : "no translation file yet — it fills up as you play";
@@ -115,6 +123,36 @@ public static class SituationReader
                 ? $"{report.OnlineTranslations.Count} translation(s) in other languages"
                 : null,
             "Install and translate");
+    }
+
+    /// <summary>
+    /// The mod, or the loader we installed, being older than what is published. Null when both
+    /// are current — or when we could not find out, which is not the same thing and must not
+    /// produce a claim either way.
+    ///
+    /// Both are named when both apply. Reporting one and staying silent on the other would have
+    /// somebody update, look again, and be told there is another update — twice, for something
+    /// that was known in one go.
+    /// </summary>
+    private static GameSituationInfo? Behind(GameReport report)
+    {
+        var plugin = report.PluginStanding is { UpdateAvailable: true } p ? p : null;
+        var loader = report.LoaderStanding is { UpdateAvailable: true } l ? l : null;
+
+        if (plugin is null && loader is null) return null;
+
+        var what = plugin is not null && loader is not null
+            ? "Mod and loader updates available"
+            : plugin is not null
+                ? "Mod update available"
+                : "Loader update available";
+
+        var detail = new List<string>();
+        if (plugin is not null) detail.Add($"mod {plugin.Installed} → {plugin.Available}");
+        if (loader is not null) detail.Add($"loader {loader.Installed} → {loader.Available}");
+
+        return new GameSituationInfo(Situation.UpdateAvailable, what,
+                                     string.Join(" · ", detail), "Update");
     }
 
     /// <summary>

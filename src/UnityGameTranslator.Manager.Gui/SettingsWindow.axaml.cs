@@ -1985,7 +1985,14 @@ public sealed class SettingsWindow : Window
         _draft.MergeStrategy = Tag(_mergeStrategy) ?? "ask";
         _draft.NotificationsEnabled = _notificationsEnabled.IsChecked == true;
         _draft.NotificationPosition = Tag(_notificationPosition) ?? "top-right";
-        _draft.EnableAi = _draft.TranslationBackend == "llm";
+        // Picking a backend on this screen means wanting it to run. It is the DEFAULT for new
+        // games, not a decision about any particular one: whether a given game starts translating
+        // is settled on that game's own card, which can switch it off without losing any of this.
+        //
+        // Deliberately not "== llm": in the mod this flag says whether translation runs, for
+        // every backend. Reading it as "the backend is an AI" is what once left every Google and
+        // DeepL setup marked as switched off.
+        _draft.EnableAi = _draft.TranslationBackend != "none";
         // Whatever is on screen is what gets saved. The field can only hold something captured,
         // so it cannot be unusable — and quietly substituting a different key would be the exact
         // behaviour this whole mechanism exists to avoid.

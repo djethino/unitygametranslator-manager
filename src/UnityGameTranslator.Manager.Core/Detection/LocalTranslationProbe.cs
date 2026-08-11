@@ -109,11 +109,17 @@ public static class LocalTranslationProbe
             var entryCount = 0;
             string? uuid = null, gameName = null, steamId = null, sourceHash = null;
             var localChanges = 0;
+            int human = 0, validated = 0, ai = 0, captured = 0, skipped = 0;
 
             foreach (var property in root.EnumerateObject())
             {
                 // Metadata keys are underscore-prefixed; everything else is a translated line.
-                if (!property.Name.StartsWith('_')) { entryCount++; continue; }
+                if (!property.Name.StartsWith('_'))
+                {
+                    entryCount++;
+                    Count(property.Value, ref human, ref validated, ref ai, ref captured, ref skipped);
+                    continue;
+                }
 
                 switch (property.Name)
                 {
@@ -150,6 +156,7 @@ public static class LocalTranslationProbe
                 EntryCount = entryCount,
                 LocalChanges = localChanges,
                 SourceHash = sourceHash,
+                Counts = new TagCounts(human, validated, ai, captured, skipped),
                 LastWrite = File.GetLastWriteTimeUtc(path),
             };
         }
@@ -163,6 +170,45 @@ public static class LocalTranslationProbe
                 EntryCount = -1,
                 LastWrite = File.GetLastWriteTimeUtc(path),
             };
+        }
+    }
+
+    /// <summary>
+    /// Puts one entry in its bucket, following the website's rules to the letter — the reasoning
+    /// for each of them is on <see cref="TagCounts"/>, and neither copy may drift from the other.
+    /// </summary>
+    private static void Count(JsonElement value, ref int human, ref int validated, ref int ai,
+                              ref int captured, ref int skipped)
+    {
+        // The old format is a bare string, and it predates tags entirely: AI is what it was.
+        if (value.ValueKind != JsonValueKind.Object
+            || !value.TryGetProperty("t", out var tagNode))
+        {
+            ai++;
+            return;
+        }
+
+        var tag = tagNode.ValueKind == JsonValueKind.String ? tagNode.GetString() : null;
+
+        var text = value.TryGetProperty("v", out var v) && v.ValueKind == JsonValueKind.String
+            ? v.GetString()
+            : null;
+
+        // Human with nothing in it is a capture: the mod met this text and nobody has dealt with
+        // it. Counting it as human work would report an untouched file as fully written by hand.
+        if (tag == "H" && string.IsNullOrEmpty(text))
+        {
+            captured++;
+            return;
+        }
+
+        switch (tag)
+        {
+            case "H": human++; break;
+            case "V": validated++; break;
+            case "S": skipped++; break;
+            case "M": break; // the mod's own interface — counted nowhere
+            default: ai++; break;
         }
     }
 

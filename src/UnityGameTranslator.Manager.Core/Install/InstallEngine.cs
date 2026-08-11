@@ -1,6 +1,7 @@
 using UnityGameTranslator.Manager.Core.Detection;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
+using UnityGameTranslator.Manager.Core.Settings;
 
 namespace UnityGameTranslator.Manager.Core.Install;
 
@@ -25,6 +26,13 @@ public sealed record InstallPlan(
     /// tuned by hand should not quietly reset their language or switch their AI back on.
     /// </summary>
     public InstallerSettings? Settings { get; init; }
+
+    /// <summary>
+    /// What was decided for this game in particular. Carried beside the defaults rather than
+    /// folded into them, so nothing has to build a doctored copy of somebody's settings to
+    /// express "in this game, do not start translating".
+    /// </summary>
+    public GamePreference? Preference { get; init; }
 
     /// <summary>Human-readable summary shown before anything is written.</summary>
     public IEnumerable<string> Describe()
@@ -90,7 +98,8 @@ public sealed class InstallEngine
     /// </param>
     public InstallPlan? Plan(GameReport report, ReleaseChannel channel = ReleaseChannel.Stable,
                              LoaderDescriptor? loaderOverride = null,
-                             InstallerSettings? settings = null)
+                             InstallerSettings? settings = null,
+                             GamePreference? preference = null)
     {
         if (report.Blockers.Count > 0) return null;
 
@@ -117,6 +126,7 @@ public sealed class InstallEngine
         {
             StrayPluginDirectory = stray,
             Settings = settings,
+            Preference = preference,
         };
     }
 
@@ -187,7 +197,8 @@ public sealed class InstallEngine
             if (plan.Settings is not null)
             {
                 Status?.Invoke("Applying your settings...");
-                configured = new GameConfigWriter().Apply(plan.Game.Path, plan.Loader, plan.Settings);
+                configured = new GameConfigWriter()
+                    .Apply(plan.Game.Path, plan.Loader, plan.Settings, perGame: plan.Preference);
             }
 
             Status?.Invoke("Done.");

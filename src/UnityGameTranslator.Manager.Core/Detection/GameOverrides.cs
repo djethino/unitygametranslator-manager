@@ -1,7 +1,7 @@
-using System.Text.Json;
 using System.Text.Json.Serialization;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
+using UnityGameTranslator.Manager.Core.Settings;
 
 namespace UnityGameTranslator.Manager.Core.Detection;
 
@@ -26,39 +26,9 @@ public sealed class GameOverride
 /// refusing is not the end of the conversation: the player may simply know, and being told "no"
 /// forever by a tool that admits it could not read the file is worse than letting them answer.
 /// </summary>
-public sealed class GameOverrides
+public sealed class GameOverrides : PerGameStore<GameOverride>
 {
-    private const string FileName = "game-overrides.json";
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNameCaseInsensitive = true,
-        Converters = { new JsonStringEnumConverter() },
-    };
-
-    private readonly string _path;
-    private Dictionary<string, GameOverride> _entries;
-
-    public GameOverrides(IPlatform platform)
-    {
-        _path = Path.Combine(platform.UserDataDirectory, FileName);
-        _entries = Load();
-    }
-
-    public GameOverride? For(string gamePath) =>
-        _entries.TryGetValue(Key(gamePath), out var value) ? value : null;
-
-    public void Set(string gamePath, GameOverride value)
-    {
-        _entries[Key(gamePath)] = value;
-        Save();
-    }
-
-    public void Clear(string gamePath)
-    {
-        if (_entries.Remove(Key(gamePath))) Save();
-    }
+    public GameOverrides(IPlatform platform) : base(platform, "game-overrides.json") { }
 
     /// <summary>
     /// Applies what the user said, then re-runs the verdict so the rest of the tool sees a game
@@ -89,41 +59,6 @@ public sealed class GameOverrides
             game.VerdictOverridden = true;
             game.OverriddenVerdict = game.Verdict;
             game.Verdict = ModdabilityVerdict.Ok;
-        }
-    }
-
-    private static string Key(string gamePath) => Path.GetFullPath(gamePath).ToLowerInvariant();
-
-    private Dictionary<string, GameOverride> Load()
-    {
-        try
-        {
-            if (File.Exists(_path))
-            {
-                var loaded = JsonSerializer.Deserialize<Dictionary<string, GameOverride>>(
-                    File.ReadAllText(_path), JsonOptions);
-                if (loaded is not null) return loaded;
-            }
-        }
-        catch
-        {
-            // Losing these means asking again, which is recoverable; refusing to start is not.
-        }
-        return new Dictionary<string, GameOverride>();
-    }
-
-    private void Save()
-    {
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-            var temp = _path + ".tmp";
-            File.WriteAllText(temp, JsonSerializer.Serialize(_entries, JsonOptions));
-            File.Move(temp, _path, overwrite: true);
-        }
-        catch
-        {
-            // Not persisting only costs the answer at the next launch.
         }
     }
 }

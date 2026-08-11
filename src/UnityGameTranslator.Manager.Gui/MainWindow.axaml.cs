@@ -39,6 +39,14 @@ public partial class MainWindow : Window
     /// </summary>
     private readonly AccountLineages _lineages = new();
 
+    /// <summary>
+    /// The newest published plugin build, looked up once and compared against every game.
+    ///
+    /// Held by the window rather than by the inventory it feeds, because the inventory is rebuilt
+    /// on every scan and this answer is about the internet, not about this machine's drives.
+    /// </summary>
+    private readonly PluginReleases _releases = new();
+
     /// <summary>Which games are open right now. Never null: an unswept machine is an empty answer.</summary>
     private RunningGames _running = RunningGames.None;
 
@@ -327,9 +335,19 @@ public partial class MainWindow : Window
 
         var result = await Task.Run(() => new CatalogProvider(_platform).Get());
         _catalog = result.Document;
+        // Asked once and shared by every report built from here — see PluginReleases. Forgotten
+        // first because reaching this method IS the gesture that means "look again": a rescan
+        // that re-read the drives and kept yesterday's idea of the newest plugin would be a
+        // refresh button that refreshes some things.
+        _releases.Forget();
+
         _inventory = new GameInventory(_platform, _catalog, new CatalogApiClient())
         {
             Lineages = _lineages,
+            Releases = _settings.Current.OnlineMode ? _releases : null,
+            Channel = string.Equals(_settings.Current.Channel, "beta", StringComparison.OrdinalIgnoreCase)
+                ? ReleaseChannel.Beta
+                : ReleaseChannel.Stable,
         };
 
         // There is a folder list to show from here on — see the note where it is switched off.
@@ -2437,6 +2455,50 @@ public partial class MainWindow : Window
             var prefix = languages is null ? "" : $"{languages}, ";
 
             panel.Children.Add(new TextBlock { Text = $"On this machine: {prefix}{count}{unsynced}", FontSize = 12, Foreground = Brush("TextSecondary") });
+
+            // What the file is actually made of, drawn by the same bar as every community entry.
+            //
+            // ⚠ Counted from the file on disk, never taken from the published figures of the same
+            // lineage: the moment somebody plays, their copy stops being the published one, and
+            // borrowing its numbers would describe a stranger's file under the words "on this
+            // machine". It is also the only thing that answers "is what I am using any good" —
+            // which used to be unanswerable here, on the one screen devoted to it.
+            if (local.Counts is { } counts && QualityBar.HasSomethingToShow(counts))
+            {
+                if (QualityBar.StageOf(counts) is { } stage)
+                {
+                    // The verdict first, the make-up under it: somebody wants to know where this
+                    // stands before they want to know what it is made of.
+                    panel.Children.Add(new TextBlock
+                    {
+                        Text = counts.Completeness is { } done
+                            ? $"{stage} · {done * 100:F0}% of what it has met is settled"
+                            : stage,
+                        FontSize = 12,
+                        TextWrapping = TextWrapping.Wrap,
+                        Foreground = Brush("TextSecondary"),
+                        Margin = new Avalonia.Thickness(0, 4, 0, 0),
+                    });
+                }
+                else if (counts.IsCaptureOnly)
+                {
+                    // Not "a translation at zero": nothing has been attempted. The difference
+                    // decides whether somebody is looking at work in progress or at the game's
+                    // own text handed back to them.
+                    panel.Children.Add(new TextBlock
+                    {
+                        Text = "Nothing translated yet — the mod has met "
+                             + $"{counts.Captured} line(s) and is waiting on a translation for them.",
+                        FontSize = 12,
+                        TextWrapping = TextWrapping.Wrap,
+                        Foreground = Brush("TextSecondary"),
+                        Margin = new Avalonia.Thickness(0, 4, 0, 0),
+                    });
+                }
+
+                panel.Children.Add(new QualityBar(counts) { Margin = new Avalonia.Thickness(0, 6, 0, 2) });
+                if (QualityBar.Legend(counts) is { } legend) panel.Children.Add(legend);
+            }
         }
         else
         {

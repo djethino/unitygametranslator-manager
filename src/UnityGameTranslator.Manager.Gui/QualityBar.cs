@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 using UnityGameTranslator.Manager.Core.Model;
+using UnityGameTranslator.Common;
 
 namespace UnityGameTranslator.Manager.Gui;
 
@@ -27,15 +28,22 @@ public sealed class QualityBar : Border
 {
     private const double BarHeight = 6;
 
-    public QualityBar(OnlineTranslation translation)
+    /// <summary>A published translation, as the server describes it.</summary>
+    public QualityBar(OnlineTranslation translation) : this(TagCounts.From(translation)) { }
+
+    /// <summary>
+    /// Any five counts — which is what lets the file sitting in a game be drawn by the same bar
+    /// as the one published on the site. They are the same measurement; only where they were
+    /// counted differs.
+    /// </summary>
+    public QualityBar(TagCounts counts)
     {
         Height = BarHeight;
         CornerRadius = new CornerRadius(BarHeight / 2);
         ClipToBounds = true;
         Background = Brush("QualityTrack");
 
-        var total = translation.HumanCount + translation.ValidatedCount + translation.AiCount
-                  + translation.SkippedCount + translation.CaptureCount;
+        var total = counts.Settled + counts.Captured;
 
         // Hidden rather than drawn empty. The caller checks HasSomethingToShow to drop the row
         // entirely; this guard is here so the control cannot lie on its own either.
@@ -59,34 +67,37 @@ public sealed class QualityBar : Border
             grid.Children.Add(block);
         }
 
-        Add(translation.HumanCount, "QualityHuman");
-        Add(translation.ValidatedCount, "QualityValidated");
-        Add(translation.AiCount, "QualityAi");
-        Add(translation.SkippedCount, "QualityKept");
-        Add(translation.CaptureCount, "QualityCapture");
+        Add(counts.Human, "QualityHuman");
+        Add(counts.Validated, "QualityValidated");
+        Add(counts.Ai, "QualityAi");
+        Add(counts.Skipped, "QualityKept");
+        Add(counts.Captured, "QualityCapture");
 
         Child = grid;
     }
 
     /// <summary>Whether there is anything to draw. Callers use it to drop the whole row.</summary>
     public static bool HasSomethingToShow(OnlineTranslation translation) =>
-        translation.HumanCount + translation.ValidatedCount + translation.AiCount
-        + translation.SkippedCount + translation.CaptureCount > 0;
+        HasSomethingToShow(TagCounts.From(translation));
+
+    public static bool HasSomethingToShow(TagCounts counts) => !counts.IsEmpty;
 
     /// <summary>
     /// The colour key, each share as a whole percent, rounding absorbed by the last entry so the
     /// figures always read 100 — the mod's rule, for the same reason: a key that adds up to 99
     /// invites the reader to look for the missing one.
     /// </summary>
-    public static Control? Legend(OnlineTranslation translation)
+    public static Control? Legend(OnlineTranslation translation) => Legend(TagCounts.From(translation));
+
+    public static Control? Legend(TagCounts tags)
     {
         var counts = new (int Count, string Colour, string Label)[]
         {
-            (translation.HumanCount, "QualityHuman", "human"),
-            (translation.ValidatedCount, "QualityValidated", "reviewed"),
-            (translation.AiCount, "QualityAi", "AI"),
-            (translation.SkippedCount, "QualityKept", "kept as is"),
-            (translation.CaptureCount, "QualityCapture", "not done yet"),
+            (tags.Human, "QualityHuman", "human"),
+            (tags.Validated, "QualityValidated", "reviewed"),
+            (tags.Ai, "QualityAi", "AI"),
+            (tags.Skipped, "QualityKept", "kept as is"),
+            (tags.Captured, "QualityCapture", "not done yet"),
         };
 
         var total = counts.Sum(entry => entry.Count);
@@ -136,6 +147,23 @@ public sealed class QualityBar : Border
 
         return panel;
     }
+
+    /// <summary>
+    /// Where the reading stands, in the mod's own words — copied from its TranslationQuality so
+    /// the same file is described identically in the game and here.
+    ///
+    /// ⚠ A step, never a mark. Every translation starts as machine output because that is how the
+    /// mod works; calling that a poor grade tells a newcomer their starting point is worthless.
+    /// Null when it is too early to say anything, and silence is then the honest answer.
+    /// </summary>
+    public static string? StageOf(TagCounts counts) => counts.Stage switch
+    {
+        ReviewStage.Reviewed => "Fully reviewed",
+        ReviewStage.Advanced => "Review well under way",
+        ReviewStage.Started => "Review started",
+        ReviewStage.Machine => "Machine translation",
+        _ => null,
+    };
 
     /// <summary>Through Palette, which will not let an unknown key pass unnoticed.</summary>
     private static IBrush? Brush(string key) => Palette.Of(key);

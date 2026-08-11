@@ -38,6 +38,17 @@ public sealed class LocalTranslation
     /// <summary>Number of real translation entries, metadata keys excluded.</summary>
     public int EntryCount { get; init; }
 
+    /// <summary>
+    /// What the file is made of, counted here the way the website counts it — same five buckets,
+    /// same rules, so the bar on this card and the bar on the site's page cannot disagree about
+    /// one file. Null on a file we could not read.
+    ///
+    /// Counted locally rather than taken from the server on purpose: the moment somebody plays,
+    /// their file stops being the published one, and the published figures would then describe
+    /// somebody else's copy while sitting under the words "on this machine".
+    /// </summary>
+    public TagCounts? Counts { get; init; }
+
     /// <summary>Entries changed since the last sync, as recorded by the mod.</summary>
     public int LocalChanges { get; init; }
 
@@ -242,6 +253,26 @@ public sealed class GameReport
 
     /// <summary>Installed plugin version read from the deployed assembly, or null.</summary>
     public string? InstalledPluginVersion { get; set; }
+
+    /// <summary>
+    /// The plugin here against what is published on the chosen channel.
+    ///
+    /// Null when there is no loader to host it, so nothing can be said. Set even when nothing is
+    /// installed — "not installed, 0.12.0 available" is exactly what the card needs to offer the
+    /// install in the first place.
+    /// </summary>
+    public VersionStanding? PluginStanding { get; set; }
+
+    /// <summary>
+    /// The mod loader here against what the catalog carries.
+    ///
+    /// Deliberately a separate answer from the plugin's, because they are separate things with
+    /// separate release cycles: one button that reinstalled both hid the case this exposes — a
+    /// loader two versions behind under a plugin that is perfectly current, or the reverse.
+    ///
+    /// Works offline: the catalog has an embedded copy, so this never depends on the network.
+    /// </summary>
+    public VersionStanding? LoaderStanding { get; set; }
 
     /// <summary>
     /// The community entry that is the same lineage as the local file, matched on uuid.

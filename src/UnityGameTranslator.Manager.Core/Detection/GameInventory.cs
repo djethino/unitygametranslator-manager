@@ -1,6 +1,8 @@
 using UnityGameTranslator.Manager.Core.Api;
+using UnityGameTranslator.Manager.Core.Install;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
+using UnityGameTranslator.Manager.Core.Update;
 
 namespace UnityGameTranslator.Manager.Core.Detection;
 
@@ -41,6 +43,22 @@ public sealed class GameInventory
     /// than carrying a second, quieter way of being signed in.
     /// </summary>
     public AccountLineages? Lineages { get; set; }
+
+    /// <summary>
+    /// Where the newest published plugin build is looked up. Null leaves every report silent
+    /// about plugin versions rather than guessing — the CLI's offline paths and the install
+    /// engine's own throwaway inventory have no business reaching the network.
+    ///
+    /// Shared on purpose: one lookup answers for every game on the machine.
+    /// </summary>
+    public PluginReleases? Releases { get; set; }
+
+    /// <summary>
+    /// Which channel the version comparison is made against. It is a setting about the person,
+    /// held by whoever owns the session — asking for betas and then being told a stable build is
+    /// the newest one would contradict the choice on the settings screen.
+    /// </summary>
+    public ReleaseChannel Channel { get; set; } = ReleaseChannel.Stable;
 
     /// <summary>
     /// Every Unity game we can find: Steam first because it is the richest source, then the
@@ -102,6 +120,9 @@ public sealed class GameInventory
             report.InstalledPluginVersion = LocalTranslationProbe.ReadInstalledPluginVersion(game.Path, descriptor);
             report.PluginBuildId = ResolvePluginBuild(descriptor, game.Runtime);
             CollectRequirements(report, descriptor, game);
+
+            report.LoaderStanding = ReadLoaderStanding(report);
+            report.PluginStanding = await ReadPluginStandingAsync(report, offline, ct).ConfigureAwait(false);
         }
 
         if (!game.IsModdable)
@@ -153,6 +174,46 @@ public sealed class GameInventory
         report.MyPosition = Lineages?.For(report.LocalTranslation?.Uuid);
 
         return report;
+    }
+
+    /// <summary>
+    /// The installed loader against the catalog's entry for it.
+    ///
+    /// ⚠ Only for a loader WE installed. One that was already there belongs to whoever put it
+    /// there — very likely another mod that needs that exact version — and telling its owner it
+    /// is out of date invites them to let us replace it, which is the one thing this tool has
+    /// promised not to do. The receipt is what separates the two.
+    /// </summary>
+    private VersionStanding? ReadLoaderStanding(GameReport report)
+    {
+        if (report.InstalledLoader is not { } installed) return null;
+        if (!installed.InstalledByUs) return null;
+
+        var known = _catalog.Loaders.FirstOrDefault(l => l.Id == installed.Id);
+        if (known is null) return null;
+
+        return new VersionStanding(installed.Version, known.Version);
+    }
+
+    /// <summary>
+    /// The plugin here against the newest published build.
+    ///
+    /// Answers with the available version even when nothing is installed: "0.12.0 available" is
+    /// what makes an install offer concrete, and the same row then serves the update.
+    /// </summary>
+    private async Task<VersionStanding?> ReadPluginStandingAsync(GameReport report, bool offline,
+                                                                 CancellationToken ct)
+    {
+        var installed = report.InstalledPluginVersion;
+
+        // Offline is a promise, so no call is made — and the screen is told it does not know,
+        // rather than being left to imply that whatever is installed is the newest there is.
+        if (offline || Releases is null)
+            return new VersionStanding(installed, null, offline ? "not checked while offline" : null);
+
+        var release = await Releases.LatestAsync(Channel, ct).ConfigureAwait(false);
+
+        return new VersionStanding(installed, release?.Version, Releases.LastError);
     }
 
     /// <summary>

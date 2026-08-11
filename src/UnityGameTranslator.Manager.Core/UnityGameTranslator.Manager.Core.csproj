@@ -10,7 +10,7 @@
   <ItemGroup>
     <!-- The catalog ships inside the binary so the tool still works offline, or behind a
          network that blocks GitHub. It is the last-resort source, never the first. -->
-    <EmbeddedResource Include="..\..\catalog\loaders.json"
+    <EmbeddedResource Include="..\..\catalogs\loaders.json"
                       LogicalName="UnityGameTranslator.Manager.Core.Resources.loaders.json" />
   </ItemGroup>
 

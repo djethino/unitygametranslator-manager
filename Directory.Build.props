@@ -3,10 +3,12 @@
     <Version>0.1.0</Version>
 
     <!-- Where the catalogs are fetched from, in this order. A folder, not a file: every
-         catalog we add (loaders, models) sits beside the others and needs no new setting.
+         catalog we add (loaders, models, languages) sits beside the others and needs no new
+         setting. They live in their own repository now — a catalogue kept inside one of its
+         consumers makes that consumer the owner of a fact the others also depend on.
          GitHub first on purpose: fetching them from our own site would put an IP in our
          server logs on every launch, and we have no reason to hold that. -->
-    <CatalogPrimaryBase>https://raw.githubusercontent.com/djethino/unitygametranslator-manager/main/catalog</CatalogPrimaryBase>
+    <CatalogPrimaryBase>https://raw.githubusercontent.com/djethino/unitygametranslator-catalogs/main</CatalogPrimaryBase>
     <CatalogMirrorBase>https://unitygametranslator.asymptomatikgames.com/catalog</CatalogMirrorBase>
 
     <!-- UnityGameTranslator services (same values as the mod's Directory.Build.props) -->

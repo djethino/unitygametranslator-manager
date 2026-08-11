@@ -13,6 +13,17 @@ public sealed record InstallPlan(
     ReleaseChannel Channel)
 {
     /// <summary>
+    /// Whether the plugin itself is (re)installed.
+    ///
+    /// ⚠ False is a real plan, not a no-op. The loader and the mod are published by different
+    /// people on different days, and one button doing both meant a loader two versions behind
+    /// could only be brought up to date by replacing a perfectly current plugin at the same time —
+    /// a download, a health check and a receipt rewrite, all to move a file nobody asked about.
+    /// The two are now asked for separately, and the one-click asks for both.
+    /// </summary>
+    public bool InstallPlugin { get; init; } = true;
+
+    /// <summary>
     /// A plugin copy sitting outside the documented location, relative to the game. Reported so
     /// the user can remove it: we never delete files we did not install, and two copies of the
     /// assembly in one game leave the loader free to pick either.
@@ -41,7 +52,11 @@ public sealed record InstallPlan(
             ? $"Install {Loader.Display} {Loader.Version} into {Game.Name}"
             : $"Use the {Loader.Display} already installed in {Game.Name}";
 
-        yield return $"Install the plugin into {Loader.PluginDir}/";
+        // Said either way. "The mod is left as it is" is the sentence that stops somebody
+        // wondering, after a loader update, whether their plugin was quietly replaced too.
+        yield return InstallPlugin
+            ? $"Install the plugin into {Loader.PluginDir}/"
+            : "The plugin already there is left exactly as it is";
 
         if (!string.Equals(Loader.UserDataDir, Loader.PluginDir, StringComparison.OrdinalIgnoreCase))
             yield return $"Settings and translations live in {Loader.UserDataDir}/";
@@ -164,7 +179,7 @@ public sealed class InstallEngine
             if (plan.InstallLoader)
             {
                 Status?.Invoke($"Downloading {plan.Loader.Display} {plan.Loader.Version}...");
-                await InstallLoaderAsync(plan, files, receipt, staging, ct).ConfigureAwait(false);
+                await InstallLoaderAsync(plan, files, receipt, staging, existing, ct).ConfigureAwait(false);
             }
             else
             {
@@ -177,8 +192,18 @@ public sealed class InstallEngine
                 };
             }
 
-            Status?.Invoke("Downloading the plugin...");
-            await InstallPluginAsync(plan, files, receipt, staging, ct).ConfigureAwait(false);
+            if (plan.InstallPlugin)
+            {
+                Status?.Invoke("Downloading the plugin...");
+                await InstallPluginAsync(plan, files, receipt, staging, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                // Carried over from the receipt we are replacing. Dropping it would leave an
+                // installed plugin that nothing claims to have put there — and uninstall reads the
+                // receipt, so it would then refuse to remove our own files.
+                receipt.Plugin = existing?.Plugin;
+            }
 
             var health = VerifyHealth(plan);
             if (health is not null)
@@ -216,8 +241,15 @@ public sealed class InstallEngine
         }
     }
 
+    /// <param name="existing">
+    /// The receipt being replaced, when there is one. Its file list is kept alongside the new one:
+    /// a newer version of a loader may ship fewer files than the one it replaces, and anything
+    /// dropped from the receipt is a file we put there that uninstall would then walk past
+    /// forever. Recording more than we need costs nothing — every removal checks the file is
+    /// still ours before touching it.
+    /// </param>
     private async Task InstallLoaderAsync(InstallPlan plan, FileOperations files, Receipt receipt,
-                                          string staging, CancellationToken ct)
+                                          string staging, Receipt? existing, CancellationToken ct)
     {
         var inventory = new GameInventory(_platform, _catalog);
         var asset = inventory.FindAsset(plan.Loader, plan.Game)
@@ -239,13 +271,27 @@ public sealed class InstallEngine
 
         CopyTree(archive.ExtractedPath, "", files);
 
+        var wasOurs = existing?.Loader is { InstalledByUs: true } ? existing.Loader : null;
+
+        var written = files.WrittenFiles.Skip(before).ToList();
+
+        // The new entries win where they overlap: theirs is the hash that matches what is on disk
+        // now, and uninstall compares against it to know whether the user has since edited a file.
+        var carried = wasOurs is null
+            ? Enumerable.Empty<ReceiptFile>()
+            : wasOurs.Files.Where(old => !written.Any(
+                  fresh => string.Equals(fresh.Path, old.Path, StringComparison.OrdinalIgnoreCase)));
+
         receipt.Loader = new ReceiptLoader
         {
             Id = plan.Loader.Id,
             Version = plan.Loader.Version,
             InstalledByUs = true,
-            Files = files.WrittenFiles.Skip(before).ToList(),
-            DirsCreated = files.CreatedDirectories.Skip(dirsBefore).ToList(),
+            Files = written.Concat(carried).ToList(),
+            DirsCreated = files.CreatedDirectories.Skip(dirsBefore)
+                        .Union(wasOurs?.DirsCreated ?? Enumerable.Empty<string>(),
+                               StringComparer.OrdinalIgnoreCase)
+                        .ToList(),
         };
     }
 
@@ -346,11 +392,18 @@ public sealed class InstallEngine
     /// </summary>
     private static string? VerifyHealth(InstallPlan plan)
     {
-        var pluginDll = Path.Combine(plan.Game.Path,
-            plan.Loader.PluginDir.Replace('/', Path.DirectorySeparatorChar),
-            LocalTranslationProbe.PluginAssemblyName);
+        // Only what this plan claimed to put there. A loader-only install must not fail because
+        // no plugin is present: "install the loader" is a complete request, and answering it with
+        // "the plugin is missing" would refuse a job that succeeded.
+        if (plan.InstallPlugin)
+        {
+            var pluginDll = Path.Combine(plan.Game.Path,
+                plan.Loader.PluginDir.Replace('/', Path.DirectorySeparatorChar),
+                LocalTranslationProbe.PluginAssemblyName);
 
-        if (!File.Exists(pluginDll)) return $"{LocalTranslationProbe.PluginAssemblyName} is not where it should be";
+            if (!File.Exists(pluginDll))
+                return $"{LocalTranslationProbe.PluginAssemblyName} is not where it should be";
+        }
 
         if (plan.InstallLoader)
         {

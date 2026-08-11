@@ -95,7 +95,7 @@
         the middle of the panel, where it reads as the main event rather than as a note. Pinned in
         its own row it spans the panel, aligns with the content below, and stays out of the way.
       -->
-      <Grid Grid.Column="1" RowDefinitions="Auto,*">
+      <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto">
         <StackPanel Grid.Row="0" x:Name="OverviewTop" Margin="20,16,24,0" Spacing="8"
                     IsVisible="False" />
 
@@ -104,6 +104,22 @@
             <TextBlock Text="Select a game on the left." Foreground="{DynamicResource TextMuted}" />
           </StackPanel>
         </ScrollViewer>
+
+        <!--
+          The one button that does everything, pinned under the card rather than at the end of it.
+
+          A game's card is long — facts, loader, mod, settings, translations — and the action that
+          finishes the job was at the bottom of all of it: you had to scroll past everything you
+          had just decided in order to reach the thing that applies it. Pinned here it is reachable
+          from anywhere in the card, and it stays where the eye last left it.
+
+          Its own row, not an overlay: content that scrolls under a floating bar has a last line
+          nobody can read. This one takes its height out of the scroller's.
+
+          Empty for the overview and for a game with nothing to do, and the row collapses with it —
+          an empty band at the bottom of the panel reads as something failing to load.
+        -->
+        <ContentControl Grid.Row="2" x:Name="ActionBar" IsVisible="False" />
       </Grid>
     </Grid>
 

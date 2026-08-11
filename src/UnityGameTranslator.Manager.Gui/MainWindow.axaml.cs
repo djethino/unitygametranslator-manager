@@ -47,6 +47,22 @@ public partial class MainWindow : Window
     /// </summary>
     private readonly PluginReleases _releases = new();
 
+    /// <summary>
+    /// What was decided for each game: apply the defaults here, start translating here, what this
+    /// game is about, which translation was picked. Loaded once — it is a small file, and every
+    /// card rendering reads from it.
+    /// </summary>
+    private GamePreferences _preferences = null!;
+
+    /// <summary>
+    /// The loader the picker is currently on, for the card being shown.
+    ///
+    /// A function rather than a value: the picker can be changed after the card is drawn, and
+    /// everything that installs has to act on what it says at the moment of the click. Reset on
+    /// every render, since it closes over controls belonging to that one rendering.
+    /// </summary>
+    private Func<LoaderDescriptor?> _chosenLoader = () => null;
+
     /// <summary>Which games are open right now. Never null: an unswept machine is an empty answer.</summary>
     private RunningGames _running = RunningGames.None;
 
@@ -206,6 +222,7 @@ public partial class MainWindow : Window
         }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
         _settings = new SettingsStore(_platform);
+        _preferences = new GamePreferences(_platform);
         _online = new OnlineCatalogCache(_platform);
 
         // After the settings exist, not while the buttons are being wired: this reads the stored
@@ -626,7 +643,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var window = new TranslationsWindow(report, descriptor, _settings, _lineages);
+        var window = new TranslationsWindow(report, descriptor, _settings, _lineages, _preferences);
         await window.ShowDialog(this);
 
         // Only when something was actually written: re-reading the game on every close would
@@ -1405,6 +1422,11 @@ public partial class MainWindow : Window
         DetailPanel.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
         DetailPanel.MaxWidth = SummaryWidth;
 
+        // The band belongs to a game, and there is none here. Its row collapses with it, so the
+        // summary gets the height back rather than sitting above an empty strip.
+        ActionBar.IsVisible = false;
+        ActionBar.Content = null;
+
         BuildOverviewTop();
 
         var language = Languages.NameOf(_settings.ResolveTargetLanguage());
@@ -2139,8 +2161,17 @@ public partial class MainWindow : Window
         foreach (var warning in report.Warnings)
             DetailPanel.Children.Add(Callout(warning, "CalloutWarningBg", "StatusWarning"));
 
+        // Three cards for three subjects, where there used to be one called "Actions".
+        //
+        // The loader and the mod are published by different people on different days and are
+        // installed by separate steps; folding them into one block meant their versions could not
+        // both be shown, and the single button had to pretend they moved together. Each card now
+        // carries its own version, its own verb, and nothing that belongs to the other.
+        DetailPanel.Children.Add(Card(LoaderSection(report)));
+        DetailPanel.Children.Add(Card(ModSection(report)));
         DetailPanel.Children.Add(Card(Translations(report)));
-        DetailPanel.Children.Add(Card(Actions(report)));
+
+        ShowActionBar(report);
     }
 
     /// <summary>
@@ -2518,6 +2549,31 @@ public partial class MainWindow : Window
 
         foreach (var line in LineageNotes(report)) panel.Children.Add(line);
 
+        // Which one the button at the bottom would bring down, named here rather than only in the
+        // band: somebody scrolling this card is asking exactly that question, and the answer is
+        // held two hundred pixels below where they are looking.
+        //
+        // Silent once a file is in place and matches it — the line above already says what this
+        // game runs, and repeating it as an intention would read as a pending change.
+        if (_preferences.Read(report.Game.Path).InstallTranslation
+            && PickTranslation(report) is { } picked
+            && !(report.MatchingOnline is { } current && current.Id == picked.Id))
+        {
+            var deliberate = _preferences.Read(report.Game.Path).TranslationId == picked.Id;
+
+            panel.Children.Add(new TextBlock
+            {
+                Text = deliberate
+                    ? $"Chosen for this game: {picked.SourceLanguage} → {picked.TargetLanguage} by {picked.Author ?? "unknown"}."
+                    : $"Setting this game up would take: {picked.SourceLanguage} → {picked.TargetLanguage} "
+                      + $"by {picked.Author ?? "unknown"} — the best ranked in your language.",
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush(deliberate ? "StatusSuccess" : "TextSecondary"),
+                Margin = new Avalonia.Thickness(0, 6, 0, 0),
+            });
+        }
+
         // One button rather than a list of names: choosing between translations needs what they
         // are made of, who reviewed them and which language they came FROM — none of which fits
         // on a line here, and all of which decides the choice.
@@ -2612,25 +2668,39 @@ public partial class MainWindow : Window
         return panel;
     }
 
-    private Control Actions(GameReport report)
+    /// <summary>
+    /// The mod loader: which one, which version, and the one thing to do about it.
+    ///
+    /// Its own card because it is somebody else's software on somebody else's release schedule.
+    /// It used to share a block — and a button — with the plugin, which meant the only way to
+    /// bring a loader up to date was to reinstall the mod at the same time, and neither version
+    /// could be shown next to the other.
+    /// </summary>
+    private Control LoaderSection(GameReport report)
     {
-        var panel = new StackPanel { Spacing = 10, Margin = new Avalonia.Thickness(0, 16, 0, 0) };
-        var engine = new InstallEngine(_platform, _catalog);
+        var panel = new StackPanel { Spacing = 8 };
+        panel.Children.Add(SectionTitle("Mod loader"));
+
+        var running = _running.IsRunning(report.Game);
+        var standing = report.LoaderStanding;
 
         // The recommendation is a default, not a decision made for the user: some games work
         // with one loader and not another for reasons no probe can see.
         ComboBox? loaderPicker = null;
 
-        if (report.InstalledLoader is not null)
+        if (report.InstalledLoader is { } installed)
         {
             panel.Children.Add(new TextBlock
             {
-                Text = $"Using the {report.InstalledLoader.Display} already installed. " +
-                       "It will not be replaced — other mods may depend on it.",
-                FontSize = 12,
-                Opacity = 0.65,
-                TextWrapping = TextWrapping.Wrap,
+                Text = $"{installed.Display} {installed.Version}".Trim(),
+                FontSize = 13,
+                Foreground = Brush("TextPrimary"),
             });
+
+            panel.Children.Add(StandingLine(standing, installed.InstalledByUs
+                ? null
+                : "It was here before you started using this tool, so it is left alone — other "
+                + "mods may depend on this exact version."));
         }
         else if (report.EligibleLoaders.Count > 0)
         {
@@ -2651,7 +2721,7 @@ public partial class MainWindow : Window
             var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
             row.Children.Add(new TextBlock
             {
-                Text = "Mod loader",
+                Text = "None installed — we would use",
                 VerticalAlignment = VerticalAlignment.Center,
                 Opacity = 0.55,
                 FontSize = 12,
@@ -2659,11 +2729,25 @@ public partial class MainWindow : Window
             row.Children.Add(loaderPicker);
             panel.Children.Add(row);
         }
+        else
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = report.RecommendationReason ?? "No loader in the catalog fits this game.",
+                FontSize = 12,
+                Opacity = 0.6,
+                TextWrapping = TextWrapping.Wrap,
+            });
+        }
+
+        // Read back by every action on this card and by the bar below it, so the loader somebody
+        // picked here is the loader that gets installed. Reset on each render, because the picker
+        // it closes over belongs to this rendering of this game.
+        _chosenLoader = () => (loaderPicker?.SelectedItem as ComboBoxItem)?.Tag as LoaderDescriptor;
 
         // A refusal we are willing to let the user overrule gets a way forward. A dead button and
         // a red paragraph, with nothing to click, is the same dead end as refusing forever.
-        if (!report.Game.IsModdable
-            && ModdabilityProbe.CanBeOverridden(report.Game.Verdict))
+        if (!report.Game.IsModdable && ModdabilityProbe.CanBeOverridden(report.Game.Verdict))
         {
             var tryAnyway = new Button { Content = "Let me try anyway...", FontSize = 12 };
             tryAnyway.Click += async (_, _) => await OverrideVerdictAsync(report);
@@ -2680,34 +2764,75 @@ public partial class MainWindow : Window
             panel.Children.Add(reconsider);
         }
 
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        // Offered only when there is a loader of ours to move on. Installing one from here is the
+        // one-click's job — a loader on its own translates nothing, so a button that put one in
+        // and stopped would leave somebody looking at a game that behaves exactly as before.
+        if (standing is { UpdateAvailable: true })
+        {
+            var update = new Button
+            {
+                Content = $"Update the loader to {standing.Available}",
+                FontSize = 12,
+                IsEnabled = !running,
+                HorizontalAlignment = HorizontalAlignment.Left,
+            };
 
-        LoaderDescriptor? Chosen() =>
-            (loaderPicker?.SelectedItem as ComboBoxItem)?.Tag as LoaderDescriptor;
+            update.Click += async (_, _) => await RunLoaderUpdateAsync(report);
+            panel.Children.Add(update);
+        }
 
-        // Reviewed settings only: before someone has opened the settings screen we know nothing
-        // about their language, and writing our defaults into their game would be deciding for
-        // them. Unreviewed, the mod's own first-run wizard asks instead — which is correct.
-        var plan = engine.Plan(report, ReleaseChannel.Stable, Chosen(),
-            _settings.Current.Reviewed ? _settings.Current : null);
+        return panel;
+    }
+
+    /// <summary>
+    /// The mod itself: its version, what to do about it, and the settings this game carries.
+    ///
+    /// The settings live here rather than on the defaults screen because they are answers about
+    /// ONE game — whether to start translating in it, and what it is about. The defaults screen
+    /// holds what is true of the person; this holds what is true of the game in front of them.
+    /// </summary>
+    private Control ModSection(GameReport report)
+    {
+        var panel = new StackPanel { Spacing = 8 };
+        panel.Children.Add(SectionTitle("UnityGameTranslator"));
+
+        var running = _running.IsRunning(report.Game);
+        var standing = report.PluginStanding;
         var installed = report.InstalledPluginVersion is not null;
 
-        // ⚠ Writing into a folder the game is holding open fails, and it fails halfway: some files
-        // replaced, some refused. The engines already check this at the moment they run, which is
-        // the check that must exist — but a button that cannot work should not look like one that
-        // can. Greyed out here, with the reason above them, so nobody spends a click finding out.
-        var running = _running.IsRunning(report.Game);
-
-        var primary = new Button
+        panel.Children.Add(new TextBlock
         {
-            Content = installed ? "Reinstall / update" : "Install",
-            IsEnabled = plan is not null && !running,
-            Classes = { "primary" },
+            Text = installed ? $"Version {report.InstalledPluginVersion}" : "Not installed",
+            FontSize = 13,
+            Foreground = Brush("TextPrimary"),
+        });
+
+        panel.Children.Add(StandingLine(standing, null));
+
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Margin = new Avalonia.Thickness(0, 2, 0, 0),
         };
-        primary.Click += async (_, _) =>
-            await RunInstallAsync(report, engine, engine.Plan(report, ReleaseChannel.Stable, Chosen(),
-                _settings.Current.Reviewed ? _settings.Current : null));
-        buttons.Children.Add(primary);
+
+        // Present once there is anywhere to put it. Installing the mod alone is a real request —
+        // somebody with the loader already in place wants the plugin and nothing else — and it is
+        // also how a version behind gets fixed without touching the loader underneath it.
+        if (report.RecommendedLoader is not null || report.InstalledLoader is not null)
+        {
+            var primary = new Button
+            {
+                Content = installed
+                    ? standing is { UpdateAvailable: true } ? $"Update to {standing.Available}" : "Reinstall"
+                    : "Install the mod",
+                IsEnabled = !running,
+                Classes = { "primary" },
+            };
+
+            primary.Click += async (_, _) => await RunModInstallAsync(report);
+            buttons.Children.Add(primary);
+        }
 
         var uninstall = new Button
         {
@@ -2721,6 +2846,10 @@ public partial class MainWindow : Window
 
         if (running)
         {
+            // ⚠ Writing into a folder the game is holding open fails, and it fails halfway: some
+            // files replaced, some refused. The engines check this again at the moment they run,
+            // which is the check that must exist — but a button that cannot work should not look
+            // like one that can.
             panel.Children.Add(new TextBlock
             {
                 Text = "The game is running. Close it and this comes back on its own.",
@@ -2730,18 +2859,750 @@ public partial class MainWindow : Window
             });
         }
 
-        if (plan is null && report.Blockers.Count == 0)
+        foreach (var control in ModSettings(report)) panel.Children.Add(control);
+
+        return panel;
+    }
+
+    /// <summary>
+    /// What this game does with the mod, remembered for this game alone.
+    ///
+    /// ⚠ The boxes save the moment they are ticked, and that is not the "apply immediately" this
+    /// project refuses elsewhere: nothing here reaches the game. They record an intention, and
+    /// writing it into config.json is a separate, named button. Ticking a box and closing the
+    /// window with an unsaved decision would be the worse trade — it is the kind of setting one
+    /// ticks on the way past.
+    /// </summary>
+    private IEnumerable<Control> ModSettings(GameReport report)
+    {
+        var settings = _settings.Current;
+        var preference = _preferences.Read(report.Game.Path);
+
+        yield return new Border
         {
-            panel.Children.Add(new TextBlock
+            Height = 1,
+            Background = Brush("BorderSubtle"),
+            Margin = new Avalonia.Thickness(0, 10, 0, 4),
+        };
+
+        yield return new TextBlock
+        {
+            Text = "In this game",
+            FontSize = 12,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = Brush("TextSecondary"),
+        };
+
+        var applyDefaults = new CheckBox
+        {
+            Content = "Use my mod defaults here",
+            IsChecked = preference.ApplyModDefaults,
+            FontSize = 12,
+        };
+
+        ToolTip.SetTip(applyDefaults,
+            "Language, backend, hotkey and update preferences are written into this game when "
+            + "something is installed. Untick to leave its own configuration alone.");
+
+        applyDefaults.IsCheckedChanged += (_, _) =>
+        {
+            preference.ApplyModDefaults = applyDefaults.IsChecked == true;
+            _preferences.Set(report.Game.Path, preference);
+        };
+
+        yield return applyDefaults;
+
+        // Only where there is something to start. On "community translations only" there is no
+        // backend to run, so the box would be a switch for a thing that does not exist.
+        if (settings.TranslationBackend != "none")
+        {
+            var start = new CheckBox
             {
-                Text = report.RecommendationReason ?? "Nothing can be installed here.",
+                Content = "Start translating when the game launches",
+                IsChecked = preference.StartTranslation ?? settings.EnableAi,
                 FontSize = 12,
-                Opacity = 0.6,
+            };
+
+            ToolTip.SetTip(start,
+                "Untick to install everything now and start translating later, from inside the "
+                + "game. Nothing is lost: the server, the model and the key stay configured.");
+
+            start.IsCheckedChanged += (_, _) =>
+            {
+                preference.StartTranslation = start.IsChecked == true;
+                _preferences.Set(report.Game.Path, preference);
+            };
+
+            yield return start;
+        }
+
+        // The one wizard question whose answer cannot be shared between two games, so the one
+        // that has no business on the defaults screen. Saved when the field loses focus rather
+        // than on every keystroke: a file written per character is a file written a hundred times
+        // for one sentence.
+        var context = new TextBox
+        {
+            Text = preference.GameContext ?? "",
+            Watermark = "What is this game about? (helps the AI: genre, tone, setting)",
+            FontSize = 12,
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.Wrap,
+            MaxHeight = 84,
+            Margin = new Avalonia.Thickness(0, 4, 0, 0),
+        };
+
+        context.LostFocus += (_, _) =>
+        {
+            var written = string.IsNullOrWhiteSpace(context.Text) ? null : context.Text.Trim();
+            if (written == preference.GameContext) return;
+
+            preference.GameContext = written;
+            _preferences.Set(report.Game.Path, preference);
+        };
+
+        yield return context;
+
+        foreach (var control in ConfigDrift(report, preference)) yield return control;
+    }
+
+    /// <summary>
+    /// Where this game's configuration disagrees with the defaults, and an offer to settle it.
+    ///
+    /// ⚠ Worded as a difference, never as a fault, and never acted on by itself. Somebody may
+    /// have set this game to another language on purpose, or turned its translation off for the
+    /// evening — a tool that quietly corrected that would be taking a decision back from the
+    /// person who made it. Shown once the mod has a configuration to disagree with; a game that
+    /// has never been launched has nothing to say.
+    /// </summary>
+    private IEnumerable<Control> ConfigDrift(GameReport report, GamePreference preference)
+    {
+        if (!preference.ApplyModDefaults) yield break;
+        if (!_settings.Current.Reviewed) yield break;
+
+        var loaderId = report.InstalledLoader?.Id;
+        var descriptor = loaderId is null
+            ? null
+            : _catalog.Loaders.FirstOrDefault(l => l.Id == loaderId);
+
+        if (descriptor is null) yield break;
+
+        var differences = new GameConfigWriter()
+            .Compare(report.Game.Path, descriptor, _settings.Current, preference);
+
+        if (differences.Count == 0) yield break;
+
+        var body = new StackPanel { Spacing = 4 };
+
+        body.Children.Add(new TextBlock
+        {
+            Text = differences.Count == 1
+                ? "One setting here differs from your defaults:"
+                : $"{differences.Count} settings here differ from your defaults:",
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("TextSecondary"),
+        });
+
+        foreach (var difference in differences)
+        {
+            body.Children.Add(new TextBlock
+            {
+                Text = $"• {difference.Label}: {difference.InGame} → {difference.Ours}",
+                FontSize = 11,
                 TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextMuted"),
             });
         }
 
-        return panel;
+        var apply = new Button
+        {
+            Content = "Apply my defaults to this game",
+            FontSize = 12,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            IsEnabled = !_running.IsRunning(report.Game),
+            Margin = new Avalonia.Thickness(0, 6, 0, 0),
+        };
+
+        apply.Click += async (_, _) => await ApplyDefaultsAsync(report, descriptor, preference);
+        body.Children.Add(apply);
+
+        yield return new Border
+        {
+            Background = Brush("CalloutWarningBg"),
+            BorderBrush = Brush("StatusWarning"),
+            BorderThickness = new Avalonia.Thickness(1),
+            CornerRadius = new Avalonia.CornerRadius(6),
+            Padding = new Avalonia.Thickness(12, 10),
+            Margin = new Avalonia.Thickness(0, 8, 0, 0),
+            Child = body,
+        };
+    }
+
+    /// <summary>
+    /// One version against another, in a single line, or silence when there is nothing to say.
+    /// </summary>
+    private Control StandingLine(VersionStanding? standing, string? instead)
+    {
+        if (instead is not null)
+        {
+            return new TextBlock
+            {
+                Text = instead,
+                FontSize = 12,
+                Opacity = 0.65,
+                TextWrapping = TextWrapping.Wrap,
+            };
+        }
+
+        // ⚠ Three states. Saying "up to date" when the lookup failed is the one sentence this
+        // must never produce: somebody behind a firewall would be told they are current on the
+        // strength of a request that never arrived.
+        if (standing is null) return new TextBlock { IsVisible = false };
+
+        if (standing.CheckFailed is { } failure)
+        {
+            return new TextBlock
+            {
+                Text = $"Could not check for a newer version ({failure}).",
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("StatusWarning"),
+            };
+        }
+
+        if (standing.UpdateAvailable)
+        {
+            return new TextBlock
+            {
+                Text = $"{standing.Available} is available.",
+                FontSize = 12,
+                Foreground = Brush("StatusInfo"),
+            };
+        }
+
+        if (standing.UpToDate)
+        {
+            return new TextBlock { Text = "Up to date.", FontSize = 12, Opacity = 0.6 };
+        }
+
+        if (!standing.IsInstalled && standing.Available is { } offered)
+        {
+            return new TextBlock
+            {
+                Text = $"{offered} would be installed.",
+                FontSize = 12,
+                Opacity = 0.6,
+            };
+        }
+
+        return new TextBlock { IsVisible = false };
+    }
+
+    private static Control SectionTitle(string text) => new TextBlock
+    {
+        Text = text,
+        FontWeight = FontWeight.SemiBold,
+        Foreground = Brush("TextPrimary"),
+    };
+
+    // ---------------------------------------------------------------- the one button
+
+    /// <summary>
+    /// Why the one-click cannot run yet, in one sentence, or null when it can.
+    ///
+    /// ⚠ Never a bare disabled button. A greyed control with no reason is the single most
+    /// frustrating thing an installer can show: the person can see the thing they want and has no
+    /// way to learn what stands between them and it. Every branch here produces words, and the
+    /// ones a person can act on produce a button too.
+    /// </summary>
+    private string? WhyNotReady(GameReport report)
+    {
+        if (!report.Game.IsModdable)
+            return ModdabilityProbe.Explain(report.Game);
+
+        if (report.Blockers.Count > 0)
+            return report.Blockers[0];
+
+        if (_running.IsRunning(report.Game))
+            return "The game is running — its files are locked until it closes.";
+
+        if (report.RecommendedLoader is null && report.InstalledLoader is null)
+            return report.RecommendationReason ?? "No loader in the catalog fits this game.";
+
+        // The prerequisite that is about the person rather than the game. Without it we do not
+        // know their language, so "install everything and be ready to play" is a promise we
+        // cannot keep — the mod would open its own wizard on first launch and ask them there.
+        if (!_settings.Current.Reviewed)
+            return "Your mod defaults have not been set yet, so there is nothing to configure this game with.";
+
+        return null;
+    }
+
+    /// <summary>
+    /// The one button, pinned under the card, and everything it needs to be honest about.
+    ///
+    /// Hidden entirely on the overview and on a game that is already finished — a button that
+    /// would do nothing is worse than no button, because it invites a click to find out.
+    /// </summary>
+    private void ShowActionBar(GameReport report)
+    {
+        // A game nothing can be installed into gets no band at all. The card already says why, in
+        // red, at the top; a disabled button repeating it underneath would be a second voice
+        // saying the same no — and it would suggest there is a way to press through it.
+        if (!report.Game.IsModdable)
+        {
+            ActionBar.IsVisible = false;
+            ActionBar.Content = null;
+            return;
+        }
+
+        var preference = _preferences.Read(report.Game.Path);
+        var blocked = WhyNotReady(report);
+
+        var body = new StackPanel { Spacing = 8 };
+
+        // What it is about to do, listed before it does it. The same courtesy the install
+        // confirmation already extends — here it is permanent, so the button never has to be
+        // pressed to find out what it means.
+        var steps = OneClickSteps(report, preference).ToList();
+
+        if (steps.Count == 0 && blocked is null)
+        {
+            // Everything this button could do is already done. Said rather than left blank:
+            // an empty bar where a button used to be reads as something having gone wrong.
+            body.Children.Add(new TextBlock
+            {
+                Text = "Everything is set up here. Nothing left for one click to do.",
+                FontSize = 12,
+                Opacity = 0.6,
+                TextWrapping = TextWrapping.Wrap,
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+
+            ActionBar.Content = ActionBarShell(body);
+            ActionBar.IsVisible = true;
+            return;
+        }
+
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+
+        var explanation = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+
+        if (blocked is not null)
+        {
+            explanation.Children.Add(new TextBlock
+            {
+                Text = blocked,
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("StatusWarning"),
+            });
+
+            // The one blocker the person can clear from here without leaving the window. The
+            // others are about the game or about it being open, and no button of ours fixes those.
+            if (!_settings.Current.Reviewed)
+            {
+                var open = new Button
+                {
+                    Content = "Set my mod defaults",
+                    FontSize = 12,
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    Margin = new Avalonia.Thickness(0, 4, 0, 0),
+                };
+                open.Click += async (_, _) => await OpenSettingsAsync();
+                explanation.Children.Add(open);
+            }
+        }
+        else
+        {
+            explanation.Children.Add(new TextBlock
+            {
+                Text = string.Join("  ·  ", steps),
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextSecondary"),
+            });
+        }
+
+        Grid.SetColumn(explanation, 0);
+        row.Children.Add(explanation);
+
+        var right = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 10,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Avalonia.Thickness(16, 0, 0, 0),
+        };
+
+        // Beside the button rather than up in the card: it changes what the button does, and a
+        // switch for an action belongs where the action is.
+        var withTranslation = new CheckBox
+        {
+            Content = "with a translation",
+            IsChecked = preference.InstallTranslation,
+            FontSize = 12,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        ToolTip.SetTip(withTranslation,
+            "Takes the best-ranked translation published in your language. Untick to start from "
+            + "a blank sheet and build your own as you play.");
+
+        withTranslation.IsCheckedChanged += (_, _) =>
+        {
+            preference.InstallTranslation = withTranslation.IsChecked == true;
+            _preferences.Set(report.Game.Path, preference);
+
+            // The list of steps depends on it, so the sentence beside the button has to follow.
+            ShowActionBar(report);
+        };
+
+        right.Children.Add(withTranslation);
+
+        var go = new Button
+        {
+            Content = "Set up this game",
+            Classes = { "primary" },
+            IsEnabled = blocked is null,
+            MinWidth = 150,
+        };
+
+        go.Click += async (_, _) => await RunOneClickAsync(report);
+        right.Children.Add(go);
+
+        Grid.SetColumn(right, 1);
+        row.Children.Add(right);
+
+        body.Children.Add(row);
+
+        ActionBar.Content = ActionBarShell(body);
+        ActionBar.IsVisible = true;
+    }
+
+    /// <summary>The band itself: same surface as the status bar, so it reads as part of the frame.</summary>
+    private Control ActionBarShell(Control content) => new Border
+    {
+        Background = Brush("SurfaceBar"),
+        BorderBrush = Brush("BorderSubtle"),
+        BorderThickness = new Avalonia.Thickness(0, 1, 0, 0),
+        Padding = new Avalonia.Thickness(20, 12, 24, 12),
+        Child = content,
+    };
+
+    /// <summary>
+    /// What one click would actually do here, in order, and nothing it would not.
+    ///
+    /// Recomputed rather than remembered, so the sentence cannot describe a state the game left
+    /// behind two rescans ago.
+    /// </summary>
+    private IEnumerable<string> OneClickSteps(GameReport report, GamePreference preference)
+    {
+        if (report.InstalledLoader is null && report.RecommendedLoader is { } loader)
+            yield return $"install {loader.Display}";
+        else if (report.LoaderStanding is { UpdateAvailable: true } loaderStanding)
+            yield return $"update the loader to {loaderStanding.Available}";
+
+        if (report.InstalledPluginVersion is null)
+            yield return "install the mod";
+        else if (report.PluginStanding is { UpdateAvailable: true } pluginStanding)
+            yield return $"update the mod to {pluginStanding.Available}";
+
+        if (preference.ApplyModDefaults && _settings.Current.Reviewed)
+            yield return "apply your settings";
+
+        if (preference.InstallTranslation && PickTranslation(report) is { } chosen)
+        {
+            yield return report.LocalTranslation is null
+                ? $"take the {Languages.NameOf(_settings.ResolveTargetLanguage())} translation by {chosen.Author ?? "its author"}"
+                : "replace the translation here (it will ask first)";
+        }
+    }
+
+    /// <summary>
+    /// Which translation one click would take, or null when it would take none.
+    ///
+    /// The rules, in order, and each of them is a decision rather than a convenience:
+    ///  · what the person already chose wins — a pick made in the translations window is an
+    ///    answer, and quietly preferring our own would make that window advisory;
+    ///  · otherwise the FIRST one published in their language, in the order the SERVER sent. That
+    ///    order is Translation::ranking_score, which normalises by the best score of the game and
+    ///    already leaves branches out. Re-sorting here would produce a different best from the
+    ///    website's for the same data, and neither could be called wrong;
+    ///  · a file already in the game does NOT stop the pick, because a newer version of that very
+    ///    translation is worth taking. What it does is turn the step into a replacement, which is
+    ///    asked about.
+    /// </summary>
+    private OnlineTranslation? PickTranslation(GameReport report)
+    {
+        if (report.OnlineTranslations.Count == 0) return null;
+
+        var preference = _preferences.Read(report.Game.Path);
+
+        if (preference.TranslationId is { } chosen)
+        {
+            var picked = report.OnlineTranslations.FirstOrDefault(t => t.Id == chosen);
+
+            // Gone from the catalogue — taken down, or made private. Falling through to the
+            // ranking rather than failing: the person asked for a translation, and the one they
+            // named no longer being there is not a reason to leave them without one.
+            if (picked is not null) return picked;
+        }
+
+        var target = _settings.ResolveTargetLanguage();
+
+        return report.OnlineTranslations
+            .FirstOrDefault(t => Languages.Matches(t.TargetLanguage, target));
+    }
+
+    /// <summary>
+    /// Does everything this game still needs, in one go, asking only where something is at stake.
+    ///
+    /// ⚠ The questions are asked BEFORE anything is written, not between steps. Somebody who
+    /// pressed one button should not be interrupted three times while files are half in place —
+    /// and a refusal at question two would otherwise leave a game in a state nobody chose.
+    /// </summary>
+    private async Task RunOneClickAsync(GameReport report)
+    {
+        if (WhyNotReady(report) is not null) return;
+
+        var preference = _preferences.Read(report.Game.Path);
+        var translation = preference.InstallTranslation ? PickTranslation(report) : null;
+
+        // Everything at stake, gathered and asked once.
+        var body = new StackPanel { Spacing = 10 };
+
+        body.Children.Add(new TextBlock
+        {
+            Text = string.Join(Environment.NewLine,
+                OneClickSteps(report, preference).Select(step => "• " + step)),
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("TextSecondary"),
+        });
+
+        if (translation is not null && report.LocalTranslation is { } local)
+        {
+            foreach (var warning in ReplacementWarnings(report, local, translation))
+                body.Children.Add(warning);
+        }
+
+        if (!await ConfirmAsync($"Set up {report.Game.Name}?", body, "Set it up")) return;
+
+        Busy(true, "Starting...");
+
+        var engine = new InstallEngine(_platform, _catalog);
+        engine.Status += OnEngineStatus;
+
+        try
+        {
+            var plan = BuildPlan(report, preference, loader: true, plugin: true);
+            if (plan is null)
+            {
+                Busy(false, "Ready.");
+                await MessageAsync("Nothing was changed",
+                    report.RecommendationReason ?? "No plan could be made for this game.");
+                return;
+            }
+
+            var outcome = await engine.ApplyAsync(plan);
+            if (!outcome.Success)
+            {
+                Busy(false, "Failed.");
+                await MessageAsync("Nothing was changed", outcome.Message);
+                return;
+            }
+
+            var message = outcome.Message;
+
+            if (translation is not null)
+                message += Environment.NewLine + Environment.NewLine + await TakeTranslationAsync(report, plan.Loader, translation);
+
+            Busy(false, "Done.");
+            await MessageAsync("Ready to play", message);
+        }
+        finally
+        {
+            engine.Status -= OnEngineStatus;
+            Busy(false, "Ready.");
+        }
+
+        await ShowSelectedAsync();
+    }
+
+    /// <summary>
+    /// What the person stands to lose by taking this translation, in their own terms.
+    ///
+    /// ⚠ Role-aware, because the same replacement means three different things. Somebody who only
+    /// plays loses a file they can take again; somebody who leads this translation, or contributes
+    /// a branch to it, loses work nobody else has a copy of. The mod says the same three things,
+    /// from the same server answer.
+    /// </summary>
+    private IEnumerable<Control> ReplacementWarnings(GameReport report, LocalTranslation local,
+                                                     OnlineTranslation taking)
+    {
+        // Already the one being taken, untouched: nothing is at stake beyond a re-download.
+        if (TranslationInstaller.LooksRecoverableOnline(local, taking)) yield break;
+
+        if (local.LocalChanges > 0)
+        {
+            yield return new TextBlock
+            {
+                Text = $"You have {local.LocalChanges} line(s) here that have never been uploaded. "
+                     + "A copy is kept aside, but this game will stop using them.",
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("StatusWarning"),
+            };
+
+            // The way to keep both, named rather than left to be discovered. This tool does not
+            // merge, and pretending otherwise here would be the moment it lost somebody's work.
+            yield return new TextBlock
+            {
+                Text = "To keep your work AND take this one, do it from inside the mod: it holds "
+                     + "the original version and the screens to settle line by line.",
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextMuted"),
+                FontSize = 12,
+            };
+        }
+        else if (local.EntryCount > 0)
+        {
+            yield return new TextBlock
+            {
+                Text = $"The {local.EntryCount} line(s) already here will be replaced. A copy is kept aside.",
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextSecondary"),
+            };
+        }
+
+        if (report.MyPosition is not { } position) yield break;
+
+        yield return new TextBlock
+        {
+            Text = position.IsMain
+                ? "This translation is yours — you are its Main. Replacing the file here does not "
+                + "touch what you published, but anything you have not published yet leaves this game."
+                : "You contribute a branch to this translation. Replacing the file here leaves "
+                + "your branch untouched on the site, and this game stops showing your version of it.",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("StatusWarning"),
+            FontSize = 12,
+        };
+    }
+
+    /// <summary>
+    /// Fetches and installs one translation, and reports it in a sentence. Never throws into the
+    /// caller: a mod that installed correctly must not be reported as a failure because the
+    /// download that followed it did not arrive.
+    /// </summary>
+    private async Task<string> TakeTranslationAsync(GameReport report, LoaderDescriptor loader,
+                                                    OnlineTranslation translation)
+    {
+        Status("Downloading the translation...");
+
+        var api = new CatalogApiClient();
+        var json = await api.DownloadAsync(translation.Id, _settings.Current.ApiToken);
+
+        if (json is null)
+            return $"The translation could not be downloaded ({api.LastError ?? "no reason given"}). Everything else is in place.";
+
+        var result = new TranslationInstaller()
+            .Install(report.Game.Path, loader, json, translation.FileHash);
+
+        if (!result.Written)
+            return $"The translation could not be written ({result.Failure}). Everything else is in place.";
+
+        // Remembered so the card can say which one this game runs, and so a later one-click does
+        // not silently pick a different translation than the one already in place.
+        var preference = _preferences.Read(report.Game.Path);
+        preference.TranslationId = translation.Id;
+        _preferences.Set(report.Game.Path, preference);
+
+        var message = "The translation is in place.";
+        if (result.BackupPath is not null)
+        {
+            message += $" Your previous file was kept in {TranslationInstaller.BackupFolderName}/"
+                     + $"{Path.GetFileName(result.BackupPath)}.";
+        }
+
+        return message;
+    }
+
+    /// <summary>
+    /// The plan for one game, with the two halves asked for separately.
+    ///
+    /// ⚠ Settings are passed only when this game asked for them AND a human has been through the
+    /// defaults screen. Before that we know nothing about their language, and writing our own
+    /// into their game would be deciding for them — the mod's first-run wizard asks instead,
+    /// which is correct.
+    /// </summary>
+    private InstallPlan? BuildPlan(GameReport report, GamePreference preference, bool loader, bool plugin)
+    {
+        var writeSettings = preference.ApplyModDefaults && _settings.Current.Reviewed;
+
+        var plan = new InstallEngine(_platform, _catalog).Plan(
+            report,
+            _settings.Current.Channel == "beta" ? ReleaseChannel.Beta : ReleaseChannel.Stable,
+            _chosenLoader(),
+            writeSettings ? _settings.Current : null,
+            writeSettings ? preference : null);
+
+        if (plan is null) return null;
+
+        // InstallLoader is decided by Plan from what is on disk; forcing it true is how a loader
+        // of ours gets replaced by a newer one, and it is only ever asked for where the card has
+        // already established that the loader is ours to replace.
+        return plan with
+        {
+            InstallLoader = loader && (plan.InstallLoader || report.LoaderStanding is { UpdateAvailable: true }),
+            InstallPlugin = plugin,
+        };
+    }
+
+    /// <summary>Brings the loader up to date, and leaves the plugin exactly where it is.</summary>
+    private async Task RunLoaderUpdateAsync(GameReport report)
+    {
+        var preference = _preferences.Read(report.Game.Path);
+        var plan = BuildPlan(report, preference, loader: true, plugin: false);
+
+        await RunInstallAsync(report, new InstallEngine(_platform, _catalog), plan);
+    }
+
+    /// <summary>Installs or replaces the plugin, and leaves the loader alone.</summary>
+    private async Task RunModInstallAsync(GameReport report)
+    {
+        var preference = _preferences.Read(report.Game.Path);
+
+        // The loader still comes along when there is none — a plugin without one loads in no game,
+        // and refusing here would mean the mod's own button could not work on a fresh game.
+        var plan = BuildPlan(report, preference,
+            loader: report.InstalledLoader is null, plugin: true);
+
+        await RunInstallAsync(report, new InstallEngine(_platform, _catalog), plan);
+    }
+
+    /// <summary>
+    /// Writes the defaults into a game that already has the mod, without reinstalling anything.
+    ///
+    /// The case it serves: somebody changed a default and wants this game to follow. Reinstalling
+    /// the plugin to move one setting would be a download and a receipt rewrite for nothing.
+    /// </summary>
+    private async Task ApplyDefaultsAsync(GameReport report, LoaderDescriptor descriptor,
+                                          GamePreference preference)
+    {
+        Busy(true, "Applying your settings...");
+
+        var result = new GameConfigWriter()
+            .Apply(report.Game.Path, descriptor, _settings.Current, perGame: preference);
+
+        Busy(false, "Ready.");
+
+        await MessageAsync(
+            result.Written ? "Applied" : "Nothing was changed",
+            result.Written
+                ? $"Applied to {report.Game.Name}: {string.Join(", ", result.Applied)}."
+                : $"Your settings could not be written ({result.Failure}).");
+
+        await ShowSelectedAsync();
     }
 
     // ---------------------------------------------------------------- actions

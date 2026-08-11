@@ -216,7 +216,16 @@ public static class CommandLine
         var platform = PlatformFactory.Create();
         var catalog = new CatalogProvider(platform).Get(offline);
         var inventory = new GameInventory(platform, catalog.Document,
-                                          offline ? null : new CatalogApiClient());
+                                          offline ? null : new CatalogApiClient())
+        {
+            // The same version comparison the window makes. This command is what somebody pastes
+            // into an issue, describing the state the window described to them — a CLI that
+            // quietly knew less would send whoever reads it after a difference that is not there.
+            //
+            // Wired here and not on the install path: there it would spend a request on the rate
+            // limited API to print nothing.
+            Releases = offline ? null : new PluginReleases(),
+        };
 
         // A path is looked up in the full scan FIRST, and only probed on its own when that finds
         // nothing.
@@ -246,6 +255,22 @@ public static class CommandLine
         return report.Blockers.Count > 0 ? 3 : 0;
     }
 
+    /// <summary>
+    /// One version against what is published, in the words the window uses.
+    ///
+    /// ⚠ "up to date" is never printed on a lookup that failed. This text ends up in issues, and
+    /// a report that claims a plugin is current when nothing could be reached would have whoever
+    /// reads it looking for a bug in a version that was never checked.
+    /// </summary>
+    private static string Standing(VersionStanding standing) => standing switch
+    {
+        { CheckFailed: { } why } => $"could not check for a newer version ({why})",
+        { UpdateAvailable: true } => $"{standing.Available} is available",
+        { UpToDate: true } => "up to date",
+        { IsInstalled: false, Available: { } offered } => $"{offered} would be installed",
+        _ => "no version information",
+    };
+
     private static void PrintReport(GameReport report)
     {
         var game = report.Game;
@@ -268,7 +293,11 @@ public static class CommandLine
             Console.WriteLine($"              {report.InstalledLoader.ForeignPluginCount} other mod(s) alongside — the loader will never be removed.");
         }
 
+        if (report.LoaderStanding is { } loaderStanding) Console.WriteLine($"              {Standing(loaderStanding)}");
+
         Console.WriteLine($"Plugin      : {report.InstalledPluginVersion ?? "not installed"}");
+
+        if (report.PluginStanding is { } pluginStanding) Console.WriteLine($"              {Standing(pluginStanding)}");
         Console.WriteLine($"Recommends  : {report.RecommendedLoader?.Display ?? "nothing"}");
         if (report.RecommendationReason is not null) Console.WriteLine($"              {report.RecommendationReason}");
         if (report.PluginBuildId is not null) Console.WriteLine($"Build       : {report.PluginBuildId}");

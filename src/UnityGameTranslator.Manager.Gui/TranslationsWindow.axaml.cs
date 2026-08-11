@@ -70,13 +70,28 @@ public sealed class TranslationsWindow : Window
     /// <summary>True when something was written, so the caller can refresh the game card.</summary>
     public bool Changed { get; private set; }
 
+    /// <summary>
+    /// Where a choice made here is remembered, and whether it can be acted on at all.
+    ///
+    /// ⚠ With no mod installed there is NOWHERE to write: the loader's folder does not exist yet,
+    /// so a download would land beside a game that cannot read it. The window then offers to
+    /// SELECT rather than to take, and the one-click installs what was selected. Discovering the
+    /// choice before the means to use it is the ordinary order of things — somebody looks at what
+    /// exists for their game before they set anything up.
+    /// </summary>
+    private readonly GamePreferences _preferences;
+
+    private readonly bool _canWrite;
+
     public TranslationsWindow(GameReport report, LoaderDescriptor loader, SettingsStore settings,
-                              AccountLineages lineages)
+                              AccountLineages lineages, GamePreferences preferences)
     {
         _report = report;
         _loader = loader;
         _settings = settings;
         _lineages = lineages;
+        _preferences = preferences;
+        _canWrite = report.InstalledPluginVersion is not null;
 
         Title = $"Translations for {report.Game.Name}";
         Width = 860;
@@ -366,8 +381,18 @@ public sealed class TranslationsWindow : Window
         ShowTranslations(found);
     }
 
+    /// <summary>
+    /// What is on screen right now, kept so a selection can redraw the cards without asking the
+    /// server again — every card carries the current choice in its own button, so one of them
+    /// changing means all of them have to.
+    /// </summary>
+    private IReadOnlyList<OnlineTranslation> _shown = Array.Empty<OnlineTranslation>();
+
+    private void Redraw() => ShowTranslations(_shown);
+
     private void ShowTranslations(IReadOnlyList<OnlineTranslation> all)
     {
+        _shown = all;
         _list.Children.Clear();
 
         if (all.Count == 0)
@@ -478,11 +503,20 @@ public sealed class TranslationsWindow : Window
             });
         }
 
+        // ⚠ A different verb when there is nowhere to write yet, because it is a different act.
+        // "Use this one" on a game with no mod installed would download a file into a folder the
+        // game cannot read, and report success. Selecting is what can honestly be done at that
+        // moment, and the button under the game's card is what carries it out.
+        var chosen = _preferences.Read(_report.Game.Path).TranslationId == translation.Id;
+
         var take = new Button
         {
-            Content = installed ? "Download again" : "Use this one",
+            Content = _canWrite
+                ? installed ? "Download again" : "Use this one"
+                : chosen ? "Selected" : "Select",
             FontSize = 12,
             Classes = { "primary" },
+            IsEnabled = _canWrite || !chosen,
             HorizontalAlignment = HorizontalAlignment.Left,
             Margin = new Thickness(0, 8, 0, 0),
         };
@@ -494,7 +528,21 @@ public sealed class TranslationsWindow : Window
             IsVisible = false,
         };
 
-        take.Click += async (_, _) => await TakeAsync(translation, take, outcome);
+        if (!_canWrite && chosen)
+        {
+            Show(outcome, "This is the one the game will be set up with.", "StatusSuccess");
+        }
+
+        take.Click += async (_, _) =>
+        {
+            if (_canWrite)
+            {
+                await TakeAsync(translation, take, outcome);
+                return;
+            }
+
+            Select(translation, outcome);
+        };
 
         body.Children.Add(take);
         body.Children.Add(outcome);
@@ -557,6 +605,34 @@ public sealed class TranslationsWindow : Window
         if (translation.GameCoverage is not { } coverage || coverage < 0.999) return false;
 
         return all.Count(other => other.Id != translation.Id) > 0;
+    }
+
+    /// <summary>
+    /// Remembers which translation this game should be set up with, and writes nothing.
+    ///
+    /// No confirmation, and none is owed: nothing on disk changes, and choosing another card
+    /// undoes it. The moment something IS at stake — a file already in the game — is the moment
+    /// the one-click asks, with the file in front of it to describe.
+    /// </summary>
+    private void Select(OnlineTranslation translation, TextBlock outcome)
+    {
+        var preference = _preferences.Read(_report.Game.Path);
+        preference.TranslationId = translation.Id;
+        preference.InstallTranslation = true;
+        _preferences.Set(_report.Game.Path, preference);
+
+        Changed = true;
+
+        Show(outcome, "Selected. Setting this game up will bring it down.", "StatusSuccess");
+
+        // The other cards carry the old selection in their own buttons, so the list is redrawn
+        // rather than left with two of them claiming to be the chosen one.
+        //
+        // ⚠ The outcome line above is written before this, and this replaces the card that holds
+        // it. Deliberate: the redrawn card says "Selected" on the button and repeats the sentence
+        // from the preference, so nothing is lost — and leaving the old cards stale would be worse
+        // than losing a line of text.
+        Redraw();
     }
 
     /// <summary>

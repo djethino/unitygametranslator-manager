@@ -78,8 +78,11 @@ public sealed class GamePreferences : PerGameStore<GamePreference>
     /// What is remembered for this game, or a fresh set of defaults. Never null, so callers read
     /// preferences the same way whether or not this game has ever been touched.
     ///
-    /// ⚠ The result is a copy for reading. Changing it changes nothing until it is handed back to
-    /// <see cref="PerGameStore{T}.Set"/> — deliberately, so a screen can offer Cancel.
+    /// ⚠ NOT a copy: for a game that has one, this is the stored object itself, so changing a
+    /// field changes what the next reader sees — it simply is not on disk until
+    /// <see cref="PerGameStore{T}.Set"/> is called. Every screen here changes one field and saves
+    /// it in the same breath, which is what makes that safe. A screen that wanted to offer Cancel
+    /// would have to copy first, and would be wrong to assume this does it for them.
     /// </summary>
     public GamePreference Read(string gamePath) => For(gamePath) ?? new GamePreference();
 

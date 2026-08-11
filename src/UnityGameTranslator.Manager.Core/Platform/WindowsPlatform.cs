@@ -123,7 +123,7 @@ public sealed class WindowsPlatform : IPlatform
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Programs", "UnityGameTranslator Manager");
 
-    public string ExecutableFileName => "UnityGameTranslatorInstaller.exe";
+    public string ExecutableFileName => "UnityGameTranslatorManager.exe";
 
     public IReadOnlyList<LauncherKind> LauncherKinds => [LauncherKind.Menu, LauncherKind.Desktop];
 
@@ -194,7 +194,7 @@ public sealed class WindowsPlatform : IPlatform
     public string? RegisterInstalled(ToolInstallation installation)
     {
         const string parent = @"Software\Microsoft\Windows\CurrentVersion\Uninstall";
-        const string name = "UnityGameTranslatorInstaller";
+        const string name = "UnityGameTranslatorManager";
 
         try
         {

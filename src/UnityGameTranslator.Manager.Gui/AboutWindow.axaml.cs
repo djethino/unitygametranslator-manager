@@ -61,7 +61,7 @@ public sealed class AboutWindow : Window
         try
         {
             using var iconStream = AssetLoader.Open(
-                new Uri("avares://UnityGameTranslatorInstaller/Assets/asymptomatik-games-mark.png"));
+                new Uri("avares://UnityGameTranslatorManager/Assets/asymptomatik-games-mark.png"));
             Icon = new WindowIcon(new Bitmap(iconStream));
         }
         catch
@@ -120,7 +120,7 @@ public sealed class AboutWindow : Window
         {
             // The website's icon, so the three products are recognisably one family.
             using var stream = AssetLoader.Open(
-                new Uri("avares://UnityGameTranslatorInstaller/Assets/icon-128.png"));
+                new Uri("avares://UnityGameTranslatorManager/Assets/icon-128.png"));
             row.Children.Add(new Image
             {
                 Source = new Bitmap(stream),
@@ -181,7 +181,7 @@ public sealed class AboutWindow : Window
         try
         {
             using var stream = AssetLoader.Open(
-                new Uri("avares://UnityGameTranslatorInstaller/Assets/asymptomatik-full.png"));
+                new Uri("avares://UnityGameTranslatorManager/Assets/asymptomatik-full.png"));
 
             band.Child = new Image
             {

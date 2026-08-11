@@ -51,7 +51,7 @@ public static class Http
 
         client.Timeout = timeout;
         client.DefaultRequestHeaders.UserAgent.ParseAdd(
-            $"UnityGameTranslatorInstaller/{BuildInfo.Version}");
+            $"UnityGameTranslatorManager/{BuildInfo.Version}");
 
         return client;
     }

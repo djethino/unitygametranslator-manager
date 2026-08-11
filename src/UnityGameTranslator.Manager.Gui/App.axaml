@@ -6,7 +6,7 @@
   <Application.Resources>
     <ResourceDictionary>
       <ResourceDictionary.MergedDictionaries>
-        <ResourceInclude Source="avares://UnityGameTranslatorInstaller/Theme.axaml" />
+        <ResourceInclude Source="avares://UnityGameTranslatorManager/Theme.axaml" />
       </ResourceDictionary.MergedDictionaries>
     </ResourceDictionary>
   </Application.Resources>

@@ -5,7 +5,7 @@
         Width="1220" Height="720"
         MinWidth="1060" MinHeight="560"
         WindowStartupLocation="CenterScreen"
-        Icon="avares://UnityGameTranslatorInstaller/Assets/app.ico"
+        Icon="avares://UnityGameTranslatorManager/Assets/app.ico"
         Background="{DynamicResource SurfaceBase}">
 
   <Grid RowDefinitions="Auto,*,Auto">
@@ -30,7 +30,7 @@
           -->
           <Grid Grid.Column="0" ColumnDefinitions="Auto,*" Margin="0,0,16,0">
             <Image Grid.Column="0"
-                   Source="avares://UnityGameTranslatorInstaller/Assets/icon-128.png"
+                   Source="avares://UnityGameTranslatorManager/Assets/icon-128.png"
                    Width="34" Height="34" VerticalAlignment="Center" Margin="0,0,12,0" />
             <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
               <TextBlock Text="Your Unity games" FontSize="18" FontWeight="SemiBold"

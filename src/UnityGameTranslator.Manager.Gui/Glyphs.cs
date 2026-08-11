@@ -47,7 +47,7 @@ public static class Glyphs
         try
         {
             using var stream = AssetLoader.Open(
-                new Uri("avares://UnityGameTranslatorInstaller/Assets/icon-128.png"));
+                new Uri("avares://UnityGameTranslatorManager/Assets/icon-128.png"));
 
             return new Image
             {

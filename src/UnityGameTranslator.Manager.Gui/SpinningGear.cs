@@ -117,7 +117,7 @@ public sealed class SpinningGear : StackPanel
         try
         {
             return new Bitmap(AssetLoader.Open(
-                new Uri("avares://UnityGameTranslatorInstaller/Assets/gear.png")));
+                new Uri("avares://UnityGameTranslatorManager/Assets/gear.png")));
         }
         catch
         {

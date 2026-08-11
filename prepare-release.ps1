@@ -89,7 +89,7 @@ $releasesDir = 'releases'
 # bit. Someone unpacking it on a Steam Deck would get a file the desktop refuses to run, with
 # nothing on screen saying why. A tar preserves the mode, and Ark and tar both honour it.
 $targets = @(
-    @{ Rid = 'win-x64';   Executable = 'UnityGameTranslatorInstaller.exe'; Archive = 'zip'    ; Shim = $true }
+    @{ Rid = 'win-x64';   Executable = 'UnityGameTranslatorManager.exe'; Archive = 'zip'    ; Shim = $true }
     @{ Rid = 'linux-x64'; Executable = 'unitygametranslator-manager';    Archive = 'tar.gz' ; Shim = $false }
 ) | Where-Object { $Rid -contains $_.Rid }
 
@@ -108,7 +108,7 @@ $shimBody = @'
 @echo off
 rem The command line face of UnityGameTranslator Manager.
 rem The executable itself opens the window when it is run with no command.
-"%~dp0UnityGameTranslatorInstaller.exe" %*
+"%~dp0UnityGameTranslatorManager.exe" %*
 '@
 
 if (-not $targets) { throw "No known target among: $($Rid -join ', ')" }
@@ -140,7 +140,7 @@ foreach ($target in $targets) {
     # here before (DebugType had to move to Directory.Build.props for exactly this reason), so it
     # is verified rather than assumed.
     $produced = Get-ChildItem $stagingDir -File
-    $expected = $produced | Where-Object { $_.Name -eq 'UnityGameTranslatorInstaller.exe' -or $_.Name -eq 'UnityGameTranslatorInstaller' }
+    $expected = $produced | Where-Object { $_.Name -eq 'UnityGameTranslatorManager.exe' -or $_.Name -eq 'UnityGameTranslatorManager' }
     if (-not $expected) {
         throw "Published $rid but found no executable in $stagingDir"
     }
@@ -162,7 +162,7 @@ foreach ($target in $targets) {
         Set-Content -Path (Join-Path $stagingDir $shimName) -Value $shimBody -Encoding ascii
     }
 
-    $base = "UnityGameTranslatorInstaller-v$Version-$rid"
+    $base = "UnityGameTranslatorManager-v$Version-$rid"
     $archiveName = "$base.$($target.Archive)"
     $archivePath = Join-Path $releasesDir $archiveName
 

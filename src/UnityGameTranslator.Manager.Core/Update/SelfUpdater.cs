@@ -396,8 +396,8 @@ public sealed class SelfUpdater
 
         return _platform.OsId switch
         {
-            "windows" => $"UnityGameTranslatorInstaller-v{version}-win-x64.zip",
-            "linux" => $"UnityGameTranslatorInstaller-v{version}-linux-x64.tar.gz",
+            "windows" => $"UnityGameTranslatorManager-v{version}-win-x64.zip",
+            "linux" => $"UnityGameTranslatorManager-v{version}-linux-x64.tar.gz",
             _ => null,
         };
     }

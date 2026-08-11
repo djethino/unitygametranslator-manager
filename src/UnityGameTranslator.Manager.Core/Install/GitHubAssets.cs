@@ -52,7 +52,7 @@ public sealed class GitHubAssets
         if (!_http.DefaultRequestHeaders.UserAgent.Any())
         {
             _http.DefaultRequestHeaders.UserAgent.ParseAdd(
-                $"UnityGameTranslatorInstaller/{BuildInfo.Version}");
+                $"UnityGameTranslatorManager/{BuildInfo.Version}");
         }
     }
 

@@ -28,7 +28,7 @@ public sealed class ArchiveFetcher
         if (!_http.DefaultRequestHeaders.UserAgent.Any())
         {
             _http.DefaultRequestHeaders.UserAgent.ParseAdd(
-                $"UnityGameTranslatorInstaller/{BuildInfo.Version}");
+                $"UnityGameTranslatorManager/{BuildInfo.Version}");
         }
     }
 

@@ -20,7 +20,7 @@
     -->
     <OutputType>WinExe</OutputType>
     <RootNamespace>UnityGameTranslator.Manager.Gui</RootNamespace>
-    <AssemblyName>UnityGameTranslatorInstaller</AssemblyName>
+    <AssemblyName>UnityGameTranslatorManager</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- Same icon as the website: one identity across the ecosystem -->
     <ApplicationIcon>Assets/app.ico</ApplicationIcon>

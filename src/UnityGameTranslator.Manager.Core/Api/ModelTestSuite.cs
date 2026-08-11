@@ -346,7 +346,7 @@ public static class ModelTestSuite
 
             new("refuses another real language", "experimental",
                 foreign.PlainLine,
-                Strict(from, language) + Rules(foreign.PlainLine),
+                Prompt(language, foreign.PlainLine, gameContext, from.Language, strictSource: true),
                 (_, answer) => answer.Trim() == SkipMarker)
             {
                 // The sentence is chosen so it is neither the source nor the target. A fixed one
@@ -370,7 +370,7 @@ public static class ModelTestSuite
             // in a real game. Refusing what it cannot know is the behaviour being measured.
             new("refuses what it cannot know", "experimental",
                 Fixtures.Klingon,
-                Strict(from, language) + Rules(Fixtures.Klingon),
+                Prompt(language, Fixtures.Klingon, gameContext, from.Language, strictSource: true),
                 (_, answer) => answer.Trim() == SkipMarker)
             {
                 Expectation = $"answers exactly {SkipMarker}, rather than inventing a translation",
@@ -408,111 +408,35 @@ public static class ModelTestSuite
     /// The block the mod puts ABOVE everything else when strict_source is on. It does not replace
     /// the usual rules: the model still has to translate normally when the language does match.
     /// </summary>
-    private static string Strict(Fixtures from, string targetLanguage) => $"""
-        === CRITICAL RULE ===
-        Source language: {from.Language}
-        - If text is NOT in {from.Language}: reply ONLY with exactly: {SkipMarker}
-        - If text IS in {from.Language}: translate to {targetLanguage}
-
-        """;
-
     /// <summary>
-    /// The system turn the mod would build for THIS text, rule for rule.
+    /// The system turn the mod builds for THIS text — the mod's own builder, not a copy of it.
     ///
-    /// The rules about markers are conditional in the mod, and that is not tidiness: its own code
-    /// says announcing a placeholder the text does not contain invites the model to invent one,
-    /// and small models were measured answering with a marker they had merely been told about.
-    /// A suite that always sent the full block was therefore testing a prompt the mod never
-    /// sends, and testing it in the direction that flatters.
+    /// ⚠ The marker rules are conditional over there, and that is not tidiness: announcing a
+    /// placeholder the text does not contain invites a model to invent one, and small models were
+    /// measured answering with a marker they had merely been told about. A bench that always sent
+    /// the full block would be scoring a prompt no game sends, in the direction that flatters.
     ///
-    /// Mirrors TranslatorCore's game path. It is a copy, and copies drift — but the alternative
-    /// is a tester that measures something else, which is worse than one that needs checking
-    /// against the mod when the mod's prompt changes.
+    /// ⚠ The fixtures already hold "[!nl]" where a game would still have a real line break, since
+    /// they stand in for text the mod has already processed. Classification happens on the raw
+    /// form over there, so the break is put back before asking — otherwise a paragraph with no
+    /// space in it would be taken for a single word and get a closing line the game never adds.
     /// </summary>
     private static string Prompt(string language, string source, string? gameContext = null,
-                                 string? sourceLanguage = null)
+                                 string? sourceLanguage = null, bool strictSource = false)
     {
-        var context = string.IsNullOrWhiteSpace(gameContext)
-            ? "video game UI, menus and dialogues"
-            : gameContext;
-
-        var prompt = new System.Text.StringBuilder();
-
-        prompt.AppendLine("=== CONTEXT ===");
-        prompt.AppendLine(sourceLanguage is null
-            ? $"Translating video game ({context}) to {language}."
-            : $"Translating video game ({context}) from {sourceLanguage} to {language}.");
-        prompt.AppendLine();
-
-        prompt.AppendLine("=== TRANSLATION RULES ===");
-        prompt.AppendLine("- Output the translation only, no explanation");
-        prompt.AppendLine("- Translation must be correct in target language");
-        prompt.AppendLine("- Keep it concise for UI");
-        prompt.AppendLine("- Do not add punctuation if not in the source to translate");
-        prompt.AppendLine("- Keep unchanged: keyboard keys (Tab, Esc, Space...), technical settings (VSync, Auto)");
-
-        if (source.Contains("[!nl]", StringComparison.Ordinal))
-            prompt.AppendLine("- IMPORTANT: Keep [!nl] placeholders exactly where they are, do not remove or move them");
-
-        if (source.Contains("[!t*", StringComparison.Ordinal))
-            prompt.AppendLine("- IMPORTANT: Keep [!t*0], [!t*1], etc. tag placeholders exactly as-is, do not modify or remove them");
-
-        if (source.Contains("[!v*", StringComparison.Ordinal))
-            prompt.AppendLine("- IMPORTANT: Keep [!v*0], [!v*1], etc. placeholders exactly as-is, do not modify them");
-
-        if (source.Contains("[!STR*", StringComparison.Ordinal))
-            prompt.AppendLine("- IMPORTANT: Keep [!STR*0], [!STR*1], etc. string variable placeholders exactly as-is, do not translate or modify them");
-
-        // The mod says "word" rather than "text" for anything without a space, and that line
-        // changes what a model answers — several return a definition when it is missing.
-        if (IsSingleWord(source))
+        var markers = new Prompts.Markers
         {
-            prompt.AppendLine();
-            prompt.Append("Now, translate this word:");
-        }
+            LineBreaks = source.Contains("[!nl]", StringComparison.Ordinal),
+            Tags = source.Contains("[!t*", StringComparison.Ordinal),
+            Numbers = source.Contains("[!v*", StringComparison.Ordinal),
+            Variables = source.Contains("[!STR*", StringComparison.Ordinal),
+        };
 
-        return prompt.ToString();
+        var asTheGameSawIt = source.Replace("[!nl]", "\n", StringComparison.Ordinal);
+
+        return Prompts.ForGameText(language, sourceLanguage, gameContext, strictSource,
+                                   Prompts.Classify(asTheGameSawIt), markers);
     }
-
-    /// <summary>
-    /// The mod's own test, in its own terms: no line break, and no space. Scriptio continua is
-    /// judged on length there; it is left out here rather than half-copied, because this suite
-    /// must not carry rules written for particular writing systems.
-    /// </summary>
-    private static bool IsSingleWord(string text) =>
-        !text.Contains('\n') && !text.Contains("[!nl]", StringComparison.Ordinal)
-        && !text.Contains(' ');
-
-    /// <summary>
-    /// A line of the length games actually hold. In one measured translation file the median line
-    /// is 73 characters and the ninth decile 220; the mod itself accepts up to 15000, so this is
-    /// ordinary rather than extreme — the suite simply had nothing above forty.
-    ///
-    /// Every marker here is one the mod really produces: a tag pair around a coloured word, a line
-    /// break, and numbers lifted out of the text so one cache entry can serve every value.
-    /// </summary>
-    private const string Paragraph =
-        "[!t*0]Warning[!t*1][!nl]The reactor is running at [!v*0] percent of its rated output. "
-        + "Vent the coolant before the next jump, or the crew will not survive it. Repairs cost "
-        + "[!v*1] credits and take [!v*2] cycles, and nothing else can be built while they are "
-        + "under way.";
-
-    /// <summary>
-    /// The system turn, in the shape the mod builds it: a context block naming the job and the
-    /// target language, then the rules. No "now translate this" line — in the mod the text to
-    /// translate arrives as the user turn and nothing announces it.
-    /// </summary>
-    private static string Rules(string language) => $"""
-        === CONTEXT ===
-        Translating video game (video game UI, menus and dialogues) to {language}.
-
-        === TRANSLATION RULES ===
-        - Output the translation only, no explanation
-        - Translation must be correct in target language
-        - Keep it concise for UI
-        - Do not add punctuation if not in the source to translate
-        - Keep unchanged: keyboard keys (Tab, Esc, Space...), technical settings (VSync, Auto)
-        """;
 
     /// <summary>
     /// Whether the answer carries the instructions back. Recognised by shape, not by wording:

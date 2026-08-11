@@ -285,6 +285,18 @@ public sealed class ModelNotesProvider
     ///
     /// ⚠ Ordered by what the machine can run, never by language. Ranking models by "good at X"
     /// would break the rule the whole project rests on.
+    ///
+    /// 🔸 THE SAME ORDER IS APPLIED BY THE WEBSITE — `App\Services\ModelCatalog::installable()` in
+    /// the website repository. Change one, change the other. The two cannot share code (PHP and C#,
+    /// and the shared library takes no JSON parser), so the rule is written twice on purpose:
+    ///
+    ///   what fits this card · the reference model · instructions followed, most first ·
+    ///   video memory, least first · languages claimed, most first
+    ///
+    /// The first key is the ONLY legitimate difference between the two: a web page has no idea what
+    /// card the reader owns, so it simply never demotes anything. Everything after it must match —
+    /// the same catalogue presented in two orders by two of our own tools is a bug the reader
+    /// experiences as one of them being wrong.
     /// </summary>
     public static IReadOnlyList<ModelNote> Installable(ModelNotesDocument? document,
                                                        long? videoMemoryBytes)
@@ -298,31 +310,43 @@ public sealed class ModelNotesProvider
         // nothing and wants three times the memory. Hiding the imperfect ones sounded prudent
         // until the measurements came in: it left the smallest cards with no choice at all, on the
         // grounds that we knew better than the person who owns the machine.
-        static int Rank(ModelNote note, bool fits) =>
-            !fits ? 3
-            : note.IsReference ? 0
-            : note.Measured is { Flawless: true } ? 1
-            : 2;
-
-        if (videoMemoryBytes is not { } bytes)
-        {
-            return offerable
-                .OrderBy(note => Rank(note, true))
-                .ThenByDescending(note => note.MinVramGb ?? 0)
-                .ToList();
-        }
-
-        var availableGb = bytes / 1024.0 / 1024 / 1024;
+        double? availableGb = videoMemoryBytes is { } bytes ? bytes / 1024.0 / 1024 / 1024 : null;
 
         // What fits comes first whatever its standing: a model that spills out of this card is not
         // a recommendation, it is a trap — it falls back to the processor and takes minutes a
         // line. What does not fit stays visible, last, with its requirement shown, because someone
         // willing to wait is entitled to decide that themselves.
+        //
+        // With no card reading, nothing is demoted: an unknown size is not a small one, and a tool
+        // that quietly buries the good models because it failed to read a number is worse than one
+        // that lists them all with their requirements.
+        bool Fits(ModelNote note) =>
+            availableGb is not { } available
+            || note.MinVramGb is null
+            || note.MinVramGb <= available;
+
         return offerable
-            .OrderBy(note => Rank(note, note.MinVramGb is null || note.MinVramGb <= availableGb))
-            .ThenByDescending(note => note.MinVramGb ?? 0)
+            .OrderBy(note => Fits(note) ? 0 : 1)
+            .ThenBy(note => note.IsReference ? 0 : 1)
+            .ThenByDescending(Followed)
+            .ThenBy(note => note.MinVramGb ?? double.MaxValue)
+            .ThenByDescending(note => note.Languages?.Supported ?? 0)
             .ToList();
     }
+
+    /// <summary>
+    /// How much of the instruction suite a model followed, as a proportion, or -1 when it was
+    /// never measured — which sorts it after everything that was, since an unknown score is not a
+    /// zero but is no reason to lead with it either.
+    ///
+    /// A proportion rather than the "flawless or not" flag this used to sort on: that flag put
+    /// 14 out of 15 and 9 out of 15 on the same footing, which is a difference a reader can see in
+    /// the same table.
+    /// </summary>
+    private static double Followed(ModelNote note) =>
+        note.Measured is { Suite: { } suite, SuiteOf: { } outOf } && outOf > 0
+            ? (double)suite / outOf
+            : -1.0;
 
     /// <summary>
     /// Why an entry is shown first, in the words the reader gets. Null for everything else —

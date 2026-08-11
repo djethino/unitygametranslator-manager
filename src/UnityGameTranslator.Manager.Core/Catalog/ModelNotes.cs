@@ -283,8 +283,10 @@ public sealed class ModelNotesProvider
     /// and unknown VRAM is common enough (virtual machines, unusual drivers) to be the norm for
     /// somebody.
     ///
-    /// ⚠ Ordered by what the machine can run, never by language. Ranking models by "good at X"
-    /// would break the rule the whole project rests on.
+    /// ⚠ Ordered by what the machine can run, NEVER by language. Sorting on "good at Japanese"
+    /// would break the rule the whole project rests on — every part of it stays language-agnostic.
+    /// That prohibition is real and absolute; deciding what to show first is not, and belongs to
+    /// whoever shows it. The catalogue keeps no rank of its own.
     ///
     /// 🔸 THE SAME ORDER IS APPLIED BY THE WEBSITE — `App\Services\ModelCatalog::installable()` in
     /// the website repository. Change one, change the other. The two cannot share code (PHP and C#,

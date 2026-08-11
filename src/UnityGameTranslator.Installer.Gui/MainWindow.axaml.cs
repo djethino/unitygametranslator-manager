@@ -213,7 +213,7 @@ public partial class MainWindow : Window
 
             default:
                 ShowUpdateNotice("Couldn't check for updates",
-                    "Updates to UnityGameTranslator Installer — this program, not the mod in your "
+                    "Updates to UnityGameTranslator Manager — this program, not the mod in your "
                     + $"games.\n\n{result.Message}\n\nA firewall, an antivirus or a company proxy "
                     + "blocking it looks exactly like this. Open Settings to try again or to set "
                     + "up a proxy.",
@@ -1764,7 +1764,7 @@ public partial class MainWindow : Window
         // into a paragraph of what looks like bad news.
         text.Children.Add(new TextBlock
         {
-            Text = "Install UnityGameTranslator Installer on this machine?",
+            Text = "Install UnityGameTranslator Manager on this machine?",
             FontSize = 13,
             FontWeight = FontWeight.SemiBold,
             Foreground = Brush("TextPrimary"),
@@ -1850,10 +1850,10 @@ public partial class MainWindow : Window
         text.Children.Add(new TextBlock
         {
             Text = canUpdate
-                ? $"UnityGameTranslator Installer {installed.Version} is installed in "
+                ? $"UnityGameTranslator Manager {installed.Version} is installed in "
                   + $"{installed.Directory}. Putting this build over it keeps the shortcut you "
                   + "already have, and your settings are shared by both either way."
-                : $"UnityGameTranslator Installer {installed.Version} is installed in "
+                : $"UnityGameTranslator Manager {installed.Version} is installed in "
                   + $"{installed.Directory}, and this window is version {running} running from "
                   + "somewhere else. Settings are shared, but an update applied here lands on this "
                   + "file rather than on the copy in your menu.",

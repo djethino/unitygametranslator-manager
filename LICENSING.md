@@ -1,6 +1,6 @@
 # Licensing
 
-UnityGameTranslator Installer is available under a dual license model.
+UnityGameTranslator Manager is available under a dual license model.
 
 ## Open Source License (AGPL-3.0)
 

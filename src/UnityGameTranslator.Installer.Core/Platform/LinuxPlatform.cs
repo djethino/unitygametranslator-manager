@@ -92,7 +92,7 @@ public sealed class LinuxPlatform : IPlatform
         {
             var xdg = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
             var baseDir = string.IsNullOrEmpty(xdg) ? Path.Combine(Home, ".local", "share") : xdg;
-            return Path.Combine(baseDir, "unitygametranslator-installer");
+            return Path.Combine(baseDir, "unitygametranslator-manager");
         }
     }
 
@@ -118,9 +118,9 @@ public sealed class LinuxPlatform : IPlatform
     /// also the right place on any other distribution for a single-user tool.
     /// </summary>
     public string SelfInstallDirectory =>
-        Path.Combine(Home, ".local", "share", "unitygametranslator-installer", "bin");
+        Path.Combine(Home, ".local", "share", "unitygametranslator-manager", "bin");
 
-    public string ExecutableFileName => "unitygametranslator-installer";
+    public string ExecutableFileName => "unitygametranslator-manager";
 
     public IReadOnlyList<LauncherKind> LauncherKinds => [LauncherKind.Menu, LauncherKind.Desktop];
 
@@ -138,12 +138,12 @@ public sealed class LinuxPlatform : IPlatform
             ? Path.Combine(Home, "Desktop")
             : Path.Combine(Home, ".local", "share", "applications");
 
-        var path = Path.Combine(folder, "unitygametranslator-installer.desktop");
+        var path = Path.Combine(folder, "unitygametranslator-manager.desktop");
 
         var entry = string.Join('\n',
             "[Desktop Entry]",
             "Type=Application",
-            "Name=UnityGameTranslator Installer",
+            "Name=UnityGameTranslator Manager",
             "Comment=Set up UnityGameTranslator in your Unity games",
             $"Exec=\"{executable}\"",
             $"Path={Path.GetDirectoryName(executable)}",

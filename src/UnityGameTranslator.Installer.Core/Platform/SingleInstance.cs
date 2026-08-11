@@ -38,7 +38,7 @@ public sealed class SingleInstance : IDisposable
     /// without it, one person opening the tool would stop another from opening it at all.
     /// </summary>
     private static string LockPathIn(string runtimeDirectory) => Path.Combine(runtimeDirectory,
-        $"unitygametranslator-installer-{Environment.UserName}.lock");
+        $"unitygametranslator-manager-{Environment.UserName}.lock");
 
     private readonly FileStream? _held;
 

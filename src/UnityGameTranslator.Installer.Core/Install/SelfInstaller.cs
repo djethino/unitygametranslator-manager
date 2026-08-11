@@ -618,7 +618,7 @@ public sealed class SelfInstaller
     [
         "LICENSE",
         "THIRD_PARTY_LICENSES.md",
-        "ugt-installer.cmd",
+        "ugt-manager.cmd",
     ];
 
     private static IEnumerable<string> Companions(string executable)

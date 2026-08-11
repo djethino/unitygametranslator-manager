@@ -1,4 +1,4 @@
-# Contributing to UnityGameTranslator Installer
+# Contributing to UnityGameTranslator Manager
 
 Thank you for your interest in contributing!
 
@@ -26,8 +26,8 @@ The most useful bug report for this tool is the output of:
 ugt-installer diagnose
 ```
 
-(the same program you double-click; given a command it answers on the console. `ugt-installer.cmd`
-sits beside the executable on Windows; on Linux run `unitygametranslator-installer` directly.)
+(the same program you double-click; given a command it answers on the console. `ugt-manager.cmd`
+sits beside the executable on Windows; on Linux run `unitygametranslator-manager` directly.)
 
 It lists what was detected and what was expected, with your user name, home directory and game
 library stripped out. Nothing is sent anywhere — you paste it yourself, or not.

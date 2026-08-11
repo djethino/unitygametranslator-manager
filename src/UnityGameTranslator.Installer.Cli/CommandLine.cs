@@ -87,7 +87,7 @@ public static class CommandLine
     private static int Help()
     {
         Console.WriteLine($"""
-            UnityGameTranslator Installer {BuildInfo.Version} (command line)
+            UnityGameTranslator Manager {BuildInfo.Version} (command line)
 
               scan [--offline] [--all]     List Unity games found on this machine
               report <path or name>        Everything known about one game
@@ -1140,7 +1140,7 @@ public static class CommandLine
         var games = inventory.ScanAll();
 
         Console.WriteLine("```");
-        Console.WriteLine($"tool     : UnityGameTranslator Installer {BuildInfo.Version}");
+        Console.WriteLine($"tool     : UnityGameTranslator Manager {BuildInfo.Version}");
         Console.WriteLine($"platform : {platform.OsId} / {platform.HostArchitecture}");
         Console.WriteLine($"os       : {Sanitize.Text(Environment.OSVersion.VersionString)}");
         Console.WriteLine($"catalog  : {catalog.Source}, {catalog.Document.Loaders.Count} loaders, built {catalog.Document.GeneratedAt}");

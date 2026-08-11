@@ -32,7 +32,7 @@ public sealed class SelfInstallWindow : Window
         _installer = installer;
         _plan = plan;
 
-        Title = "Install UnityGameTranslator Installer";
+        Title = "Install UnityGameTranslator Manager";
         Width = 620;
         SizeToContent = SizeToContent.Height;
         MinHeight = 260;
@@ -55,7 +55,7 @@ public sealed class SelfInstallWindow : Window
     {
         var layout = new StackPanel { Spacing = 14, Margin = new Thickness(24) };
 
-        layout.Children.Add(Heading("Install UnityGameTranslator Installer on this machine"));
+        layout.Children.Add(Heading("Install UnityGameTranslator Manager on this machine"));
 
         // Named, and told apart from the mod. A dialog is read out of context by definition — it
         // covers whatever it was opened from — so it cannot lean on the window behind it to say

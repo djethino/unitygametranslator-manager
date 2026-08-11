@@ -1,5 +1,5 @@
 #!/usr/bin/env pwsh
-# UnityGameTranslator Installer — release preparation
+# UnityGameTranslator Manager — release preparation
 # Usage: ./prepare-release.ps1 [-Rid win-x64,linux-x64]
 #
 # Produces, in ./releases/, one archive per system and its .sha256 sidecar.
@@ -76,7 +76,7 @@ function New-TarGz {
 $Version = ($props.Project.PropertyGroup | Where-Object { $_.Version }).Version
 if (-not $Version) { throw 'No <Version> found in Directory.Build.props' }
 
-Write-Host "=== UnityGameTranslator Installer $Version ===" -ForegroundColor Cyan
+Write-Host "=== UnityGameTranslator Manager $Version ===" -ForegroundColor Cyan
 
 $project = 'src/UnityGameTranslator.Installer.Gui/UnityGameTranslator.Installer.Gui.csproj'
 $releasesDir = 'releases'
@@ -90,7 +90,7 @@ $releasesDir = 'releases'
 # nothing on screen saying why. A tar preserves the mode, and Ark and tar both honour it.
 $targets = @(
     @{ Rid = 'win-x64';   Executable = 'UnityGameTranslatorInstaller.exe'; Archive = 'zip'    ; Shim = $true }
-    @{ Rid = 'linux-x64'; Executable = 'unitygametranslator-installer';    Archive = 'tar.gz' ; Shim = $false }
+    @{ Rid = 'linux-x64'; Executable = 'unitygametranslator-manager';    Archive = 'tar.gz' ; Shim = $false }
 ) | Where-Object { $Rid -contains $_.Rid }
 
 # The Windows command line entry point: one line of batch, not a second program.
@@ -103,10 +103,10 @@ $targets = @(
 # Going through cmd fixes it, because cmd IS a console program: PowerShell waits for cmd, cmd waits
 # for us, and the redirection and the exit code both survive. Verified for `>`, for a pipeline and
 # for the exit code. It costs one text file, and it means the command has a name worth typing.
-$shimName = 'ugt-installer.cmd'
+$shimName = 'ugt-manager.cmd'
 $shimBody = @'
 @echo off
-rem The command line face of UnityGameTranslator Installer.
+rem The command line face of UnityGameTranslator Manager.
 rem The executable itself opens the window when it is run with no command.
 "%~dp0UnityGameTranslatorInstaller.exe" %*
 '@

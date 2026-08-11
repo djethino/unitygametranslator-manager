@@ -121,7 +121,7 @@ public sealed class WindowsPlatform : IPlatform
 
     public string SelfInstallDirectory => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "Programs", "UnityGameTranslator Installer");
+        "Programs", "UnityGameTranslator Manager");
 
     public string ExecutableFileName => "UnityGameTranslatorInstaller.exe";
 
@@ -144,7 +144,7 @@ public sealed class WindowsPlatform : IPlatform
 
         if (string.IsNullOrEmpty(folder)) return [];
 
-        var path = Path.Combine(folder, "UnityGameTranslator Installer.lnk");
+        var path = Path.Combine(folder, "UnityGameTranslator Manager.lnk");
 
         try
         {
@@ -201,7 +201,7 @@ public sealed class WindowsPlatform : IPlatform
             using var key = Registry.CurrentUser.CreateSubKey($@"{parent}\{name}", writable: true);
             if (key is null) return null;
 
-            key.SetValue("DisplayName", "UnityGameTranslator Installer");
+            key.SetValue("DisplayName", "UnityGameTranslator Manager");
             key.SetValue("DisplayVersion", installation.Version);
             key.SetValue("Publisher", "ASymptOmatik Games");
             key.SetValue("InstallLocation", installation.Directory);

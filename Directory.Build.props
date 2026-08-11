@@ -6,7 +6,7 @@
          catalog we add (loaders, models) sits beside the others and needs no new setting.
          GitHub first on purpose: fetching them from our own site would put an IP in our
          server logs on every launch, and we have no reason to hold that. -->
-    <CatalogPrimaryBase>https://raw.githubusercontent.com/djethino/unitygametranslator-installer/main/catalog</CatalogPrimaryBase>
+    <CatalogPrimaryBase>https://raw.githubusercontent.com/djethino/unitygametranslator-manager/main/catalog</CatalogPrimaryBase>
     <CatalogMirrorBase>https://unitygametranslator.asymptomatikgames.com/catalog</CatalogMirrorBase>
 
     <!-- UnityGameTranslator services (same values as the mod's Directory.Build.props) -->
@@ -24,8 +24,8 @@
     <!-- Where this tool's own releases are published. Separate from the mod's on purpose: the two
          are versioned apart, and someone testing a beta of the installer has not thereby agreed to
          put a beta of the mod into their games. -->
-    <ToolRepo>djethino/unitygametranslator-installer</ToolRepo>
-    <ToolReleasesApi>https://api.github.com/repos/djethino/unitygametranslator-installer/releases</ToolReleasesApi>
+    <ToolRepo>djethino/unitygametranslator-manager</ToolRepo>
+    <ToolReleasesApi>https://api.github.com/repos/djethino/unitygametranslator-manager/releases</ToolReleasesApi>
   </PropertyGroup>
 
   <PropertyGroup>

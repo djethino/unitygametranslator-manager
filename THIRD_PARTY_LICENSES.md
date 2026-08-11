@@ -1,6 +1,6 @@
 # Third-Party Licenses
 
-This document lists the third-party components used by UnityGameTranslator Installer.
+This document lists the third-party components used by UnityGameTranslator Manager.
 
 ## Bundled in the executable
 

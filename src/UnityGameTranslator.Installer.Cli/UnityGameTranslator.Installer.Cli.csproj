@@ -12,7 +12,7 @@
       What it costs is paid on Windows, where the subsystem is a property of the file: the file
       declares itself a window program so that opening the tool never puts a console on screen, and
       a window program does not hold a PowerShell prompt. A one-line batch file in the archive
-      (ugt-installer.cmd, written by prepare-release.ps1) gives the command line back its ordinary
+      (ugt-manager.cmd, written by prepare-release.ps1) gives the command line back its ordinary
       behaviour — redirection, pipelines and exit codes — without adding a second program.
     -->
     <OutputType>Library</OutputType>

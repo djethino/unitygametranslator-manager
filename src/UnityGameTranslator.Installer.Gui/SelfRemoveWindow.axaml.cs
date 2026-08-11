@@ -25,7 +25,7 @@ public sealed class SelfRemoveWindow : Window
 
     public SelfRemoveWindow(IPlatform platform, SelfInstaller installer, bool standalone = false)
     {
-        Title = "Remove UnityGameTranslator Installer";
+        Title = "Remove UnityGameTranslator Manager";
         Width = 620;
         SizeToContent = SizeToContent.Height;
         MinHeight = 240;
@@ -51,7 +51,7 @@ public sealed class SelfRemoveWindow : Window
     {
         var layout = new StackPanel { Spacing = 14, Margin = new Thickness(24) };
 
-        layout.Children.Add(Text("Remove UnityGameTranslator Installer", 15, FontWeight.SemiBold,
+        layout.Children.Add(Text("Remove UnityGameTranslator Manager", 15, FontWeight.SemiBold,
                                  "TextPrimary"));
 
         // Which of the two things bearing that name is going, said before anything else: this

@@ -1,4 +1,4 @@
-# UnityGameTranslator Installer
+# UnityGameTranslator Manager
 
 Finds the Unity games on your machine, tells you what each one needs, and sets up
 [UnityGameTranslator](https://github.com/djethino/unitygametranslator) on it — mod loader
@@ -66,10 +66,10 @@ ugt-installer diagnose            Printable report, safe to paste into an issue
 ugt-installer self-update         Update this tool itself
 ```
 
-On Windows `ugt-installer.cmd` sits beside the executable and is the way to run commands: the
+On Windows `ugt-manager.cmd` sits beside the executable and is the way to run commands: the
 executable is a window program, so that opening the tool never puts a console on your screen, and
 going through the small batch file is what keeps `> log.txt` and exit codes working from a
-PowerShell prompt. On Linux there is no such thing — run `unitygametranslator-installer` directly.
+PowerShell prompt. On Linux there is no such thing — run `unitygametranslator-manager` directly.
 
 Add `--offline` to any command to skip every network call. Run it with no command, or drop a game
 folder onto it, and you get the window.

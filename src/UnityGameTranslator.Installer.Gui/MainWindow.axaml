@@ -1,7 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="UnityGameTranslator.Installer.Gui.MainWindow"
-        Title="UnityGameTranslator Installer"
+        Title="UnityGameTranslator Manager"
         Width="1220" Height="720"
         MinWidth="1060" MinHeight="560"
         WindowStartupLocation="CenterScreen"

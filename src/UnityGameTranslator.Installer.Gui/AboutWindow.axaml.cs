@@ -89,7 +89,7 @@ public sealed class AboutWindow : Window
 
         var links = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         links.Children.Add(LinkButton("Website", BuildInfo.WebsiteBaseUrl));
-        links.Children.Add(LinkButton("Source code", "https://github.com/djethino/unitygametranslator-installer"));
+        links.Children.Add(LinkButton("Source code", "https://github.com/djethino/unitygametranslator-manager"));
 
         var close = new Button { Content = "Close", IsDefault = true };
         close.Click += (_, _) => Close();
@@ -137,7 +137,7 @@ public sealed class AboutWindow : Window
         var titles = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
         titles.Children.Add(new TextBlock
         {
-            Text = "UnityGameTranslator Installer",
+            Text = "UnityGameTranslator Manager",
             FontSize = 19,
             FontWeight = FontWeight.SemiBold,
             Foreground = this.FindResource("TextPrimary") as IBrush,

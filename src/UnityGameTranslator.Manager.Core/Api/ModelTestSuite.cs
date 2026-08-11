@@ -191,7 +191,11 @@ public static class ModelTestSuite
 
         // Built from the source of each case, exactly as the mod builds it — see Prompt. Writing
         // the rules by hand per test is what made this suite ask for things the mod never asks.
-        string Rules(string source) => Prompt(language, source, gameContext);
+        //
+        // ⚠ The source language IS sent. This report announces "Translating from: X" at the top,
+        // and the mod names it in the prompt whenever it knows it — so leaving it out here scored
+        // models on a harder question than a configured game ever asks them.
+        string Rules(string source) => Prompt(language, source, gameContext, from.Language);
 
         var tests = new List<ModelTest>
         {

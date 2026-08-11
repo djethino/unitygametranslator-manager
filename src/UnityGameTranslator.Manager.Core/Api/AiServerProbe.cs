@@ -535,39 +535,71 @@ public sealed class AiServerProbe
     /// turn carrying the failed answer — which is what the mod does, and what no system+user
     /// helper can express.
     /// </summary>
+    /// <summary>
+    /// What this provider+model turned out to accept. Shared with the mod — see
+    /// UnityGameTranslator.Common.Negotiation.
+    ///
+    /// ⚠ Without it, this sent one fixed request shape and gave up on refusal. A provider that
+    /// will not take that shape — the wrong token field, a temperature it refuses, a reasoning
+    /// parameter it does not know — made every model here score zero, for a reason that was never
+    /// about the models. The mod would have adapted and translated the same lines.
+    /// </summary>
+    private readonly Negotiation _negotiation = new();
+
     private async Task<string?> SendAsync(string baseUrl, string model, object messages,
                                           double temperature, int maxTokens, string? effort,
                                           CancellationToken ct)
     {
-        var payload = JsonSerializer.Serialize(new
-        {
-            model,
-            messages,
-            stream = false,
-            temperature,
-            max_tokens = maxTokens,
-            reasoning_effort = effort,
-        }, new JsonSerializerOptions
-        {
-            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-        });
+        _negotiation.ForgetIfChanged($"{baseUrl}|{model}");
 
-        try
+        for (var attempt = 0; attempt < Negotiation.MaxAttempts; attempt++)
         {
-            using var content = new StringContent(payload, Encoding.UTF8, "application/json");
-            using var client = Http.Create(TimeSpan.FromMinutes(2));
+            // The shape the negotiation currently believes in, written in our own JSON. Deciding
+            // is shared; serialising is not, and that is the whole seam.
+            var fields = new Dictionary<string, object?>
+            {
+                ["model"] = model,
+                ["messages"] = messages,
+                ["stream"] = false,
+                [_negotiation.TokenField] = maxTokens,
+            };
 
-            var response = await client.PostAsync(Endpoints.Chat(baseUrl), content, ct)
-                                       .ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode) return null;
+            if (_negotiation.SendTemperature) fields["temperature"] = temperature;
 
-            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-            return ReadFirstChoice(body);
+            // ⚠ The caller picks the rung on the first go — the probe does, to see how a model
+            // behaves when asked to reason. After a refusal the negotiation decides instead:
+            // sending the caller's choice again would collect the same refusal five times.
+            var rung = attempt == 0 ? effort : _negotiation.ReasoningEffort;
+            if (rung is not null) fields["reasoning_effort"] = rung;
+
+            var payload = JsonSerializer.Serialize(fields);
+
+            try
+            {
+                using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+                using var client = Http.Create(TimeSpan.FromMinutes(2));
+
+                var response = await client.PostAsync(Endpoints.Chat(baseUrl), content, ct)
+                                           .ConfigureAwait(false);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                    return ReadFirstChoice(body);
+                }
+
+                if (!Negotiation.IsAboutOurRequest((int)response.StatusCode)) return null;
+
+                var error = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                if (!_negotiation.Concede(error, out _)) return null;
+            }
+            catch
+            {
+                return null;
+            }
         }
-        catch
-        {
-            return null;
-        }
+
+        return null;
     }
 
     private async Task<AiTrial> TryOnceAsync(string baseUrl, string model, string? effort,

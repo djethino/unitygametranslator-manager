@@ -1,0 +1,80 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      Window subsystem. One executable wears both faces, and the subsystem is a property of the
+      FILE, not of the run: it is chosen once, for both.
+
+      It was console first, on the reasoning that a command line the shell does not wait for is not
+      a command line, and that the console window could simply be hidden at startup when opening
+      the window. ⚠ That does not work on Windows 11: with Windows Terminal as the console host,
+      GetConsoleWindow returns a hidden stand-in for the pseudo-console rather than the visible
+      window, so hiding it hides nothing and an empty terminal sits there for the whole session.
+      Measured on a real machine.
+
+      So: no console is ever created, and the command line face attaches to the terminal it was
+      launched from (Program.SpeakToTheTerminal). What that costs is the prompt coming back
+      immediately when a command is typed by hand — output still arrives, under the new prompt.
+      Scripts and our own tests are unaffected: a captured stream is inherited whatever the
+      subsystem is, and the caller waits for it to end.
+    -->
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>UnityGameTranslator.Manager.Gui</RootNamespace>
+    <AssemblyName>UnityGameTranslatorInstaller</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Same icon as the website: one identity across the ecosystem -->
+    <ApplicationIcon>Assets/app.ico</ApplicationIcon>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+
+    <!--
+      ⚠ Compression stays OFF, and this is not a size oversight.
+
+      A compressed bundle is a small stub followed by one large compressed blob it unpacks in
+      memory at startup. To a static heuristic that is the definition of a packer, which is what
+      malware uses to hide its contents. Measured on a real machine, 2026-08-09: the compressed
+      build was quarantined as Gen:Variant.Yogi.44836 the moment it was written, and the publish
+      itself failed with fifteen access errors as the file was taken away mid-build. The same
+      code with compression off was never touched.
+
+      An antivirus quarantining the installer does not produce a bug report. It produces someone
+      who concludes the project is shady and leaves, and we never hear about it. Forty-eight
+      megabytes of download is a far cheaper price — and it is paid once, at the download, since
+      the release archive is compressed anyway.
+    -->
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
+
+    <!--
+      Trimming is off for now: Avalonia resolves a good deal through reflection, and a trimmed
+      build that starts fine here can fail on a screen nobody opened before shipping. Worth
+      revisiting once the window has actually been walked through end to end.
+    -->
+    <PublishTrimmed>false</PublishTrimmed>
+
+    <!-- DebugType lives in Directory.Build.props: it has to hold for every project, not just
+         this one, or the others drop their .pdb beside the published executable. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.10" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.10" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.10" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.10" />
+
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\UnityGameTranslator.Manager.Core\UnityGameTranslator.Manager.Core.csproj" />
+    <!-- The command line face, linked in rather than shipped beside: one file to download, one to
+         replace when the tool updates itself. -->
+    <ProjectReference Include="..\UnityGameTranslator.Manager.Cli\UnityGameTranslator.Manager.Cli.csproj" />
+  </ItemGroup>
+
+</Project>

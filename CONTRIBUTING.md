@@ -23,7 +23,7 @@ This allows us to maintain the dual licensing model while keeping the project su
 The most useful bug report for this tool is the output of:
 
 ```
-ugt-installer diagnose
+ugt-manager diagnose
 ```
 
 (the same program you double-click; given a command it answers on the console. `ugt-manager.cmd`

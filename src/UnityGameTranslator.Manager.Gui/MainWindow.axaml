@@ -1,0 +1,123 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="UnityGameTranslator.Manager.Gui.MainWindow"
+        Title="UnityGameTranslator Manager"
+        Width="1220" Height="720"
+        MinWidth="1060" MinHeight="560"
+        WindowStartupLocation="CenterScreen"
+        Icon="avares://UnityGameTranslatorInstaller/Assets/app.ico"
+        Background="{DynamicResource SurfaceBase}">
+
+  <Grid RowDefinitions="Auto,*,Auto">
+
+    <!-- Header -->
+    <Border Grid.Row="0" Padding="16,12" Background="{DynamicResource SurfaceBar}"
+            BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1">
+      <!--
+        Two rows on purpose. Six controls and a title do not fit on one line at the minimum
+        window width, and squeezing them made the title collide with the language picker.
+        Identity and tools on top, then the two things that decide what the list shows.
+      -->
+      <StackPanel Spacing="10">
+        <Grid ColumnDefinitions="*,Auto">
+          <!--
+            A Grid rather than a horizontal StackPanel, and that is what makes the trimming work:
+            a StackPanel hands each child the width it asks for, so a TextBlock inside one never
+            has a reason to shorten itself and pushes into whatever sits next to it instead. The
+            starred column gives the text a width to fit into.
+
+            The subtitle needs it as much as the title: it counts games, and both numbers grow.
+          -->
+          <Grid Grid.Column="0" ColumnDefinitions="Auto,*" Margin="0,0,16,0">
+            <Image Grid.Column="0"
+                   Source="avares://UnityGameTranslatorInstaller/Assets/icon-128.png"
+                   Width="34" Height="34" VerticalAlignment="Center" Margin="0,0,12,0" />
+            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+              <TextBlock Text="Your Unity games" FontSize="18" FontWeight="SemiBold"
+                         TextTrimming="CharacterEllipsis"
+                         Foreground="{DynamicResource TextPrimary}" />
+              <TextBlock x:Name="SubtitleText" FontSize="12"
+                         TextTrimming="CharacterEllipsis"
+                         ToolTip.Tip="{Binding #SubtitleText.Text}"
+                         Text="Scanning..." Foreground="{DynamicResource TextMuted}" />
+            </StackPanel>
+          </Grid>
+
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"
+                      VerticalAlignment="Center">
+            <Button x:Name="AddFolderButton" Content="Add a folder..." />
+            <Button x:Name="FoldersButton" Content="My folders" />
+            <Button x:Name="RescanButton" Content="Rescan" />
+            <Button x:Name="SettingsButton" Content="Mod defaults" />
+            <Button x:Name="ToolSettingsButton" Content="Settings" />
+            <Button x:Name="AboutButton" Content="About" />
+            <!-- Empty unless there is something to say. A row that always carries "up to date"
+                 trains people to stop reading it, and then it is not there when it matters. -->
+            <ContentControl x:Name="UpdateSlot" VerticalAlignment="Center" />
+            <ContentControl x:Name="AccountSlot" VerticalAlignment="Center" />
+          </StackPanel>
+        </Grid>
+
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBlock Text="Play in" VerticalAlignment="Center" FontSize="12"
+                     Foreground="{DynamicResource TextMuted}" />
+          <ComboBox x:Name="LanguageBox" Width="170" />
+          <TextBox x:Name="SearchBox" Width="240" Watermark="Search your games" />
+        </StackPanel>
+      </StackPanel>
+    </Border>
+
+    <!-- Body: games on the left, the selected game on the right -->
+    <Grid Grid.Row="1" ColumnDefinitions="370,*">
+
+      <Grid Grid.Column="0" RowDefinitions="Auto,*">
+        <!--
+          Three columns rather than a wrap. Wrapping packed them by width, so the rows came out
+          ragged — four and two — and losing one tag with the account left a single orphan on the
+          second line. A grid keeps the columns aligned whatever the count: the empty cell reads as
+          deliberate where a lone wrapped tag reads as a mistake.
+        -->
+        <UniformGrid Grid.Row="0" x:Name="FilterBar" Columns="3" Margin="10,10,10,2" />
+
+        <ListBox Grid.Row="1" x:Name="GameList" Classes="cards"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
+      </Grid>
+
+      <!--
+        Two rows rather than one scroller, so that what belongs at the top stays at the top.
+
+        The overview centres itself in the space it has, which is what makes a short summary read
+        as an answer. A standing notice cannot live inside that: centred with the rest it drifts to
+        the middle of the panel, where it reads as the main event rather than as a note. Pinned in
+        its own row it spans the panel, aligns with the content below, and stays out of the way.
+      -->
+      <Grid Grid.Column="1" RowDefinitions="Auto,*">
+        <StackPanel Grid.Row="0" x:Name="OverviewTop" Margin="20,16,24,0" Spacing="8"
+                    IsVisible="False" />
+
+        <ScrollViewer Grid.Row="1">
+          <StackPanel x:Name="DetailPanel" Margin="20,16,24,24" Spacing="14">
+            <TextBlock Text="Select a game on the left." Foreground="{DynamicResource TextMuted}" />
+          </StackPanel>
+        </ScrollViewer>
+      </Grid>
+    </Grid>
+
+    <!-- Status bar -->
+    <Border Grid.Row="2" Padding="16,8" Background="{DynamicResource SurfaceBar}"
+            BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,1,0,0">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock x:Name="StatusText" Grid.Column="0" VerticalAlignment="Center"
+                   FontSize="12" Text="Ready." TextTrimming="CharacterEllipsis"
+                   Foreground="{DynamicResource TextSecondary}" />
+        <!-- Neither visible nor animating until there is something to wait for: an indeterminate
+             bar keeps its animation clock running even when hidden, and this window is meant to be
+             left open. Measured: eighteen per cent of a core for a stripe nobody could see.
+             See MainWindow.Busy, which turns both on together. -->
+        <ProgressBar x:Name="BusyBar" Grid.Column="1" Width="160" Height="4"
+                     Foreground="{DynamicResource Accent}"
+                     IsIndeterminate="False" IsVisible="False" />
+      </Grid>
+    </Border>
+  </Grid>
+</Window>

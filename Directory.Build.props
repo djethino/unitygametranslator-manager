@@ -49,7 +49,7 @@
   <Target Name="GenerateBuildInfo" BeforeTargets="CoreCompile">
     <PropertyGroup>
       <BuildInfoContent>
-namespace UnityGameTranslator.Installer {
+namespace UnityGameTranslator.Manager {
     internal static class BuildInfo {
         public const string Version = "$(Version)"%3B
         public const string CatalogPrimaryBase = "$(CatalogPrimaryBase)"%3B

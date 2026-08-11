@@ -59,11 +59,11 @@ It is the same program: given a command it answers on the console instead of ope
 There is nothing extra to download, and nothing to keep in step.
 
 ```
-ugt-installer scan [--all]        List the Unity games found on this machine
-ugt-installer report <game>       Everything known about one game
-ugt-installer catalog             Show the loader catalog and where it came from
-ugt-installer diagnose            Printable report, safe to paste into an issue
-ugt-installer self-update         Update this tool itself
+ugt-manager scan [--all]        List the Unity games found on this machine
+ugt-manager report <game>       Everything known about one game
+ugt-manager catalog             Show the loader catalog and where it came from
+ugt-manager diagnose            Printable report, safe to paste into an issue
+ugt-manager self-update         Update this tool itself
 ```
 
 On Windows `ugt-manager.cmd` sits beside the executable and is the way to run commands: the
@@ -119,7 +119,7 @@ Requires the .NET 8 SDK.
 
 ```bash
 dotnet build -c Release
-dotnet run --project src/UnityGameTranslator.Installer.Gui -- scan
+dotnet run --project src/UnityGameTranslator.Manager.Gui -- scan
 ```
 
 Both faces live in the same project because they live in the same file: `Gui` is the executable,
@@ -129,14 +129,14 @@ Both faces live in the same project because they live in the same file: `Gui` is
 
 ```
 src/
-├── UnityGameTranslator.Installer.Core/   Everything: detection, catalog, install, receipts
+├── UnityGameTranslator.Manager.Core/   Everything: detection, catalog, install, receipts
 │   ├── Platform/                         The only OS-specific code (IPlatform + adapters)
 │   ├── Detection/                        Games, runtimes, Unity versions, loaders, anti-cheat
 │   ├── Catalog/                          Loader catalog, fetched and cached
 │   ├── Api/                              Read-only, anonymous calls to the community site
 │   └── Model/                            Shared types
-├── UnityGameTranslator.Installer.Cli/    Command line face (a library, not a program)
-└── UnityGameTranslator.Installer.Gui/    The executable: window, and the entry point of both
+├── UnityGameTranslator.Manager.Cli/    Command line face (a library, not a program)
+└── UnityGameTranslator.Manager.Gui/    The executable: window, and the entry point of both
 ```
 
 Same shape as the mod: one shared trunk holding all the logic, thin adapters for what genuinely

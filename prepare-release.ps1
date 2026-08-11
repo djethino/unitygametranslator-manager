@@ -78,7 +78,7 @@ if (-not $Version) { throw 'No <Version> found in Directory.Build.props' }
 
 Write-Host "=== UnityGameTranslator Manager $Version ===" -ForegroundColor Cyan
 
-$project = 'src/UnityGameTranslator.Installer.Gui/UnityGameTranslator.Installer.Gui.csproj'
+$project = 'src/UnityGameTranslator.Manager.Gui/UnityGameTranslator.Manager.Gui.csproj'
 $releasesDir = 'releases'
 
 # What each system gets: the runtime identifier, the name the executable takes there (the same

@@ -360,7 +360,7 @@ public static class ModelTestSuite
             new("refuses another real language", "experimental",
                 foreign.PlainLine,
                 Prompt(language, foreign.PlainLine, gameContext, from.Language, strictSource: true),
-                (_, answer) => Prompts.ReadAnswer(answer) == Prompts.AnswerKind.Skip)
+                (_, answer) => Answers.Read(answer) == AnswerKind.Skip)
             {
                 // The sentence is chosen so it is neither the source nor the target. A fixed one
                 // is eventually somebody's own language: this case used to hand a French sentence
@@ -384,7 +384,7 @@ public static class ModelTestSuite
             new("refuses what it cannot know", "experimental",
                 Fixtures.Klingon,
                 Prompt(language, Fixtures.Klingon, gameContext, from.Language, strictSource: true),
-                (_, answer) => Prompts.ReadAnswer(answer) == Prompts.AnswerKind.Skip)
+                (_, answer) => Answers.Read(answer) == AnswerKind.Skip)
             {
                 Expectation = $"answers exactly {SkipMarker}, rather than inventing a translation",
                 UnlocksOption = "strict_source",

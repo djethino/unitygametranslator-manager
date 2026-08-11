@@ -407,6 +407,12 @@ public sealed class AiServerProbe
                                      attempt == 2 ? 0.3 : 0.0, maxTokens, "none", ct)
                 .ConfigureAwait(false);
 
+            // ⚠ Cleaned before it is judged, exactly where the mod cleans it. A model that wraps
+            // its answer in quotation marks, opens with "Translation:" or adds a note about its
+            // own work is not a model that broke a rule — a game copes with all of that and shows
+            // the text underneath. Scoring the wrapping would have measured this bench.
+            answer = Answers.Clean(answer!);
+
             // A refused request is not a refused translation: the mod gives up here too rather
             // than burning its retries on a server problem.
             if (answer is null)

@@ -91,6 +91,16 @@ public sealed record ModelTestResult(
 
     /// <summary>The mod put back trailing line breaks the model had trimmed.</summary>
     public bool Repaired { get; init; }
+
+    /// <summary>
+    /// The answer arrived wrapped in something a game takes off before showing it: a
+    /// "Translation:" opener, markdown emphasis, quotation marks, a note about its own work.
+    ///
+    /// Not a failure — the mod strips all of that, so the line reaches a player clean. It is said
+    /// anyway because it is a habit, not an accident: a model that wraps one answer wraps them
+    /// all, and that is worth knowing when choosing between two that both pass.
+    /// </summary>
+    public bool NeededCleaning { get; init; }
 }
 
 /// <summary>

@@ -304,6 +304,7 @@ public sealed class AiServerProbe
                     Elapsed = attempt.Elapsed,
                     Accepted = attempt.Accepted,
                     Repaired = attempt.Repaired,
+                    NeededCleaning = attempt.NeededCleaning,
                 };
             }
 
@@ -344,7 +345,7 @@ public sealed class AiServerProbe
 
     /// <summary>What the whole chain cost and how it ended.</summary>
     private sealed record ModAttempt(string? Answer, int Attempts, TimeSpan Elapsed,
-                                     bool Accepted, bool Repaired);
+                                     bool Accepted, bool Repaired, bool NeededCleaning);
 
     /// <summary>
     /// Translates one line the way a game does: up to three attempts, judged by the mod's own
@@ -370,6 +371,7 @@ public sealed class AiServerProbe
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
         string? answer = null;
+        var neededCleaning = false;
         string? failed = null;
         var errors = new List<string>();
         var repaired = false;
@@ -411,33 +413,35 @@ public sealed class AiServerProbe
             // its answer in quotation marks, opens with "Translation:" or adds a note about its
             // own work is not a model that broke a rule — a game copes with all of that and shows
             // the text underneath. Scoring the wrapping would have measured this bench.
-            answer = Answers.Clean(answer!);
+            var asItArrived = answer!;
+            answer = Answers.Clean(asItArrived);
+            neededCleaning |= !string.Equals(answer, asItArrived.Trim(), StringComparison.Ordinal);
 
             // A refused request is not a refused translation: the mod gives up here too rather
             // than burning its retries on a server problem.
             if (answer is null)
             {
                 stopwatch.Stop();
-                return new ModAttempt(null, attempt + 1, stopwatch.Elapsed, false, false);
+                return new ModAttempt(null, attempt + 1, stopwatch.Elapsed, false, false, neededCleaning);
             }
 
             // Nothing to validate: the model was asked to skip this line and did.
             if (answer.Contains(ModelTestSuite.SkipMarker, StringComparison.Ordinal))
             {
                 stopwatch.Stop();
-                return new ModAttempt(answer, attempt + 1, stopwatch.Elapsed, true, false);
+                return new ModAttempt(answer, attempt + 1, stopwatch.Elapsed, true, false, neededCleaning);
             }
 
             if (frozen.Count == 0)
             {
                 stopwatch.Stop();
-                return new ModAttempt(answer, attempt + 1, stopwatch.Elapsed, true, false);
+                return new ModAttempt(answer, attempt + 1, stopwatch.Elapsed, true, false, neededCleaning);
             }
 
             if (Placeholders.Accepts(source, answer, frozen, out errors))
             {
                 stopwatch.Stop();
-                return new ModAttempt(answer, attempt + 1, stopwatch.Elapsed, true, repaired);
+                return new ModAttempt(answer, attempt + 1, stopwatch.Elapsed, true, repaired, neededCleaning);
             }
 
             // The repair a game makes for itself, and it has to pass the full check on its own.
@@ -445,7 +449,7 @@ public sealed class AiServerProbe
                 && Placeholders.Accepts(source, mended, frozen, out _))
             {
                 stopwatch.Stop();
-                return new ModAttempt(mended, attempt + 1, stopwatch.Elapsed, true, true);
+                return new ModAttempt(mended, attempt + 1, stopwatch.Elapsed, true, true, neededCleaning);
             }
 
             failed = answer;
@@ -454,7 +458,7 @@ public sealed class AiServerProbe
         // Three attempts, still refused: in a game this line stays in its original language for
         // the session. The time was spent all the same, which is the point of timing it.
         stopwatch.Stop();
-        return new ModAttempt(answer, Placeholders.MaxAttempts, stopwatch.Elapsed, false, false);
+        return new ModAttempt(answer, Placeholders.MaxAttempts, stopwatch.Elapsed, false, false, neededCleaning);
     }
 
     /// <summary>Reasoning budgets to try, best first — the same ladder the mod walks.</summary>

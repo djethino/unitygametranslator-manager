@@ -1856,6 +1856,10 @@ public sealed class SettingsWindow : Window
 
         if (!result.Accepted) cost += " · refused, left untranslated";
         else if (result.Repaired) cost += " · repaired by the mod";
+            // Not a failure: the mod takes this off before a player sees it. Said
+            // because it is a habit rather than an accident — a model that wraps one
+            // answer wraps them all, and that separates two models that both pass.
+            if (result.NeededCleaning) cost += " · wrapped, cleaned by the mod";
 
         var costText = new TextBlock
         {

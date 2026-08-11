@@ -79,7 +79,8 @@ public sealed class GameConfigWriter
     /// effect there.
     /// </summary>
     private static List<Intent> Intended(InstallerSettings settings, GamePreference? perGame,
-                                         bool skipWizard, out bool wizardSkipped)
+                                         LanguagePair languages, bool skipWizard,
+                                         out bool wizardSkipped)
     {
         var intents = new List<Intent>();
 
@@ -90,12 +91,19 @@ public sealed class GameConfigWriter
         // Writing "fr" produced a game that searched the catalogue for a language nobody
         // publishes under and asked a model to "translate to fr". The tool keeps ISO codes
         // internally — they are what a system reports and what makes a picker sane — and
-        // converts on the way out. "auto" is passed through: the mod resolves it itself.
-        var language = string.Equals(settings.TargetLanguage, "auto", StringComparison.OrdinalIgnoreCase)
-            ? "auto"
-            : Languages.NameOf(settings.TargetLanguage);
+        // converts on the way out.
+        //
+        // ⚠ And it is NEVER "auto" — see GameLanguages, which decides this pair. The tool knows
+        // the answer at the moment it writes; leaving the mod to resolve it at launch made the
+        // same install mean different things on different machines.
+        intents.Add(new Intent(null, "target_language", languages.Target, "language"));
 
-        intents.Add(new Intent(null, "target_language", language, "language"));
+        // Written only when it is settled. A translation being built locally may legitimately have
+        // no stated source — the mod detects it line by line — and pinning one there would make it
+        // refuse every line that came from anywhere else.
+        if (languages.Source is { Length: > 0 } source)
+            intents.Add(new Intent(null, "source_language", source, "source language"));
+
         intents.Add(new Intent(null, "translation_backend", settings.TranslationBackend, "translation backend"));
 
         // ⚠ Written for EVERY backend, not just the AI one.
@@ -202,9 +210,15 @@ public sealed class GameConfigWriter
     /// What was decided for this game in particular, which wins over the defaults wherever it
     /// says anything. Null means nothing was decided here and the defaults stand alone.
     /// </param>
+    /// <param name="languages">
+    /// The pair this game is to be set to, decided by <see cref="GameLanguages.Decide"/>. Passed in
+    /// rather than derived here, because deciding it needs what is published for this game — which
+    /// this class has no business knowing about — and because the same decision has to be made
+    /// identically by the screen that only shows it.
+    /// </param>
     public ConfigWriteResult Apply(string gamePath, LoaderDescriptor descriptor,
-                                   InstallerSettings settings, bool skipWizard = true,
-                                   GamePreference? perGame = null)
+                                   InstallerSettings settings, LanguagePair languages,
+                                   bool skipWizard = true, GamePreference? perGame = null)
     {
         var folder = Path.Combine(gamePath,
             descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar));
@@ -215,7 +229,7 @@ public sealed class GameConfigWriter
             var root = Load(path);
             var applied = new List<string>();
 
-            var intents = Intended(settings, perGame, skipWizard, out var wizardSkipped);
+            var intents = Intended(settings, perGame, languages, skipWizard, out var wizardSkipped);
 
             foreach (var intent in intents)
             {
@@ -257,7 +271,7 @@ public sealed class GameConfigWriter
     /// exists so the screen can offer, not so it can insist.
     /// </summary>
     public IReadOnlyList<ConfigDifference> Compare(string gamePath, LoaderDescriptor descriptor,
-                                                   InstallerSettings settings,
+                                                   InstallerSettings settings, LanguagePair languages,
                                                    GamePreference? perGame = null)
     {
         var path = Path.Combine(gamePath,
@@ -284,7 +298,7 @@ public sealed class GameConfigWriter
         // ⚠ skipWizard: false. first_run_completed is not a preference, it is a latch — a game
         // that has been through the wizard carries true, and comparing it would report "the
         // first-run wizard differs" on every game somebody has actually played.
-        foreach (var intent in Intended(settings, perGame, skipWizard: false, out _))
+        foreach (var intent in Intended(settings, perGame, languages, skipWizard: false, out _))
         {
             // A key we would only remove has nothing to compare: its absence is our intent.
             if (intent.Value is null) continue;

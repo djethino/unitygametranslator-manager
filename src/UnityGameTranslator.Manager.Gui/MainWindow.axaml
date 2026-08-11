@@ -65,7 +65,10 @@
         <StackPanel Orientation="Horizontal" Spacing="8">
           <TextBlock Text="Play in" VerticalAlignment="Center" FontSize="12"
                      Foreground="{DynamicResource TextMuted}" />
-          <ComboBox x:Name="LanguageBox" Width="170" />
+          <!-- Wide enough for the longest entry it can show, which is not a language name but
+               "<language> (system language)". At 170 that one was cut in half, so the entry the
+               list opens on said the least of any of them. -->
+          <ComboBox x:Name="LanguageBox" Width="240" />
           <TextBox x:Name="SearchBox" Width="240" Watermark="Search your games" />
         </StackPanel>
       </StackPanel>

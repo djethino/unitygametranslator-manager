@@ -766,22 +766,20 @@ public sealed class TranslationsWindow : Window
 
         if (!agreed) return;
 
-        var settings = _settings.Current;
-        var previous = settings.TargetLanguage;
+        // Both languages of the translation just taken, verbatim from what was published — the
+        // pair it was uploaded under, and the only pair under which the game can read it.
+        //
+        // ⚠ The global default is untouched, and this used to be enforced by writing into the
+        // settings object and putting it back in a finally block. It is now simply not involved:
+        // the pair is an argument, and a decision about one game cannot leak into the next install
+        // because there is nothing shared left to leak through.
+        var pair = new LanguagePair(
+            string.IsNullOrWhiteSpace(translation.SourceLanguage) ? null : translation.SourceLanguage,
+            taken);
 
-        try
-        {
-            // Written through the same merge as everything else, so the game keeps its token, its
-            // secrets and every key we do not know about.
-            settings.TargetLanguage = Languages.CodeOf(taken) ?? previous;
-            new GameConfigWriter().Apply(_report.Game.Path, _loader, settings);
-        }
-        finally
-        {
-            // The global default is untouched: this was a decision about one game, and leaving it
-            // changed would apply it to the next install without anyone asking.
-            settings.TargetLanguage = previous;
-        }
+        // Written through the same merge as everything else, so the game keeps its token, its
+        // secrets and every key we do not know about.
+        new GameConfigWriter().Apply(_report.Game.Path, _loader, _settings.Current, pair);
     }
 
     /// <summary>

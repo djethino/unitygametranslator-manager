@@ -817,11 +817,15 @@ public partial class MainWindow : Window
     private void BuildLanguageBox()
     {
         // "auto" first: following the system is a legitimate answer, and it is the mod's default.
-        // "auto" says which language it resolved to: "System language" alone leaves the reader
-        // guessing what the rest of the window is talking about.
+        //
+        // ⚠ The LANGUAGE leads and the reason follows — "French (system language)", not "System
+        // language (French)". Every other line in this list is a language name, so putting the
+        // machinery first made the one entry that matters most read as a setting rather than as an
+        // answer; and it is the entry most likely to be selected, so it is the one the closed box
+        // shows, where the language was pushed past the edge and cut off entirely.
         var detected = Languages.FromLocale(_platform.SystemLanguage());
         var autoLabel = detected is not null
-            ? $"System language ({Languages.NameOf(detected)})"
+            ? $"{Languages.NameOf(detected)} (system language)"
             : "System language";
         LanguageBox.Items.Add(new ComboBoxItem { Content = autoLabel, Tag = "auto" });
         foreach (var (code, name) in Languages.All())
@@ -2477,13 +2481,21 @@ public partial class MainWindow : Window
             // The pair comes first, as it does on every community entry below. Without it the two
             // lines invite a comparison they do not support: a local file and a published one can
             // share a target and differ on the source, and the reader had no way to see it.
+            //
+            // ⚠ Read from what this game IS set to, and shown as "→ auto" only where that is
+            // genuinely the answer — which, for a file that exists, it should never be. The pair
+            // used to come straight out of config.json, so a game left on the mod's default
+            // announced "French → auto" over a translation that plainly had a target: the display
+            // was faithful and the configuration was wrong. Both are fixed; this line is what
+            // makes the second one visible when it happens again.
             var loaderId = report.InstalledLoader?.Id ?? report.RecommendedLoader?.Id;
             var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == loaderId);
-            var languages = descriptor is null
+
+            var pair = descriptor is null
                 ? null
                 : LocalTranslationProbe.DescribeLanguages(report.Game.Path, descriptor);
 
-            var prefix = languages is null ? "" : $"{languages}, ";
+            var prefix = pair is null ? "" : $"{pair}, ";
 
             panel.Children.Add(new TextBlock { Text = $"On this machine: {prefix}{count}{unsynced}", FontSize = 12, Foreground = Brush("TextSecondary") });
 
@@ -2893,6 +2905,38 @@ public partial class MainWindow : Window
             Foreground = Brush("TextSecondary"),
         };
 
+        // ⚠ Only the parts that depend on these controls are rebuilt, never the whole card.
+        //
+        // Redrawing the section from inside one of its own checkboxes destroys that checkbox while
+        // its event is still running, and takes the keyboard focus with it — the box is left
+        // looking pressed and the next Space goes nowhere. Two things react to a change here: the
+        // list of differences, and the band at the bottom that says what one click would do.
+        var driftHost = new StackPanel { Spacing = 4 };
+
+        var dependents = new List<Control>();
+
+        void Refresh()
+        {
+            driftHost.Children.Clear();
+            foreach (var control in ConfigDrift(report, preference)) driftHost.Children.Add(control);
+
+            // Untick "use my defaults" and this game's config.json is not touched at all — so the
+            // two settings below it cannot be applied either, since they are written into that
+            // same file. Greyed rather than hidden: they keep the values they carry, and their
+            // reason for being unavailable is one hover away.
+            foreach (var control in dependents)
+            {
+                control.IsEnabled = preference.ApplyModDefaults;
+
+                ToolTip.SetTip(control, preference.ApplyModDefaults
+                    ? control.Tag as string
+                    : "Available when \"Use my mod defaults here\" is ticked — without it, this "
+                      + "game's configuration file is left untouched, and this is written into it.");
+            }
+
+            ShowActionBar(report);
+        }
+
         var applyDefaults = new CheckBox
         {
             Content = "Use my mod defaults here",
@@ -2908,6 +2952,7 @@ public partial class MainWindow : Window
         {
             preference.ApplyModDefaults = applyDefaults.IsChecked == true;
             _preferences.Set(report.Game.Path, preference);
+            Refresh();
         };
 
         yield return applyDefaults;
@@ -2921,18 +2966,22 @@ public partial class MainWindow : Window
                 Content = "Start translating when the game launches",
                 IsChecked = preference.StartTranslation ?? settings.EnableAi,
                 FontSize = 12,
-            };
 
-            ToolTip.SetTip(start,
-                "Untick to install everything now and start translating later, from inside the "
-                + "game. Nothing is lost: the server, the model and the key stay configured.");
+                // Kept on the control so Refresh can put it back when the box becomes available
+                // again — a tip replaced by the unavailable one and never restored would leave the
+                // setting explained by the reason it used to be greyed out.
+                Tag = "Untick to install everything now and start translating later, from inside "
+                    + "the game. Nothing is lost: the server, the model and the key stay configured.",
+            };
 
             start.IsCheckedChanged += (_, _) =>
             {
                 preference.StartTranslation = start.IsChecked == true;
                 _preferences.Set(report.Game.Path, preference);
+                Refresh();
             };
 
+            dependents.Add(start);
             yield return start;
         }
 
@@ -2949,6 +2998,7 @@ public partial class MainWindow : Window
             TextWrapping = TextWrapping.Wrap,
             MaxHeight = 84,
             Margin = new Avalonia.Thickness(0, 4, 0, 0),
+            Tag = "Sent to the AI with every line of this game, so it knows what it is translating.",
         };
 
         context.LostFocus += (_, _) =>
@@ -2958,11 +3008,15 @@ public partial class MainWindow : Window
 
             preference.GameContext = written;
             _preferences.Set(report.Game.Path, preference);
+            Refresh();
         };
 
+        dependents.Add(context);
         yield return context;
+        yield return driftHost;
 
-        foreach (var control in ConfigDrift(report, preference)) yield return control;
+        // The first fill, which also settles whether the two above start out available.
+        Refresh();
     }
 
     /// <summary>
@@ -2986,8 +3040,10 @@ public partial class MainWindow : Window
 
         if (descriptor is null) yield break;
 
+        var languages = GameLanguages.Decide(report, descriptor, _settings.ResolveTargetLanguage());
+
         var differences = new GameConfigWriter()
-            .Compare(report.Game.Path, descriptor, _settings.Current, preference);
+            .Compare(report.Game.Path, descriptor, _settings.Current, languages, preference);
 
         if (differences.Count == 0) yield break;
 
@@ -3591,8 +3647,10 @@ public partial class MainWindow : Window
     {
         Busy(true, "Applying your settings...");
 
+        var languages = GameLanguages.Decide(report, descriptor, _settings.ResolveTargetLanguage());
+
         var result = new GameConfigWriter()
-            .Apply(report.Game.Path, descriptor, _settings.Current, perGame: preference);
+            .Apply(report.Game.Path, descriptor, _settings.Current, languages, perGame: preference);
 
         Busy(false, "Ready.");
 

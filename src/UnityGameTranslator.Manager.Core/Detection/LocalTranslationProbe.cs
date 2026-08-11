@@ -66,8 +66,15 @@ public static class LocalTranslationProbe
     /// the same pair — and here they were not: the local one detects its source, the published one
     /// is fixed to English.
     ///
-    /// "auto" is spelled out rather than hidden: it is a real answer, and the one that explains why
-    /// a source filter cannot be preselected from it.
+    /// An unstated SOURCE is a real answer and says so: the mod detects it line by line, and it is
+    /// what explains why a source filter cannot be preselected from it.
+    ///
+    /// ⚠ An unstated TARGET is not. The mod resolves it from the machine's locale at launch, so a
+    /// game left that way means something different on every machine — and over a translation that
+    /// exists, it means the mod may well be working towards a language that file is not in. It is
+    /// therefore worded as the gap it is, not as "auto", so it reads like something to settle
+    /// rather than like a setting somebody chose. What settles it is the difference list on the
+    /// game's card, which offers to write the real target in.
     /// </summary>
     public static string? DescribeLanguages(string gamePath, LoaderDescriptor descriptor)
     {
@@ -77,7 +84,7 @@ public static class LocalTranslationProbe
         // "auto → auto" would dress that up as a choice somebody made.
         if (source is null && target is null) return null;
 
-        return $"{source ?? "auto-detected"} → {target ?? "auto"}";
+        return $"{source ?? "auto-detected"} → {target ?? "no target set"}";
     }
 
     /// <summary>One language field, with "auto" and blanks reported as "not set".</summary>

@@ -145,23 +145,6 @@ public sealed class SettingsStore
     /// Returns the canonical code for the language, lowercase — two letters for most, more
     /// where the language needs it ("zh-tw").
     /// </summary>
-    public string ResolveTargetLanguage()
-    {
-        var configured = Current.TargetLanguage;
-
-        if (!string.IsNullOrWhiteSpace(configured)
-            && !configured.Equals("auto", StringComparison.OrdinalIgnoreCase))
-        {
-            // ⚠ Canonical, never truncated. Cutting to two letters turned "zh-tw" into "zh" —
-            // Simplified Chinese — so someone who had explicitly PICKED Traditional had their own
-            // choice overruled, silently, on every read.
-            return Languages.Canonical(configured)!;
-        }
-
-        // Asked of the OS, not of CultureInfo: invariant globalization makes the latter answer
-        // "iv", which showed up as "No iv translation yet" on every row.
-        // ⚠ Resolved by the shared table, not cut to two letters: "zh-Hant-TW" is Traditional
-        // Chinese, and truncating it answered Simplified.
-        return Languages.FromLocale(_platform.SystemLanguage()) ?? "en";
-    }
+    public string ResolveTargetLanguage() =>
+        GameLanguages.Resolve(Current.TargetLanguage, _platform.SystemLanguage());
 }

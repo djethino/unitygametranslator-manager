@@ -102,8 +102,13 @@ public interface IPlatform
     bool IsGameRunning(GameInstall game);
 
     /// <summary>
-    /// The language the operating system is set to, as an ISO 639-1 code, or null when it cannot
-    /// be established.
+    /// The locale the operating system is set to, as the system reports it — "fr-FR",
+    /// "zh-Hant-TW", "fr_FR.UTF-8" — or null when it cannot be established.
+    ///
+    /// ⚠ Reported, not interpreted. Every implementation used to cut it to two letters, which
+    /// turned "zh-Hant-TW" into "zh" — Simplified Chinese — and offered Simplified to someone
+    /// whose system is set to Traditional. Deciding what a locale means belongs to
+    /// UnityGameTranslator.Common.Languages.FromLocale, where the table is.
     ///
     /// Asked of the OS rather than of CultureInfo on purpose: this tool builds with invariant
     /// globalization, so CurrentUICulture is the invariant culture and reports "iv" — which

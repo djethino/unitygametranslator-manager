@@ -203,9 +203,10 @@ public sealed class LinuxPlatform : IPlatform
             var value = Environment.GetEnvironmentVariable(name);
             if (string.IsNullOrWhiteSpace(value)) continue;
 
-            // Shapes seen in the wild: "fr_FR.UTF-8", "fr_FR", "fr", "fr:en".
-            var code = value.Split(':', '.', '_', '@')[0].Trim();
-            if (code.Length >= 2 && char.IsLetter(code[0])) return code[..2].ToLowerInvariant();
+            // Shapes seen in the wild: "fr_FR.UTF-8", "fr_FR", "fr", "fr:en". Handed over whole —
+            // Languages.FromLocale knows these shapes and knows which part means something.
+            var locale = value.Split(':')[0].Trim();
+            if (locale.Length >= 2 && char.IsLetter(locale[0])) return locale;
         }
         return null;
     }

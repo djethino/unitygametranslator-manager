@@ -277,7 +277,7 @@ public sealed class SettingsWindow : Window
     {
         _language = new ComboBox { Width = 260 };
 
-        var detected = _platform.SystemLanguage();
+        var detected = Languages.FromLocale(_platform.SystemLanguage());
         _language.Items.Add(new ComboBoxItem
         {
             Content = detected is not null

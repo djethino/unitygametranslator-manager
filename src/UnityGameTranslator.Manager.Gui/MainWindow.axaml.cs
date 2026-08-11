@@ -741,7 +741,7 @@ public partial class MainWindow : Window
         // "auto" first: following the system is a legitimate answer, and it is the mod's default.
         // "auto" says which language it resolved to: "System language" alone leaves the reader
         // guessing what the rest of the window is talking about.
-        var detected = _platform.SystemLanguage();
+        var detected = Languages.FromLocale(_platform.SystemLanguage());
         var autoLabel = detected is not null
             ? $"System language ({Languages.NameOf(detected)})"
             : "System language";

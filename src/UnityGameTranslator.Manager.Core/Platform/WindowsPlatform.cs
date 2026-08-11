@@ -348,10 +348,8 @@ public sealed class WindowsPlatform : IPlatform
             var buffer = new System.Text.StringBuilder(85);
             if (GetUserDefaultLocaleName(buffer, buffer.Capacity) == 0) return null;
 
-            var locale = buffer.ToString();
-            var dash = locale.IndexOf('-');
-            var language = dash > 0 ? locale[..dash] : locale;
-            return language.Length >= 2 ? language[..2].ToLowerInvariant() : null;
+            var locale = buffer.ToString().Trim();
+            return locale.Length >= 2 ? locale : null;
         }
         catch
         {

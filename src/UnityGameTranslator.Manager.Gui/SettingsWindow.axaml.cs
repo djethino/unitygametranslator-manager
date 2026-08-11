@@ -1766,6 +1766,22 @@ public sealed class SettingsWindow : Window
                 Foreground = Brush(passed == required ? "StatusSuccess" : "StatusWarning"),
             });
 
+            // Said next to the mark, never inside it: a line that passed after the mod corrected
+            // something does work in a game, and the model still got it wrong first. Two models
+            // can share a score and not share that.
+            var helped = outcomes.Count(r => r.Test.UnlocksOption is null && r.PassedWithHelp);
+            if (helped > 0)
+            {
+                _testOutput.Children.Add(new TextBlock
+                {
+                    Text = helped == 1
+                        ? "1 of those was wrong at first and passed only after the mod corrected it."
+                        : $"{helped} of those were wrong at first and passed only after the mod corrected them.",
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = Brush("TextMuted"),
+                });
+            }
+
             // The figures a player actually needs, and only those — what a line costs them in
             // waiting, how often it had to be asked twice, and what stayed untranslated.
             if (ModelTestSuite.Summarise(outcomes) is { Length: > 0 } summary)

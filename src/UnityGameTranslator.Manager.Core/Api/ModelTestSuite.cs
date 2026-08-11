@@ -101,6 +101,17 @@ public sealed record ModelTestResult(
     /// all, and that is worth knowing when choosing between two that both pass.
     /// </summary>
     public bool NeededCleaning { get; init; }
+
+    /// <summary>
+    /// It passed, but not on its own: the mod asked again, put back what was trimmed, or took off
+    /// what was wrapped around it.
+    ///
+    /// ⚠ Still a pass — the line does work in a game, which is what the mark says. But a model
+    /// that needs the mod to step in got it wrong first, and that is the difference between two
+    /// models with the same score. Left out of the verdict and said next to it, so neither fact
+    /// hides the other.
+    /// </summary>
+    public bool PassedWithHelp => Passed && (Attempts > 1 || Repaired || NeededCleaning);
 }
 
 /// <summary>

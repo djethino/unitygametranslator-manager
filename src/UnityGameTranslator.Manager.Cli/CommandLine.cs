@@ -787,6 +787,16 @@ public static class CommandLine
 
         Console.WriteLine($"{passed}/{total} required instructions followed.");
 
+        var helped = outcomes.Count(r => r.Test.UnlocksOption is null && r.PassedWithHelp);
+        if (helped > 0)
+        {
+            // Said plainly: a mark obtained after the mod corrected something is not the same as
+            // one obtained first time. Both lines work in a game; only one model got them right.
+            Console.WriteLine(helped == 1
+                ? "1 of those was wrong at first and passed only after the mod corrected it."
+                : $"{helped} of those were wrong at first and passed only after the mod corrected them.");
+        }
+
         if (ModelTestSuite.Summarise(outcomes) is { Length: > 0 } summary)
             Console.WriteLine(summary);
 

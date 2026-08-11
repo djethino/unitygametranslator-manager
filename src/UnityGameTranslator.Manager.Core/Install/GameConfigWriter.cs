@@ -75,7 +75,7 @@ public sealed class GameConfigWriter
             // Only written when the mod could act on it. An unparseable hotkey would replace a
             // working one with something that never fires, and the mod reports nothing when that
             // happens — leaving the panel unreachable in a game where it used to open.
-            if (Hotkeys.IsValid(settings.SettingsHotkey))
+            if (BindableKeys.IsValid(settings.SettingsHotkey))
                 Set(root, applied, "settings_hotkey", settings.SettingsHotkey, "in-game hotkey");
             // The mod's own setting, not this tool's. Someone who installed everything from here,
             // translation included, has what they need before the game starts and may not want

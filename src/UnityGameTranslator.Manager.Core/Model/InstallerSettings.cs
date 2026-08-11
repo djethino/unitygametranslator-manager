@@ -257,7 +257,7 @@ public sealed class InstallerSettings
         // fails, its panel never opens and it says nothing. Skipping the first-run wizard on top
         // of that would leave someone locked out of the mod with no screen to fix it on — so an
         // unusable hotkey means the wizard runs, which is exactly the safety net it is for.
-        && Hotkeys.IsValid(SettingsHotkey)
+        && BindableKeys.IsValid(SettingsHotkey)
 
         && (TranslationBackend != "llm" || !string.IsNullOrWhiteSpace(AiUrl))
 

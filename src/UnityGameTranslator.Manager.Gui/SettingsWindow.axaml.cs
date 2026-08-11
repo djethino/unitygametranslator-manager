@@ -655,13 +655,13 @@ public sealed class SettingsWindow : Window
         // ecosystem, and someone who has met one should recognise the other. It also beats
         // capturing the whole combination at once: changing Ctrl for Alt does not mean redoing
         // the capture.
-        var initial = _draft.SettingsHotkey ?? Hotkeys.Default;
+        var initial = _draft.SettingsHotkey ?? BindableKeys.Default;
 
         var ctrlBox = new CheckBox { Content = "Ctrl", IsChecked = initial.Contains("Ctrl+") };
         var altBox = new CheckBox { Content = "Alt", IsChecked = initial.Contains("Alt+") };
         var shiftBox = new CheckBox { Content = "Shift", IsChecked = initial.Contains("Shift+") };
 
-        var baseKey = Hotkeys.BaseKeyOf(initial);
+        var baseKey = BindableKeys.BaseKeyOf(initial);
         var keyButton = new Button { Content = baseKey, MinWidth = 110, FontSize = 12 };
 
         _hotkeyProblem = new TextBlock
@@ -717,13 +717,13 @@ public sealed class SettingsWindow : Window
             // Unity records too. That is why this holds on any layout and any system: the key left
             // of "1" is BackQuote to both, whether it prints `, ² or ^. Verified against what the
             // mod had actually written into real games.
-            var unityName = Hotkeys.FromPhysicalKey(e.PhysicalKey.ToString());
+            var unityName = BindableKeys.FromPhysicalKey(e.PhysicalKey.ToString());
 
             if (unityName is null)
             {
                 // Said, never worked around. Substituting another key silently would leave someone
                 // pressing the one they chose and concluding the mod is broken.
-                keyButton.Content = Hotkeys.BaseKeyOf(_hotkey.Text ?? Hotkeys.Default);
+                keyButton.Content = BindableKeys.BaseKeyOf(_hotkey.Text ?? BindableKeys.Default);
                 _hotkeyProblem.Text = "The mod cannot use that key: Unity has no name for its "
                                     + "position, so it would never respond. Your previous key was kept.";
                 _hotkeyProblem.IsVisible = true;

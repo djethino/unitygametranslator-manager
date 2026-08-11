@@ -1,11 +1,18 @@
+using UnityGameTranslator.Common;
 namespace UnityGameTranslator.Manager.Core.Model;
 
 /// <summary>
-/// Which hotkey strings the mod can actually act on.
+/// Which KEYS this tool is willing to write into somebody's game.
 ///
-/// ⚠ This mirrors TranslatorUIManager.IsHotkeyPressed, which strips the modifiers and then does
-/// Enum.TryParse&lt;KeyCode&gt; on what is left. A name that does not parse makes that method
-/// **return false forever, without a word** — the panel simply never opens.
+/// ⚠ How a shortcut is SPELLED is no longer decided here: that is
+/// <see cref="UnityGameTranslator.Common.Hotkeys"/>, shared with the mod's input loop and its
+/// capture widget. This class answers a different question — which KEYS this tool is willing to
+/// write into somebody's game — and the two were tangled together long enough to disagree about
+/// case: "ctrl+F10" passed as valid here and never fired over there.
+///
+/// The mod's own answer on keys is Enum.TryParse&lt;KeyCode&gt;, i.e. Unity's enum, which is wider
+/// than the list below. A name that does not parse makes its input loop **return false forever,
+/// without a word** — the panel simply never opens.
 ///
 /// That silence is why this class exists. Writing an unparseable hotkey into a game is worse than
 /// writing none: combined with skipping the first-run wizard, it leaves someone with a mod they
@@ -17,10 +24,10 @@ namespace UnityGameTranslator.Manager.Core.Model;
 /// restricted to keys a person would sensibly bind. Anything outside it is refused rather than
 /// guessed at.
 /// </summary>
-public static class Hotkeys
+public static class BindableKeys
 {
-    /// <summary>The default the mod itself falls back to.</summary>
-    public const string Default = "Ctrl+F10";
+    /// <summary>The default the mod itself falls back to. Stated once, in the shared library.</summary>
+    public const string Default = Common.Hotkeys.Default;
 
     private static readonly HashSet<string> KeyNames = BuildKeyNames();
 
@@ -71,12 +78,8 @@ public static class Hotkeys
         return KeyNames.Contains(BaseKeyOf(hotkey));
     }
 
-    /// <summary>The key left once the modifiers are stripped — exactly as the mod strips them.</summary>
-    public static string BaseKeyOf(string hotkey) =>
-        hotkey.Replace("Ctrl+", "", StringComparison.OrdinalIgnoreCase)
-              .Replace("Alt+", "", StringComparison.OrdinalIgnoreCase)
-              .Replace("Shift+", "", StringComparison.OrdinalIgnoreCase)
-              .Trim();
+    /// <summary>The key left once the modifiers are stripped — by the same code the mod uses.</summary>
+    public static string BaseKeyOf(string hotkey) => Common.Hotkeys.BaseKeyOf(hotkey);
 
     /// <summary>
     /// Physical key position → the name Unity gives it.
@@ -168,8 +171,7 @@ public static class Hotkeys
         var key = FromPhysicalKey(physicalKeyName);
         if (key is null) return null;
 
-        var prefix = (ctrl ? "Ctrl+" : "") + (alt ? "Alt+" : "") + (shift ? "Shift+" : "");
-        return prefix + key;
+        return Common.Hotkeys.Compose(key, ctrl, alt, shift);
     }
 
     /// <summary>

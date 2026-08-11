@@ -11,6 +11,15 @@ public sealed record ModelTest(
     string Rule,
     Func<string, string, bool> Check)
 {
+    /// <summary>
+    /// Whether a second try was ever possible for this line.
+    ///
+    /// ⚠ The mod asks again only when a structural check fails, and it only checks when the text
+    /// carries markers — a line without any gets one request and stops. Reporting that as "1 of 3"
+    /// promises a budget that never existed, and makes a model look thrifty where it had no choice.
+    /// </summary>
+    public bool CanBeAskedAgain => Placeholders.FrozenSequences(Source).Count > 0;
+
     /// <summary>What the model was asked to do, in one line, for the report.</summary>
     public string Expectation { get; init; } = "";
 
@@ -351,7 +360,7 @@ public static class ModelTestSuite
             new("refuses another real language", "experimental",
                 foreign.PlainLine,
                 Prompt(language, foreign.PlainLine, gameContext, from.Language, strictSource: true),
-                (_, answer) => answer.Trim() == SkipMarker)
+                (_, answer) => Prompts.ReadAnswer(answer) == Prompts.AnswerKind.Skip)
             {
                 // The sentence is chosen so it is neither the source nor the target. A fixed one
                 // is eventually somebody's own language: this case used to hand a French sentence
@@ -375,7 +384,7 @@ public static class ModelTestSuite
             new("refuses what it cannot know", "experimental",
                 Fixtures.Klingon,
                 Prompt(language, Fixtures.Klingon, gameContext, from.Language, strictSource: true),
-                (_, answer) => answer.Trim() == SkipMarker)
+                (_, answer) => Prompts.ReadAnswer(answer) == Prompts.AnswerKind.Skip)
             {
                 Expectation = $"answers exactly {SkipMarker}, rather than inventing a translation",
                 UnlocksOption = "strict_source",

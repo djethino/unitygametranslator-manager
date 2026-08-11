@@ -756,7 +756,9 @@ public static class CommandLine
             // Always the count, and always over the ceiling: three of three is a line that came
             // within one attempt of being abandoned, which a bare "3" does not say.
             var cost = $"   {result.Elapsed.TotalSeconds:F1}s over "
-                     + $"{result.Attempts} of {Placeholders.MaxAttempts} requests";
+                     + (result.Test.CanBeAskedAgain
+                        ? $"{result.Attempts} of {Placeholders.MaxAttempts} requests"
+                        : $"{result.Attempts} request — nothing to check, so no second one");
 
             if (!result.Accepted) cost += ", refused — left untranslated";
             else if (result.Repaired) cost += ", repaired by the mod";

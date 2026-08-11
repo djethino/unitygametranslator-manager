@@ -145,7 +145,7 @@ public sealed class AiServerProbe
     {
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, AiEndpoint.Models(baseUrl));
+            using var request = new HttpRequestMessage(HttpMethod.Get, Endpoints.Models(baseUrl));
             if (!string.IsNullOrWhiteSpace(apiKey))
                 request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
 
@@ -557,7 +557,7 @@ public sealed class AiServerProbe
             using var content = new StringContent(payload, Encoding.UTF8, "application/json");
             using var client = Http.Create(TimeSpan.FromMinutes(2));
 
-            var response = await client.PostAsync(AiEndpoint.Chat(baseUrl), content, ct)
+            var response = await client.PostAsync(Endpoints.Chat(baseUrl), content, ct)
                                        .ConfigureAwait(false);
             if (!response.IsSuccessStatusCode) return null;
 

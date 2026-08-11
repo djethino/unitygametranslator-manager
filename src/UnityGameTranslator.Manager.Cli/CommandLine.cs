@@ -861,8 +861,8 @@ public static class CommandLine
         foreach (var input in inputs)
         {
             Console.WriteLine(input);
-            Console.WriteLine($"    chat   {AiEndpoint.Chat(input)}");
-            Console.WriteLine($"    models {AiEndpoint.Models(input)}");
+            Console.WriteLine($"    chat   {Endpoints.Chat(input)}");
+            Console.WriteLine($"    models {Endpoints.Models(input)}");
             Console.WriteLine();
         }
 

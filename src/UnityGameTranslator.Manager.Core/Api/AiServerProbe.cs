@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using UnityGameTranslator.Manager.Core.Net;
+using UnityGameTranslator.Common;
 
 namespace UnityGameTranslator.Manager.Core.Api;
 
@@ -364,7 +365,7 @@ public sealed class AiServerProbe
                                                             string systemPrompt, string source,
                                                             CancellationToken ct)
     {
-        var frozen = ModPlaceholderRules.FrozenSequences(source);
+        var frozen = Placeholders.FrozenSequences(source);
         var maxTokens = Math.Max(200, source.Length * 2);
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
@@ -373,7 +374,7 @@ public sealed class AiServerProbe
         var errors = new List<string>();
         var repaired = false;
 
-        for (var attempt = 0; attempt < ModPlaceholderRules.MaxAttempts; attempt++)
+        for (var attempt = 0; attempt < Placeholders.MaxAttempts; attempt++)
         {
             object messages = attempt switch
             {
@@ -388,7 +389,7 @@ public sealed class AiServerProbe
                     new { role = "system", content = systemPrompt },
                     new { role = "user", content = source },
                     new { role = "assistant", content = failed ?? "" },
-                    new { role = "user", content = ModPlaceholderRules.Correction(errors, frozen) },
+                    new { role = "user", content = Placeholders.Correction(errors, frozen) },
                 },
 
                 _ => new object[]
@@ -396,7 +397,7 @@ public sealed class AiServerProbe
                     new
                     {
                         role = "system",
-                        content = systemPrompt + "\n" + ModPlaceholderRules.MandatorySequences(frozen),
+                        content = systemPrompt + "\n" + Placeholders.MandatorySequences(frozen),
                     },
                     new { role = "user", content = source },
                 },
@@ -427,15 +428,15 @@ public sealed class AiServerProbe
                 return new ModAttempt(answer, attempt + 1, stopwatch.Elapsed, true, false);
             }
 
-            if (ModPlaceholderRules.Accepts(source, answer, frozen, out errors))
+            if (Placeholders.Accepts(source, answer, frozen, out errors))
             {
                 stopwatch.Stop();
                 return new ModAttempt(answer, attempt + 1, stopwatch.Elapsed, true, repaired);
             }
 
             // The repair a game makes for itself, and it has to pass the full check on its own.
-            if (ModPlaceholderRules.RepairTrailingBreaks(source, answer) is { } mended
-                && ModPlaceholderRules.Accepts(source, mended, frozen, out _))
+            if (Placeholders.RepairTrailingBreaks(source, answer) is { } mended
+                && Placeholders.Accepts(source, mended, frozen, out _))
             {
                 stopwatch.Stop();
                 return new ModAttempt(mended, attempt + 1, stopwatch.Elapsed, true, true);
@@ -447,7 +448,7 @@ public sealed class AiServerProbe
         // Three attempts, still refused: in a game this line stays in its original language for
         // the session. The time was spent all the same, which is the point of timing it.
         stopwatch.Stop();
-        return new ModAttempt(answer, ModPlaceholderRules.MaxAttempts, stopwatch.Elapsed, false, false);
+        return new ModAttempt(answer, Placeholders.MaxAttempts, stopwatch.Elapsed, false, false);
     }
 
     /// <summary>Reasoning budgets to try, best first — the same ladder the mod walks.</summary>

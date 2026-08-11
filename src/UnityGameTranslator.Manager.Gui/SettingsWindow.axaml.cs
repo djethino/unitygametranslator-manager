@@ -1850,7 +1850,7 @@ public sealed class SettingsWindow : Window
         // attempt of being left in its original language. Nothing here is worth hiding — the way
         // the mod works is the thing being measured.
         var cost = $"{result.Elapsed.TotalSeconds:F1}s · "
-                 + $"{result.Attempts} of {ModPlaceholderRules.MaxAttempts} requests";
+                 + $"{result.Attempts} of {Placeholders.MaxAttempts} requests";
 
         if (!result.Accepted) cost += " · refused, left untranslated";
         else if (result.Repaired) cost += " · repaired by the mod";

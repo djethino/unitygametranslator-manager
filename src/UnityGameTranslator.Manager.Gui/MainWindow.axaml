@@ -17,6 +17,11 @@
         Two rows on purpose. Six controls and a title do not fit on one line at the minimum
         window width, and squeezing them made the title collide with the language picker.
         Identity and tools on top, then the two things that decide what the list shows.
+
+        Each button carries a mark, put on in code — see Glyphs.Adorn, and the note there about
+        why the paths are not repeated in this file. "Add a folder..." used to sit here beside
+        "My folders", which was one subject split across two buttons; it now lives inside that
+        window, which is what pays for the marks without the row growing.
       -->
       <StackPanel Spacing="10">
         <Grid ColumnDefinitions="*,Auto">
@@ -45,7 +50,6 @@
 
           <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"
                       VerticalAlignment="Center">
-            <Button x:Name="AddFolderButton" Content="Add a folder..." />
             <Button x:Name="FoldersButton" Content="My folders" />
             <Button x:Name="RescanButton" Content="Rescan" />
             <Button x:Name="SettingsButton" Content="Mod defaults" />

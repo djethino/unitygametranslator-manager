@@ -3,7 +3,6 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using UnityGameTranslator.Manager.Core.Api;
 using UnityGameTranslator.Manager.Core.Catalog;
@@ -166,11 +165,20 @@ public partial class MainWindow : Window
 
         SearchBox.TextChanged += (_, _) => RefreshList();
         RescanButton.Click += async (_, _) => await ScanAsync();
-        AddFolderButton.Click += async (_, _) => await AddFolderAsync();
-        FoldersButton.Click += async (_, _) => await ManageFoldersAsync();
+        FoldersButton.Click += async (_, _) => await OpenFoldersAsync();
         SettingsButton.Click += async (_, _) => await OpenSettingsAsync();
         ToolSettingsButton.Click += async (_, _) => await OpenToolSettingsAsync();
         AboutButton.Click += async (_, _) => await new AboutWindow().ShowDialog(this);
+
+        AdornToolbar();
+
+        // ⚠ Nothing to manage until the machine has been read once: the folder list is read by the
+        // inventory, and the inventory does not exist until the first scan has run. Pressing this
+        // during the opening sweep — several seconds, with the window fully up — went straight into
+        // a null reference. Disabled rather than guarded silently, so the button says why it cannot
+        // be pressed instead of doing nothing when it is. ScanAsync turns it on.
+        FoldersButton.IsEnabled = false;
+        ToolTip.SetTip(FoldersButton, "Reading this machine first...");
         GameList.SelectionChanged += async (_, _) =>
         {
             if (_restoringSelection) return;
@@ -208,6 +216,37 @@ public partial class MainWindow : Window
             // question put to GitHub must not delay the list by so much as a frame.
             await LookForToolUpdateAsync();
         };
+    }
+
+    /// <summary>
+    /// Puts a mark on each toolbar button.
+    ///
+    /// Here rather than in the XAML because the paths live in Glyphs, and a second copy of a mark
+    /// written in markup is a copy free to drift from the first. It also keeps the markup readable:
+    /// a row of buttons still reads as a row of buttons with their labels on.
+    ///
+    /// ⚠ The row has to keep fitting at the minimum window width. It does because "Add a folder..."
+    /// left it for the window it belongs to — five marks cost about what that one button did. Adding
+    /// a seventh control here means measuring again, not assuming.
+    /// </summary>
+    /// <summary>Written once: the button says this again once the first scan has run.</summary>
+    private const string FoldersTip = "Places to look for games beyond Steam, Epic and GOG";
+
+    private void AdornToolbar()
+    {
+        Glyphs.Adorn(FoldersButton, Glyphs.Folder());
+        Glyphs.Adorn(RescanButton, Glyphs.Refresh());
+        Glyphs.Adorn(SettingsButton, Glyphs.Sliders());
+        Glyphs.Adorn(ToolSettingsButton, Glyphs.Gear());
+        Glyphs.Adorn(AboutButton, Glyphs.Info());
+
+        // Said once here rather than in five places: which of the two settings windows a button
+        // opens is the one thing about this row people get wrong.
+        ToolTip.SetTip(FoldersButton, FoldersTip);
+        ToolTip.SetTip(RescanButton, "Look for games again");
+        ToolTip.SetTip(SettingsButton, "What gets written into your games");
+        ToolTip.SetTip(ToolSettingsButton, "Settings for this program itself");
+        ToolTip.SetTip(AboutButton, "About UnityGameTranslator Manager");
     }
 
     // ---------------------------------------------------------------- this tool's own updates
@@ -292,6 +331,10 @@ public partial class MainWindow : Window
         {
             Lineages = _lineages,
         };
+
+        // There is a folder list to show from here on — see the note where it is switched off.
+        FoldersButton.IsEnabled = true;
+        ToolTip.SetTip(FoldersButton, FoldersTip);
 
         Status($"Catalog: {_catalog.Loaders.Count} loaders ({result.Source}). Scanning your drives...");
 
@@ -846,124 +889,30 @@ public partial class MainWindow : Window
             button.Classes.Set("selected", (Lens?)button.Tag == _lens);
     }
 
-    private async Task AddFolderAsync()
-    {
-        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
-        {
-            Title = "Where is the game installed?",
-            AllowMultiple = false,
-        });
-
-        var path = folders.FirstOrDefault()?.TryGetLocalPath();
-        if (path is null) return;
-
-        // Remember it, so the next run finds it without asking again — and so it can be shown
-        // and taken back out. A folder added and then invisible is a folder the user cannot
-        // manage.
-        _inventory.Folders.Add(path);
-
-        // The folder may hold one game or a whole library; scanning covers both.
-        var found = StoreScanner
-            .ScanFolder(Path.GetFullPath(path), GameStore.Manual, maxDepth: 2)
-            .ToList();
-
-        if (found.Count == 0)
-        {
-            Status($"No Unity game found in {path}. The folder was still added to your list.");
-            RefreshList();
-            return;
-        }
-
-        var added = 0;
-        foreach (var game in found)
-        {
-            if (_games.Any(g => string.Equals(g.Path, game.Path, StringComparison.OrdinalIgnoreCase)))
-                continue;
-            _games.Add(game);
-            added++;
-        }
-
-        _games.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
-
-        Status(added == 0
-            ? "Those games were already listed."
-            : $"Added {added} game(s) from {path}.");
-
-        RefreshList();
-        SelectByPath(found[0].Path);
-    }
-
     /// <summary>
-    /// Shows the folders the user added, and lets them be removed. Adding a folder with no way
-    /// to see or undo it is a one-way door.
+    /// The folders this tool was told to look in — added, listed and removed in one window.
+    ///
+    /// ⚠ Both halves used to be here: a toolbar button that opened a folder picker, and a second
+    /// one that opened a list which could only take things away. Adding and managing are the same
+    /// subject, so they are one window now, and this method does nothing but open it and act on
+    /// what came back.
+    ///
+    /// The rescan happens once, here, and only when something actually changed — a folder added or
+    /// removed changes which games exist, and nothing short of reading the drives again can say
+    /// what the list should now contain.
     /// </summary>
-    private async Task ManageFoldersAsync()
+    private async Task OpenFoldersAsync()
     {
-        var folders = _inventory.Folders;
-        var layout = new StackPanel { Spacing = 10 };
+        var window = new FoldersWindow(_inventory.Folders, _games);
+        await window.ShowDialog(this);
 
-        layout.Children.Add(new TextBlock
-        {
-            Text = "Steam, Epic and GOG are found on their own. These are the extra folders you " +
-                   "asked us to look in.",
-            TextWrapping = TextWrapping.Wrap,
-            Opacity = 0.7,
-            FontSize = 12,
-        });
+        if (!window.Changed) return;
 
-        var list = new StackPanel { Spacing = 6 };
-        var toRemove = new List<string>();
-
-        if (folders.All.Count == 0)
-        {
-            list.Children.Add(new TextBlock
-            {
-                Text = "None yet. Use “Add a folder…” for games installed outside a launcher.",
-                Opacity = 0.5,
-                FontSize = 12,
-            });
-        }
-
-        foreach (var folder in folders.All)
-        {
-            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-
-            var missing = folders.IsMissing(folder);
-            var label = new TextBlock
-            {
-                Text = missing ? $"{folder}   (not found right now)" : folder,
-                FontSize = 12,
-                TextWrapping = TextWrapping.Wrap,
-                VerticalAlignment = VerticalAlignment.Center,
-                // A missing folder is flagged, never dropped on its own: an unplugged drive is
-                // not a decision to forget what the user asked us to remember.
-                Opacity = missing ? 0.55 : 1,
-            };
-            Grid.SetColumn(label, 0);
-
-            var remove = new Button { Content = "Remove", FontSize = 11 };
-            var captured = folder;
-            remove.Click += (_, _) =>
-            {
-                toRemove.Add(captured);
-                remove.IsEnabled = false;
-                label.Opacity = 0.35;
-                label.TextDecorations = TextDecorations.Strikethrough;
-            };
-            Grid.SetColumn(remove, 1);
-
-            row.Children.Add(label);
-            row.Children.Add(remove);
-            list.Children.Add(row);
-        }
-
-        layout.Children.Add(list);
-
-        if (!await ConfirmAsync("Folders you added", layout, "Apply")) return;
-        if (toRemove.Count == 0) return;
-
-        foreach (var folder in toRemove) folders.Remove(folder);
         await ScanAsync();
+
+        // Somebody who pointed us at a folder was pointing at a game. Landing on it is the answer
+        // to that; leaving them to find it in a list of eighty is not.
+        if (window.FirstGameFound is { } path) SelectByPath(path);
     }
 
     private void RefreshList()
@@ -2088,13 +2037,14 @@ public partial class MainWindow : Window
     /// </summary>
     private Control BackToOverview()
     {
-        var back = new Button
-        {
-            Content = "← All games",
-            FontSize = 12,
-            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
-            Margin = new Avalonia.Thickness(0, 0, 0, 2),
-        };
+        // A house rather than a close cross, and on the left rather than the right. The card is
+        // not a dialog laid over the window — it IS the window's right-hand side — so "close" would
+        // name the wrong gesture: what happens is a return to the summary of the whole machine,
+        // which is a place, and a place is what a house means. On the left because that is where
+        // the way back lives everywhere else people use.
+        var back = Glyphs.Button(Glyphs.Home(), "Home");
+        back.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left;
+        back.Margin = new Avalonia.Thickness(0, 0, 0, 2);
 
         ToolTip.SetTip(back, "Back to the summary of every game found (Esc)");
         back.Click += (_, _) => CloseCard();

@@ -9,8 +9,14 @@
 
   <ItemGroup>
     <!-- The catalog ships inside the binary so the tool still works offline, or behind a
-         network that blocks GitHub. It is the last-resort source, never the first. -->
-    <EmbeddedResource Include="..\..\catalogs\loaders.json"
+         network that blocks GitHub. It is the last-resort source, never the first.
+
+         Read through common/, NOT from a second checkout of its own. `common` has to carry the
+         catalogue anyway — its language tables are generated from it and its build verifies them
+         against it — so a direct submodule here was a second copy of the same repository, free to
+         sit on a different commit from the one the shared library was checked against. Two
+         answers to "which catalogue is this built from" is one too many. -->
+    <EmbeddedResource Include="..\..\common\catalogs\loaders.json"
                       LogicalName="UnityGameTranslator.Manager.Core.Resources.loaders.json" />
   </ItemGroup>
 

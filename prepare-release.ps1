@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 # UnityGameTranslator Manager — release preparation
 # Usage: ./prepare-release.ps1 [-Rid win-x64,linux-x64]
 #

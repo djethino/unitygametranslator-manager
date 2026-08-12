@@ -139,23 +139,28 @@ public static class LocalTranslationProbe
     }
 
     /// <summary>
-    /// One entry as the hash sees it. A bare string is the old format and counts as machine
-    /// output, which is what it was before tags existed.
+    /// One entry exactly as the file holds it.
+    ///
+    /// ⚠ Nothing is tidied here, and that is the whole point: the server hashes the file as
+    /// written, so a bare string stays bare, a missing tag stays missing and a null value stays
+    /// null. Filling any of them in with a sensible default produces a different hash for a file
+    /// nobody has touched — which reads as "permanently out of sync" and never as a bug in us.
     /// </summary>
     private static TranslationLine LineOf(JsonElement value)
     {
+        // The format from before tags existed. Old published translations are still made of these.
         if (value.ValueKind == JsonValueKind.String)
-            return new TranslationLine(value.GetString() ?? "", "A");
+            return TranslationLine.Bare(value.GetString());
 
-        if (value.ValueKind != JsonValueKind.Object) return new TranslationLine("", "A");
+        if (value.ValueKind != JsonValueKind.Object) return TranslationLine.Bare(null);
 
-        var text = value.TryGetProperty("v", out var v) && v.ValueKind == JsonValueKind.String
-            ? v.GetString() ?? ""
-            : "";
+        string? text = null;
+        if (value.TryGetProperty("v", out var v) && v.ValueKind == JsonValueKind.String)
+            text = v.GetString();
 
-        var tag = value.TryGetProperty("t", out var t) && t.ValueKind == JsonValueKind.String
-            ? t.GetString()
-            : null;
+        string? tag = null;
+        if (value.TryGetProperty("t", out var t) && t.ValueKind == JsonValueKind.String)
+            tag = t.GetString();
 
         return new TranslationLine(text, tag);
     }

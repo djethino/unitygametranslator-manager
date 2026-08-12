@@ -3001,6 +3001,27 @@ public partial class MainWindow : Window
         // it closes over belongs to this rendering of this game.
         _chosenLoader = () => (loaderPicker?.SelectedItem as ComboBoxItem)?.Tag as LoaderDescriptor;
 
+        // ⚠ Its own verb, exactly as the section below has one. The decision was "each section
+        // carries its own version and its own verb, and the one-click orchestrates both" — only
+        // the mod's half was ever built. Everything else was already in place: the engine does the
+        // two halves separately (InstallPlan.InstallPlugin), the one-click already names this step,
+        // and LoaderStanding already knows whether there is an update. Without a button here, a
+        // game with no loader could only be set up through the one-click, or through the mod's
+        // button, which drags the plugin along with it.
+        if (LoaderVerb(report) is { } verb)
+        {
+            var act = new Button
+            {
+                Content = verb,
+                IsEnabled = !running,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Avalonia.Thickness(0, 2, 0, 0),
+            };
+
+            act.Click += async (_, _) => await RunLoaderInstallAsync(report);
+            panel.Children.Add(act);
+        }
+
         // A refusal we are willing to let the user overrule gets a way forward. A dead button and
         // a red paragraph, with nothing to click, is the same dead end as refusing forever.
         if (!report.Game.IsModdable && ModdabilityProbe.CanBeOverridden(report.Game.Verdict))
@@ -4169,6 +4190,46 @@ public partial class MainWindow : Window
         // and refusing here would mean the mod's own button could not work on a fresh game.
         var plan = BuildPlan(report, preference,
             loader: report.InstalledLoader is null, plugin: true);
+
+        await RunInstallAsync(report, new InstallEngine(_platform, _catalog), plan);
+    }
+
+    /// <summary>
+    /// What the loader section offers to do, or null when it offers nothing.
+    ///
+    /// ⚠ A loader we did not install gets no verb at all, and that is a decision rather than a
+    /// gap: it was here before us, other mods may depend on that exact version, and replacing it
+    /// is not ours to offer. The line above it already says so.
+    /// </summary>
+    private string? LoaderVerb(GameReport report)
+    {
+        if (report.InstalledLoader is { } installed)
+        {
+            if (!installed.InstalledByUs) return null;
+
+            // "Reinstall" earns its place even up to date: it is what puts back a loader whose
+            // files were damaged, which is otherwise only reachable by removing everything first.
+            return report.LoaderStanding is { UpdateAvailable: true } standing
+                ? $"Update to {standing.Available}"
+                : "Reinstall";
+        }
+
+        // Nothing installed: offered as soon as something could be. The picker beside it says
+        // which one, so the button does not repeat the name and cannot drift from the choice.
+        return report.EligibleLoaders.Count > 0 ? "Install the loader" : null;
+    }
+
+    /// <summary>
+    /// Installs or updates the loader alone, leaving the plugin exactly as it is.
+    ///
+    /// The two are published by different people on different days. This button names one of them,
+    /// so it does one of them — bringing a loader up to date has no business replacing a plugin
+    /// that was already current.
+    /// </summary>
+    private async Task RunLoaderInstallAsync(GameReport report)
+    {
+        var preference = _preferences.Read(report.Game.Path);
+        var plan = BuildPlan(report, preference, loader: true, plugin: false);
 
         await RunInstallAsync(report, new InstallEngine(_platform, _catalog), plan);
     }

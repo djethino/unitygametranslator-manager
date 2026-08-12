@@ -315,6 +315,21 @@ public static class CommandLine
             Console.WriteLine("Local trans.: none");
         }
 
+        // ⚠ The verdict a running game would reach, reached without one. Printed here because this
+        // command is what somebody pastes into an issue about sync, and "the mod says X, the
+        // manager says Y" is the report that matters.
+        if (report.Sync is { } sync)
+        {
+            Console.WriteLine($"Sync        : {sync switch
+            {
+                SyncDirection.InSync => "in sync with the published version",
+                SyncDirection.Download => "the published version has moved — nothing of yours is at risk",
+                SyncDirection.Upload => "you have changes the server does not",
+                SyncDirection.Merge => "both moved — the mod has the screens to settle it line by line",
+                _ => sync.ToString(),
+            }}");
+        }
+
         if (report.OnlineTranslations.Count > 0)
         {
             Console.WriteLine($"Online      : {report.OnlineTranslations.Count} community translation(s)");

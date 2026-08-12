@@ -1,4 +1,5 @@
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
+using UnityGameTranslator.Common;
 
 namespace UnityGameTranslator.Manager.Core.Model;
 
@@ -309,6 +310,16 @@ public sealed class GameReport
     /// read — see LocalTranslationProbe.ReadSiteAccount.
     /// </summary>
     public (string? User, string? Server) SiteAccount { get; set; }
+
+    /// <summary>
+    /// Where the translation here stands against the published one — the same verdict the mod
+    /// reaches, from the same shared rule, without the game ever being opened.
+    ///
+    /// ⚠ Null means the question does not arise, never that everything is fine: no translation
+    /// here, none published for it, or a file we could not read. Anything that shows this must
+    /// keep those apart from <see cref="SyncDirection.InSync"/>.
+    /// </summary>
+    public SyncDirection? Sync { get; set; }
 
     /// <summary>Blocking prerequisites, e.g. a missing .NET Desktop Runtime.</summary>
     public List<string> Blockers { get; } = new();

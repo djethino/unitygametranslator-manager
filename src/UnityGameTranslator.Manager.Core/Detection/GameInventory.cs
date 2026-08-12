@@ -169,6 +169,21 @@ public sealed class GameInventory
             }
         }
 
+        // ⚠ Only once we hold the published entry of THIS file, which is what makes the hash worth
+        // computing: without something to compare it to, walking a 6000-line file would answer a
+        // question nobody asked. With it, the manager reaches the same verdict a running game
+        // would, and reaches it before anybody launches anything.
+        if (report.MatchingOnline is { FileHash.Length: > 0 } published
+            && report.LocalTranslation is { } local
+            && ResolveDescriptor(report, game) is { } loader)
+        {
+            report.Sync = Common.Sync.Decide(
+                LocalTranslationProbe.ComputeContentHash(game.Path, loader),
+                published.FileHash,
+                local.SourceHash,
+                local.LocalChanges > 0);
+        }
+
         // Deliberately outside the community lookup: whether this account leads or contributes to
         // the lineage of the local file is a fact about the account, and it holds even when the
         // catalog search failed or the game is not published anywhere.

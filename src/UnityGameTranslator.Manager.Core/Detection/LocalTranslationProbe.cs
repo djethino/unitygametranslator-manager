@@ -1,5 +1,6 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using UnityGameTranslator.Manager.Core.Model;
+using UnityGameTranslator.Common;
 
 namespace UnityGameTranslator.Manager.Core.Detection;
 
@@ -85,6 +86,78 @@ public static class LocalTranslationProbe
         if (source is null && target is null) return null;
 
         return $"{source ?? "auto-detected"} → {target ?? "no target set"}";
+    }
+
+    /// <summary>
+    /// The content hash of the translation in a game, or null when there is none to hash.
+    ///
+    /// ⚠ Computed ON DEMAND and never as part of reading a game, because it is the one expensive
+    /// thing here: a 1.6 MB file parses in ~19 ms and hashing walks every line again. Across fifty
+    /// games, on every language change, that is a second nobody asked for — and the answer is only
+    /// ever useful for a game whose translation also exists on the server, which is a handful.
+    ///
+    /// The rule itself is <see cref="ContentHash"/>, shared with the mod and ported from the
+    /// website: what comes out is the same string the server issues as file_hash.
+    /// </summary>
+    public static string? ComputeContentHash(string gamePath, LoaderDescriptor descriptor)
+    {
+        var path = Path.Combine(gamePath,
+            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar),
+            TranslationFileName);
+
+        if (!File.Exists(path)) return null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(path));
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return null;
+
+            string? uuid = null;
+            var lines = new List<KeyValuePair<string, TranslationLine>>();
+
+            foreach (var property in root.EnumerateObject())
+            {
+                if (ContentHash.IsMetadataKey(property.Name))
+                {
+                    if (property.Name == ContentHash.UuidKey && property.Value.ValueKind == JsonValueKind.String)
+                        uuid = property.Value.GetString();
+                    continue;
+                }
+
+                lines.Add(new KeyValuePair<string, TranslationLine>(property.Name, LineOf(property.Value)));
+            }
+
+            return ContentHash.Of(lines, uuid ?? "");
+        }
+        catch
+        {
+            // A file we cannot read has no identity we can vouch for, and saying so is the point:
+            // every caller treats null as "we do not know", never as "it differs".
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// One entry as the hash sees it. A bare string is the old format and counts as machine
+    /// output, which is what it was before tags existed.
+    /// </summary>
+    private static TranslationLine LineOf(JsonElement value)
+    {
+        if (value.ValueKind == JsonValueKind.String)
+            return new TranslationLine(value.GetString() ?? "", "A");
+
+        if (value.ValueKind != JsonValueKind.Object) return new TranslationLine("", "A");
+
+        var text = value.TryGetProperty("v", out var v) && v.ValueKind == JsonValueKind.String
+            ? v.GetString() ?? ""
+            : "";
+
+        var tag = value.TryGetProperty("t", out var t) && t.ValueKind == JsonValueKind.String
+            ? t.GetString()
+            : null;
+
+        return new TranslationLine(text, tag);
     }
 
     /// <summary>

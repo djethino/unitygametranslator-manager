@@ -1,9 +1,10 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using UnityGameTranslator.Manager.Core.Api;
 using UnityGameTranslator.Manager.Core.Install;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
 using UnityGameTranslator.Manager.Core.Net;
+using UnityGameTranslator.Common;
 
 namespace UnityGameTranslator.Manager.Core.Ai;
 
@@ -178,7 +179,7 @@ public sealed class OllamaInstaller
         for (var attempt = 0; attempt < 30; attempt++)
         {
             await Task.Delay(1000, ct).ConfigureAwait(false);
-            if (await probe.ListModelsAsync("http://localhost:11434", ct).ConfigureAwait(false) is not null)
+            if (await probe.ListModelsAsync(Endpoints.OllamaDefault, ct).ConfigureAwait(false) is not null)
                 return null;
         }
 

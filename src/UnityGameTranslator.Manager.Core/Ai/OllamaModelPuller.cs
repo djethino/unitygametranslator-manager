@@ -1,6 +1,7 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using UnityGameTranslator.Manager.Core.Net;
+using UnityGameTranslator.Common;
 
 namespace UnityGameTranslator.Manager.Core.Ai;
 
@@ -24,7 +25,7 @@ public sealed class OllamaModelPuller
     private readonly string _baseUrl;
     private readonly HttpClient _http;
 
-    public OllamaModelPuller(string baseUrl = "http://localhost:11434", HttpClient? http = null)
+    public OllamaModelPuller(string baseUrl = Endpoints.OllamaDefault, HttpClient? http = null)
     {
         _baseUrl = baseUrl.TrimEnd('/');
 

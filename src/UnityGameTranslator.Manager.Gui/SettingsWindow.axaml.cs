@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
@@ -47,6 +47,12 @@ public sealed class SettingsWindow : Window
     private ComboBox _language = null!;
     private ComboBox _backend = null!;
     private TextBox _aiUrl = null!;
+
+    /// <summary>
+    /// What has to be said about the address currently in the field: nothing for a server on this
+    /// machine, privacy for one on the network, privacy and cost for anything else.
+    /// </summary>
+    private TextBlock _locality = null!;
     private ComboBox _aiModel = null!;
     private ComboBox _testInto = null!;
     private ComboBox _testFrom = null!;
@@ -488,9 +494,26 @@ public sealed class SettingsWindow : Window
         return Card("Google / DeepL", null, _apiPanel);
     }
 
+    /// <summary>
+    /// Puts the caution in step with the address, or takes it away when there is nothing to say.
+    ///
+    /// ⚠ An empty field says nothing either. Somebody who has not typed an address yet has not
+    /// made a decision to be cautioned about, and greeting them with a bill notice would answer a
+    /// question they have not asked.
+    /// </summary>
+    private void ShowLocality()
+    {
+        var typed = _aiUrl.Text?.Trim();
+
+        var caution = string.IsNullOrWhiteSpace(typed) ? null : Endpoints.CautionFor(typed);
+
+        _locality.Text = caution ?? "";
+        _locality.IsVisible = caution is not null;
+    }
+
     private Control AiCard()
     {
-        _aiUrl = new TextBox { Width = 300, Watermark = "http://localhost:11434" };
+        _aiUrl = new TextBox { Width = 300, Watermark = Endpoints.OllamaDefault };
         _aiUrl.Text = _draft.AiUrl;
 
         // One field for a server on this machine and for an online provider alike: the mod only
@@ -560,16 +583,27 @@ public sealed class SettingsWindow : Window
         _aiPanel.Children.Add(_aiStatus);
         _aiPanel.Children.Add(Row("Server", _aiUrl, refresh));
         _aiPanel.Children.Add(Row("API key", _apiKey, _connectButton));
+        // ⚠ What is said depends on WHERE the address points, and it used to be said to everyone.
+        //
+        // A permanent bill notice under a local Ollama contradicts the offer this whole project is
+        // built on — free translation on your own machine — and a caution everybody sees is a
+        // caution nobody reads, so it was also absent exactly where it mattered. The three cases
+        // are settled once, in the shared library, because it is a statement about somebody's money
+        // and somebody's data and the mod has to make it identically.
+        _locality = new TextBlock
+        {
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("StatusWarning"),
+            IsVisible = false,
+        };
+        _aiPanel.Children.Add(_locality);
+
         _aiPanel.Children.Add(new TextBlock
         {
-            // Said plainly, once. We do not pick a provider, we resell nothing, and we are in no
-            // position to know what someone will be charged.
-            Text = "An online provider bills you directly, on your own account. We take no part in "
-                 + "that and cannot be held responsible for what it costs. Some providers do offer "
-                 + "free allowances - DeepL through a developer account, OpenRouter on some models - "
-                 + "but finding one and reading its terms is yours to do."
-                 + Environment.NewLine
-                 + "The key is stored encrypted and bound to this machine, so a copy of the file "
+            // Said plainly, once, and only about the key itself — it is true wherever the server
+            // is, because a key only exists when something asks for one.
+            Text = "The key is stored encrypted and bound to this machine, so a copy of the file "
                  + "taken elsewhere cannot be read. That protects a file that leaves; it does not "
                  + "protect against something already running as you. Revoking the key at the "
                  + "provider is the real defence.",
@@ -577,6 +611,11 @@ public sealed class SettingsWindow : Window
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("TextMuted"),
         });
+
+        // Follows what is typed rather than what was saved: somebody pasting a provider's address
+        // needs to read this before they press Save, not after.
+        _aiUrl.TextChanged += (_, _) => ShowLocality();
+        ShowLocality();
         _modelNote = new TextBlock
         {
             FontSize = 11,

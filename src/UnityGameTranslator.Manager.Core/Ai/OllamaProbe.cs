@@ -1,6 +1,7 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using UnityGameTranslator.Manager.Core.Api;
 using UnityGameTranslator.Manager.Core.Platform;
+using UnityGameTranslator.Common;
 
 namespace UnityGameTranslator.Manager.Core.Ai;
 
@@ -121,7 +122,7 @@ public sealed class OllamaProbe
         // container, on another port, or something else entirely that answers just as well. The
         // mod only ever needs an endpoint, so a working endpoint ends the question.
         var models = await new AiServerProbe()
-            .ListModelsAsync("http://localhost:11434", ct)
+            .ListModelsAsync(Endpoints.OllamaDefault, ct)
             .ConfigureAwait(false);
 
         if (models is not null)
@@ -243,7 +244,7 @@ public sealed class OllamaProbe
         for (var attempt = 0; attempt < 20; attempt++)
         {
             await Task.Delay(500, ct).ConfigureAwait(false);
-            if (await probe.ListModelsAsync("http://localhost:11434", ct).ConfigureAwait(false) is not null)
+            if (await probe.ListModelsAsync(Endpoints.OllamaDefault, ct).ConfigureAwait(false) is not null)
                 return new OllamaStartOutcome(true, HowToStop: howToStop);
         }
 

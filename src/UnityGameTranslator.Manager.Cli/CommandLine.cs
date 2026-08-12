@@ -1,4 +1,4 @@
-using UnityGameTranslator.Manager.Core.Ai;
+﻿using UnityGameTranslator.Manager.Core.Ai;
 using UnityGameTranslator.Manager.Core.Api;
 using UnityGameTranslator.Manager.Core.Catalog;
 using UnityGameTranslator.Manager.Core.Detection;
@@ -877,7 +877,7 @@ public static class CommandLine
         {
             inputs = new[]
             {
-                "http://localhost:11434",
+                Endpoints.OllamaDefault,
                 "https://api.openai.com/v1/chat/completions",
                 "https://api.deepseek.com/chat/completions",
                 "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",

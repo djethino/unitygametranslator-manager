@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using UnityGameTranslator.Manager.Core.Net;
@@ -120,7 +120,7 @@ public sealed class AiServerProbe
     {
         var attempts = KnownPorts.Select(async known =>
         {
-            var url = $"http://localhost:{known.Port}";
+            var url = Endpoints.LocalServer(known.Port);
             var models = await ListModelsAsync(url, ct).ConfigureAwait(false);
             return models is null ? null : new AiServer(url, known.Product, models);
         });

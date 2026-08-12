@@ -3312,6 +3312,20 @@ public partial class MainWindow : Window
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("TextMuted"),
             });
+
+            // Indented under its own line rather than appended to it: this is a caveat about ONE
+            // setting, and folded into the row it would read as part of the value.
+            if (difference.Note is { } note)
+            {
+                body.Children.Add(new TextBlock
+                {
+                    Text = note,
+                    FontSize = 11,
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Avalonia.Thickness(12, 0, 0, 2),
+                    Foreground = Brush("StatusWarning"),
+                });
+            }
         }
 
         var apply = new Button

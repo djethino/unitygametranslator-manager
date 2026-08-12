@@ -65,6 +65,68 @@ public static class BindableKeys
     public static IReadOnlyCollection<string> AvailableKeys => KeyNames;
 
     /// <summary>
+    /// The keys this tool is willing to WRITE into somebody's game — a strictly smaller question
+    /// than "what can the mod parse", and the two were the same list until 2026-08-12.
+    ///
+    /// ⚠ **A key that prints a character is not portable between games.** What a Unity `KeyCode`
+    /// designates depends on a per-PROJECT setting the studio chose — Input Manager → "Use Physical
+    /// Keys" — which is on by default since Unity 2022.1 but stays off in every project migrated
+    /// from before. With it on, `KeyCode` is a position on a US keyboard; with it off, it is
+    /// whatever the key produces under the current layout. **No runtime API reports which régime a
+    /// game is in**, deducing it from the Unity version is wrong (migrated projects), and inferring
+    /// it by comparing code and character breaks under Proton, where Wine can resolve virtual keys
+    /// against one layout while text follows another.
+    ///
+    /// Measured on the 13 test games: the same physical key was written `Quote` in six of them and
+    /// `BackQuote` in five — two of those on the SAME Unity build. See
+    /// analyse/hotkey-keycode-divergence.md.
+    ///
+    /// So this tool stopped trying to transpose. The keys below carry NO character, therefore no
+    /// layout can move them and both régimes agree on them — on AZERTY, QWERTZ, Dvorak, Cyrillic,
+    /// JIS or Hangul alike. That is not a convention that a future Unity could change: there is
+    /// simply nothing to translate.
+    ///
+    /// Anything else stays perfectly legitimate **in the game**, where the mod captures it against
+    /// the real keyboard and is right by construction. It is only unfit to travel from here.
+    /// </summary>
+    private static readonly HashSet<string> UniversalKeyNames = BuildUniversalKeyNames();
+
+    private static HashSet<string> BuildUniversalKeyNames()
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            // No character, no layout, no argument.
+            "Escape", "Tab", "Space", "Return", "Backspace",
+            "Delete", "Insert", "Home", "End", "PageUp", "PageDown",
+            "UpArrow", "DownArrow", "LeftArrow", "RightArrow",
+            "Print", "ScrollLock", "Pause",
+        };
+
+        for (var i = 1; i <= 15; i++) names.Add($"F{i}");
+
+        // ⚠ The keypad, NOT the number row. Alpha0..Alpha9 sit on keys that print something and
+        // are re-lettered by several layouts; Keypad0..Keypad9 have their own scan codes.
+        for (var i = 0; i <= 9; i++) names.Add($"Keypad{i}");
+
+        return names;
+    }
+
+    /// <summary>Keys this tool may write into a game, for a picker or an error message.</summary>
+    public static IReadOnlyCollection<string> UniversalKeys => UniversalKeyNames;
+
+    /// <summary>
+    /// Whether this shortcut means the same thing in every game, on every keyboard.
+    ///
+    /// Empty counts as universal: it means "no hotkey", which travels fine.
+    /// </summary>
+    public static bool IsUniversal(string? hotkey)
+    {
+        if (string.IsNullOrWhiteSpace(hotkey)) return true;
+
+        return UniversalKeyNames.Contains(BaseKeyOf(hotkey));
+    }
+
+    /// <summary>
     /// Whether the mod would act on this string.
     ///
     /// Empty is valid on purpose: the mod treats an empty hotkey as "disabled", and that is a
@@ -82,18 +144,22 @@ public static class BindableKeys
     public static string BaseKeyOf(string hotkey) => Common.Hotkeys.BaseKeyOf(hotkey);
 
     /// <summary>
-    /// Physical key position → the name Unity gives it.
+    /// Physical key position → the name Unity gives it **when the game reads positions**.
     ///
-    /// This is the whole answer to "how do we do this across layouts and systems", and it is the
-    /// same answer on both sides: **neither Unity nor this table cares which character the key
-    /// prints.** Unity's KeyCode names describe positions on a US keyboard, and the browser-derived
-    /// physical key codes Avalonia reports describe the same positions. So the key left of "1" is
-    /// Backquote to both of them, whether it prints ` on QWERTY, ² on a French AZERTY, or ^ on a
-    /// German QWERTZ.
+    /// 🔴 **This table is only true half the time, and that was found out the hard way.** It used
+    /// to claim that "neither Unity nor this table cares which character the key prints", on the
+    /// strength of one game checked on 2026-08-09 where the mod had indeed written `BackQuote` for
+    /// the key left of "1". That game had Input Manager → "Use Physical Keys" ON. A game with it
+    /// OFF — every project migrated from before Unity 2022.1 — writes `Quote` for the very same
+    /// key on a French AZERTY, because Windows reports it as VK_OEM_7 there.
     ///
-    /// Verified against real games on 2026-08-09: the mod, asked to capture that key on an AZERTY
-    /// keyboard, had written exactly "BackQuote" into their config.json. The mapping below is not a
-    /// guess — it reproduces what the mod already does.
+    /// One measurement, generalised into a rule, is what made writing hotkeys into games feel safe.
+    /// Six of the thirteen test games disagree with it. See analyse/hotkey-keycode-divergence.md.
+    ///
+    /// ⚠ So this mapping is NOT a way to transpose a key across games. It is kept for the one thing
+    /// it does honestly: turning what Avalonia reports under our own capture into a Unity name.
+    /// Whether that name means the same thing inside a given game is decided by
+    /// <see cref="IsUniversal"/> — and for anything that prints a character, the answer is no.
     ///
     /// Only keys Unity actually has are listed. IntlBackslash (the &lt;&gt; key on European
     /// keyboards) has no KeyCode at all, so it is absent and gets refused rather than approximated
@@ -186,5 +252,26 @@ public static class BindableKeys
         return $"The mod cannot use \"{key}\" — it would silently never open. "
              + "Function keys (F1 to F15), letters, and named keys like Space, Tab or Escape work; "
              + "digits are written Alpha1 to Alpha9. Modifiers go in front: Ctrl+, Alt+, Shift+.";
+    }
+
+    /// <summary>
+    /// Why a key is fine in a game but not fit to be sent from here. Null when it travels.
+    ///
+    /// Worded as a limit of THIS tool, because that is what it is: the key works perfectly well
+    /// where it was captured. Saying "unsupported" would be false and would send somebody looking
+    /// for a fix that does not exist.
+    /// </summary>
+    public static string? ExplainNotUniversal(string? hotkey)
+    {
+        if (IsUniversal(hotkey)) return null;
+
+        var key = BaseKeyOf(hotkey!);
+
+        return $"\"{key}\" prints a character, so what it means changes from one game to the next — "
+             + "the same physical key is read differently depending on a setting each studio chose. "
+             + "This tool only sends keys that mean the same everywhere: F1 to F15, the keypad, "
+             + "Insert/Delete/Home/End/Page keys, arrows, Escape, Tab, Space, Enter. "
+             + "To use this key, set it in the game itself — there the mod reads your actual "
+             + "keyboard, so it is right whatever your layout or language.";
     }
 }

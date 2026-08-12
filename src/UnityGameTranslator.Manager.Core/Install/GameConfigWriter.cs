@@ -24,7 +24,13 @@ public sealed record ConfigWriteResult(
 /// <param name="Label">The setting in the words the screens use.</param>
 /// <param name="InGame">What the game says now.</param>
 /// <param name="Ours">What applying the defaults would put there.</param>
-public sealed record ConfigDifference(string Label, string InGame, string Ours);
+/// <param name="Note">
+/// What is worth knowing before overwriting this one, or null when the value speaks for itself.
+/// Carried here rather than reconstructed on the screen: the reason a setting deserves a caveat is
+/// known where the setting is declared, and a screen matching on labels would lose it at the first
+/// rewording.
+/// </param>
+public sealed record ConfigDifference(string Label, string InGame, string Ours, string? Note = null);
 
 /// <summary>
 /// Puts the installer's settings into a game's config.json, and nothing else.
@@ -63,12 +69,19 @@ public sealed class GameConfigWriter
     /// Secrets are held here in CLEAR and protected on the way to disk — one place where the
     /// plaintext can reach a file, and it does not.
     /// </summary>
+    /// <param name="OnlyIfAbsent">
+    /// Write this key when the game has none, and leave it alone otherwise — for the settings a
+    /// game may legitimately know better than we do. Such a key is also never reported as a
+    /// difference: we are not offering to change it, so listing it would be an offer we do not make.
+    /// </param>
     private readonly record struct Intent(
         string? Parent,
         string Key,
         object? Value,
         string? Label,
-        bool Secret = false);
+        bool Secret = false,
+        string? Note = null,
+        bool OnlyIfAbsent = false);
 
     /// <summary>
     /// Everything we would write, and nothing else.
@@ -125,11 +138,31 @@ public sealed class GameConfigWriter
         if (perGame?.GameContext is { } context)
             intents.Add(new Intent(null, "game_context", context, "what this game is about"));
 
-        // Only written when the mod could act on it. An unparseable hotkey would replace a working
-        // one with something that never fires, and the mod reports nothing when that happens —
-        // leaving the panel unreachable in a game where it used to open.
-        if (BindableKeys.IsValid(settings.SettingsHotkey))
-            intents.Add(new Intent(null, "settings_hotkey", settings.SettingsHotkey, "in-game hotkey"));
+        // ⚠ Three conditions, and each one closed a real way of locking somebody out of the panel.
+        //
+        // 1. OFF BY DEFAULT (WriteHotkeyToGames). A hotkey belongs to one GAME: the mod captures it
+        //    against the real keyboard there, which is the only measurement that exists. This tool
+        //    only ever holds a global preference, and it cannot know what a given game already uses.
+        // 2. UNIVERSAL ONLY. What a KeyCode designates depends on a per-project Unity setting
+        //    ("Use Physical Keys") that no runtime API reports — so a key that prints a character
+        //    means different things in different games. Six of the thirteen test games disagreed
+        //    with the other five about the very same physical key.
+        // 3. PARSEABLE at all, as before.
+        //
+        // Get it wrong and the mod says nothing: the panel simply stops opening, in a game where it
+        // used to, and the settings screen that could fix it is the one behind that key.
+        // See analyse/hotkey-keycode-divergence.md.
+        if (BindableKeys.IsUniversal(settings.SettingsHotkey)
+            && BindableKeys.IsValid(settings.SettingsHotkey))
+        {
+            // ⚠ Unticked does NOT mean "never write it": a game that has no hotkey yet has nothing
+            // to overwrite, and skipping it there would leave the mod on its own default while
+            // first_run_completed claims the question was answered — AnswersTheWizard counts this
+            // setting among the answers. So: always on a fresh config, only on demand afterwards.
+            intents.Add(new Intent(null, "settings_hotkey", settings.SettingsHotkey, "in-game hotkey",
+                Note: "set in the game itself — applying replaces the key you chose there",
+                OnlyIfAbsent: !settings.WriteHotkeyToGames));
+        }
 
         // The mod's own setting, not this tool's. Someone who installed everything from here,
         // translation included, has what they need before the game starts and may not want the mod
@@ -233,6 +266,9 @@ public sealed class GameConfigWriter
 
             foreach (var intent in intents)
             {
+                // Left exactly as the game has it — see Intent.OnlyIfAbsent.
+                if (intent.OnlyIfAbsent && Existing(root, intent) is not null) continue;
+
                 var value = intent.Secret && intent.Value is string secret
                     ? Secrets.Protect(secret)
                     : intent.Value;
@@ -258,6 +294,12 @@ public sealed class GameConfigWriter
                 $"{ex.GetType().Name}: {ex.Message}");
         }
     }
+
+    /// <summary>What the game holds for this key today, or null when it holds nothing.</summary>
+    private static JsonNode? Existing(JsonObject root, Intent intent) =>
+        intent.Parent is null
+            ? root[intent.Key]
+            : (root[intent.Parent] as JsonObject)?[intent.Key];
 
     /// <summary>
     /// Where this game's configuration differs from what applying the defaults would put there.
@@ -308,9 +350,11 @@ public sealed class GameConfigWriter
             // decision, and none of the six in words anybody chose.
             if (intent.Label is null) continue;
 
-            var node = intent.Parent is null
-                ? root[intent.Key]
-                : (root[intent.Parent] as JsonObject)?[intent.Key];
+            var node = Existing(root, intent);
+
+            // Nothing is being offered about this one while the game already answers it, so there
+            // is nothing to report either.
+            if (intent.OnlyIfAbsent && node is not null) continue;
 
             // Absent in the game means the mod is on its default there. That IS a difference worth
             // offering — it is how "your game never learned your hotkey" shows up — but it is
@@ -320,7 +364,7 @@ public sealed class GameConfigWriter
 
             if (inGame is not null && string.Equals(inGame, ours, StringComparison.Ordinal)) continue;
 
-            differences.Add(new ConfigDifference(intent.Label, inGame ?? "not set", ours));
+            differences.Add(new ConfigDifference(intent.Label, inGame ?? "not set", ours, intent.Note));
         }
 
         return differences;

@@ -59,6 +59,7 @@ public sealed class SettingsWindow : Window
     private TextBox _hotkey = null!;
     private TextBlock _hotkeyProblem = null!;
     private ComboBox _channel = null!;
+    private CheckBox _writeHotkey = null!;
     private CheckBox _modOnline = null!;
     private CheckBox _autoDownload = null!;
     private CheckBox _notifyUpdates = null!;
@@ -714,6 +715,16 @@ public sealed class SettingsWindow : Window
         // Not shown, not editable: the field only exists so Save reads one value from one place.
         _hotkey = new TextBox { IsVisible = false, Text = initial };
 
+        // ⚠ Said on arrival, not at the next capture. A key chosen before this tool learned that
+        // character keys do not travel is still sitting in the settings, and it is now skipped when
+        // writing to games — a setting silently without effect is the one thing this screen must
+        // never leave behind.
+        if (BindableKeys.ExplainNotUniversal(initial) is { } carriedOver)
+        {
+            _hotkeyProblem.Text = carriedOver;
+            _hotkeyProblem.IsVisible = true;
+        }
+
         void Recompose()
         {
             var prefix = (ctrlBox.IsChecked == true ? "Ctrl+" : "")
@@ -752,10 +763,8 @@ public sealed class SettingsWindow : Window
 
             capturing = false;
 
-            // The physical position, not the character printed on the key — which is exactly what
-            // Unity records too. That is why this holds on any layout and any system: the key left
-            // of "1" is BackQuote to both, whether it prints `, ² or ^. Verified against what the
-            // mod had actually written into real games.
+            // The physical position, turned into the name Unity gives it. ⚠ That name only means
+            // the same thing in every game for keys that print nothing — see BindableKeys.
             var unityName = BindableKeys.FromPhysicalKey(e.PhysicalKey.ToString());
 
             if (unityName is null)
@@ -765,6 +774,17 @@ public sealed class SettingsWindow : Window
                 keyButton.Content = BindableKeys.BaseKeyOf(_hotkey.Text ?? BindableKeys.Default);
                 _hotkeyProblem.Text = "The mod cannot use that key: Unity has no name for its "
                                     + "position, so it would never respond. Your previous key was kept.";
+                _hotkeyProblem.IsVisible = true;
+                return;
+            }
+
+            // ⚠ Refused HERE rather than filtered at write time, so the answer arrives while the
+            // key is still under the finger. Discovering three screens later that a choice was
+            // quietly dropped is how somebody stops trusting a tool.
+            if (BindableKeys.ExplainNotUniversal(unityName) is { } notUniversal)
+            {
+                keyButton.Content = BindableKeys.BaseKeyOf(_hotkey.Text ?? BindableKeys.Default);
+                _hotkeyProblem.Text = notUniversal;
                 _hotkeyProblem.IsVisible = true;
                 return;
             }
@@ -796,6 +816,15 @@ public sealed class SettingsWindow : Window
         _channel.Items.Add(new ComboBoxItem { Content = "Beta (test releases)", Tag = "beta" });
         Select(_channel, _draft.Channel);
 
+        // ⚠ Off by default, and it stays where somebody put it. The hotkey is the one setting here
+        // that a game may legitimately know better than we do: inside it, the mod captured the key
+        // against the real keyboard. This box is how somebody says "no, use mine everywhere".
+        _writeHotkey = new CheckBox
+        {
+            Content = "Replace the hotkey in games too",
+            IsChecked = _draft.WriteHotkeyToGames,
+        };
+
         // The mod's own connection, not this tool's. Someone who installs everything from here,
         // translation included, has what they need before the game starts.
         _modOnline = new CheckBox
@@ -809,10 +838,18 @@ public sealed class SettingsWindow : Window
         panel.Children.Add(Row("In-game hotkey", hotkeyRow));
         panel.Children.Add(_hotkey);
         panel.Children.Add(Note(
-            "Click the key button, then press the key you want. It is stored by position on the "
-            + "keyboard, exactly as the mod reads it - so the key left of \"1\" works whatever "
-            + "character your layout prints on it.", "TextMuted"));
+            "Click the key button, then press the key you want. Only keys that mean the same in "
+            + "every game are accepted here: F1 to F15, the keypad, Insert/Delete/Home/End/Page, "
+            + "the arrows, Escape, Tab, Space and Enter. In the game itself the mod accepts far "
+            + "more - any key the game does not already use - because there it reads your actual "
+            + "keyboard. A key that prints a character is read differently from one game to the "
+            + "next, so it cannot be sent from here.", "TextMuted"));
         panel.Children.Add(_hotkeyProblem);
+        panel.Children.Add(_writeHotkey);
+        panel.Children.Add(Note(
+            "Off, your games keep the key each of them already has. This is a global preference "
+            + "and we cannot know what a particular game already uses - so a key set inside a game "
+            + "wins over this one unless you say otherwise.", "TextMuted"));
         panel.Children.Add(Row("Updates", _channel));
         panel.Children.Add(_modOnline);
         panel.Children.Add(Note(
@@ -2017,6 +2054,7 @@ public sealed class SettingsWindow : Window
         // stores it.
         if (Tag(_backend) == "google") _draft.TranslationBackend = Tag(_provider) ?? "google";
         _draft.DeeplUseFree = _deeplFree.IsChecked == true;
+        _draft.WriteHotkeyToGames = _writeHotkey.IsChecked == true;
         _draft.ModOnlineMode = _modOnline.IsChecked == true;
         _draft.AutoDownload = _autoDownload.IsChecked == true;
         _draft.NotifyUpdates = _notifyUpdates.IsChecked == true;
@@ -2117,6 +2155,9 @@ public sealed class SettingsWindow : Window
         Compare("hotkey", _hotkey.Text, saved.SettingsHotkey);
         Compare("updates channel", Tag(_channel), saved.Channel);
 
+        if ((_writeHotkey.IsChecked == true) != saved.WriteHotkeyToGames)
+            changes.Add($"replace the hotkey in games: {saved.WriteHotkeyToGames} -> {_writeHotkey.IsChecked == true}");
+
         if ((_modOnline.IsChecked == true) != saved.ModOnlineMode)
             changes.Add($"mod goes online: {saved.ModOnlineMode} -> {_modOnline.IsChecked == true}");
 
@@ -2177,6 +2218,7 @@ public sealed class SettingsWindow : Window
             field.TextChanged += (_, _) => RefreshApplyButton();
 
         _modOnline.IsCheckedChanged += (_, _) => RefreshApplyButton();
+        _writeHotkey.IsCheckedChanged += (_, _) => RefreshApplyButton();
         foreach (var box in new[] { _autoDownload, _notifyUpdates, _checkModUpdates, _notificationsEnabled })
             box.IsCheckedChanged += (_, _) => RefreshApplyButton();
         foreach (var combo in new[] { _mergeStrategy, _notificationPosition })

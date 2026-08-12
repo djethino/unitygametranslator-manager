@@ -177,6 +177,20 @@ public sealed class InstallerSettings
     [JsonPropertyName("settings_hotkey")] public string SettingsHotkey { get; set; } = "Ctrl+F10";
 
     /// <summary>
+    /// Whether that hotkey is pushed into games alongside everything else. **Off by default.**
+    ///
+    /// ⚠ Not caution, a limit: this tool cannot know what a given game already uses, nor how it
+    /// reads keys. A hotkey belongs to ONE game — the mod captures it against the real keyboard
+    /// there, which is the only measurement anybody has — while this setting is a global
+    /// preference. Pushing a preference over a measurement is how somebody ends up unable to open
+    /// the panel in a game where it used to work, with no screen left to fix it on.
+    ///
+    /// Ticked, it still only sends keys that mean the same in every game
+    /// (<see cref="BindableKeys.IsUniversal"/>). See analyse/hotkey-keycode-divergence.md.
+    /// </summary>
+    [JsonPropertyName("write_hotkey_to_games")] public bool WriteHotkeyToGames { get; set; }
+
+    /// <summary>
     /// Sync and notification preferences, written into the game's own "sync" block.
     ///
     /// These are facts about a person, not about a game: someone with twenty games does not want

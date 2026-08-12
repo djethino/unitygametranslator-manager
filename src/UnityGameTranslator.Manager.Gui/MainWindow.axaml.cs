@@ -63,6 +63,20 @@ public partial class MainWindow : Window
     /// </summary>
     private Func<LoaderDescriptor?> _chosenLoader = () => null;
 
+    /// <summary>
+    /// Whether the one-click should also bring a translation down, for the card being shown.
+    ///
+    /// ⚠ Held here rather than read from the preferences on every draw, and the difference matters.
+    /// The stored answer is honoured only where nothing is at stake (see
+    /// <see cref="TranslationOffers.MayDefaultToYes"/>); on a game carrying unpublished work the
+    /// box starts unticked whatever was stored, because that "yes" was given about a game in
+    /// another state. Once somebody ticks it here, it has to STAY ticked — recomputing the safe
+    /// default on the redraw their own click causes would untick it under their hand.
+    ///
+    /// Set in <see cref="RenderReport"/> and nowhere else.
+    /// </summary>
+    private bool _takeTranslation;
+
     /// <summary>Which games are open right now. Never null: an unswept machine is an empty answer.</summary>
     private RunningGames _running = RunningGames.None;
 
@@ -2171,6 +2185,13 @@ public partial class MainWindow : Window
         // installed by separate steps; folding them into one block meant their versions could not
         // both be shown, and the single button had to pretend they moved together. Each card now
         // carries its own version, its own verb, and nothing that belongs to the other.
+        // Settled once per card, before anything reads it. A stored "yes" is deliberately ignored
+        // where a translation would replace something — that answer was given about a game in
+        // another state, and re-applying it is precisely the mistake this is here to prevent.
+        var offer = TranslationOffers.For(report, PickTranslation(report));
+        _takeTranslation = TranslationOffers.MayDefaultToYes(offer)
+                           && _preferences.Read(report.Game.Path).InstallTranslation;
+
         DetailPanel.Children.Add(Card(LoaderSection(report)));
         DetailPanel.Children.Add(Card(ModSection(report)));
         DetailPanel.Children.Add(Card(Translations(report)));
@@ -2567,7 +2588,7 @@ public partial class MainWindow : Window
         //
         // Silent once a file is in place and matches it — the line above already says what this
         // game runs, and repeating it as an intention would read as a pending change.
-        if (_preferences.Read(report.Game.Path).InstallTranslation
+        if (_takeTranslation
             && PickTranslation(report) is { } picked
             && !(report.MatchingOnline is { } current && current.Id == picked.Id))
         {
@@ -3222,7 +3243,14 @@ public partial class MainWindow : Window
         // pressed to find out what it means.
         var steps = OneClickSteps(report, preference).ToList();
 
-        if (steps.Count == 0 && blocked is null)
+        // ⚠ An unticked box makes the step list empty, so "nothing left to do" cannot be decided
+        // on that list alone: on a game already up to date, holding a translation with unpublished
+        // work, every step is absent precisely BECAUSE there is an offer standing — and taking the
+        // shortcut here left the box that offers it unreachable.
+        var offered = TranslationOffers.For(report, PickTranslation(report))
+                      is not (TranslationOffer.None or TranslationOffer.AlreadyInPlace);
+
+        if (steps.Count == 0 && blocked is null && !offered)
         {
             // Everything this button could do is already done. Said rather than left blank:
             // an empty bar where a button used to be reads as something having gone wrong.
@@ -3271,9 +3299,14 @@ public partial class MainWindow : Window
         }
         else
         {
+            // An empty list with an offer standing is the one case where the button has nothing to
+            // do and the bar still has something to say: everything is installed, and the only
+            // thing left is a decision nobody has taken.
             explanation.Children.Add(new TextBlock
             {
-                Text = string.Join("  ·  ", steps),
+                Text = steps.Count > 0
+                    ? string.Join("  ·  ", steps)
+                    : "Everything is installed and up to date here.",
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("TextSecondary"),
@@ -3293,34 +3326,61 @@ public partial class MainWindow : Window
 
         // Beside the button rather than up in the card: it changes what the button does, and a
         // switch for an action belongs where the action is.
-        var withTranslation = new CheckBox
+        //
+        // ⚠ Absent when there is nothing for it to do — nothing published to take, or the file
+        // here already IS the one that would be taken. A ticked box that re-downloads the same
+        // bytes reads as an action, and an unticked one reads as something being withheld.
+        var offer = TranslationOffers.For(report, PickTranslation(report));
+
+        if (offer is not (TranslationOffer.None or TranslationOffer.AlreadyInPlace))
         {
-            Content = "with a translation",
-            IsChecked = preference.InstallTranslation,
-            FontSize = 12,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
+            var replaces = offer is TranslationOffer.ReplacesWork or TranslationOffer.ReplacesChoice;
 
-        ToolTip.SetTip(withTranslation,
-            "Takes the best-ranked translation published in your language. Untick to start from "
-            + "a blank sheet and build your own as you play.");
+            var withTranslation = new CheckBox
+            {
+                // The verb tells them which of the two acts this is, before they read anything
+                // else. "with a translation" on a game holding their own month of work was the
+                // same four words as on an empty one.
+                Content = replaces ? "and replace the translation here" : "with a translation",
+                IsChecked = _takeTranslation,
+                FontSize = 12,
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = Brush(replaces ? "StatusWarning" : "TextSecondary"),
+            };
 
-        withTranslation.IsCheckedChanged += (_, _) =>
-        {
-            preference.InstallTranslation = withTranslation.IsChecked == true;
-            _preferences.Set(report.Game.Path, preference);
+            ToolTip.SetTip(withTranslation, replaces
+                ? "Not ticked on purpose: " + TranslationOffers.Caution(offer)
+                  + ". Tick it to take the community one anyway — you will be asked again, with "
+                  + "what is at stake spelled out, and a copy is kept aside either way."
+                : "Takes the best-ranked translation published in your language. Untick to start "
+                  + "from a blank sheet and build your own as you play.");
 
-            // The list of steps depends on it, so the sentence beside the button has to follow.
-            ShowActionBar(report);
-        };
+            withTranslation.IsCheckedChanged += (_, _) =>
+            {
+                _takeTranslation = withTranslation.IsChecked == true;
 
-        right.Children.Add(withTranslation);
+                // Remembered as their answer. It is only ever honoured again where nothing is at
+                // stake, so storing a yes here cannot come back to bite them on a game that has
+                // acquired unpublished work since.
+                preference.InstallTranslation = _takeTranslation;
+                _preferences.Set(report.Game.Path, preference);
+
+                // The list of steps depends on it, so the sentence beside the button has to follow.
+                ShowActionBar(report);
+            };
+
+            right.Children.Add(withTranslation);
+        }
 
         var go = new Button
         {
             Content = "Set up this game",
             Classes = { "primary" },
-            IsEnabled = blocked is null,
+
+            // Nothing in the list means nothing would happen. Enabled, it would spend a click and
+            // a confirmation to do nothing — which reads as a failure rather than as "there was
+            // nothing to do", and sends people looking for what went wrong.
+            IsEnabled = blocked is null && steps.Count > 0,
             MinWidth = 150,
         };
 
@@ -3367,12 +3427,22 @@ public partial class MainWindow : Window
         if (preference.ApplyModDefaults && _settings.Current.Reviewed)
             yield return "apply your settings";
 
-        if (preference.InstallTranslation && PickTranslation(report) is { } chosen)
+        if (!_takeTranslation || PickTranslation(report) is not { } chosen) yield break;
+
+        // Worded by what it would DO, not by what exists. The three are different acts and the
+        // person is about to authorise one of them with a single click.
+        yield return TranslationOffers.For(report, chosen) switch
         {
-            yield return report.LocalTranslation is null
-                ? $"take the {Languages.NameOf(_settings.ResolveTargetLanguage())} translation by {chosen.Author ?? "its author"}"
-                : "replace the translation here (it will ask first)";
-        }
+            TranslationOffer.ReplacesWork =>
+                "replace the translation here, losing what was never uploaded (it will ask first)",
+            TranslationOffer.ReplacesChoice =>
+                "swap the translation here for another one (it will ask first)",
+            TranslationOffer.FreeToTake when report.LocalTranslation is not null =>
+                "update the translation",
+            _ =>
+                $"take the {chosen.TargetLanguage ?? Languages.NameOf(_settings.ResolveTargetLanguage())} "
+                + $"translation by {chosen.Author ?? "its author"}",
+        };
     }
 
     /// <summary>
@@ -3423,7 +3493,7 @@ public partial class MainWindow : Window
         if (WhyNotReady(report) is not null) return;
 
         var preference = _preferences.Read(report.Game.Path);
-        var translation = preference.InstallTranslation ? PickTranslation(report) : null;
+        var translation = _takeTranslation ? PickTranslation(report) : null;
 
         // Everything at stake, gathered and asked once.
         var body = new StackPanel { Spacing = 10 };

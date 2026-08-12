@@ -3650,34 +3650,33 @@ public partial class MainWindow : Window
             }
         }
 
-        // The list is information; the button is an offer. Unticked, the information still stands
-        // — it is what the decision is made on — but there is nothing to offer, because writing
-        // the defaults into this game is exactly what was declined. Said in words rather than by
-        // a greyed button: "unavailable" would leave somebody hunting for the reason.
-        if (preference.ApplyModDefaults)
+        // ⚠ Offered whether or not the box above is ticked — and it was not, which had it exactly
+        // backwards. Unticking means "one click leaves this game alone", never "I may no longer
+        // apply anything here": keeping the control IS the reason somebody unticks, and taking the
+        // button away takes that control with it. The box governs what happens without being
+        // asked; this button is the asking.
+        var apply = new Button
         {
-            var apply = new Button
-            {
-                Content = "Apply my defaults to this game",
-                FontSize = 12,
-                HorizontalAlignment = HorizontalAlignment.Left,
-                IsEnabled = !_running.IsRunning(report.Game),
-                Margin = new Avalonia.Thickness(0, 6, 0, 0),
-            };
+            Content = "Apply my defaults to this game",
+            FontSize = 12,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            IsEnabled = !_running.IsRunning(report.Game),
+            Margin = new Avalonia.Thickness(0, 6, 0, 0),
+        };
 
-            apply.Click += async (_, _) => await ApplyDefaultsAsync(report, descriptor, preference);
-            body.Children.Add(apply);
-        }
-        else
+        apply.Click += async (_, _) => await ApplyDefaultsAsync(report, descriptor, preference);
+        body.Children.Add(apply);
+
+        if (!preference.ApplyModDefaults)
         {
             body.Children.Add(new TextBlock
             {
-                Text = "This game keeps all of it: \"Use my mod defaults here\" is unticked, so "
-                     + "nothing above is written into it. Tick it to be able to apply them.",
+                Text = "One click will not write any of this — that is what unticking above means. "
+                     + "Applying it now is still yours to do.",
                 FontSize = 11,
                 TextWrapping = TextWrapping.Wrap,
-                Margin = new Avalonia.Thickness(0, 6, 0, 0),
-                Foreground = Brush("TextSecondary"),
+                Margin = new Avalonia.Thickness(0, 4, 0, 0),
+                Foreground = Brush("TextMuted"),
             });
         }
 

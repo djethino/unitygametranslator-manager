@@ -372,6 +372,48 @@ public sealed class GameConfigWriter
         }
     }
 
+    /// <summary>
+    /// Writes ONE key we own, leaving every other setting in the file exactly as the game has it.
+    ///
+    /// ⚠ Exists for the settings that belong to the GAME rather than to the defaults — what a game
+    /// is about, first of all. Sending those through <see cref="Apply"/> would write the language,
+    /// the backend and the update preferences in the same breath, which is not what a button that
+    /// saves one sentence may do. It also has to work while "use my mod defaults here" is off:
+    /// that switch governs the defaults, and this value was never one of them.
+    ///
+    /// Null removes the key — that is how "I emptied the box" reaches the file.
+    /// </summary>
+    public ConfigWriteResult ApplyOne(string gamePath, LoaderDescriptor descriptor,
+                                      string key, string? value, string label)
+    {
+        var folder = Path.Combine(gamePath,
+            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar));
+        var path = ConfigPath(gamePath, descriptor);
+
+        try
+        {
+            var root = Load(path);
+            var applied = new List<string>();
+
+            Set(root, applied, key, value, label);
+
+            Directory.CreateDirectory(folder);
+
+            // Same write-beside-then-move as Apply: a config half-written by a crash is worse than
+            // no config at all.
+            var temp = path + ".tmp";
+            File.WriteAllText(temp, root.ToJsonString(WriteOptions), new UTF8Encoding(false));
+            File.Move(temp, path, overwrite: true);
+
+            return new ConfigWriteResult(true, applied, false, null);
+        }
+        catch (Exception ex)
+        {
+            return new ConfigWriteResult(false, Array.Empty<string>(), false,
+                $"{ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
     /// <summary>What the game holds for this key today, or null when it holds nothing.</summary>
     private static JsonNode? Existing(JsonObject root, Intent intent) =>
         intent.Parent is null

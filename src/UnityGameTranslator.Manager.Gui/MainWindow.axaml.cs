@@ -3327,6 +3327,10 @@ public partial class MainWindow : Window
             Tag = "Sent to the AI with every line of this game, so it knows what it is translating.",
         };
 
+        // Declared before the handler that fills it: a local function reaching a variable declared
+        // further down is a use-before-assignment as far as the compiler is concerned.
+        var contextActions = new StackPanel { Spacing = 4, Margin = new Avalonia.Thickness(0, 4, 0, 0) };
+
         context.LostFocus += (_, _) =>
         {
             var written = string.IsNullOrWhiteSpace(context.Text) ? null : context.Text.Trim();
@@ -3334,30 +3338,99 @@ public partial class MainWindow : Window
             // Against what is DISPLAYED, not against what is stored: a value read from the game
             // and left alone is not an edit, and storing it here would turn merely opening the
             // card into a decision to write that sentence back into the game.
-            if (written == shownContext) return;
+            if (written == (preference.GameContext ?? inGameContext)) return;
 
             preference.GameContext = written;
             _preferences.Set(report.Game.Path, preference);
+            RefreshContext();
             Refresh();
         };
 
-        dependents.Add(context);
+        // ⚠ Deliberately NOT a dependent, and it was one. This belongs to the GAME, not to the
+        // defaults — it is the one wizard question whose answer cannot be shared between two games.
+        // Greying it alongside them said the opposite: that describing this game required agreeing
+        // to have its language and backend overwritten too, and it left no way at all to write a
+        // sentence about a game whose configuration one had deliberately chosen to leave alone.
         yield return context;
 
-        // Said only while it is true: once edited, the value shown is theirs and saying where it
-        // came from would describe a state that no longer exists.
-        if (preference.GameContext is null && inGameContext is not null)
+        // Its own button, for the same reason. "Apply my defaults" writes the defaults; this value
+        // is not one of them, so it needs somewhere to go that does not drag them along.
+        void RefreshContext()
         {
-            yield return new TextBlock
+            contextActions.Children.Clear();
+
+            var current = preference.GameContext ?? inGameContext;
+
+            if (string.Equals(current, inGameContext, StringComparison.Ordinal))
             {
-                Text = "Read from this game. Edit it and it will be written back on the next set-up.",
+                // Said only while it is true: once edited, the value shown is theirs, and saying
+                // where it came from would describe a state that no longer exists.
+                if (preference.GameContext is null && inGameContext is not null)
+                {
+                    contextActions.Children.Add(new TextBlock
+                    {
+                        Text = "Read from this game.",
+                        FontSize = 11,
+                        TextWrapping = TextWrapping.Wrap,
+                        Foreground = Brush("TextMuted"),
+                    });
+                }
+
+                return;
+            }
+
+            // Nowhere to write it: the game has no loader we recognise, so no config.json we can
+            // name. Kept, not lost — it goes in on the next set-up.
+            if (descriptor is null) return;
+
+            var save = new Button
+            {
+                Content = "Save this into the game",
+                FontSize = 12,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                IsEnabled = !_running.IsRunning(report.Game),
+            };
+
+            save.Click += async (_, _) =>
+            {
+                Busy(true, "Saving...");
+
+                // One key, on its own. Going through Apply would write the language, the backend
+                // and the update preferences at the same time — none of which this button names.
+                var result = new GameConfigWriter().ApplyOne(
+                    report.Game.Path, descriptor, GameConfigWriter.GameContextKey,
+                    current, "what this game is about");
+
+                Busy(false, "Ready.");
+
+                if (!result.Written)
+                {
+                    await MessageAsync("Nothing was changed",
+                        $"It could not be written ({result.Failure}).");
+                    return;
+                }
+
+                inGameContext = current;
+                RefreshContext();
+                Refresh();
+            };
+
+            contextActions.Children.Add(save);
+            contextActions.Children.Add(new TextBlock
+            {
+                Text = inGameContext is null
+                    ? "This game has nothing written for it yet."
+                    : $"This game currently says: {inGameContext}",
                 FontSize = 11,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("TextMuted"),
-            };
+            });
         }
 
-        // The first fill, which also settles whether the two above start out available.
+        yield return contextActions;
+
+        // The first fill, which also settles whether the boxes above start out available.
+        RefreshContext();
         Refresh();
     }
 
@@ -3388,7 +3461,11 @@ public partial class MainWindow : Window
     /// </summary>
     private IEnumerable<Control> ConfigDrift(GameReport report, GamePreference preference)
     {
-        if (!preference.ApplyModDefaults) yield break;
+        // ⚠ Shown whether or not the box above is ticked, and it used to be hidden when it was not.
+        // That was backwards: what this game holds against what the defaults say is precisely the
+        // information somebody needs in order to decide whether to tick it. Hiding it left the
+        // choice to be made blind, and an unticked box looking like a game with nothing to settle.
+        // Only the offer to write is withheld — see the foot of this block.
         if (!_settings.Current.Reviewed) yield break;
 
         var descriptor = InstalledDescriptor(report);
@@ -3438,17 +3515,36 @@ public partial class MainWindow : Window
             }
         }
 
-        var apply = new Button
+        // The list is information; the button is an offer. Unticked, the information still stands
+        // — it is what the decision is made on — but there is nothing to offer, because writing
+        // the defaults into this game is exactly what was declined. Said in words rather than by
+        // a greyed button: "unavailable" would leave somebody hunting for the reason.
+        if (preference.ApplyModDefaults)
         {
-            Content = "Apply my defaults to this game",
-            FontSize = 12,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            IsEnabled = !_running.IsRunning(report.Game),
-            Margin = new Avalonia.Thickness(0, 6, 0, 0),
-        };
+            var apply = new Button
+            {
+                Content = "Apply my defaults to this game",
+                FontSize = 12,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                IsEnabled = !_running.IsRunning(report.Game),
+                Margin = new Avalonia.Thickness(0, 6, 0, 0),
+            };
 
-        apply.Click += async (_, _) => await ApplyDefaultsAsync(report, descriptor, preference);
-        body.Children.Add(apply);
+            apply.Click += async (_, _) => await ApplyDefaultsAsync(report, descriptor, preference);
+            body.Children.Add(apply);
+        }
+        else
+        {
+            body.Children.Add(new TextBlock
+            {
+                Text = "This game keeps all of it: \"Use my mod defaults here\" is unticked, so "
+                     + "nothing above is written into it. Tick it to be able to apply them.",
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Avalonia.Thickness(0, 6, 0, 0),
+                Foreground = Brush("TextSecondary"),
+            });
+        }
 
         yield return new Border
         {

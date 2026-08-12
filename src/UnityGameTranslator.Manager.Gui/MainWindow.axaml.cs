@@ -2934,6 +2934,29 @@ public partial class MainWindow : Window
     /// bring a loader up to date was to reinstall the mod at the same time, and neither version
     /// could be shown next to the other.
     /// </summary>
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // THE GAME CARD'S CONVENTIONS — decided once, here, because they were being decided per
+    // section. The loader hid a button the mod greyed out for the same reason, and a reader had
+    // to learn each section separately to know whether an absent control meant "never" or "not
+    // now". Every section below obeys these three rules.
+    //
+    //  · GREYED — the act belongs here and will become possible again. The reason is said next
+    //    to it, and the way out is within reach: close the game, set up a translator. A greyed
+    //    button is a promise for later.
+    //
+    //  · ABSENT — the act has nothing to work on in this situation: no receipt to remove, no
+    //    loader that is ours, no eligible loader at all. It is replaced by a sentence whenever
+    //    its absence could be read as something having gone wrong.
+    //
+    //  · ONE "primary" PER SECTION — the section's own verb, and only it. The one-click is not
+    //    dressed as a fourth: it stands apart by living in the fixed bar at the bottom.
+    //
+    // ⚠ A running game GREYS anything that writes into it — install, remove, apply — because the
+    // files come back the moment it closes. It does NOT grey "Play": there the running game is
+    // not an obstacle, it is the act already done, and the only thing a second press could do is
+    // start a second copy. Same fact, two readings, and the rule above is what tells them apart.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+
     private Control LoaderSection(GameReport report)
     {
         var panel = new StackPanel { Spacing = 8 };
@@ -3034,13 +3057,10 @@ public partial class MainWindow : Window
         // while the plugin stays would leave a mod loading into nothing, which is the very order
         // this card exists to protect. That dialogue is where the three levels are chosen
         // together, and it already refuses a loader that is not ours.
-        if (report.InstalledLoader is { InstalledByUs: true })
+        if (report.InstalledLoader is { InstalledByUs: true }
+            && ReceiptStore.Read(report.Game.Path) is not null)
         {
-            var remove = new Button
-            {
-                Content = "Uninstall...",
-                IsEnabled = ReceiptStore.Read(report.Game.Path) is not null && !running,
-            };
+            var remove = new Button { Content = "Uninstall...", IsEnabled = !running };
 
             remove.Click += async (_, _) => await RunUninstallAsync(report);
             loaderButtons.Children.Add(remove);
@@ -3152,13 +3172,15 @@ public partial class MainWindow : Window
             buttons.Children.Add(primary);
         }
 
-        var uninstall = new Button
+        // Absent when there is no receipt: nothing here was installed by us, so there is nothing
+        // to offer removing. It used to be greyed, while the loader's twin was hidden — the same
+        // situation dressed two ways on one screen. See the conventions above.
+        if (ReceiptStore.Read(report.Game.Path) is not null)
         {
-            Content = "Uninstall...",
-            IsEnabled = ReceiptStore.Read(report.Game.Path) is not null && !running,
-        };
-        uninstall.Click += async (_, _) => await RunUninstallAsync(report);
-        buttons.Children.Add(uninstall);
+            var uninstall = new Button { Content = "Uninstall...", IsEnabled = !running };
+            uninstall.Click += async (_, _) => await RunUninstallAsync(report);
+            buttons.Children.Add(uninstall);
+        }
 
         // ⚠ Settings first, acts last — and it was the other way round. The buttons sat between
         // the version and a block of preferences, so "In this game" read as an afterthought

@@ -2848,6 +2848,7 @@ public partial class MainWindow : Window
         }
 
         foreach (var control in TranslationVerb(report)) panel.Children.Add(control);
+        foreach (var control in TranslationPlanning(report)) panel.Children.Add(control);
 
         // Counted over everything published, not over the alternatives. Excluding the one already
         // installed made the card announce "none in French" to the very person who wrote the only
@@ -3253,10 +3254,13 @@ public partial class MainWindow : Window
             driftHost.Children.Clear();
             foreach (var control in ConfigDrift(report, preference)) driftHost.Children.Add(control);
 
-            // Untick "use my defaults" and this game's config.json is not touched at all — so the
-            // two settings below it cannot be applied either, since they are written into that
-            // same file. Greyed rather than hidden: they keep the values they carry, and their
-            // reason for being unavailable is one hover away.
+            // Untick "use my defaults" and one click leaves this game's config.json alone — so a
+            // setting that only travels with the defaults cannot travel either. Greyed rather than
+            // hidden: it keeps the value it carries, and the reason is one hover away.
+            //
+            // ⚠ Only the hotkey remains here. What a game translates with, and what it is about,
+            // moved to the Translations section — they describe the translation, not the plugin,
+            // and greying them alongside the defaults claimed a dependency they never had.
             foreach (var control in dependents)
             {
                 control.IsEnabled = preference.ApplyModDefaults;
@@ -3345,227 +3349,8 @@ public partial class MainWindow : Window
             };
         }
 
-        // ⚠ Shown even with no backend, greyed, rather than hidden. Hidden, the one question that
-        // matters here — "will this game actually translate anything?" — had no answer on the
-        // screen devoted to it: somebody who never configured a backend saw a card that said
-        // nothing about it and a game that then translated nothing.
-        var backend = TranslationBackendLabel(settings);
-
-        var start = new CheckBox
-        {
-            Content = "Start translating when the game launches",
-            IsChecked = backend is not null && (preference.StartTranslation ?? settings.EnableAi),
-            FontSize = 12,
-            IsEnabled = backend is not null,
-
-            // Kept on the control so Refresh can put it back when the box becomes available
-            // again — a tip replaced by the unavailable one and never restored would leave the
-            // setting explained by the reason it used to be greyed out.
-            Tag = "Untick to install everything now and start translating later, from inside "
-                + "the game. Nothing is lost: the server, the model and the key stay configured.",
-        };
-
-        start.IsCheckedChanged += (_, _) =>
-        {
-            preference.StartTranslation = start.IsChecked == true;
-            _preferences.Set(report.Game.Path, preference);
-            Refresh();
-        };
-
-        // Only a dependent while there IS a backend: otherwise its own reason for being greyed
-        // must win, and Refresh would overwrite it with the defaults one.
-        if (backend is not null) dependents.Add(start);
-        yield return start;
-
-        // What it would translate WITH, next to the switch that starts it. It was nowhere on this
-        // card, so the box read as "translate this game" when it means "run the thing configured
-        // in Mod defaults" — and which thing that is decides whether it costs money.
-        if (backend is not null)
-        {
-            yield return new TextBlock
-            {
-                Text = backend,
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Avalonia.Thickness(24, 0, 0, 0),
-                Foreground = Brush("TextMuted"),
-            };
-        }
-        else
-        {
-            var missing = new StackPanel { Spacing = 4, Margin = new Avalonia.Thickness(24, 0, 0, 0) };
-
-            missing.Children.Add(new TextBlock
-            {
-                Text = "No translator is set up, so nothing can be translated as you play. "
-                     + "Community translations still work — they are already written.",
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = Brush("TextMuted"),
-            });
-
-            // A way forward rather than a statement of fact: the setting lives in another window,
-            // and saying "it is missing" without opening the door is how somebody goes looking.
-            var configure = new Button
-            {
-                Content = "Set up a translator...",
-                FontSize = 12,
-                HorizontalAlignment = HorizontalAlignment.Left,
-            };
-
-            configure.Click += async (_, _) => await OpenSettingsAsync();
-            missing.Children.Add(configure);
-
-            yield return missing;
-        }
-
-        // The one wizard question whose answer cannot be shared between two games, so the one
-        // that has no business on the defaults screen. Saved when the field loses focus rather
-        // than on every keystroke: a file written per character is a file written a hundred times
-        // for one sentence.
-        // ⚠ Pre-filled from the game when it already carries one. This is the mod's own
-        // game_context, which somebody may well have written from inside the options panel while
-        // playing — showing an empty box over an answer that exists invites retyping it, and an
-        // empty box that stays empty cannot be told apart from "nothing was ever asked".
-        var inGameContext = GameConfigWriter.InGameValue(
-            report.Game.Path, descriptor, GameConfigWriter.GameContextKey);
-
-        var shownContext = preference.GameContext ?? inGameContext;
-
-        yield return new TextBlock
-        {
-            Text = "What is this game about?    (optional)",
-            FontSize = 12,
-            Margin = new Avalonia.Thickness(0, 10, 0, 0),
-            Foreground = Brush("TextSecondary"),
-        };
-
-        yield return new TextBlock
-        {
-            Text = "Sent to the AI with every line it translates, so it reaches for the right "
-                 + "words: a game about starships and one about Roman legions do not share a "
-                 + "vocabulary. Left empty, it translates without it.",
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Brush("TextMuted"),
-        };
-
-        var context = new TextBox
-        {
-            Text = shownContext ?? "",
-            Watermark = "Genre, tone, setting - a sentence is enough",
-            FontSize = 12,
-            AcceptsReturn = true,
-            TextWrapping = TextWrapping.Wrap,
-            MaxHeight = 84,
-            Margin = new Avalonia.Thickness(0, 4, 0, 0),
-            Tag = "Sent to the AI with every line of this game, so it knows what it is translating.",
-        };
-
-        // Declared before the handler that fills it: a local function reaching a variable declared
-        // further down is a use-before-assignment as far as the compiler is concerned.
-        var contextActions = new StackPanel { Spacing = 4, Margin = new Avalonia.Thickness(0, 4, 0, 0) };
-
-        context.LostFocus += (_, _) =>
-        {
-            var written = string.IsNullOrWhiteSpace(context.Text) ? null : context.Text.Trim();
-
-            // Against what is DISPLAYED, not against what is stored: a value read from the game
-            // and left alone is not an edit, and storing it here would turn merely opening the
-            // card into a decision to write that sentence back into the game.
-            if (written == (preference.GameContext ?? inGameContext)) return;
-
-            preference.GameContext = written;
-            _preferences.Set(report.Game.Path, preference);
-            RefreshContext();
-            Refresh();
-        };
-
-        // ⚠ Deliberately NOT a dependent, and it was one. This belongs to the GAME, not to the
-        // defaults — it is the one wizard question whose answer cannot be shared between two games.
-        // Greying it alongside them said the opposite: that describing this game required agreeing
-        // to have its language and backend overwritten too, and it left no way at all to write a
-        // sentence about a game whose configuration one had deliberately chosen to leave alone.
-        yield return context;
-
-        // Its own button, for the same reason. "Apply my defaults" writes the defaults; this value
-        // is not one of them, so it needs somewhere to go that does not drag them along.
-        void RefreshContext()
-        {
-            contextActions.Children.Clear();
-
-            var current = preference.GameContext ?? inGameContext;
-
-            if (string.Equals(current, inGameContext, StringComparison.Ordinal))
-            {
-                // Said only while it is true: once edited, the value shown is theirs, and saying
-                // where it came from would describe a state that no longer exists.
-                if (preference.GameContext is null && inGameContext is not null)
-                {
-                    contextActions.Children.Add(new TextBlock
-                    {
-                        Text = "Read from this game.",
-                        FontSize = 11,
-                        TextWrapping = TextWrapping.Wrap,
-                        Foreground = Brush("TextMuted"),
-                    });
-                }
-
-                return;
-            }
-
-            // Nowhere to write it: the game has no loader we recognise, so no config.json we can
-            // name. Kept, not lost — it goes in on the next set-up.
-            if (descriptor is null) return;
-
-            var save = new Button
-            {
-                Content = "Save this into the game",
-                FontSize = 12,
-                HorizontalAlignment = HorizontalAlignment.Left,
-                IsEnabled = !_running.IsRunning(report.Game),
-            };
-
-            save.Click += async (_, _) =>
-            {
-                Busy(true, "Saving...");
-
-                // One key, on its own. Going through Apply would write the language, the backend
-                // and the update preferences at the same time — none of which this button names.
-                var result = new GameConfigWriter().ApplyOne(
-                    report.Game.Path, descriptor, GameConfigWriter.GameContextKey,
-                    current, "what this game is about");
-
-                Busy(false, "Ready.");
-
-                if (!result.Written)
-                {
-                    await MessageAsync("Nothing was changed",
-                        $"It could not be written ({result.Failure}).");
-                    return;
-                }
-
-                inGameContext = current;
-                RefreshContext();
-                Refresh();
-            };
-
-            contextActions.Children.Add(save);
-            contextActions.Children.Add(new TextBlock
-            {
-                Text = inGameContext is null
-                    ? "This game has nothing written for it yet."
-                    : $"This game currently says: {inGameContext}",
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = Brush("TextMuted"),
-            });
-        }
-
-        yield return contextActions;
 
         // The first fill, which also settles whether the boxes above start out available.
-        RefreshContext();
         Refresh();
     }
 
@@ -4376,6 +4161,307 @@ public partial class MainWindow : Window
             loader: report.InstalledLoader is null, plugin: true);
 
         await RunInstallAsync(report, new InstallEngine(_platform, _catalog), plan);
+    }
+
+    /// <summary>
+    /// What this game's translation is meant to become, and the two settings that follow from it.
+    ///
+    /// ⚠ These lived under the mod's card, and neither belongs there. "Start translating" decides
+    /// whether a translation is MADE while playing; "what is this game about" is the context sent
+    /// to the translator and has no effect at all without one. Both describe the translation, not
+    /// the plugin — and they sat above the very section that is about translations, so somebody
+    /// who only wanted a community file had to walk through them first.
+    ///
+    /// ⚠ The posture DECIDES NOTHING. It proposes those two settings, which stay editable beside
+    /// it, so changing it never touches a game: the buttons act, with the warnings they carry.
+    /// That is what makes it safe to switch after an install rather than a way to lose a file.
+    /// </summary>
+    private IEnumerable<Control> TranslationPlanning(GameReport report)
+    {
+        var settings = _settings.Current;
+        var preference = _preferences.Read(report.Game.Path);
+        var descriptor = InstalledDescriptor(report);
+
+        var postures = SituationReader.PosturesFor(report, _settings.ResolveTargetLanguage());
+        var posture = preference.Posture ?? settings.DefaultPosture;
+
+        // Nothing published means "Use" cannot be honoured, whatever was stored — a preference
+        // from another day must not survive as a choice the catalogue can no longer answer.
+        if (!postures.Contains(posture)) posture = postures[0];
+
+        yield return new Border
+        {
+            Height = 1,
+            Background = Brush("BorderSubtle"),
+            Margin = new Avalonia.Thickness(0, 10, 0, 6),
+        };
+
+        yield return new TextBlock
+        {
+            Text = "What do you want for this game?",
+            FontSize = 12,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = Brush("TextSecondary"),
+        };
+
+        // ⚠ Rebuilt on its own rather than through the whole card: redrawing a section from inside
+        // one of its own controls destroys that control while its event is still running and takes
+        // the keyboard focus with it.
+        var planHost = new StackPanel { Spacing = 4 };
+
+        var group = $"posture-{report.Game.Path.GetHashCode()}";
+
+        foreach (var option in postures)
+        {
+            var choice = new RadioButton
+            {
+                Content = SituationReader.Describe(option),
+                GroupName = group,
+                IsChecked = option == posture,
+                FontSize = 12,
+            };
+
+            var chosen = option;
+            choice.IsCheckedChanged += (_, _) =>
+            {
+                if (choice.IsChecked != true) return;
+
+                preference.Posture = chosen;
+
+                // What the posture MEANS, written into the two settings it governs. Written here
+                // and not read on the fly, so they remain what somebody can then override one by
+                // one — the posture is a starting point, not a lock.
+                preference.InstallTranslation = chosen != Posture.Start;
+                preference.StartTranslation = chosen != Posture.Use;
+
+                _preferences.Set(report.Game.Path, preference);
+
+                RefreshPlan();
+                ShowActionBar(report);
+            };
+
+            yield return choice;
+        }
+
+        yield return planHost;
+
+        void RefreshPlan()
+        {
+            planHost.Children.Clear();
+            foreach (var control in PlanDetail(report, preference, descriptor, RefreshPlan))
+                planHost.Children.Add(control);
+        }
+
+        RefreshPlan();
+    }
+
+    /// <summary>
+    /// What this game is about, in the words handed to the translator — the mod's game_context.
+    ///
+    /// The one wizard question whose answer cannot be shared between two games, which is why it is
+    /// per game. It belongs to the GAME rather than to the defaults, so it is never greyed with
+    /// them and it has its own button: saving a sentence must not carry the language and the
+    /// backend in with it.
+    /// </summary>
+    private IEnumerable<Control> GameContextField(GameReport report, GamePreference preference,
+                                                  LoaderDescriptor? descriptor, Action refresh)
+    {
+        // ⚠ Pre-filled from the game when it already carries one — somebody may well have written
+        // it from inside the mod's options while playing. An empty box over an answer that exists
+        // invites retyping it, and cannot be told apart from "nothing was ever asked".
+        var inGameContext = GameConfigWriter.InGameValue(
+            report.Game.Path, descriptor, GameConfigWriter.GameContextKey);
+
+        yield return new TextBlock
+        {
+            Text = "What is this game about?    (optional)",
+            FontSize = 12,
+            Margin = new Avalonia.Thickness(0, 10, 0, 0),
+            Foreground = Brush("TextSecondary"),
+        };
+
+        yield return new TextBlock
+        {
+            Text = "Sent with every line it translates, so it reaches for the right words: a game "
+                 + "about starships and one about Roman legions do not share a vocabulary.",
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("TextMuted"),
+        };
+
+        var context = new TextBox
+        {
+            Text = (preference.GameContext ?? inGameContext) ?? "",
+            Watermark = "Genre, tone, setting - a sentence is enough",
+            FontSize = 12,
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.Wrap,
+            MaxHeight = 84,
+            Margin = new Avalonia.Thickness(0, 4, 0, 0),
+        };
+
+        var actions = new StackPanel { Spacing = 4, Margin = new Avalonia.Thickness(0, 4, 0, 0) };
+
+        // Saved when the field loses focus rather than on every keystroke: a file written per
+        // character is a file written a hundred times for one sentence.
+        context.LostFocus += (_, _) =>
+        {
+            var written = string.IsNullOrWhiteSpace(context.Text) ? null : context.Text.Trim();
+
+            // Against what is DISPLAYED: a value read from the game and left alone is not an edit,
+            // and storing it would turn merely opening the card into a decision to write it back.
+            if (written == (preference.GameContext ?? inGameContext)) return;
+
+            preference.GameContext = written;
+            _preferences.Set(report.Game.Path, preference);
+            refresh();
+        };
+
+        yield return context;
+
+        var current = preference.GameContext ?? inGameContext;
+
+        if (string.Equals(current, inGameContext, StringComparison.Ordinal))
+        {
+            if (preference.GameContext is null && inGameContext is not null)
+            {
+                actions.Children.Add(new TextBlock
+                {
+                    Text = "Read from this game.",
+                    FontSize = 11,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = Brush("TextMuted"),
+                });
+            }
+        }
+        else if (descriptor is not null)
+        {
+            var save = new Button
+            {
+                Content = "Save this into the game",
+                FontSize = 12,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                IsEnabled = !_running.IsRunning(report.Game),
+            };
+
+            save.Click += async (_, _) =>
+            {
+                Busy(true, "Saving...");
+
+                // One key, on its own — going through Apply would write the language, the backend
+                // and the update preferences in the same breath.
+                var result = new GameConfigWriter().ApplyOne(
+                    report.Game.Path, descriptor, GameConfigWriter.GameContextKey,
+                    current, "what this game is about");
+
+                Busy(false, "Ready.");
+
+                if (!result.Written)
+                {
+                    await MessageAsync("Nothing was changed",
+                        $"It could not be written ({result.Failure}).");
+                    return;
+                }
+
+                refresh();
+            };
+
+            actions.Children.Add(save);
+            actions.Children.Add(new TextBlock
+            {
+                Text = inGameContext is null
+                    ? "This game has nothing written for it yet."
+                    : $"This game currently says: {inGameContext}",
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextMuted"),
+            });
+        }
+
+        yield return actions;
+    }
+
+    /// <summary>
+    /// The consequence of the posture, and the two settings that carry it out.
+    /// </summary>
+    private IEnumerable<Control> PlanDetail(GameReport report, GamePreference preference,
+                                            LoaderDescriptor? descriptor, Action refresh)
+    {
+        var settings = _settings.Current;
+        var posture = preference.Posture ?? settings.DefaultPosture;
+        var backend = TranslationBackendLabel(settings);
+
+        yield return new TextBlock
+        {
+            Text = SituationReader.Consequence(posture),
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Avalonia.Thickness(24, 0, 0, 6),
+            Foreground = Brush("TextMuted"),
+        };
+
+        // ⚠ Greyed with no backend rather than hidden: hiding it left the one question this
+        // section exists to answer — will this game actually translate anything — unanswered.
+        var start = new CheckBox
+        {
+            Content = "Translate while I play",
+            IsChecked = backend is not null && (preference.StartTranslation ?? settings.EnableAi),
+            IsEnabled = backend is not null,
+            FontSize = 12,
+        };
+
+        start.IsCheckedChanged += (_, _) =>
+        {
+            preference.StartTranslation = start.IsChecked == true;
+            _preferences.Set(report.Game.Path, preference);
+            ShowActionBar(report);
+        };
+
+        yield return start;
+
+        if (backend is not null)
+        {
+            // What it would translate WITH. Which service it is decides whether it costs money,
+            // so it cannot stay implicit behind a switch.
+            yield return new TextBlock
+            {
+                Text = backend,
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Avalonia.Thickness(24, 0, 0, 0),
+                Foreground = Brush("TextMuted"),
+            };
+        }
+        else
+        {
+            yield return new TextBlock
+            {
+                Text = "No translator is set up, so nothing can be translated as you play. "
+                     + "A published translation still works — it is already written.",
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Avalonia.Thickness(24, 0, 0, 0),
+                Foreground = Brush("TextMuted"),
+            };
+
+            var configure = new Button
+            {
+                Content = "Set up a translator...",
+                FontSize = 12,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Avalonia.Thickness(24, 2, 0, 0),
+            };
+
+            configure.Click += async (_, _) => await OpenSettingsAsync();
+            yield return configure;
+        }
+
+        // Only where it can do something: it is the context handed to a translator, and without
+        // one it is a box that changes nothing. Kept under the switch that gives it its purpose.
+        if (backend is null) yield break;
+
+        foreach (var control in GameContextField(report, preference, descriptor, refresh))
+            yield return control;
     }
 
     /// <summary>

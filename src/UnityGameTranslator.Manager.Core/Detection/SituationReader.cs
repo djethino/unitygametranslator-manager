@@ -156,7 +156,7 @@ public static class SituationReader
     }
 
     /// <summary>
-    /// Postures offered for a game, best-first. All four stay reachable whenever a translation
+    /// Postures offered for a game, best-first. All of them stay reachable whenever a translation
     /// exists — including a complete one, which is exactly the case where assuming would shut
     /// the door on someone willing to finish what an author could not reach.
     /// </summary>
@@ -165,18 +165,34 @@ public static class SituationReader
         var hasTranslation = report.OnlineTranslations
             .Any(t => Languages.Matches(t.TargetLanguage, targetLanguage));
 
+        // Nothing published means there is nothing to take, so the choice collapses to the only
+        // honest one. Offering "use it" over an empty catalogue would be a button for a file that
+        // does not exist.
         return hasTranslation
-            ? new[] { Posture.Use, Posture.Contribute, Posture.Fork, Posture.Start }
+            ? new[] { Posture.Use, Posture.Complete, Posture.Start }
             : new[] { Posture.Start };
     }
 
     public static string Describe(Posture posture) => posture switch
     {
-        Posture.Use => "Use it as it is",
-        Posture.Contribute => "Use it and offer my corrections back",
-        Posture.Fork => "Take it as a starting point, as my own version",
-        Posture.Start => "Start a translation for this game",
+        Posture.Use => "Use the published translation as it is",
+        Posture.Complete => "Use it, and translate what it does not cover",
+        Posture.Start => "Start this game's translation from nothing",
         _ => posture.ToString(),
+    };
+
+    /// <summary>
+    /// What the posture means for this game, in the consequence rather than the intention — the
+    /// sentence somebody reads to check they picked the right one.
+    /// </summary>
+    public static string Consequence(Posture posture) => posture switch
+    {
+        Posture.Use => "Text the translation does not cover stays in the game's own language.",
+        Posture.Complete => "Whatever it does not cover is translated as you meet it, and joins "
+                          + "the file as machine work you can review later.",
+        Posture.Start => "Nothing is downloaded. The mod captures the game's text as you play, "
+                       + "for a translator to fill in or for you to write yourself.",
+        _ => "",
     };
 
     /// <summary>

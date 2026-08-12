@@ -11,18 +11,21 @@ namespace UnityGameTranslator.Manager.Core.Model;
 /// game is unknowable, so a game marked complete can still be missing whatever its author never
 /// walked past. All four remain offered, including on a complete translation.
 /// </summary>
+/// ⚠ **Three, not four, and the two that left were not dropped by accident.** "Contribute" and
+/// "fork" are decisions taken when PUBLISHING, inside the mod: they choose what a lineage does with
+/// what you wrote. This tool writes config.json, which has no key for either — so offering them
+/// here would have produced exactly the same configuration as "complete it", three buttons for one
+/// outcome. What this tool can honestly settle is whether a translation is taken, and whether one
+/// is being made while you play.
 public enum Posture
 {
-    /// <summary>Play with what exists. Captures stay local.</summary>
+    /// <summary>Take the published translation and read it. Nothing is generated while playing.</summary>
     Use,
 
-    /// <summary>Play and give back: a branch of the existing translation.</summary>
-    Contribute,
+    /// <summary>Take it, and let the translator fill in whatever it does not cover.</summary>
+    Complete,
 
-    /// <summary>Take it as a starting point and carry it as my own lineage.</summary>
-    Fork,
-
-    /// <summary>Start a translation for this game.</summary>
+    /// <summary>Nobody else's file. The translation of this game starts here.</summary>
     Start,
 }
 

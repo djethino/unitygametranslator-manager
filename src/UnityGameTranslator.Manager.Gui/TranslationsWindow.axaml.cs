@@ -71,17 +71,15 @@ public sealed class TranslationsWindow : Window
     public bool Changed { get; private set; }
 
     /// <summary>
-    /// Where a choice made here is remembered, and whether it can be acted on at all.
+    /// Where a choice made here is remembered — which is all this window does with it.
     ///
-    /// ⚠ With no mod installed there is NOWHERE to write: the loader's folder does not exist yet,
-    /// so a download would land beside a game that cannot read it. The window then offers to
-    /// SELECT rather than to take, and the one-click installs what was selected. Discovering the
-    /// choice before the means to use it is the ordinary order of things — somebody looks at what
-    /// exists for their game before they set anything up.
+    /// ⚠ Nothing is written into a game from here, and that is the rule rather than a limitation
+    /// of the moment. Choosing needs the translations side by side; acting needs what the game
+    /// already carries, which only its card knows. This window used to do both, so the same button
+    /// meant "select" or "download now" depending on the state of the game behind it, and a
+    /// replacement was weighed in two places with two sets of warnings.
     /// </summary>
     private readonly GamePreferences _preferences;
-
-    private readonly bool _canWrite;
 
     public TranslationsWindow(GameReport report, LoaderDescriptor loader, SettingsStore settings,
                               AccountLineages lineages, GamePreferences preferences)
@@ -91,7 +89,6 @@ public sealed class TranslationsWindow : Window
         _settings = settings;
         _lineages = lineages;
         _preferences = preferences;
-        _canWrite = report.InstalledPluginVersion is not null;
 
         Title = $"Translations for {report.Game.Name}";
         Width = 860;
@@ -503,20 +500,22 @@ public sealed class TranslationsWindow : Window
             });
         }
 
-        // ⚠ A different verb when there is nowhere to write yet, because it is a different act.
-        // "Use this one" on a game with no mod installed would download a file into a folder the
-        // game cannot read, and report success. Selecting is what can honestly be done at that
-        // moment, and the button under the game's card is what carries it out.
+        // ⚠ This window SELECTS. It does not write, and it used to — "Use this one" downloaded on
+        // the spot whenever a mod happened to be installed, so the same screen meant two different
+        // things depending on the state of the game behind it, and taking a translation happened
+        // in two places with two sets of warnings.
+        //
+        // One rule now: choosing is done where translations can be compared, acting is done on the
+        // game's card next to everything else that acts. The card is also the only place that can
+        // weigh a replacement against what the game already carries.
         var chosen = _preferences.Read(_report.Game.Path).TranslationId == translation.Id;
 
         var take = new Button
         {
-            Content = _canWrite
-                ? installed ? "Download again" : "Use this one"
-                : chosen ? "Selected" : "Select",
+            Content = chosen ? "Selected" : "Select",
             FontSize = 12,
             Classes = { "primary" },
-            IsEnabled = _canWrite || !chosen,
+            IsEnabled = !chosen,
             HorizontalAlignment = HorizontalAlignment.Left,
             Margin = new Thickness(0, 8, 0, 0),
         };
@@ -528,21 +527,14 @@ public sealed class TranslationsWindow : Window
             IsVisible = false,
         };
 
-        if (!_canWrite && chosen)
+        if (chosen)
         {
-            Show(outcome, "This is the one the game will be set up with.", "StatusSuccess");
+            Show(outcome, installed
+                ? "This is the one in the game."
+                : "Chosen. The game's card is where you install it.", "StatusSuccess");
         }
 
-        take.Click += async (_, _) =>
-        {
-            if (_canWrite)
-            {
-                await TakeAsync(translation, take, outcome);
-                return;
-            }
-
-            Select(translation, outcome);
-        };
+        take.Click += (_, _) => Select(translation, outcome);
 
         body.Children.Add(take);
         body.Children.Add(outcome);
@@ -633,155 +625,6 @@ public sealed class TranslationsWindow : Window
         // from the preference, so nothing is lost — and leaving the old cards stale would be worse
         // than losing a line of text.
         Redraw();
-    }
-
-    /// <summary>
-    /// Takes a translation: asks first when something stands to be replaced, then writes.
-    ///
-    /// The confirmation NAMES what is at stake rather than asking "are you sure?". Someone who is
-    /// told "42 lines you have not uploaded anywhere" can decide; someone asked "are you sure"
-    /// can only guess, and will click yes.
-    /// </summary>
-    private async Task TakeAsync(OnlineTranslation translation, Button button, TextBlock outcome)
-    {
-        if (!await ConfirmReplacementAsync(translation)) return;
-
-        button.IsEnabled = false;
-        button.Content = "Downloading...";
-
-        // The token is sent when we have one: the endpoint is public for anything published, and
-        // only a branch needs the caller identified. Today there is none — signing in is not built
-        // yet — so this is simply null and public translations work regardless.
-        var json = await _api.DownloadAsync(translation.Id, ApiToken());
-
-        if (json is null)
-        {
-            button.IsEnabled = true;
-            button.Content = "Use this one";
-            Show(outcome, _api.LastError ?? "The download failed.", "StatusError");
-            return;
-        }
-
-        var result = new TranslationInstaller()
-            .Install(_report.Game.Path, _loader, json, translation.FileHash);
-
-        button.IsEnabled = true;
-        button.Content = "Download again";
-
-        if (!result.Written)
-        {
-            Show(outcome, result.Failure ?? "It could not be written.", "StatusError");
-            return;
-        }
-
-        Changed = true;
-
-        // The file is in place; the game may still be aimed elsewhere. Asked after the download
-        // rather than before, because it only matters once the file exists — and because saying
-        // no must leave a working translation behind, not a cancelled operation.
-        await OfferToAlignGameAsync(translation);
-
-        var message = "Installed. The game will use it next time you launch it.";
-        if (result.BackupPath is not null)
-        {
-            message += $" Your previous file was kept in {TranslationInstaller.BackupFolderName}/"
-                     + $"{Path.GetFileName(result.BackupPath)}.";
-        }
-
-        Show(outcome, message, "StatusSuccess");
-    }
-
-    /// <summary>
-    /// Asks before replacing, in terms of what is actually lost. True when we may go ahead.
-    ///
-    /// Nothing installed means nothing to ask about. And when the file that is there is provably
-    /// the server's own, still untouched, the wording changes — but the backup does not: that
-    /// proof rests on metadata that is sometimes missing.
-    /// </summary>
-    private async Task<bool> ConfirmReplacementAsync(OnlineTranslation translation)
-    {
-        var local = _report.LocalTranslation;
-        if (local is null) return true;
-
-        var recoverable = TranslationInstaller.LooksRecoverableOnline(local, translation);
-
-        var what = local.LocalChanges > 0
-            ? $"You have {local.LocalChanges} line(s) here that exist nowhere else — they have "
-              + "never been uploaded. Replacing this file puts them out of the game's reach."
-            : recoverable
-                ? "The file you have is the one already published, unchanged, so you can take it "
-                  + "again whenever you like."
-                : $"You have {local.EntryCount} line(s) here. They will be replaced.";
-
-        var keep = "A copy is kept in the removed folder either way, so nothing is deleted.";
-
-        // Offered only when there is something to lose. Someone with no unsent work does not need
-        // to be told about merging, and a caveat shown to everyone is a caveat nobody reads.
-        var merge = local.LocalChanges > 0
-            ? Environment.NewLine + Environment.NewLine
-              + "To keep your work AND take this one, do it from the mod instead: it holds the "
-              + "original version and the screens to settle line by line. This tool never merges."
-            : "";
-
-        return await ConfirmationWindow.AskAsync(this,
-            "Replace the translation in this game?",
-            what + " " + keep + merge,
-            confirm: "Replace it");
-    }
-
-    /// <summary>
-    /// Points the game at the language of the translation just taken, with permission.
-    ///
-    /// This is the case that actually happens: no translation in your language for a Japanese or
-    /// Chinese game, so you take the English one. Without this the file lands in a game still set
-    /// to French — the mod would ignore what you just installed and carry on translating into a
-    /// language nobody provided, and nothing on screen would explain why.
-    ///
-    /// ⚠ Asked, never done silently. The target language is also what the mod uses to decide what
-    /// to translate as you play, so changing it has consequences beyond this file — and someone
-    /// running two games in two languages has a reason we cannot guess.
-    /// </summary>
-    private async Task OfferToAlignGameAsync(OnlineTranslation translation)
-    {
-        var taken = translation.TargetLanguage;
-        if (string.IsNullOrWhiteSpace(taken)) return;
-
-        // What the GAME is set to, not what this tool defaults to: they are allowed to differ, and
-        // this one is what the mod will act on.
-        var configured = LocalTranslationProbe.ReadTargetLanguage(_report.Game.Path, _loader);
-
-        // No config yet means the install path will write our own default, which already matches
-        // what this screen was filtered by. Nothing to reconcile.
-        if (configured is null) return;
-        if (string.Equals(configured, taken, StringComparison.OrdinalIgnoreCase)) return;
-
-        var agreed = await ConfirmationWindow.AskAsync(this,
-            $"Point the game at {taken}?",
-            $"This game is set to {configured}, and the translation you just took is in {taken}. "
-            + $"Left as it is, the mod will keep working towards {configured} and will not use the "
-            + $"file you just installed."
-            + Environment.NewLine + Environment.NewLine
-            + $"Switching only changes this game. Your default stays {Languages.NameOf(_settings.ResolveTargetLanguage())}.",
-            confirm: $"Use {taken} for this game");
-
-        if (!agreed) return;
-
-        // The target of the translation just taken, verbatim from what was published — the language
-        // it was uploaded under, and the only one under which the game can read it.
-        //
-        // ⚠ Its SOURCE is deliberately not carried across. That field describes the person who made
-        // the translation, not the game: nothing here can read what language a game's own text is
-        // in, and writing a guess would put "translate from English" into every prompt — and, under
-        // strict_source_language, retire every line the model judged to be in another language.
-        //
-        // ⚠ The global default is untouched, and this used to be enforced by writing into the
-        // settings object and putting it back in a finally block. It is now simply not involved:
-        // the target is an argument, and a decision about one game cannot leak into the next
-        // install because there is nothing shared left to leak through.
-        //
-        // Written through the same merge as everything else, so the game keeps its token, its
-        // secrets and every key we do not know about.
-        new GameConfigWriter().Apply(_report.Game.Path, _loader, _settings.Current, taken);
     }
 
     /// <summary>

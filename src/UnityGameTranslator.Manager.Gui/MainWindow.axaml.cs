@@ -2847,6 +2847,8 @@ public partial class MainWindow : Window
             panel.Children.Add(browse);
         }
 
+        foreach (var control in TranslationVerb(report)) panel.Children.Add(control);
+
         // Counted over everything published, not over the alternatives. Excluding the one already
         // installed made the card announce "none in French" to the very person who wrote the only
         // French one and published it — the count contradicted the line above it.
@@ -4353,6 +4355,225 @@ public partial class MainWindow : Window
             loader: report.InstalledLoader is null, plugin: true);
 
         await RunInstallAsync(report, new InstallEngine(_platform, _catalog), plan);
+    }
+
+    /// <summary>
+    /// What the card offers to do about translations: which one is selected, whether the game is
+    /// running it, and the one button that settles the difference.
+    ///
+    /// ⚠ The translations window selects; this acts. Taking a file used to happen there too, so
+    /// the same screen meant two things depending on the game behind it and a replacement was
+    /// weighed in two places. Here we can see what the game already carries, which is the only
+    /// place that comparison exists.
+    /// </summary>
+    private IEnumerable<Control> TranslationVerb(GameReport report)
+    {
+        // Nothing published for this game. The most important thing this card can say, and it said
+        // nothing at all: somebody was left looking at an empty section with no idea that the mod
+        // is meant to be used exactly like this.
+        if (report.OnlineTranslations.Count == 0)
+        {
+            yield return new TextBlock
+            {
+                Text = "No translation has been published for this game yet.",
+                FontSize = 13,
+                FontWeight = FontWeight.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Avalonia.Thickness(0, 6, 0, 0),
+                Foreground = Brush("TextPrimary"),
+            };
+
+            // ⚠ Conditional on purpose. Somebody with a translator set up needs one sentence;
+            // somebody without one needs to know the mod is still usable, or they will conclude
+            // it is not for them and stop here.
+            yield return new TextBlock
+            {
+                Text = TranslationBackendLabel(_settings.Current) is not null
+                    ? "Yours would be the first: play with the mod on and it translates as it "
+                      + "meets text, then you can publish it for everyone else."
+                    : "You can still make one without any translator. The mod captures the game's "
+                      + "text as you play, and its live editor lets you write the lines yourself, "
+                      + "in game, one at a time — that is how a translation is made by hand.",
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Avalonia.Thickness(0, 2, 0, 0),
+                Foreground = Brush("TextSecondary"),
+            };
+
+            yield break;
+        }
+
+        if (PickTranslation(report) is not { } picked) yield break;
+
+        var preference = _preferences.Read(report.Game.Path);
+        var offer = TranslationOffers.For(report, picked);
+        var author = picked.Author ?? "its author";
+
+        // ⚠ Said whenever nobody chose it. A pick made for somebody, presented as theirs, is how
+        // they end up with a translation they never agreed to — and the rule that made it (best
+        // ranked in your language) is worth naming, because it is a defensible rule rather than
+        // a coin toss.
+        if (preference.TranslationId is null)
+        {
+            yield return new TextBlock
+            {
+                Text = $"Chosen for you: the best-ranked one in {picked.TargetLanguage ?? "your language"}, "
+                     + $"by {author}. Open the list to pick another.",
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Avalonia.Thickness(0, 6, 0, 0),
+                Foreground = Brush("TextMuted"),
+            };
+        }
+
+        // Nothing to do about it: the file here IS this translation, unchanged.
+        if (offer == TranslationOffer.AlreadyInPlace)
+        {
+            yield return new TextBlock
+            {
+                Text = $"This game is running it — the one by {author}, up to date.",
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Avalonia.Thickness(0, 6, 0, 0),
+                Foreground = Brush("StatusSuccess"),
+            };
+
+            yield break;
+        }
+
+        // ⚠ The dependency, stated rather than enforced by a dead button: without the mod there is
+        // nowhere to write. The selection is kept and the one-click carries it out.
+        if (report.InstalledPluginVersion is null)
+        {
+            yield return new TextBlock
+            {
+                Text = $"Selected: the one by {author}. It goes in when the mod is installed — "
+                     + "the button at the bottom does both.",
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Avalonia.Thickness(0, 6, 0, 0),
+                Foreground = Brush("TextMuted"),
+            };
+
+            yield break;
+        }
+
+        var replacing = offer is TranslationOffer.ReplacesWork or TranslationOffer.ReplacesChoice;
+
+        // Said before the button, not only in the dialogue it opens: somebody has to know the game
+        // is not running the translation they picked WITHOUT having to press anything to find out.
+        if (replacing)
+        {
+            yield return new TextBlock
+            {
+                Text = $"This game is not running the one you selected. Yours is by {author}.",
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Avalonia.Thickness(0, 6, 0, 0),
+                Foreground = Brush("StatusWarning"),
+            };
+        }
+
+        var act = new Button
+        {
+            Content = offer switch
+            {
+                TranslationOffer.ReplacesWork or TranslationOffer.ReplacesChoice => "Replace it with this one...",
+                _ when report.LocalTranslation is not null => "Update the translation",
+                _ => "Download this translation",
+            },
+            FontSize = 12,
+            Classes = { "primary" },
+            IsEnabled = !_running.IsRunning(report.Game),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Avalonia.Thickness(0, 6, 0, 0),
+        };
+
+        act.Click += async (_, _) => await TakeSelectedTranslationAsync(report, picked, replacing);
+        yield return act;
+    }
+
+    /// <summary>
+    /// Downloads the selected translation into the game, asking first when something is at stake.
+    ///
+    /// ⚠ The warnings are the ones the one-click already shows, from the same place: a replacement
+    /// decided here and a replacement decided there must weigh the same, or the safer-looking
+    /// route becomes the one that loses work.
+    /// </summary>
+    private async Task TakeSelectedTranslationAsync(GameReport report, OnlineTranslation picked,
+                                                    bool replacing)
+    {
+        var descriptor = InstalledDescriptor(report);
+        if (descriptor is null) return;
+
+        if (replacing && report.LocalTranslation is { } local)
+        {
+            var body = new StackPanel { Spacing = 6 };
+            foreach (var warning in ReplacementWarnings(report, local, picked)) body.Children.Add(warning);
+
+            if (!await ConfirmAsync($"Replace the translation in {report.Game.Name}?", body, "Replace it"))
+                return;
+        }
+
+        Busy(true, "Downloading the translation...");
+        var message = await TakeTranslationAsync(report, descriptor, picked);
+        Busy(false, "Ready.");
+
+        await MessageAsync("Translation", message);
+
+        // Asked AFTER the file is in place, because it only matters once it exists — and because
+        // saying no must leave a working translation behind rather than a cancelled operation.
+        await OfferToAlignGameAsync(report, descriptor, picked);
+
+        await ShowSelectedAsync();
+    }
+
+    /// <summary>
+    /// Points the game at the language of the translation just taken, with permission.
+    ///
+    /// This is the case that actually happens: no translation in your language for a Japanese or
+    /// Chinese game, so you take the English one. Without this the file lands in a game still set
+    /// to French — the mod ignores what was just installed and carries on translating towards a
+    /// language nobody published, and nothing on screen explains why.
+    ///
+    /// ⚠ Asked, never done silently. The target language also decides what the mod translates as
+    /// you play, so changing it reaches beyond this file — and somebody running two games in two
+    /// languages has a reason we cannot guess.
+    ///
+    /// ⚠ Writes that ONE key. It used to go through Apply, which carried the backend and the
+    /// update preferences along with it — a language question answered by rewriting the whole
+    /// configuration.
+    /// </summary>
+    private async Task OfferToAlignGameAsync(GameReport report, LoaderDescriptor descriptor,
+                                             OnlineTranslation translation)
+    {
+        var taken = translation.TargetLanguage;
+        if (string.IsNullOrWhiteSpace(taken)) return;
+
+        // What the GAME is set to, not what this tool defaults to: they are allowed to differ, and
+        // this one is what the mod acts on.
+        var configured = LocalTranslationProbe.ReadTargetLanguage(report.Game.Path, descriptor);
+
+        if (configured is null) return;
+        if (string.Equals(configured, taken, StringComparison.OrdinalIgnoreCase)) return;
+
+        var agreed = await ConfirmAsync($"Point the game at {taken}?",
+            $"This game is set to {configured}, and the translation you just took is in {taken}. "
+            + $"Left as it is, the mod will keep working towards {configured} and will not use the "
+            + "file you just installed."
+            + Environment.NewLine + Environment.NewLine
+            + $"Switching only changes this game. Your default stays "
+            + $"{Languages.NameOf(_settings.ResolveTargetLanguage())}.",
+            $"Use {taken} for this game");
+
+        if (!agreed) return;
+
+        // ⚠ The SOURCE language is deliberately not carried across. That field describes the person
+        // who made the translation, not the game: nothing here can read what language a game's own
+        // text is in, and writing a guess would put "translate from English" into every prompt —
+        // and, under strict_source_language, retire every line judged to be in another language.
+        new GameConfigWriter().ApplyOne(report.Game.Path, descriptor,
+            GameConfigWriter.TargetLanguageKey, taken, "language");
     }
 
     /// <summary>

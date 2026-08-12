@@ -74,6 +74,12 @@ public sealed class GameConfigWriter
     public const string GameContextKey = "game_context";
 
     /// <summary>
+    /// The mod's key for the language it works towards. ⚠ A language NAME, never an ISO code —
+    /// see the intent below.
+    /// </summary>
+    public const string TargetLanguageKey = "target_language";
+
+    /// <summary>
     /// Where this game's config.json lives. One composition, because three callers needing the
     /// same path is exactly how two of them end up disagreeing about it.
     /// </summary>

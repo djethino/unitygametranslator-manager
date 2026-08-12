@@ -3022,6 +3022,38 @@ public partial class MainWindow : Window
             panel.Children.Add(act);
         }
 
+        // Not ours: no verb, because nothing here may touch it. But a refusal with nowhere to go
+        // is a dead end — the uninstaller already declines this loader, and somebody who wants it
+        // gone has to be told where to look. So the way to act becomes a way to act BY HAND.
+        if (report.InstalledLoader is { InstalledByUs: false } theirs)
+        {
+            var open = Glyphs.Button(Glyphs.Folder(), "Open the game folder");
+            open.FontSize = 12;
+            open.HorizontalAlignment = HorizontalAlignment.Left;
+            open.Click += (_, _) => Shell.OpenFolder(report.Game.Path);
+            panel.Children.Add(open);
+
+            panel.Children.Add(new Expander
+            {
+                Header = new TextBlock
+                {
+                    Text = "What is ours to remove, and what is not",
+                    FontSize = 12,
+                    Foreground = Brush("TextSecondary"),
+                },
+                Content = new TextBlock
+                {
+                    Text = ForeignLoaderAdvice(report, theirs),
+                    FontSize = 11,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = Brush("TextMuted"),
+                },
+                IsExpanded = false,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Margin = new Avalonia.Thickness(0, 4, 0, 0),
+            });
+        }
+
         // A refusal we are willing to let the user overrule gets a way forward. A dead button and
         // a red paragraph, with nothing to click, is the same dead end as refusing forever.
         if (!report.Game.IsModdable && ModdabilityProbe.CanBeOverridden(report.Game.Verdict))
@@ -4164,6 +4196,50 @@ public partial class MainWindow : Window
             InstallLoader = loader && (plan.InstallLoader || report.LoaderStanding is { UpdateAvailable: true }),
             InstallPlugin = plugin,
         };
+    }
+
+    /// <summary>
+    /// What somebody may safely delete themselves under a loader that is not ours, and what they
+    /// must not.
+    ///
+    /// ⚠ Only ever names paths WE own. Listing the loader's own files would be this tool giving
+    /// removal instructions for someone else's software, from a catalogue entry that describes how
+    /// to detect it rather than how to take it apart — and being wrong there costs somebody every
+    /// other mod they had.
+    /// </summary>
+    private string ForeignLoaderAdvice(GameReport report, DetectedLoader theirs)
+    {
+        var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == theirs.Id);
+
+        var lines = new List<string>
+        {
+            $"{theirs.Display} was already here when this tool first saw this game, so it is left "
+            + "alone: it is not ours, and other mods may be running on it.",
+        };
+
+        // The count is already measured for the uninstaller's refusal; saying it here turns that
+        // refusal into something checkable rather than something to take on trust.
+        if (theirs.ForeignPluginCount > 0)
+        {
+            lines.Add($"{theirs.ForeignPluginCount} other mod(s) sit beside ours in "
+                    + $"{theirs.PluginDir}/. Removing the loader removes those too.");
+        }
+
+        lines.Add($"Ours, and safe to delete by hand: the UnityGameTranslator folder in "
+                + $"{theirs.PluginDir}/");
+
+        if (descriptor is not null
+            && !string.Equals(descriptor.UserDataDir, theirs.PluginDir, StringComparison.OrdinalIgnoreCase))
+        {
+            lines.Add($"Your settings and translations live in {descriptor.UserDataDir}/ — deleting "
+                    + "that folder loses the lines you captured while playing, so keep it unless "
+                    + "you mean to start over.");
+        }
+
+        lines.Add("To remove " + theirs.Display + " itself, follow its own instructions. This tool "
+                + "will not guess at another program's files.");
+
+        return string.Join(Environment.NewLine + Environment.NewLine, lines);
     }
 
     /// <summary>

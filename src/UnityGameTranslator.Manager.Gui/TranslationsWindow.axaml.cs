@@ -766,20 +766,22 @@ public sealed class TranslationsWindow : Window
 
         if (!agreed) return;
 
-        // Both languages of the translation just taken, verbatim from what was published — the
-        // pair it was uploaded under, and the only pair under which the game can read it.
+        // The target of the translation just taken, verbatim from what was published — the language
+        // it was uploaded under, and the only one under which the game can read it.
+        //
+        // ⚠ Its SOURCE is deliberately not carried across. That field describes the person who made
+        // the translation, not the game: nothing here can read what language a game's own text is
+        // in, and writing a guess would put "translate from English" into every prompt — and, under
+        // strict_source_language, retire every line the model judged to be in another language.
         //
         // ⚠ The global default is untouched, and this used to be enforced by writing into the
         // settings object and putting it back in a finally block. It is now simply not involved:
-        // the pair is an argument, and a decision about one game cannot leak into the next install
-        // because there is nothing shared left to leak through.
-        var pair = new LanguagePair(
-            string.IsNullOrWhiteSpace(translation.SourceLanguage) ? null : translation.SourceLanguage,
-            taken);
-
+        // the target is an argument, and a decision about one game cannot leak into the next
+        // install because there is nothing shared left to leak through.
+        //
         // Written through the same merge as everything else, so the game keeps its token, its
         // secrets and every key we do not know about.
-        new GameConfigWriter().Apply(_report.Game.Path, _loader, _settings.Current, pair);
+        new GameConfigWriter().Apply(_report.Game.Path, _loader, _settings.Current, taken);
     }
 
     /// <summary>

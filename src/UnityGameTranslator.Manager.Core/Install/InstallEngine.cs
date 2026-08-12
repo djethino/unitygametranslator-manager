@@ -1,4 +1,4 @@
-using UnityGameTranslator.Manager.Core.Detection;
+﻿using UnityGameTranslator.Manager.Core.Detection;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
 using UnityGameTranslator.Manager.Core.Settings;
@@ -46,11 +46,11 @@ public sealed record InstallPlan(
     public GamePreference? Preference { get; init; }
 
     /// <summary>
-    /// The languages this game is to be set to. Decided when the plan is made, from what is
+    /// The language this game is to be set to. Decided when the plan is made, from what is
     /// published for this game, so the confirmation shown to the user and the file written
     /// afterwards cannot say two different things.
     /// </summary>
-    public LanguagePair? Languages { get; init; }
+    public string? TargetLanguage { get; init; }
 
     /// <summary>Human-readable summary shown before anything is written.</summary>
     public IEnumerable<string> Describe()
@@ -71,12 +71,8 @@ public sealed record InstallPlan(
         // Named before it happens, because it is the one setting that decides whether the game
         // reads the file it is about to be given. A pair that comes from a translation already in
         // place is called out as such: it is not a choice being made, it is one being respected.
-        if (Languages is { } languages)
-        {
-            yield return languages.Source is { Length: > 0 } from
-                ? $"Set this game to translate {from} into {languages.Target}"
-                : $"Set this game to translate into {languages.Target}";
-        }
+        if (TargetLanguage is { Length: > 0 } target)
+            yield return $"Set this game to translate into {target}";
 
         yield return "Existing settings and translations are left untouched";
 
@@ -162,9 +158,9 @@ public sealed class InstallEngine
 
             // Decided here because here is where the report is: what is published for this game
             // is what fixes its languages, and nothing further down the chain can see it.
-            Languages = settings is null
+            TargetLanguage = settings is null
                 ? null
-                : GameLanguages.Decide(report, loader,
+                : GameLanguages.TargetFor(report, loader,
                     GameLanguages.Resolve(settings.TargetLanguage, _platform.SystemLanguage())),
         };
     }
@@ -243,11 +239,11 @@ public sealed class InstallEngine
             // we did not create, and a failure to write settings is not a reason to undo a
             // perfectly good install — it is a reason to say so and let the mod's own wizard ask.
             ConfigWriteResult? configured = null;
-            if (plan.Settings is not null && plan.Languages is not null)
+            if (plan.Settings is not null && plan.TargetLanguage is not null)
             {
                 Status?.Invoke("Applying your settings...");
                 configured = new GameConfigWriter()
-                    .Apply(plan.Game.Path, plan.Loader, plan.Settings, plan.Languages,
+                    .Apply(plan.Game.Path, plan.Loader, plan.Settings, plan.TargetLanguage,
                            perGame: plan.Preference);
             }
 

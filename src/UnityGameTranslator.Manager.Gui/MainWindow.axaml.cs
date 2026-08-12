@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
@@ -3040,10 +3040,10 @@ public partial class MainWindow : Window
 
         if (descriptor is null) yield break;
 
-        var languages = GameLanguages.Decide(report, descriptor, _settings.ResolveTargetLanguage());
+        var target = GameLanguages.TargetFor(report, descriptor, _settings.ResolveTargetLanguage());
 
         var differences = new GameConfigWriter()
-            .Compare(report.Game.Path, descriptor, _settings.Current, languages, preference);
+            .Compare(report.Game.Path, descriptor, _settings.Current, target, preference);
 
         if (differences.Count == 0) yield break;
 
@@ -3647,10 +3647,10 @@ public partial class MainWindow : Window
     {
         Busy(true, "Applying your settings...");
 
-        var languages = GameLanguages.Decide(report, descriptor, _settings.ResolveTargetLanguage());
+        var target = GameLanguages.TargetFor(report, descriptor, _settings.ResolveTargetLanguage());
 
         var result = new GameConfigWriter()
-            .Apply(report.Game.Path, descriptor, _settings.Current, languages, perGame: preference);
+            .Apply(report.Game.Path, descriptor, _settings.Current, target, perGame: preference);
 
         Busy(false, "Ready.");
 

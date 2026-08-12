@@ -5,22 +5,7 @@ using UnityGameTranslator.Common;
 namespace UnityGameTranslator.Manager.Core.Settings;
 
 /// <summary>
-/// The two languages a game is set to, as NAMES — "English", "French" — because that is what the
-/// mod stores and what the site publishes under.
-/// </summary>
-/// <param name="Source">
-/// What the game is translated FROM, or null to leave the game's own answer alone.
-///
-/// ⚠ Null is the only legitimate "auto" left in this pair, and only in one situation: a
-/// translation being built locally that has never been uploaded and whose source nobody has
-/// stated. The mod detects it as it goes. The moment the file exists on the server, its source is
-/// part of what was published and is no longer ours to leave open.
-/// </param>
-/// <param name="Target">What it is translated INTO. Never null, and never "auto".</param>
-public sealed record LanguagePair(string? Source, string Target);
-
-/// <summary>
-/// Which languages to write into a game, and — more often — which ones NOT to touch.
+/// Which language to translate a game INTO, and nothing else.
 ///
 /// ⚠ **"auto" must never reach target_language.** It used to: a tool set to follow the system
 /// wrote the literal string "auto", and the mod resolves that at launch from the machine's own
@@ -29,10 +14,21 @@ public sealed record LanguagePair(string? Source, string Target);
 /// carrying a French translation would quietly start asking for English. The tool knows the answer
 /// at the moment it writes; leaving the question open serves nobody.
 ///
-/// ⚠ **A translation already in place decides.** Its languages are not a preference, they are what
-/// the file IS. Overwriting the target of a game that holds a French translation with somebody's
+/// ⚠ **A translation already in place decides.** Its target is not a preference, it is what the
+/// file IS. Overwriting the target of a game that holds a French translation with somebody's
 /// German default does not translate that game into German: it leaves the mod hunting for German
 /// while a French file sits beside it, which reads as "the translation stopped working".
+///
+/// ⚠ **The SOURCE is never written, by anything here.** This tool cannot read what language a
+/// game's own text is in, and the one thing that looks like an answer — the source declared on a
+/// published translation — is a statement about the person who made it, not a measurement of the
+/// game. Writing it is not labelling, it is instructing: the mod puts it in every prompt
+/// ("Translating video game from English to French"), and with strict_source_language it tells the
+/// model to answer with a skip marker for anything not in that language. A line skipped that way
+/// is cached with the tag "S", which the merge treats as immutable — so one wrong guess about a
+/// game's source language permanently retires the lines it hit, and counts them as settled in the
+/// quality bar. Auto-detection is the mod's job, it works line by line, and it was never ours to
+/// override.
 /// </summary>
 public static class GameLanguages
 {
@@ -64,39 +60,35 @@ public static class GameLanguages
     }
 
     /// <summary>
-    /// What this game should be set to, in order of authority.
+    /// The language this game should translate INTO, in order of authority.
     ///
-    /// 1. **A published translation this game holds.** Both languages come from what was
-    ///    published, verbatim. They are fixed: the file was uploaded under them, the site lists it
-    ///    under them, and a game aimed anywhere else cannot use it.
+    /// 1. **A published translation this game holds.** Its target comes from what was published,
+    ///    verbatim. It is fixed: the file was uploaded under it, the site lists it under it, and a
+    ///    game aimed anywhere else cannot use it.
     /// 2. **A local translation nobody has published.** Whatever target the game already names is
     ///    kept — somebody is building that file in that language, and retargeting it mid-work
-    ///    would orphan everything they have done. The source stays open if it was open: that is
-    ///    the one case where the mod detecting it is still the right answer.
+    ///    would orphan everything they have done.
     /// 3. **Nothing installed.** The person's own target, resolved. Nothing to preserve, and this
     ///    is the choice the whole tool is organised around.
     /// </summary>
     /// <param name="defaultTargetCode">The person's target, already resolved by <see cref="Resolve"/>.</param>
-    public static LanguagePair Decide(GameReport report, LoaderDescriptor descriptor,
-                                      string defaultTargetCode)
+    /// <returns>A language NAME, as the mod stores it. Never null, never "auto".</returns>
+    public static string TargetFor(GameReport report, LoaderDescriptor descriptor,
+                                   string defaultTargetCode)
     {
         // The published entry of the very file installed here — matched on lineage, so it IS this
         // translation rather than another one for the same game.
-        if (report.MatchingOnline is { TargetLanguage: { Length: > 0 } published } entry)
-            return new LanguagePair(Blank(entry.SourceLanguage), published);
+        if (report.MatchingOnline is { TargetLanguage: { Length: > 0 } published })
+            return published;
 
         if (report.LocalTranslation is not null)
         {
-            var (source, target) = LocalTranslationProbe.ReadLanguages(report.Game.Path, descriptor);
-
             // ReadLanguages already reports "auto" and blanks as null, so a target here is a real
-            // one somebody or something settled on.
-            if (target is { Length: > 0 })
-                return new LanguagePair(source, target);
+            // one somebody settled on.
+            var (_, target) = LocalTranslationProbe.ReadLanguages(report.Game.Path, descriptor);
+            if (target is { Length: > 0 }) return target;
         }
 
-        return new LanguagePair(null, Languages.NameOf(defaultTargetCode));
+        return Languages.NameOf(defaultTargetCode);
     }
-
-    private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 }

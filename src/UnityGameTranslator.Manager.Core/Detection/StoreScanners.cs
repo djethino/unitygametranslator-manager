@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
 
@@ -41,6 +41,7 @@ public sealed class StoreScanner
         {
             string? location = null;
             string? name = null;
+            string? appName = null;
 
             try
             {
@@ -48,6 +49,10 @@ public sealed class StoreScanner
                 var rootElement = doc.RootElement;
                 if (rootElement.TryGetProperty("InstallLocation", out var loc)) location = loc.GetString();
                 if (rootElement.TryGetProperty("DisplayName", out var dn)) name = dn.GetString();
+
+                // The launcher's own id for this title. Read while the manifest is open: it is
+                // what lets the game be started through Epic, which some titles insist on.
+                if (rootElement.TryGetProperty("AppName", out var an)) appName = an.GetString();
             }
             catch
             {
@@ -58,6 +63,8 @@ public sealed class StoreScanner
 
             var game = UnityGameProbe.Probe(location, name, GameStore.Epic);
             if (game is null) continue;
+
+            game.StoreAppId = appName;
 
             ModdabilityProbe.Evaluate(game);
             yield return game;

@@ -91,6 +91,16 @@ public static class Glyphs
         "M8,1.9 L14.4,8.1 L12.7,8.1 L12.7,13.9 L9.4,13.9 L9.4,9.9 L6.6,9.9 "
         + "L6.6,13.9 L3.3,13.9 L3.3,8.1 L1.6,8.1 Z");
 
+    /// <summary>
+    /// A triangle, for starting the game itself.
+    ///
+    /// Drawn slightly right of centre in its box: a triangle's visual weight sits at its base, so
+    /// one centred by its bounding box reads as leaning left. The same correction every play
+    /// button in the world carries.
+    /// </summary>
+    public static Control Play(string? colour = null) => Shape(colour,
+        "M4.6,2.6 L13,8 L4.6,13.4 Z");
+
     /// <summary>A bin, for taking something back out of a list.</summary>
     public static Control Trash(string? colour = null) => Shape(colour,
         "M3,3.6 L6,3.6 L6,2.2 L10,2.2 L10,3.6 L13,3.6 L13,5.2 L3,5.2 Z "

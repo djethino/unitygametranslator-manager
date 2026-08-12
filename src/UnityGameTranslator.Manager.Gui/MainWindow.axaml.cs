@@ -1434,32 +1434,104 @@ public partial class MainWindow : Window
     /// </summary>
     private Control WithAccountMark(GameInstall game, Control content)
     {
-        if (!_accounts.TryGetValue(game.Path, out var account)) return content;
+        _accounts.TryGetValue(game.Path, out var account);
+
+        var play = PlayButton(game, small: true);
+        if (account is null && play is null) return content;
 
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
 
         Grid.SetColumn(content, 0);
         grid.Children.Add(content);
 
-        var mark = new TextBlock
+        // Stacked in the corner: the account says what this game IS, the button is what to do with
+        // it. Right-aligned so neither pushes the name around as they come and go.
+        var corner = new StackPanel
         {
-            Text = "@" + account,
-            FontSize = 10,
-            Foreground = Brush("StatusSuccess"),
-            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+            Spacing = 4,
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
             Margin = new Avalonia.Thickness(8, 1, 0, 0),
-            MaxWidth = 110,
-            TextTrimming = TextTrimming.CharacterEllipsis,
         };
 
-        ToolTip.SetTip(mark, $"This game is signed in to the site as {account}, so it can publish "
-                           + "and contribute from inside the game.");
+        if (account is not null)
+        {
+            var mark = new TextBlock
+            {
+                Text = "@" + account,
+                FontSize = 10,
+                Foreground = Brush("StatusSuccess"),
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                MaxWidth = 110,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            };
 
-        Grid.SetColumn(mark, 1);
-        grid.Children.Add(mark);
+            ToolTip.SetTip(mark, $"This game is signed in to the site as {account}, so it can publish "
+                               + "and contribute from inside the game.");
+
+            corner.Children.Add(mark);
+        }
+
+        if (play is not null)
+        {
+            play.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right;
+            corner.Children.Add(play);
+        }
+
+        Grid.SetColumn(corner, 1);
+        grid.Children.Add(corner);
 
         return grid;
+    }
+
+    /// <summary>
+    /// The button that starts the game, or null when there is nothing to start it with.
+    ///
+    /// ⚠ Absent while the game is already running rather than disabled. The row and the card both
+    /// say "Running now" a line away; a second control repeating it in grey is noise, and the one
+    /// thing a second press could do — start a second copy — is not something to offer.
+    ///
+    /// ⚠ The route is Core's decision, not this button's: a Steam title goes through Steam so its
+    /// launch options apply, which is where the Proton override this very tool tells people to set
+    /// actually lives. See GameLaunch, and the trap it documents about app ids.
+    /// </summary>
+    private Button? PlayButton(GameInstall game, bool small)
+    {
+        if (_running.IsRunning(game)) return null;
+        if (GameLaunch.RouteFor(game) is not { } route) return null;
+
+        var button = small
+            ? new Button
+            {
+                Content = Glyphs.Play("StatusSuccess"),
+                Padding = new Avalonia.Thickness(6, 2),
+                Background = Avalonia.Media.Brushes.Transparent,
+                BorderThickness = new Avalonia.Thickness(0),
+                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+            }
+            : Glyphs.Button(Glyphs.Play(), "Play");
+
+        ToolTip.SetTip(button, $"Start {game.Name}. {route.Why}");
+
+        button.Click += async (_, _) =>
+        {
+            // Said before it happens: a store that has to wake up first can take several seconds,
+            // and a button that appears to do nothing gets pressed again.
+            Status($"Starting {game.Name}...");
+
+            if (GameLaunch.Start(route) is { } failure)
+            {
+                Status("Ready.");
+                await MessageAsync($"{game.Name} did not start", failure);
+                return;
+            }
+
+            // The sweep notices it on its own within a few seconds — this only spares those
+            // seconds, so the row a person just pressed stops offering to start it again.
+            await LookForRunningGamesAsync();
+        };
+
+        return button;
     }
 
     private void SelectByPath(string path)
@@ -3401,14 +3473,33 @@ public partial class MainWindow : Window
         {
             // Everything this button could do is already done. Said rather than left blank:
             // an empty bar where a button used to be reads as something having gone wrong.
-            body.Children.Add(new TextBlock
+            //
+            // ⚠ And it still carries the way to play. This is the card somebody opens precisely
+            // because there is nothing left to arrange; sending them back to the list to find the
+            // button they just walked past would be the one wrong turn left on this screen.
+            var done = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+
+            var settled = new TextBlock
             {
                 Text = "Everything is set up here. Nothing left for one click to do.",
                 FontSize = 12,
                 Opacity = 0.6,
                 TextWrapping = TextWrapping.Wrap,
                 VerticalAlignment = VerticalAlignment.Center,
-            });
+            };
+
+            Grid.SetColumn(settled, 0);
+            done.Children.Add(settled);
+
+            if (PlayButton(report.Game, small: false) is { } start)
+            {
+                start.Margin = new Avalonia.Thickness(16, 0, 0, 0);
+                start.VerticalAlignment = VerticalAlignment.Center;
+                Grid.SetColumn(start, 1);
+                done.Children.Add(start);
+            }
+
+            body.Children.Add(done);
 
             ActionBar.Content = ActionBarShell(body);
             ActionBar.IsVisible = true;
@@ -3533,6 +3624,11 @@ public partial class MainWindow : Window
 
         go.Click += async (_, _) => await RunOneClickAsync(report);
         right.Children.Add(go);
+
+        // After the set-up button, not before it: the order on this bar is the order of the two
+        // acts. Present even when there is nothing left to set up — a card whose every job is done
+        // is exactly the one somebody opened in order to go and play.
+        if (PlayButton(report.Game, small: false) is { } play) right.Children.Add(play);
 
         Grid.SetColumn(right, 1);
         row.Children.Add(right);

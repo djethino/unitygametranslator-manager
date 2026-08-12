@@ -1,4 +1,4 @@
-namespace UnityGameTranslator.Manager.Core.Model;
+﻿namespace UnityGameTranslator.Manager.Core.Model;
 
 /// <summary>Where the game was found. Not cosmetic: it decides how we get the app id.</summary>
 public enum GameStore
@@ -79,6 +79,16 @@ public sealed class GameInstall
 
     /// <summary>Steam app id when known. This is the key into our online translation catalog.</summary>
     public string? SteamAppId { get; init; }
+
+    /// <summary>
+    /// The id the game's own store knows it by, when that store is not Steam — today, Epic's
+    /// AppName from its manifest.
+    ///
+    /// ⚠ Deliberately separate from SteamAppId, which is NOT a reliable statement about a store:
+    /// it falls back to steam_appid.txt, and that file travels with any copy of a game. This one
+    /// only ever comes from the store's own records, so it can be used to ask that store to launch.
+    /// </summary>
+    public string? StoreAppId { get; set; }
 
     public UnityRuntime Runtime { get; set; } = UnityRuntime.Unknown;
 

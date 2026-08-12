@@ -131,6 +131,17 @@ public partial class MainWindow : Window
     private readonly HashSet<string> _mine = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
+    /// The site account each game is signed in with, by game path. Absent means signed in with
+    /// none, which is the ordinary case.
+    ///
+    /// It is a fact about the GAME, not about this tool: somebody signs in from inside the mod,
+    /// per game, and with twenty games installed there is otherwise no way to know which of them
+    /// can publish. ⚠ Only the name is ever held — see LocalTranslationProbe.ReadSiteAccount.
+    /// </summary>
+    private readonly Dictionary<string, string> _accounts =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
     /// The rows currently in the list, by game path, with what each was saying when it was built.
     ///
     /// ⚠ These belong to the ListBox. They are here to be UPDATED in place, never to be handed
@@ -477,12 +488,14 @@ public partial class MainWindow : Window
     {
         _situations.Clear();
         _mine.Clear();
+        _accounts.Clear();
 
         foreach (var game in _games)
         {
-            var (situation, mine) = ReadSituation(game);
+            var (situation, mine, account) = ReadSituation(game);
             _situations[game.Path] = situation;
             if (mine) _mine.Add(game.Path);
+            if (account is not null) _accounts[game.Path] = account;
         }
     }
 
@@ -500,7 +513,7 @@ public partial class MainWindow : Window
     /// down where doing so is safe. Reaching into that set from here was a race with a full
     /// recompute — rare, and the kind that corrupts a collection rather than failing cleanly.
     /// </summary>
-    private (GameSituationInfo Situation, bool Mine) ReadSituation(GameInstall game)
+    private (GameSituationInfo Situation, bool Mine, string? Account) ReadSituation(GameInstall game)
     {
         var language = _settings.ResolveTargetLanguage();
         var online = _online.Peek(game);
@@ -509,12 +522,17 @@ public partial class MainWindow : Window
 
         var detected = LoaderProbe.Detect(game.Path, _catalog);
         var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == detected?.Id);
+        string? account = null;
 
         if (descriptor is not null)
         {
             report.InstalledPluginVersion =
                 LocalTranslationProbe.ReadInstalledPluginVersion(game.Path, descriptor);
             report.LocalTranslation = LocalTranslationProbe.Read(game.Path, descriptor);
+
+            // Read while we are in this game's folder anyway. ⚠ The token is never touched — the
+            // mod clears the name along with it, so the name answers the question on its own.
+            account = LocalTranslationProbe.ReadSiteAccount(game.Path, descriptor).User;
 
             // Noted while the file is open anyway. Asked again at filter time it would mean
             // re-reading a translation from disk on every keystroke in the search box.
@@ -533,7 +551,7 @@ public partial class MainWindow : Window
 
         var checkedOnline = online is not null || !_settings.Current.OnlineMode;
 
-        return (SituationReader.Read(report, language, checkedOnline), mine);
+        return (SituationReader.Read(report, language, checkedOnline), mine, account);
     }
 
     /// <summary>
@@ -1180,10 +1198,15 @@ public partial class MainWindow : Window
     private async Task RereadAsync(GameInstall game)
     {
         var before = _situations.TryGetValue(game.Path, out var was) ? was : null;
-        var (now, mine) = await Task.Run(() => ReadSituation(game));
+        var (now, mine, account) = await Task.Run(() => ReadSituation(game));
 
         _situations[game.Path] = now;
         if (mine) _mine.Add(game.Path); else _mine.Remove(game.Path);
+
+        // Signing in happens INSIDE the game, so this is one of the few things that can change
+        // while somebody plays — which is exactly when this re-read runs.
+        if (account is not null) _accounts[game.Path] = account;
+        else _accounts.Remove(game.Path);
         _watchedStamps[game.Path] = TranslationFileStamp(game);
 
         // Nothing said differently means nothing to redraw. A game can save its file without any of
@@ -1391,10 +1414,52 @@ public partial class MainWindow : Window
             body.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
             row.Children.Add(body);
 
-            return row;
+            return WithAccountMark(game, row);
         }
 
-        return body;
+        return WithAccountMark(game, body);
+    }
+
+    /// <summary>
+    /// Puts the account this game is signed in with in its top-right corner, when there is one.
+    ///
+    /// ⚠ Shown only when there IS one, and that is the rule the rest of this window follows: badges
+    /// work by being rare. Most games are signed in with nothing, so marking every one of them
+    /// "not linked" would put a label on the ordinary case and make the meaningful one invisible.
+    /// The absence is stated on the game's card instead, where a reader is asking about one game
+    /// and silence would be an unanswered question.
+    ///
+    /// Its own column rather than a line in the text: it belongs to the game, not to the situation,
+    /// and it must not push the name or the headline around as it comes and goes.
+    /// </summary>
+    private Control WithAccountMark(GameInstall game, Control content)
+    {
+        if (!_accounts.TryGetValue(game.Path, out var account)) return content;
+
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+
+        Grid.SetColumn(content, 0);
+        grid.Children.Add(content);
+
+        var mark = new TextBlock
+        {
+            Text = "@" + account,
+            FontSize = 10,
+            Foreground = Brush("StatusSuccess"),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+            Margin = new Avalonia.Thickness(8, 1, 0, 0),
+            MaxWidth = 110,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        };
+
+        ToolTip.SetTip(mark, $"This game is signed in to the site as {account}, so it can publish "
+                           + "and contribute from inside the game.");
+
+        Grid.SetColumn(mark, 1);
+        grid.Children.Add(mark);
+
+        return grid;
     }
 
     private void SelectByPath(string path)
@@ -2093,7 +2158,7 @@ public partial class MainWindow : Window
     /// somewhere: the card is on screen BECAUSE a game is selected on the left, so leaving it means
     /// no game is selected, and the list shows that.
     /// </summary>
-    private Control BackToOverview()
+    private Control BackToOverview(GameReport report)
     {
         // A house rather than a close cross, and on the left rather than the right. The card is
         // not a dialog laid over the window — it IS the window's right-hand side — so "close" would
@@ -2102,12 +2167,57 @@ public partial class MainWindow : Window
         // the way back lives everywhere else people use.
         var back = Glyphs.Button(Glyphs.Home(), "Home");
         back.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left;
-        back.Margin = new Avalonia.Thickness(0, 0, 0, 2);
 
         ToolTip.SetTip(back, "Back to the summary of every game found (Esc)");
         back.Click += (_, _) => CloseCard();
 
-        return back;
+        // Facing it across the same line: where this game stands with the site.
+        //
+        // ⚠ Said in BOTH directions here, unlike the list. A reader on one game's card is asking
+        // about that game, and silence would leave the question open — where in a list of fifty,
+        // marking every unlinked one would bury the few that are.
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+            Margin = new Avalonia.Thickness(0, 0, 0, 2),
+        };
+
+        grid.Children.Add(back);
+
+        var (user, server) = report.SiteAccount;
+
+        var linked = user is { Length: > 0 };
+
+        var mark = new TextBlock
+        {
+            Text = linked ? $"Signed in to the site as {user}" : "Not signed in to the site",
+            FontSize = 11,
+            Foreground = Brush(linked ? "StatusSuccess" : "TextMuted"),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Margin = new Avalonia.Thickness(12, 0, 0, 0),
+        };
+
+        // ⚠ Named when it is not our own server. Somebody running their own instance would
+        // otherwise read "signed in" and assume it is the same place this tool talks to.
+        var elsewhere = linked && server is { Length: > 0 }
+                        && !server.TrimEnd('/').StartsWith(BuildInfo.ApiBaseUrl.TrimEnd('/'),
+                                                           StringComparison.OrdinalIgnoreCase);
+
+        ToolTip.SetTip(mark, linked
+            ? (elsewhere ? $"On {server} — not the site this tool is set to." : null)
+              ?? "Signing in happens inside the game, and is remembered per game. It is what lets "
+                 + "this one publish a translation or contribute to somebody else's."
+            : "Signing in happens inside the game, from the mod's own panel. Without it this game "
+              + "can use community translations but cannot publish or contribute.");
+
+        if (elsewhere) mark.Foreground = Brush("StatusWarning");
+
+        Grid.SetColumn(mark, 1);
+        grid.Children.Add(mark);
+
+        return grid;
     }
 
     private void CloseCard()
@@ -2166,7 +2276,7 @@ public partial class MainWindow : Window
         // height back rather than keeping an empty band.
         OverviewTop.IsVisible = false;
 
-        DetailPanel.Children.Add(BackToOverview());
+        DetailPanel.Children.Add(BackToOverview(report));
         DetailPanel.Children.Add(Header(report));
 
         if (BeTheFirstBanner(report) is { } invitation) DetailPanel.Children.Add(invitation);

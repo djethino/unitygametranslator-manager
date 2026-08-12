@@ -299,6 +299,17 @@ public sealed class GameReport
             ? OnlineTranslations
             : OnlineTranslations.Where(t => !ReferenceEquals(t, MatchingOnline));
 
+    /// <summary>
+    /// The site account this GAME is signed in with, and the server that issued it — read from the
+    /// mod's own config, never from ours.
+    ///
+    /// Worth surfacing because it is per game and easy to lose track of: publishing, contributing
+    /// a branch and being credited all depend on the game being linked, and somebody who set one
+    /// up months ago has no way of knowing which of their twenty are. ⚠ The token itself is never
+    /// read — see LocalTranslationProbe.ReadSiteAccount.
+    /// </summary>
+    public (string? User, string? Server) SiteAccount { get; set; }
+
     /// <summary>Blocking prerequisites, e.g. a missing .NET Desktop Runtime.</summary>
     public List<string> Blockers { get; } = new();
 

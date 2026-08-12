@@ -87,6 +87,52 @@ public static class LocalTranslationProbe
         return $"{source ?? "auto-detected"} → {target ?? "no target set"}";
     }
 
+    /// <summary>
+    /// The site account a game is signed in with, or null when it is signed in with none.
+    ///
+    /// ⚠ **The token is never read, and this is how that promise is kept while still answering
+    /// the question.** The mod clears api_token, api_user and api_token_server together — see
+    /// ClearApiSession, which is also what runs when the server refuses a token — so the presence
+    /// of a username IS the presence of a session, and the secret never has to be looked at.
+    ///
+    /// ⚠ Nothing here is written back, ever. This tool's own token and the mod's are deliberately
+    /// separate so that revoking one does not disconnect the other; reading a name to display it
+    /// is the whole of the interest we take in the other one.
+    /// </summary>
+    /// <returns>The account name and the server that issued it, or (null, null).</returns>
+    public static (string? User, string? Server) ReadSiteAccount(string gamePath,
+                                                                 LoaderDescriptor descriptor)
+    {
+        var path = Path.Combine(gamePath,
+            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar), ConfigFileName);
+
+        if (!File.Exists(path)) return (null, null);
+
+        try
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(path));
+            var root = document.RootElement;
+
+            var user = root.TryGetProperty("api_user", out var u) && u.ValueKind == JsonValueKind.String
+                ? u.GetString()
+                : null;
+
+            if (string.IsNullOrWhiteSpace(user)) return (null, null);
+
+            var server = root.TryGetProperty("api_token_server", out var s)
+                         && s.ValueKind == JsonValueKind.String
+                ? s.GetString()
+                : null;
+
+            return (user, string.IsNullOrWhiteSpace(server) ? null : server);
+        }
+        catch
+        {
+            // A config we cannot parse is reported elsewhere; here it simply means we cannot say.
+            return (null, null);
+        }
+    }
+
     /// <summary>One language field, with "auto" and blanks reported as "not set".</summary>
     private static string? Named(JsonElement root, string property)
     {

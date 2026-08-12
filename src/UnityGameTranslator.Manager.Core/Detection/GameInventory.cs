@@ -121,6 +121,7 @@ public sealed class GameInventory
             report.PluginBuildId = ResolvePluginBuild(descriptor, game.Runtime);
             CollectRequirements(report, descriptor, game);
 
+            report.SiteAccount = LocalTranslationProbe.ReadSiteAccount(game.Path, descriptor);
             report.LoaderStanding = ReadLoaderStanding(report);
             report.PluginStanding = await ReadPluginStandingAsync(report, offline, ct).ConfigureAwait(false);
         }

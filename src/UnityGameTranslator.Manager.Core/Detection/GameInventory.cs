@@ -160,6 +160,10 @@ public sealed class GameInventory
             // only one of them is our problem. Keep them apart.
             report.OnlineSearchError = _api.LastError;
 
+            // And "we never asked" is a third thing again. Only a search that ran and came back is
+            // evidence that nobody has published anything.
+            report.OnlineChecked = _api.LastError is null;
+
             // Same lineage as the local file? Then it is not something to offer, it is the
             // thing the user already runs — and the only question is whether it moved online.
             if (report.LocalTranslation?.Uuid is { Length: > 0 } localUuid)

@@ -234,6 +234,17 @@ public sealed class GameReport
     /// </summary>
     public string? OnlineSearchError { get; set; }
 
+    /// <summary>
+    /// Whether the community was actually asked. False when offline, when community features are
+    /// switched off, or when there was nothing to search by.
+    ///
+    /// ⚠ Distinct from an empty result AND from a failure. "Nobody has published a translation of
+    /// this game" is a claim about the world, and an empty list is only evidence for it when
+    /// somebody went and looked — an offline session would otherwise tell a player their game is
+    /// untranslated, which is the one sentence that sends them off to redo existing work.
+    /// </summary>
+    public bool OnlineChecked { get; set; }
+
     /// <summary>Loader we would install if the user accepts the default. Null when none fits.</summary>
     public LoaderDescriptor? RecommendedLoader { get; set; }
 

@@ -1674,34 +1674,71 @@ public partial class MainWindow : Window
     {
         if (!report.Game.IsModdable) return null;
 
-        var language = _settings.ResolveTargetLanguage();
+        // ⚠ Only once somebody has actually looked. An empty list is evidence that nobody has
+        // published anything ONLY when a search ran and came back — offline, or with community
+        // features switched off, this would tell a player their game is untranslated and send them
+        // off to redo work that already exists.
+        if (!report.OnlineChecked) return null;
 
-        if (report.OnlineTranslations.Any(t => Languages.Matches(t.TargetLanguage, language)))
+        // ⚠ THE GAME'S language, not the reader's default, and they are routinely different: the
+        // target is set per game, and somebody translating one game into a language they do not
+        // otherwise play in would be told about the wrong one. Falls back to the default only when
+        // the game names none — which, for a game holding a translation, is itself a gap the
+        // differences list offers to close.
+        var loaderId = report.InstalledLoader?.Id ?? report.RecommendedLoader?.Id;
+        var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == loaderId);
+
+        var inGame = descriptor is null
+            ? null
+            : LocalTranslationProbe.ReadTargetLanguage(report.Game.Path, descriptor);
+
+        var name = inGame ?? Languages.NameOf(_settings.ResolveTargetLanguage());
+
+        if (report.OnlineTranslations.Any(t => Languages.Matches(t.TargetLanguage, name)))
             return null;
-
-        // Somebody already translating this game is not being invited to start it.
-        if (report.LocalTranslation is { EntryCount: > 0 }) return null;
-
-        var name = Languages.NameOf(language);
 
         var text = new StackPanel { Spacing = 2 };
 
+        // Two propositions, and they are not the same one worded twice. Nothing here yet is an
+        // invitation to start; work here that has never left the machine is an invitation to
+        // publish — and that second case had no banner at all, because the guard that stopped the
+        // first from nagging a translator also silenced the one message they had earned.
+        var started = report.LocalTranslation is { EntryCount: > 0 };
+
+        // Published translations of this file would appear as the matching entry. Its absence,
+        // once a search has run, is what "never shared" means.
+        if (started && report.MatchingOnline is not null) return null;
+
         text.Children.Add(new TextBlock
         {
-            Text = $"Nobody has published a {name} translation of this game — you could be first",
+            Text = started
+                ? $"You have {report.LocalTranslation!.EntryCount} {name} lines nobody else has — "
+                  + "you could be the first to publish them"
+                : $"Nobody has published a {name} translation of this game — you could be first",
             FontSize = 13,
             FontWeight = FontWeight.SemiBold,
-            Foreground = Brush("TextPrimary"),
+            Foreground = Brush(started ? "StatusSuccess" : "TextPrimary"),
             TextWrapping = TextWrapping.Wrap,
         });
 
         text.Children.Add(new TextBlock
         {
-            Text = "Set the mod up and play: it collects the lines the game shows you as it shows "
-                 + "them. From there it is your choice — write the translations yourself in the "
-                 + "game, line by line, or set up a local AI under Mod defaults and let it take a "
-                 + "first pass you can correct. Either way the file stays on your machine until "
-                 + "you decide to share it.",
+            Text = started
+                // ⚠ Named from the GAME's account, not this tool's. Publishing happens inside the
+                // game, with the game's own sign-in — and the two are allowed to differ, which on
+                // a shared machine is the ordinary case rather than a mistake.
+                ? (report.SiteAccount.User is { Length: > 0 } who
+                    ? $"This game is signed in as {who}, so it can publish. Open it, press the "
+                      + "mod's hotkey and use its upload panel — sharing is a decision you take "
+                      + "there, line by line if you want to review first."
+                    : "Sharing them needs an account, and signing in happens inside the game, from "
+                      + "the mod's own panel. Until then the file stays on this machine.")
+                  + " Nothing leaves this machine until you say so."
+                : "Set the mod up and play: it collects the lines the game shows you as it shows "
+                  + "them. From there it is your choice — write the translations yourself in the "
+                  + "game, line by line, or set up a local AI under Mod defaults and let it take a "
+                  + "first pass you can correct. Either way the file stays on your machine until "
+                  + "you decide to share it.",
             FontSize = 11,
             Foreground = Brush("TextSecondary"),
             TextWrapping = TextWrapping.Wrap,

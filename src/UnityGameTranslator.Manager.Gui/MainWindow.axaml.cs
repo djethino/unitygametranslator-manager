@@ -1494,6 +1494,10 @@ public partial class MainWindow : Window
     /// ⚠ The route is Core's decision, not this button's: a Steam title goes through Steam so its
     /// launch options apply, which is where the Proton override this very tool tells people to set
     /// actually lives. See GameLaunch, and the trap it documents about app ids.
+    ///
+    /// ⚠ Green in BOTH sizes, and that is not decoration. It is one act, so it wears one colour
+    /// wherever it appears — and grey is what the rest of this interface means by "cannot be
+    /// pressed". A grey play mark on the card, next to green ones in the list, reads as disabled.
     /// </summary>
     private Button? PlayButton(GameInstall game, bool small)
     {
@@ -1509,7 +1513,7 @@ public partial class MainWindow : Window
                 BorderThickness = new Avalonia.Thickness(0),
                 Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
             }
-            : Glyphs.Button(Glyphs.Play(), "Play");
+            : Glyphs.Button(Glyphs.Play("StatusSuccess"), "Play");
 
         ToolTip.SetTip(button, $"Start {game.Name}. {route.Why}");
 

@@ -3041,23 +3041,6 @@ public partial class MainWindow : Window
             panel.Children.Add(reconsider);
         }
 
-        // Offered only when there is a loader of ours to move on. Installing one from here is the
-        // one-click's job — a loader on its own translates nothing, so a button that put one in
-        // and stopped would leave somebody looking at a game that behaves exactly as before.
-        if (standing is { UpdateAvailable: true })
-        {
-            var update = new Button
-            {
-                Content = $"Update the loader to {standing.Available}",
-                FontSize = 12,
-                IsEnabled = !running,
-                HorizontalAlignment = HorizontalAlignment.Left,
-            };
-
-            update.Click += async (_, _) => await RunLoaderUpdateAsync(report);
-            panel.Children.Add(update);
-        }
-
         return panel;
     }
 
@@ -4149,9 +4132,20 @@ public partial class MainWindow : Window
     /// into their game would be deciding for them — the mod's first-run wizard asks instead,
     /// which is correct.
     /// </summary>
-    private InstallPlan? BuildPlan(GameReport report, GamePreference preference, bool loader, bool plugin)
+    /// <param name="settings">
+    /// False for the acts that are not about the mod's configuration at all — putting a loader in
+    /// place, first of all.
+    ///
+    /// ⚠ It was not a parameter, and that cost a real install: pressing "install the loader" wrote
+    /// the language and the backend into a config.json, in a plugin folder the plugin had not been
+    /// installed into. The orphan folder was then counted as somebody else's mod, and the loader we
+    /// had just installed could no longer be removed — "other mods use it". A button writes what it
+    /// names, and nothing else.
+    /// </param>
+    private InstallPlan? BuildPlan(GameReport report, GamePreference preference, bool loader, bool plugin,
+                                   bool settings = true)
     {
-        var writeSettings = preference.ApplyModDefaults && _settings.Current.Reviewed;
+        var writeSettings = settings && preference.ApplyModDefaults && _settings.Current.Reviewed;
 
         var plan = new InstallEngine(_platform, _catalog).Plan(
             report,
@@ -4172,11 +4166,17 @@ public partial class MainWindow : Window
         };
     }
 
-    /// <summary>Brings the loader up to date, and leaves the plugin exactly where it is.</summary>
-    private async Task RunLoaderUpdateAsync(GameReport report)
+    /// <summary>
+    /// Puts the loader in place — or brings it up to date — and touches nothing else.
+    ///
+    /// ⚠ No plugin and NO settings. A loader is the thing that lets mods load; the mod's own
+    /// configuration is not its business, and writing it here created a plugin folder with no
+    /// plugin in it, which the uninstaller then read as another mod's.
+    /// </summary>
+    private async Task RunLoaderInstallAsync(GameReport report)
     {
         var preference = _preferences.Read(report.Game.Path);
-        var plan = BuildPlan(report, preference, loader: true, plugin: false);
+        var plan = BuildPlan(report, preference, loader: true, plugin: false, settings: false);
 
         await RunInstallAsync(report, new InstallEngine(_platform, _catalog), plan);
     }
@@ -4207,31 +4207,18 @@ public partial class MainWindow : Window
         {
             if (!installed.InstalledByUs) return null;
 
-            // "Reinstall" earns its place even up to date: it is what puts back a loader whose
-            // files were damaged, which is otherwise only reachable by removing everything first.
+            // ⚠ No "Reinstall" here. BuildPlan only turns InstallLoader on when there is none or
+            // when one is behind, so a reinstall button would confirm, run, report success and
+            // replace nothing — worse than an absent button. Restoring a damaged loader goes
+            // through uninstall then install, which does say what it does.
             return report.LoaderStanding is { UpdateAvailable: true } standing
-                ? $"Update to {standing.Available}"
-                : "Reinstall";
+                ? $"Update the loader to {standing.Available}"
+                : null;
         }
 
         // Nothing installed: offered as soon as something could be. The picker beside it says
         // which one, so the button does not repeat the name and cannot drift from the choice.
         return report.EligibleLoaders.Count > 0 ? "Install the loader" : null;
-    }
-
-    /// <summary>
-    /// Installs or updates the loader alone, leaving the plugin exactly as it is.
-    ///
-    /// The two are published by different people on different days. This button names one of them,
-    /// so it does one of them — bringing a loader up to date has no business replacing a plugin
-    /// that was already current.
-    /// </summary>
-    private async Task RunLoaderInstallAsync(GameReport report)
-    {
-        var preference = _preferences.Read(report.Game.Path);
-        var plan = BuildPlan(report, preference, loader: true, plugin: false);
-
-        await RunInstallAsync(report, new InstallEngine(_platform, _catalog), plan);
     }
 
     /// <summary>

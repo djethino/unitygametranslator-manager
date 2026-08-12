@@ -113,6 +113,23 @@ public sealed class GameInventory
 
         report.InstalledLoader = LoaderProbe.Detect(game.Path, _catalog);
 
+        // ⚠ The probe looks at files; only the receipt knows who put them there. Nothing was
+        // filling this in, so DetectedLoader.InstalledByUs was false for EVERY game — including
+        // the ones this tool had just set up. Two consequences, both reported as bugs: the card
+        // said "it was here before you started using this tool" about a loader we had installed
+        // ourselves minutes earlier, and ReadLoaderStanding refused to compare its version, so no
+        // loader update was ever offered to anybody.
+        //
+        // The id is compared too: a receipt describing BepInEx says nothing about a MelonLoader
+        // found on disk today.
+        if (report.InstalledLoader is { } detected)
+        {
+            var receipt = ReceiptStore.Read(game.Path);
+
+            detected.InstalledByUs = receipt?.Loader is { InstalledByUs: true } ours
+                                     && string.Equals(ours.Id, detected.Id, StringComparison.OrdinalIgnoreCase);
+        }
+
         var descriptor = ResolveDescriptor(report, game);
         if (descriptor is not null)
         {

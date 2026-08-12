@@ -3008,19 +3008,43 @@ public partial class MainWindow : Window
         // and LoaderStanding already knows whether there is an update. Without a button here, a
         // game with no loader could only be set up through the one-click, or through the mod's
         // button, which drags the plugin along with it.
+        var loaderButtons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Margin = new Avalonia.Thickness(0, 2, 0, 0),
+        };
+
         if (LoaderVerb(report) is { } verb)
         {
             var act = new Button
             {
                 Content = verb,
                 IsEnabled = !running,
-                HorizontalAlignment = HorizontalAlignment.Left,
-                Margin = new Avalonia.Thickness(0, 2, 0, 0),
+                Classes = { "primary" },
             };
 
             act.Click += async (_, _) => await RunLoaderInstallAsync(report);
-            panel.Children.Add(act);
+            loaderButtons.Children.Add(act);
         }
+
+        // ⚠ The mod's own dialogue, on purpose — not a loader-only removal. Taking a loader away
+        // while the plugin stays would leave a mod loading into nothing, which is the very order
+        // this card exists to protect. That dialogue is where the three levels are chosen
+        // together, and it already refuses a loader that is not ours.
+        if (report.InstalledLoader is { InstalledByUs: true })
+        {
+            var remove = new Button
+            {
+                Content = "Uninstall...",
+                IsEnabled = ReceiptStore.Read(report.Game.Path) is not null && !running,
+            };
+
+            remove.Click += async (_, _) => await RunUninstallAsync(report);
+            loaderButtons.Children.Add(remove);
+        }
+
+        if (loaderButtons.Children.Count > 0) panel.Children.Add(loaderButtons);
 
         // Not ours: no verb, because nothing here may touch it. But a refusal with nowhere to go
         // is a dead end — the uninstaller already declines this loader, and somebody who wants it
@@ -3134,6 +3158,13 @@ public partial class MainWindow : Window
         uninstall.Click += async (_, _) => await RunUninstallAsync(report);
         buttons.Children.Add(uninstall);
 
+        // ⚠ Settings first, acts last — and it was the other way round. The buttons sat between
+        // the version and a block of preferences, so "In this game" read as an afterthought
+        // hanging off them rather than as what the next install would carry. The order now says
+        // what it does: here is the state, here is what you want, here is the button that goes
+        // and does it. Same shape as the card as a whole, whose one-click sits at the bottom.
+        foreach (var control in ModSettings(report)) panel.Children.Add(control);
+
         panel.Children.Add(buttons);
 
         if (running)
@@ -3141,7 +3172,7 @@ public partial class MainWindow : Window
             // ⚠ Writing into a folder the game is holding open fails, and it fails halfway: some
             // files replaced, some refused. The engines check this again at the moment they run,
             // which is the check that must exist — but a button that cannot work should not look
-            // like one that can.
+            // like one that can. Kept next to the buttons it explains.
             panel.Children.Add(new TextBlock
             {
                 Text = "The game is running. Close it and this comes back on its own.",
@@ -3150,8 +3181,6 @@ public partial class MainWindow : Window
                 Foreground = Brush("StatusWarning"),
             });
         }
-
-        foreach (var control in ModSettings(report)) panel.Children.Add(control);
 
         return panel;
     }
@@ -3292,32 +3321,78 @@ public partial class MainWindow : Window
             };
         }
 
-        // Only where there is something to start. On "community translations only" there is no
-        // backend to run, so the box would be a switch for a thing that does not exist.
-        if (settings.TranslationBackend != "none")
+        // ⚠ Shown even with no backend, greyed, rather than hidden. Hidden, the one question that
+        // matters here — "will this game actually translate anything?" — had no answer on the
+        // screen devoted to it: somebody who never configured a backend saw a card that said
+        // nothing about it and a game that then translated nothing.
+        var backend = TranslationBackendLabel(settings);
+
+        var start = new CheckBox
         {
-            var start = new CheckBox
+            Content = "Start translating when the game launches",
+            IsChecked = backend is not null && (preference.StartTranslation ?? settings.EnableAi),
+            FontSize = 12,
+            IsEnabled = backend is not null,
+
+            // Kept on the control so Refresh can put it back when the box becomes available
+            // again — a tip replaced by the unavailable one and never restored would leave the
+            // setting explained by the reason it used to be greyed out.
+            Tag = "Untick to install everything now and start translating later, from inside "
+                + "the game. Nothing is lost: the server, the model and the key stay configured.",
+        };
+
+        start.IsCheckedChanged += (_, _) =>
+        {
+            preference.StartTranslation = start.IsChecked == true;
+            _preferences.Set(report.Game.Path, preference);
+            Refresh();
+        };
+
+        // Only a dependent while there IS a backend: otherwise its own reason for being greyed
+        // must win, and Refresh would overwrite it with the defaults one.
+        if (backend is not null) dependents.Add(start);
+        yield return start;
+
+        // What it would translate WITH, next to the switch that starts it. It was nowhere on this
+        // card, so the box read as "translate this game" when it means "run the thing configured
+        // in Mod defaults" — and which thing that is decides whether it costs money.
+        if (backend is not null)
+        {
+            yield return new TextBlock
             {
-                Content = "Start translating when the game launches",
-                IsChecked = preference.StartTranslation ?? settings.EnableAi,
+                Text = backend,
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Avalonia.Thickness(24, 0, 0, 0),
+                Foreground = Brush("TextMuted"),
+            };
+        }
+        else
+        {
+            var missing = new StackPanel { Spacing = 4, Margin = new Avalonia.Thickness(24, 0, 0, 0) };
+
+            missing.Children.Add(new TextBlock
+            {
+                Text = "No translator is set up, so nothing can be translated as you play. "
+                     + "Community translations still work — they are already written.",
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextMuted"),
+            });
+
+            // A way forward rather than a statement of fact: the setting lives in another window,
+            // and saying "it is missing" without opening the door is how somebody goes looking.
+            var configure = new Button
+            {
+                Content = "Set up a translator...",
                 FontSize = 12,
-
-                // Kept on the control so Refresh can put it back when the box becomes available
-                // again — a tip replaced by the unavailable one and never restored would leave the
-                // setting explained by the reason it used to be greyed out.
-                Tag = "Untick to install everything now and start translating later, from inside "
-                    + "the game. Nothing is lost: the server, the model and the key stay configured.",
+                HorizontalAlignment = HorizontalAlignment.Left,
             };
 
-            start.IsCheckedChanged += (_, _) =>
-            {
-                preference.StartTranslation = start.IsChecked == true;
-                _preferences.Set(report.Game.Path, preference);
-                Refresh();
-            };
+            configure.Click += async (_, _) => await OpenSettingsAsync();
+            missing.Children.Add(configure);
 
-            dependents.Add(start);
-            yield return start;
+            yield return missing;
         }
 
         // The one wizard question whose answer cannot be shared between two games, so the one
@@ -4175,7 +4250,7 @@ public partial class MainWindow : Window
     /// names, and nothing else.
     /// </param>
     private InstallPlan? BuildPlan(GameReport report, GamePreference preference, bool loader, bool plugin,
-                                   bool settings = true)
+                                   bool settings = true, bool force = false)
     {
         var writeSettings = settings && preference.ApplyModDefaults && _settings.Current.Reviewed;
 
@@ -4193,7 +4268,14 @@ public partial class MainWindow : Window
         // already established that the loader is ours to replace.
         return plan with
         {
-            InstallLoader = loader && (plan.InstallLoader || report.LoaderStanding is { UpdateAvailable: true }),
+            // ⚠ force exists for one case: a reinstall asked for by name. Plan() only turns this
+            // on when there is no loader, and the standing test adds the one that is behind — so
+            // without it, a "reinstall" button would confirm, run, report success and replace
+            // nothing. The one-click must NOT force: it passes loader: true meaning "put one there
+            // if needed", and forcing would replace a perfectly current loader on every click.
+            InstallLoader = loader && (force
+                                       || plan.InstallLoader
+                                       || report.LoaderStanding is { UpdateAvailable: true }),
             InstallPlugin = plugin,
         };
     }
@@ -4252,7 +4334,10 @@ public partial class MainWindow : Window
     private async Task RunLoaderInstallAsync(GameReport report)
     {
         var preference = _preferences.Read(report.Game.Path);
-        var plan = BuildPlan(report, preference, loader: true, plugin: false, settings: false);
+
+        // force: this button was pressed by name. Without it a reinstall would do nothing.
+        var plan = BuildPlan(report, preference,
+            loader: true, plugin: false, settings: false, force: true);
 
         await RunInstallAsync(report, new InstallEngine(_platform, _catalog), plan);
     }
@@ -4271,6 +4356,34 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// The translator these defaults would run, in one line, or null when there is none.
+    ///
+    /// ⚠ Names the service AND what it needs to work. "AI translation" over an empty server
+    /// address is a promise the game cannot keep, and the failure would surface in-game with
+    /// nothing to explain it — the same reason AnswersTheWizard refuses to skip the mod's wizard
+    /// on a half-configured backend.
+    /// </summary>
+    private static string? TranslationBackendLabel(InstallerSettings settings) =>
+        settings.TranslationBackend switch
+        {
+            "llm" when !string.IsNullOrWhiteSpace(settings.AiUrl) =>
+                string.IsNullOrWhiteSpace(settings.AiModel)
+                    ? $"Using your own AI at {settings.AiUrl} — no model chosen yet"
+                    : $"Using {settings.AiModel} on your own AI at {settings.AiUrl}",
+
+            "google" when !string.IsNullOrWhiteSpace(settings.GoogleApiKey) =>
+                "Using Google Translate with your key",
+
+            "deepl" when !string.IsNullOrWhiteSpace(settings.DeeplApiKey) =>
+                $"Using DeepL ({(settings.DeeplUseFree ? "free" : "paid")}) with your key",
+
+            // Everything else — "none", or a backend chosen but left without what it needs — is
+            // reported as nothing set up. A key that is missing translates exactly as little as a
+            // backend that was never picked.
+            _ => null,
+        };
+
+    /// <summary>
     /// What the loader section offers to do, or null when it offers nothing.
     ///
     /// ⚠ A loader we did not install gets no verb at all, and that is a decision rather than a
@@ -4283,13 +4396,12 @@ public partial class MainWindow : Window
         {
             if (!installed.InstalledByUs) return null;
 
-            // ⚠ No "Reinstall" here. BuildPlan only turns InstallLoader on when there is none or
-            // when one is behind, so a reinstall button would confirm, run, report success and
-            // replace nothing — worse than an absent button. Restoring a damaged loader goes
-            // through uninstall then install, which does say what it does.
+            // Same three verbs as the mod's section, in the same order, for the same reasons.
+            // "Reinstall" is what puts back a loader whose files were damaged — reachable only by
+            // removing everything first, until now.
             return report.LoaderStanding is { UpdateAvailable: true } standing
                 ? $"Update the loader to {standing.Available}"
-                : null;
+                : "Reinstall the loader";
         }
 
         // Nothing installed: offered as soon as something could be. The picker beside it says

@@ -3201,6 +3201,61 @@ public partial class MainWindow : Window
 
         yield return applyDefaults;
 
+        // Directly under the box that governs it: the list of differences is what ticking that box
+        // would change, so it belongs to it. Further down it read as an unrelated warning about
+        // the game, and the connection between the two had to be guessed.
+        yield return driftHost;
+
+        // ⚠ Asked about this game, and nowhere else. A hotkey is the one setting a game may
+        // legitimately know better than the defaults do: inside it, the mod captured the key
+        // against the real keyboard, which is the only measurement that exists. So the question is
+        // never "do I replace hotkeys" but "do I replace THIS one" — unanswerable without both
+        // keys in front of you, which is why it left the defaults screen.
+        //
+        // Only when the game has a key AND it differs from ours: with none it is written outright
+        // (GameConfigWriter.Intended), and one that already agrees has nothing to decide. Read
+        // from the config rather than from the list of differences, which deliberately hides this
+        // key once the game answers it — that is exactly what makes the question ours to ask.
+        var descriptor = InstalledDescriptor(report);
+
+        var inGameHotkey = GameConfigWriter.InGameValue(
+            report.Game.Path, descriptor, GameConfigWriter.HotkeyKey);
+
+        if (inGameHotkey is not null
+            && !string.Equals(inGameHotkey, settings.SettingsHotkey, StringComparison.Ordinal))
+        {
+            var replaceHotkey = new CheckBox
+            {
+                Content = "Replace this game's hotkey with mine",
+                IsChecked = preference.ReplaceHotkey,
+                FontSize = 12,
+                Margin = new Avalonia.Thickness(0, 4, 0, 0),
+                Tag = "Left unticked, this game keeps the key it already has - everything else is "
+                    + "still written into it. The key you set inside a game was measured against "
+                    + "your real keyboard there, so it wins unless you say otherwise here.",
+            };
+
+            replaceHotkey.IsCheckedChanged += (_, _) =>
+            {
+                preference.ReplaceHotkey = replaceHotkey.IsChecked == true;
+                _preferences.Set(report.Game.Path, preference);
+                Refresh();
+            };
+
+            dependents.Add(replaceHotkey);
+            yield return replaceHotkey;
+
+            // Both keys, side by side. "Replace it?" cannot be answered without them, and this is
+            // the only screen where the game's own key is ever shown.
+            yield return new TextBlock
+            {
+                Text = $"In this game: {inGameHotkey}    Yours: {settings.SettingsHotkey}",
+                FontSize = 11,
+                Margin = new Avalonia.Thickness(24, 0, 0, 0),
+                Foreground = Brush("StatusWarning"),
+            };
+        }
+
         // Only where there is something to start. On "community translations only" there is no
         // backend to run, so the box would be a switch for a thing that does not exist.
         if (settings.TranslationBackend != "none")
@@ -3233,10 +3288,37 @@ public partial class MainWindow : Window
         // that has no business on the defaults screen. Saved when the field loses focus rather
         // than on every keystroke: a file written per character is a file written a hundred times
         // for one sentence.
+        // ⚠ Pre-filled from the game when it already carries one. This is the mod's own
+        // game_context, which somebody may well have written from inside the options panel while
+        // playing — showing an empty box over an answer that exists invites retyping it, and an
+        // empty box that stays empty cannot be told apart from "nothing was ever asked".
+        var inGameContext = GameConfigWriter.InGameValue(
+            report.Game.Path, descriptor, GameConfigWriter.GameContextKey);
+
+        var shownContext = preference.GameContext ?? inGameContext;
+
+        yield return new TextBlock
+        {
+            Text = "What is this game about?    (optional)",
+            FontSize = 12,
+            Margin = new Avalonia.Thickness(0, 10, 0, 0),
+            Foreground = Brush("TextSecondary"),
+        };
+
+        yield return new TextBlock
+        {
+            Text = "Sent to the AI with every line it translates, so it reaches for the right "
+                 + "words: a game about starships and one about Roman legions do not share a "
+                 + "vocabulary. Left empty, it translates without it.",
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("TextMuted"),
+        };
+
         var context = new TextBox
         {
-            Text = preference.GameContext ?? "",
-            Watermark = "What is this game about? (helps the AI: genre, tone, setting)",
+            Text = shownContext ?? "",
+            Watermark = "Genre, tone, setting - a sentence is enough",
             FontSize = 12,
             AcceptsReturn = true,
             TextWrapping = TextWrapping.Wrap,
@@ -3248,7 +3330,11 @@ public partial class MainWindow : Window
         context.LostFocus += (_, _) =>
         {
             var written = string.IsNullOrWhiteSpace(context.Text) ? null : context.Text.Trim();
-            if (written == preference.GameContext) return;
+
+            // Against what is DISPLAYED, not against what is stored: a value read from the game
+            // and left alone is not an edit, and storing it here would turn merely opening the
+            // card into a decision to write that sentence back into the game.
+            if (written == shownContext) return;
 
             preference.GameContext = written;
             _preferences.Set(report.Game.Path, preference);
@@ -3257,10 +3343,38 @@ public partial class MainWindow : Window
 
         dependents.Add(context);
         yield return context;
-        yield return driftHost;
+
+        // Said only while it is true: once edited, the value shown is theirs and saying where it
+        // came from would describe a state that no longer exists.
+        if (preference.GameContext is null && inGameContext is not null)
+        {
+            yield return new TextBlock
+            {
+                Text = "Read from this game. Edit it and it will be written back on the next set-up.",
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextMuted"),
+            };
+        }
 
         // The first fill, which also settles whether the two above start out available.
         Refresh();
+    }
+
+    /// <summary>
+    /// The catalog entry for the loader this game actually has, or null when it has none we know.
+    ///
+    /// Everything that reads or writes a game's config.json needs it — the file lives under a
+    /// folder the descriptor names — so it is resolved once rather than by each caller in its own
+    /// slightly different way.
+    /// </summary>
+    private LoaderDescriptor? InstalledDescriptor(GameReport report)
+    {
+        var loaderId = report.InstalledLoader?.Id;
+
+        return loaderId is null
+            ? null
+            : _catalog.Loaders.FirstOrDefault(l => l.Id == loaderId);
     }
 
     /// <summary>
@@ -3277,11 +3391,7 @@ public partial class MainWindow : Window
         if (!preference.ApplyModDefaults) yield break;
         if (!_settings.Current.Reviewed) yield break;
 
-        var loaderId = report.InstalledLoader?.Id;
-        var descriptor = loaderId is null
-            ? null
-            : _catalog.Loaders.FirstOrDefault(l => l.Id == loaderId);
-
+        var descriptor = InstalledDescriptor(report);
         if (descriptor is null) yield break;
 
         var target = GameLanguages.TargetFor(report, descriptor, _settings.ResolveTargetLanguage());
@@ -3630,7 +3740,7 @@ public partial class MainWindow : Window
 
         var go = new Button
         {
-            Content = "Set up this game",
+            Content = "OneClick Set Up this Game",
             Classes = { "primary" },
 
             // Nothing in the list means nothing would happen. Enabled, it would spend a click and

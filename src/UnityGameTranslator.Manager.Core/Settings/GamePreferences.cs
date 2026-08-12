@@ -48,6 +48,21 @@ public sealed class GamePreference
     [JsonPropertyName("game_context")] public string? GameContext { get; set; }
 
     /// <summary>
+    /// Whether the hotkey from the defaults replaces the one this game already carries.
+    ///
+    /// Not nullable, and no default to fall back on: unlike the settings above, this is not a
+    /// preference the defaults can express. A hotkey is the one setting a game may legitimately
+    /// know better than we do — inside it, the mod captured the key against the real keyboard,
+    /// which is the only measurement that exists — so the question is never "do I replace hotkeys"
+    /// but "do I replace THIS one", and false is the only safe answer to give on its behalf.
+    ///
+    /// ⚠ False does NOT mean the hotkey is never written: a game that has none yet gets ours
+    /// regardless, because leaving it out would let first_run_completed claim the question was
+    /// answered while the mod sat on its own default. See GameConfigWriter.Intended.
+    /// </summary>
+    [JsonPropertyName("replace_hotkey")] public bool ReplaceHotkey { get; set; }
+
+    /// <summary>
     /// The community translation the user picked for this game, by site id.
     ///
     /// Remembered because it can be chosen before there is anywhere to put it: with no loader

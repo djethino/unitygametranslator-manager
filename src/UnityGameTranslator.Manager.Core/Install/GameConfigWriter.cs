@@ -62,6 +62,65 @@ public sealed class GameConfigWriter
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
+    /// <summary>The mod's key for the panel shortcut.</summary>
+    /// <remarks>
+    /// Named here, like <see cref="GameContextKey"/>, because these are the keys read back from
+    /// outside <see cref="Intended"/> by <see cref="InGameValue"/>. A second literal spelling of
+    /// one of them would be a second declaration, which this class exists to avoid.
+    /// </remarks>
+    public const string HotkeyKey = "settings_hotkey";
+
+    /// <summary>The mod's key for what a game is about, in the words sent to the AI.</summary>
+    public const string GameContextKey = "game_context";
+
+    /// <summary>
+    /// Where this game's config.json lives. One composition, because three callers needing the
+    /// same path is exactly how two of them end up disagreeing about it.
+    /// </summary>
+    private static string ConfigPath(string gamePath, LoaderDescriptor descriptor) =>
+        Path.Combine(gamePath,
+            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar),
+            LocalTranslationProbe.ConfigFileName);
+
+    /// <summary>
+    /// What this game carries right now under one of our own keys, or null when there is nothing
+    /// to speak of — no config yet, one we cannot read, or one that never learned that key.
+    ///
+    /// ⚠ Exists because <see cref="Compare"/> deliberately cannot answer this, and for two
+    /// different reasons. A key written only on demand is skipped there the moment the game has
+    /// one of its own; and a key the game answered on its own is exactly what a screen needs to
+    /// show BEFORE offering to replace it. Both cases are a question asked next to the game's own
+    /// value, and a list of differences is the wrong shape for that.
+    ///
+    /// ⚠ Strings only, by design: the two keys read this way are both text a person wrote. A
+    /// value stored as anything else comes back null rather than guessed at.
+    /// </summary>
+    public static string? InGameValue(string gamePath, LoaderDescriptor? descriptor, string key)
+    {
+        if (descriptor is null) return null;
+
+        var path = ConfigPath(gamePath, descriptor);
+        if (!File.Exists(path)) return null;
+
+        try
+        {
+            var node = Load(path)[key];
+            if (node is null) return null;
+
+            var text = node.GetValue<JsonElement>().ValueKind == JsonValueKind.String
+                ? node.GetValue<string>()
+                : null;
+
+            return string.IsNullOrWhiteSpace(text) ? null : text;
+        }
+        catch
+        {
+            // Same silence as Compare: a config we cannot read is reported by the install path,
+            // which refuses to touch it. Saying it twice, less accurately, helps nobody.
+            return null;
+        }
+    }
+
     /// <summary>
     /// One key this tool owns, and the value it would give it.
     ///
@@ -74,6 +133,18 @@ public sealed class GameConfigWriter
     /// game may legitimately know better than we do. Such a key is also never reported as a
     /// difference: we are not offering to change it, so listing it would be an offer we do not make.
     /// </param>
+    /// <param name="AskedSeparately">
+    /// Once the game carries a value of its own, keep this key out of <see cref="Compare"/>
+    /// whatever <paramref name="OnlyIfAbsent"/> says, because a screen of its own asks about it.
+    ///
+    /// ⚠ Not the same statement as OnlyIfAbsent, and the difference is the whole point. That one
+    /// means "we are not offering to change this"; this one means "we are, elsewhere". The list of
+    /// differences is a single block somebody accepts or refuses as a whole, so a setting carrying
+    /// its own question would be answered twice — and the two answers could disagree.
+    ///
+    /// ⚠ Only once the game has a value. With none, there is no separate question to ask: the key
+    /// is written outright, and leaving it out of the list would understate what applying does.
+    /// </param>
     private readonly record struct Intent(
         string? Parent,
         string Key,
@@ -81,7 +152,8 @@ public sealed class GameConfigWriter
         string? Label,
         bool Secret = false,
         string? Note = null,
-        bool OnlyIfAbsent = false);
+        bool OnlyIfAbsent = false,
+        bool AskedSeparately = false);
 
     /// <summary>
     /// Everything we would write, and nothing else.
@@ -136,13 +208,17 @@ public sealed class GameConfigWriter
         // Only when this game has one, and never cleared by omission: a description written inside
         // the game, in the mod's own options, must survive an install from here.
         if (perGame?.GameContext is { } context)
-            intents.Add(new Intent(null, "game_context", context, "what this game is about"));
+            intents.Add(new Intent(null, GameContextKey, context, "what this game is about"));
 
         // ⚠ Three conditions, and each one closed a real way of locking somebody out of the panel.
         //
-        // 1. OFF BY DEFAULT (WriteHotkeyToGames). A hotkey belongs to one GAME: the mod captures it
-        //    against the real keyboard there, which is the only measurement that exists. This tool
-        //    only ever holds a global preference, and it cannot know what a given game already uses.
+        // 1. ASKED PER GAME (GamePreference.ReplaceHotkey), never globally. A hotkey belongs to one
+        //    GAME: the mod captures it against the real keyboard there, which is the only
+        //    measurement that exists. This tool only ever holds a global preference, and it cannot
+        //    know what a given game already uses — so the question can only be answered on that
+        //    game's card, next to both values. It used to be a single box on the defaults screen,
+        //    which asked somebody to decide for every game at once, out of sight of every one of
+        //    them, and showed nothing afterwards.
         // 2. UNIVERSAL ONLY. What a KeyCode designates depends on a per-project Unity setting
         //    ("Use Physical Keys") that no runtime API reports — so a key that prints a character
         //    means different things in different games. Six of the thirteen test games disagreed
@@ -159,9 +235,10 @@ public sealed class GameConfigWriter
             // to overwrite, and skipping it there would leave the mod on its own default while
             // first_run_completed claims the question was answered — AnswersTheWizard counts this
             // setting among the answers. So: always on a fresh config, only on demand afterwards.
-            intents.Add(new Intent(null, "settings_hotkey", settings.SettingsHotkey, "in-game hotkey",
+            intents.Add(new Intent(null, HotkeyKey, settings.SettingsHotkey, "in-game hotkey",
                 Note: "set in the game itself — applying replaces the key you chose there",
-                OnlyIfAbsent: !settings.WriteHotkeyToGames));
+                OnlyIfAbsent: !(perGame?.ReplaceHotkey ?? false),
+                AskedSeparately: true));
         }
 
         // The mod's own setting, not this tool's. Someone who installed everything from here,
@@ -255,7 +332,7 @@ public sealed class GameConfigWriter
     {
         var folder = Path.Combine(gamePath,
             descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar));
-        var path = Path.Combine(folder, LocalTranslationProbe.ConfigFileName);
+        var path = ConfigPath(gamePath, descriptor);
 
         try
         {
@@ -316,9 +393,7 @@ public sealed class GameConfigWriter
                                                    InstallerSettings settings, string targetLanguage,
                                                    GamePreference? perGame = null)
     {
-        var path = Path.Combine(gamePath,
-            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar),
-            LocalTranslationProbe.ConfigFileName);
+        var path = ConfigPath(gamePath, descriptor);
 
         if (!File.Exists(path)) return Array.Empty<ConfigDifference>();
 
@@ -355,6 +430,11 @@ public sealed class GameConfigWriter
             // Nothing is being offered about this one while the game already answers it, so there
             // is nothing to report either.
             if (intent.OnlyIfAbsent && node is not null) continue;
+
+            // Answered on its own screen instead — see Intent.AskedSeparately. Checked after the
+            // line above rather than merged with it: the two say different things, and a game
+            // with no value of its own is still reported by both.
+            if (intent.AskedSeparately && node is not null) continue;
 
             // Absent in the game means the mod is on its default there. That IS a difference worth
             // offering — it is how "your game never learned your hotkey" shows up — but it is

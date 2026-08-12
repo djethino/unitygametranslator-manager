@@ -59,7 +59,6 @@ public sealed class SettingsWindow : Window
     private TextBox _hotkey = null!;
     private TextBlock _hotkeyProblem = null!;
     private ComboBox _channel = null!;
-    private CheckBox _writeHotkey = null!;
     private CheckBox _modOnline = null!;
     private CheckBox _autoDownload = null!;
     private CheckBox _notifyUpdates = null!;
@@ -816,14 +815,13 @@ public sealed class SettingsWindow : Window
         _channel.Items.Add(new ComboBoxItem { Content = "Beta (test releases)", Tag = "beta" });
         Select(_channel, _draft.Channel);
 
-        // ⚠ Off by default, and it stays where somebody put it. The hotkey is the one setting here
-        // that a game may legitimately know better than we do: inside it, the mod captured the key
-        // against the real keyboard. This box is how somebody says "no, use mine everywhere".
-        _writeHotkey = new CheckBox
-        {
-            Content = "Replace the hotkey in games too",
-            IsChecked = _draft.WriteHotkeyToGames,
-        };
+        // ⚠ There is no "replace it in games too" box here any more, and putting one back would be
+        // a step backwards. The hotkey is the one setting a game may legitimately know better than
+        // we do — inside it, the mod captured the key against the real keyboard — so the question
+        // is never "replace them all", it is "replace THIS one", and it belongs where both keys
+        // can be read: the game's own card (GamePreference.ReplaceHotkey). Asked here it made
+        // somebody decide for every game at once, out of sight of all of them, and showed nothing
+        // afterwards — a game keeping its own key never appeared as a difference anywhere.
 
         // The mod's own connection, not this tool's. Someone who installs everything from here,
         // translation included, has what they need before the game starts.
@@ -845,11 +843,11 @@ public sealed class SettingsWindow : Window
             + "keyboard. A key that prints a character is read differently from one game to the "
             + "next, so it cannot be sent from here.", "TextMuted"));
         panel.Children.Add(_hotkeyProblem);
-        panel.Children.Add(_writeHotkey);
         panel.Children.Add(Note(
-            "Off, your games keep the key each of them already has. This is a global preference "
-            + "and we cannot know what a particular game already uses - so a key set inside a game "
-            + "wins over this one unless you say otherwise.", "TextMuted"));
+            "A game that already has its own key keeps it. This is a preference, and a key set "
+            + "inside a game was measured against your real keyboard there - so it wins over this "
+            + "one. Replacing it is offered on that game's card, where both keys are shown.",
+            "TextMuted"));
         panel.Children.Add(Row("Updates", _channel));
         panel.Children.Add(_modOnline);
         panel.Children.Add(Note(
@@ -2054,7 +2052,6 @@ public sealed class SettingsWindow : Window
         // stores it.
         if (Tag(_backend) == "google") _draft.TranslationBackend = Tag(_provider) ?? "google";
         _draft.DeeplUseFree = _deeplFree.IsChecked == true;
-        _draft.WriteHotkeyToGames = _writeHotkey.IsChecked == true;
         _draft.ModOnlineMode = _modOnline.IsChecked == true;
         _draft.AutoDownload = _autoDownload.IsChecked == true;
         _draft.NotifyUpdates = _notifyUpdates.IsChecked == true;
@@ -2155,9 +2152,6 @@ public sealed class SettingsWindow : Window
         Compare("hotkey", _hotkey.Text, saved.SettingsHotkey);
         Compare("updates channel", Tag(_channel), saved.Channel);
 
-        if ((_writeHotkey.IsChecked == true) != saved.WriteHotkeyToGames)
-            changes.Add($"replace the hotkey in games: {saved.WriteHotkeyToGames} -> {_writeHotkey.IsChecked == true}");
-
         if ((_modOnline.IsChecked == true) != saved.ModOnlineMode)
             changes.Add($"mod goes online: {saved.ModOnlineMode} -> {_modOnline.IsChecked == true}");
 
@@ -2218,7 +2212,6 @@ public sealed class SettingsWindow : Window
             field.TextChanged += (_, _) => RefreshApplyButton();
 
         _modOnline.IsCheckedChanged += (_, _) => RefreshApplyButton();
-        _writeHotkey.IsCheckedChanged += (_, _) => RefreshApplyButton();
         foreach (var box in new[] { _autoDownload, _notifyUpdates, _checkModUpdates, _notificationsEnabled })
             box.IsCheckedChanged += (_, _) => RefreshApplyButton();
         foreach (var combo in new[] { _mergeStrategy, _notificationPosition })

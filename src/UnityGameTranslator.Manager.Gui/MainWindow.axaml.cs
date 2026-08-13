@@ -3381,6 +3381,69 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// The three-position switch: published / both / on this machine.
+    ///
+    /// ⚠ Drawn from <see cref="EditScope"/> and nothing else — the positions, their order, their
+    /// names, the sentence saying what a save does, and the reason a position is out of reach all
+    /// come from the socle. This method only turns that into Avalonia controls; the mod's editor
+    /// and the site's turn the same answers into their own.
+    ///
+    /// ⚠ A position that cannot be chosen keeps its place and states why. Hiding it would make the
+    /// control look different from one screen to the next, which is the whole thing this switch
+    /// exists to avoid.
+    /// </summary>
+    private IEnumerable<Control> SideSwitch(SideStanding[] sides, EditSide chosen)
+    {
+        var row = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 0,
+            Margin = new Avalonia.Thickness(0, 10, 0, 0),
+        };
+
+        foreach (var side in sides)
+        {
+            var selected = side.Side == chosen && side.Available;
+
+            // ⚠ Keys that exist. Naming one that does not styles nothing while looking deliberate
+            // — the same trap the tab strip carries a warning about.
+            var segment = new Border
+            {
+                Background = Brush(selected ? "AccentSelected" : "SurfaceControl"),
+                BorderBrush = Brush(selected ? "AccentEdge" : "BorderSubtle"),
+                BorderThickness = new Avalonia.Thickness(1),
+                Padding = new Avalonia.Thickness(10, 4),
+                Opacity = side.Available ? 1 : 0.45,
+                Child = new TextBlock
+                {
+                    Text = EditScope.Name(side.Side),
+                    FontSize = 11,
+                    FontWeight = selected ? FontWeight.SemiBold : FontWeight.Normal,
+                    Foreground = Brush(selected ? "TextPrimary" : "TextSecondary"),
+                },
+            };
+
+            ToolTip.SetTip(segment, side.Available
+                ? EditScope.Effect(side.Side)
+                : EditScope.Explain(side.Block));
+
+            row.Children.Add(segment);
+        }
+
+        yield return row;
+
+        // What the chosen side means, spelled out rather than left to a tooltip nobody hovers.
+        yield return new TextBlock
+        {
+            Text = EditScope.Effect(chosen),
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Avalonia.Thickness(0, 4, 0, 0),
+            Foreground = Brush("TextMuted"),
+        };
+    }
+
+    /// <summary>
     /// What a translation file is MADE OF: the stage it has reached, and the bar that shows the
     /// five buckets.
     ///
@@ -3609,10 +3672,31 @@ public partial class MainWindow : Window
 
             if (merge.Summary.HasConflicts)
             {
-                await ConfirmationWindow.TellAsync(this, "This one needs a decision, line by line",
-                    summary + "\n\nA conflict is two people having written the same line differently, "
-                    + "and nothing here can choose between them for you. The mod's own merge screens "
-                    + "settle those while the game runs — they show both versions side by side.");
+                var standing = ServerIdentity.For(_settings.Current, report.SiteAccount, BuildInfo.ApiBaseUrl);
+
+                // ⚠ The site's merge screen needs an account: it holds the comparison under one,
+                // and hands the result back to the same one. Without it there is still an answer —
+                // the mod's own screens — rather than a dead end.
+                if (!standing.CanAct || string.IsNullOrWhiteSpace(_settings.Current.ApiToken))
+                {
+                    await ConfirmationWindow.TellAsync(this, "This one needs a decision, line by line",
+                        summary + "\n\nA conflict is two people having written the same line "
+                        + "differently, and nothing here can choose between them for you. "
+                        + (standing.Reason ?? "")
+                        + "\n\nThe mod's own merge screens settle these while the game runs.");
+                    return;
+                }
+
+                if (!await ConfirmationWindow.AskAsync(this, "Settle these in the browser?",
+                        summary + "\n\nA conflict is two people having written the same line "
+                        + "differently. The site shows both versions side by side, you choose, and "
+                        + "the result comes back here — nothing is published by doing this.",
+                        "Open the comparison"))
+                {
+                    return;
+                }
+
+                await ArbitrateInBrowserAsync(report, descriptor, merge, local, remote, published);
                 return;
             }
 
@@ -3654,6 +3738,79 @@ public partial class MainWindow : Window
             button.Content = report.Sync == SyncDirection.Merge ? "Settle with the published version…"
                                                                 : "Take what changed online…";
         }
+    }
+
+    /// <summary>
+    /// Send the two versions to the site's side-by-side screen, and wait for the answer.
+    ///
+    /// ⚠ **The waiting is the point.** Opening the browser is the easy half; somebody then reads
+    /// every contested line and chooses. Without coming back for the result those choices would sit
+    /// on the site and the file here would never change — the work would evaporate without a word,
+    /// which is the failure this whole area keeps producing.
+    ///
+    /// ⚠ Bounded, and cancellable. The site answers "not yet" and "this comparison is gone" with
+    /// the same 404, so waiting for ever is not a safe default — and somebody who closed the page
+    /// must not leave this window watching a decision nobody is making.
+    /// </summary>
+    private async Task ArbitrateInBrowserAsync(GameReport report, LoaderDescriptor descriptor,
+                                               TranslationMerge merge, string local, string remote,
+                                               OnlineTranslation published)
+    {
+        var token = _settings.Current.ApiToken!;
+        var client = new MergePreviewClient();
+
+        var preview = await client.OpenAsync(published.Id, local, token);
+        if (preview is null)
+        {
+            await ConfirmationWindow.TellAsync(this, "The comparison could not be opened",
+                client.LastError ?? "The site did not answer.");
+            return;
+        }
+
+        Shell.OpenUrl(preview.Url);
+
+        // Half an hour: settling a long file line by line is not a thirty-second job, and the only
+        // cost of waiting is a request every few seconds.
+        var deadline = DateTimeOffset.UtcNow.AddMinutes(30);
+        string? settled = null;
+
+        Status("Waiting for the comparison to be settled in the browser…");
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(4));
+
+            settled = await client.ResultAsync(preview.Token, token);
+            if (settled is not null) break;
+        }
+
+        if (settled is null)
+        {
+            await ConfirmationWindow.TellAsync(this, "Nothing came back",
+                "The comparison was not settled, or the page was closed. Nothing here was changed, "
+                + "and you can start it again whenever you like.");
+            return;
+        }
+
+        var result = new TranslationInstaller(_platform).WriteMerged(
+            report.Game, descriptor, settled, remote, published.FileHash,
+            merge.CountAheadOfServer(settled));
+
+        if (!result.Written)
+        {
+            await ConfirmationWindow.TellAsync(this, "Nothing was written",
+                result.Failure ?? "The file could not be written.");
+            return;
+        }
+
+        await ConfirmationWindow.TellAsync(this, "Settled",
+            "What you chose in the browser is now the translation in this game."
+            + (result.BackupPath is not null
+                ? $"\n\nYour previous file is in {TranslationInstaller.BackupFolderName}/"
+                  + Path.GetFileName(result.BackupPath) + "."
+                : ""));
+
+        await RereadAsync(report.Game);
     }
 
     /// <summary>A merge in figures, and the one caveat that changes how they should be read.</summary>
@@ -3839,6 +3996,22 @@ public partial class MainWindow : Window
                 Foreground = Brush(sync == SyncDirection.Merge ? "StatusWarning" : "TextSecondary"),
             };
         }
+
+        // ── Which copy the buttons below act on ───────────────────────────────
+        //
+        // ⚠ The same three positions, in the same order, with the same words as the mod's editor
+        // and the site's. Somebody who learns this switch in one place must not relearn it in the
+        // next — which is why the rule and the wording live in the socle rather than here.
+        var sides = EditScope.Sides(
+            hasLocalFile: true,
+            // The manager reaches the file directly: that is what it is for.
+            canReachMachine: true,
+            signedIn: standing.CanAct,
+            publishedByThisAccount: report.MyPosition is { IsMain: true },
+            publishedBySomebodyElse: report.MatchingOnline is not null
+                                     && report.MyPosition is null or { IsMain: false });
+
+        foreach (var control in SideSwitch(sides, EditSide.Local)) yield return control;
 
         var actions = new StackPanel
         {

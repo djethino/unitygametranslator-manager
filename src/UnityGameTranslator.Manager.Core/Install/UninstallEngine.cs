@@ -44,7 +44,21 @@ public sealed class UninstallEngine
     public UninstallChoice Available(GameInstall game)
     {
         var receipt = ReceiptStore.Read(game.Path);
-        if (receipt is null) return new UninstallChoice(false, false, false);
+
+        // ⚠ No receipt does not mean nothing of ours is here. A mod dropped in by hand, or put
+        // there by a build script, or installed before receipts existed, left the one screen that
+        // could remove it showing no button at all — so the answer to "how do I get rid of this"
+        // was "edit the folder yourself".
+        //
+        // What we may act on then is strictly what we can RECOGNISE: our own assembly, by name, at
+        // the two documented locations. Never a folder, never a sweep — those hold translations,
+        // and nothing here has a record of who wrote them.
+        if (receipt is null)
+        {
+            return FindUnrecordedPlugin(game) is null
+                ? new UninstallChoice(false, false, false)
+                : new UninstallChoice(RemovePlugin: true, RemoveLoader: false, RemoveUserData: true);
+        }
 
         var loaderRemovable = receipt.Loader?.InstalledByUs == true
                               && CountForeignMods(game, receipt) == 0;
@@ -55,14 +69,58 @@ public sealed class UninstallEngine
             RemoveUserData: true);
     }
 
+    /// <summary>
+    /// Our assembly sitting in this game with nothing claiming to have put it there, or null.
+    ///
+    /// ⚠ Recognised by NAME at the documented locations, never by sweeping a folder. It is the only
+    /// thing we can be certain is ours without a receipt to read.
+    /// </summary>
+    private string? FindUnrecordedPlugin(GameInstall game)
+    {
+        var detected = LoaderProbe.Detect(game.Path, _catalog);
+        if (detected is null) return null;
+
+        var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == detected.Id);
+        if (descriptor is null) return null;
+
+        return LocalTranslationProbe.FindInstalledPlugin(game.Path, descriptor) is { } found
+            ? Path.Combine(found.Directory, LocalTranslationProbe.PluginAssemblyName)
+            : null;
+    }
+
     public UninstallOutcome Apply(GameInstall game, UninstallChoice choice)
     {
         var receipt = ReceiptStore.Read(game.Path);
         if (receipt is null)
         {
+            // Nothing recorded, but our assembly is here: remove that one file and say so. The
+            // data is deliberately left alone — with no receipt we cannot tell a translation
+            // somebody wrote from one they downloaded, and the screen that asks about data is the
+            // one that knows.
+            if (choice.RemovePlugin && FindUnrecordedPlugin(game) is { } orphan)
+            {
+                try
+                {
+                    File.Delete(orphan);
+                    FileOperations.TryRemoveEmptyDirectory(Path.GetDirectoryName(orphan)!);
+
+                    var name = Path.GetRelativePath(game.Path, orphan).Replace('\\', '/');
+
+                    return new UninstallOutcome(true,
+                        $"Removed {name}. It was not installed by UnityGameTranslator Manager, so "
+                        + "nothing else was touched — your settings and translations are still there.",
+                        new[] { name }, Array.Empty<string>(), null);
+                }
+                catch (Exception ex)
+                {
+                    return new UninstallOutcome(false,
+                        $"The plugin could not be removed ({ex.Message}).",
+                        Array.Empty<string>(), Array.Empty<string>(), null);
+                }
+            }
+
             return new UninstallOutcome(false,
-                "No install receipt here. This game was not set up by this tool, so there is " +
-                "nothing it can safely remove.",
+                "No install receipt here, and no UnityGameTranslator assembly to remove.",
                 Array.Empty<string>(), Array.Empty<string>(), null);
         }
 

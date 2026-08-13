@@ -3617,10 +3617,13 @@ public partial class MainWindow : Window
             buttons.Children.Add(primary);
         }
 
-        // Absent when there is no receipt: nothing here was installed by us, so there is nothing
-        // to offer removing. It used to be greyed, while the loader's twin was hidden — the same
-        // situation dressed two ways on one screen. See the conventions above.
-        if (ReceiptStore.Read(report.Game.Path) is not null)
+        // ⚠ Offered whenever something of ours can be removed — which is NOT the same as "we have
+        // a receipt". A mod dropped in by hand, or by a build script, or installed before receipts
+        // existed, showed no button at all: the only screen able to remove it pretended there was
+        // nothing there. UninstallEngine answers for both cases; asking it is what keeps this
+        // button and that engine from disagreeing.
+        if (new UninstallEngine(_platform, _catalog).Available(report.Game) is
+            { RemovePlugin: true } or { RemoveLoader: true })
         {
             var uninstall = new Button { Content = "Uninstall...", IsEnabled = !running };
             uninstall.Click += async (_, _) => await RunUninstallAsync(report);

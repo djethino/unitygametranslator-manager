@@ -3392,8 +3392,18 @@ public partial class MainWindow : Window
     /// control look different from one screen to the next, which is the whole thing this switch
     /// exists to avoid.
     /// </summary>
-    private IEnumerable<Control> SideSwitch(SideStanding[] sides, EditSide chosen)
+    private IEnumerable<Control> SideSwitch(EditSide chosen)
     {
+        // What is reachable from a tool that holds the machine's files: everything local, and the
+        // published side only once signed in. Asked here so no caller can draw the control from a
+        // reading of its own.
+        var sides = EditScope.Sides(
+            hasLocalFile: true,
+            canReachMachine: true,
+            signedIn: !string.IsNullOrWhiteSpace(_settings.Current.ApiToken),
+            publishedByThisAccount: false,
+            publishedBySomebodyElse: false);
+
         var row = new StackPanel
         {
             Orientation = Orientation.Horizontal,
@@ -3458,6 +3468,17 @@ public partial class MainWindow : Window
     private IEnumerable<Control> TranslationMakeup(LocalTranslation local)
     {
         if (local.Counts is not { } counts || !QualityBar.HasSomethingToShow(counts)) yield break;
+
+        // ⚠ **Attached to the FIGURES, not to the buttons** — which is the answer to what this
+        // control is about. Every one of these numbers describes the file on this machine, and the
+        // very same bar on the website describes the published one: the two can differ by
+        // everything somebody has translated since they took it.
+        //
+        // Placed here rather than beside the actions on purpose. Above three buttons that each act
+        // on a different side, it looked like a choice and was none. Wherever the counts are shown,
+        // this says whose counts they are — the same reading as every screen on the site and in
+        // the game, which is what makes the glance worth learning.
+        foreach (var control in SideSwitch(EditSide.Local)) yield return control;
 
         if (QualityBar.StageOf(counts) is { } stage)
         {
@@ -3996,22 +4017,6 @@ public partial class MainWindow : Window
                 Foreground = Brush(sync == SyncDirection.Merge ? "StatusWarning" : "TextSecondary"),
             };
         }
-
-        // ── Which copy the buttons below act on ───────────────────────────────
-        //
-        // ⚠ The same three positions, in the same order, with the same words as the mod's editor
-        // and the site's. Somebody who learns this switch in one place must not relearn it in the
-        // next — which is why the rule and the wording live in the socle rather than here.
-        var sides = EditScope.Sides(
-            hasLocalFile: true,
-            // The manager reaches the file directly: that is what it is for.
-            canReachMachine: true,
-            signedIn: standing.CanAct,
-            publishedByThisAccount: report.MyPosition is { IsMain: true },
-            publishedBySomebodyElse: report.MatchingOnline is not null
-                                     && report.MyPosition is null or { IsMain: false });
-
-        foreach (var control in SideSwitch(sides, EditSide.Local)) yield return control;
 
         var actions = new StackPanel
         {

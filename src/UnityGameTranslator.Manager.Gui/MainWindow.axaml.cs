@@ -2640,7 +2640,7 @@ public partial class MainWindow : Window
         // as much as a pending update: it is the answer to "do I need to go and look".
         var pending = new List<string>();
         if (report.InstalledLoader is null) pending.Add("the loader");
-        else if (report.LoaderStanding is { UpdateAvailable: true }) pending.Add("a newer loader");
+        else if (report.LoaderUpdateOffered) pending.Add("a newer loader");
 
         if (!installed) pending.Add("the mod");
         else if (report.PluginStanding is { UpdateAvailable: true }) pending.Add("a newer mod");
@@ -3014,6 +3014,20 @@ public partial class MainWindow : Window
     /// </summary>
     private static void OpenFolder(string path) => Shell.OpenFolder(path);
 
+    /// <summary>
+    /// One line saying what is installed and, when it is behind, what is published.
+    ///
+    /// ⚠ Silent when the lookup failed. "0.11.0" with nothing after it means "we did not find out",
+    /// and that is the honest rendering — appending "up to date" to a request that never arrived
+    /// is the one sentence this screen must never produce.
+    /// </summary>
+    private static string Published(string installed, VersionStanding? standing) =>
+        standing is { UpdateAvailable: true }
+            ? $"{installed}  ·  {standing.Available} available"
+            : standing is { IsInstalled: false, Available: { } offered }
+                ? $"{installed}  ·  {offered} would be installed"
+                : installed;
+
     private static Control Facts(GameReport report)
     {
         var game = report.Game;
@@ -3028,10 +3042,16 @@ public partial class MainWindow : Window
                 _ => "could not be determined",
             }),
             ("Unity", game.UnityVersion ?? "unknown"),
-            ("Mod loader", report.InstalledLoader is null
+            // ⚠ What is here AND what is published, on one line each. This block is the answer to
+            // "where does this game stand", and it gave half of it: the installed version alone
+            // says nothing without the one it should be compared to. Said for a loader we did not
+            // install too — that it is not ours to update does not make its version a secret.
+            ("Mod loader", Published(report.InstalledLoader is null
                 ? "none installed"
-                : $"{report.InstalledLoader.Display} {report.InstalledLoader.Version ?? ""}".Trim()),
-            ("Plugin", report.InstalledPluginVersion ?? "not installed"),
+                : $"{report.InstalledLoader.Display} {report.InstalledLoader.Version ?? ""}".Trim(),
+                report.LoaderStanding)),
+            ("Plugin", Published(report.InstalledPluginVersion ?? "not installed",
+                                 report.PluginStanding)),
         };
 
         if (report.RecommendationReason is not null)
@@ -3937,13 +3957,32 @@ public partial class MainWindow : Window
         // update will ever be offered here.
         if (instead is not null)
         {
-            return new TextBlock
+            var note = new TextBlock
             {
                 Text = instead,
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("StatusWarning"),
             };
+
+            // ⚠ The newer version is stated even here, and it did not used to be: this branch
+            // REPLACED the standing line, so a loader somebody else installed showed its version
+            // and nothing about the catalog knowing a newer one. Fact first, then the reason we
+            // leave it alone — in that order, because the reason only makes sense once you know
+            // what is being left alone.
+            if (standing is { UpdateAvailable: true })
+            {
+                var available = new TextBlock
+                {
+                    Text = $"{standing.Available} is available.",
+                    FontSize = 12,
+                    Foreground = Brush("StatusInfo"),
+                };
+
+                return new StackPanel { Spacing = 2, Children = { available, note } };
+            }
+
+            return note;
         }
 
         // ⚠ Three states. Saying "up to date" when the lookup failed is the one sentence this
@@ -4139,7 +4178,7 @@ public partial class MainWindow : Window
             explanation.Children.Add(new TextBlock
             {
                 Text = steps.Count > 0
-                    ? string.Join("  ·  ", steps)
+                    ? string.Join("  ·  ", steps.Select(step => step.Text))
                     : "Everything is installed and up to date here.",
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
@@ -4208,7 +4247,7 @@ public partial class MainWindow : Window
 
         var go = new Button
         {
-            Content = "OneClick Set Up this Game",
+            Content = OneClickVerb(steps),
             Classes = { "primary" },
 
             // Nothing in the list means nothing would happen. Enabled, it would spend a click and
@@ -4246,25 +4285,50 @@ public partial class MainWindow : Window
     };
 
     /// <summary>
+    /// The kind of act a one-click step is, apart from the sentence describing it.
+    ///
+    /// ⚠ Exists so the BUTTON can be named from the very list it is about to run. It was labelled
+    /// "OneClick Set Up this Game" always — on a game already set up whose only pending act was an
+    /// update, and on one where nothing was pending at all. Deriving the label from the same list
+    /// the sentence beside it comes from is what makes the two incapable of disagreeing.
+    /// </summary>
+    private enum OneClickAct
+    {
+        InstallLoader, UpdateLoader, InstallMod, UpdateMod,
+        ApplySettings, TakeTranslation, UpdateTranslation, ReplaceTranslation,
+    }
+
+    /// <summary>One act, and the sentence shown for it.</summary>
+    private sealed record OneClickStep(OneClickAct Act, string Text);
+
+    /// <summary>
     /// What one click would actually do here, in order, and nothing it would not.
     ///
     /// Recomputed rather than remembered, so the sentence cannot describe a state the game left
     /// behind two rescans ago.
     /// </summary>
-    private IEnumerable<string> OneClickSteps(GameReport report, GamePreference preference)
+    private IEnumerable<OneClickStep> OneClickSteps(GameReport report, GamePreference preference)
     {
         if (report.InstalledLoader is null && report.RecommendedLoader is { } loader)
-            yield return $"install {loader.Display}";
-        else if (report.LoaderStanding is { UpdateAvailable: true } loaderStanding)
-            yield return $"update the loader to {loaderStanding.Available}";
+            yield return new(OneClickAct.InstallLoader, $"install {loader.Display}");
+        else if (report.LoaderUpdateOffered)
+            yield return new(OneClickAct.UpdateLoader,
+                             $"update the loader to {report.LoaderStanding!.Available}");
 
         if (report.InstalledPluginVersion is null)
-            yield return "install the mod";
+            yield return new(OneClickAct.InstallMod, "install the mod");
         else if (report.PluginStanding is { UpdateAvailable: true } pluginStanding)
-            yield return $"update the mod to {pluginStanding.Available}";
+            yield return new(OneClickAct.UpdateMod, $"update the mod to {pluginStanding.Available}");
 
-        if (preference.ApplyModDefaults && _settings.Current.Reviewed)
-            yield return "apply your settings";
+        // ⚠ Only when it would actually change something. This step used to be listed whenever the
+        // box was ticked — which it is by default — so the list was NEVER empty, "nothing left for
+        // one click to do" was unreachable on any game, and the button stayed lit offering to
+        // rewrite a config.json with the values already in it.
+        if (preference.ApplyModDefaults && _settings.Current.Reviewed
+            && SettingsWouldChangeAnything(report, preference))
+        {
+            yield return new(OneClickAct.ApplySettings, "apply your settings");
+        }
 
         if (!_takeTranslation || PickTranslation(report) is not { } chosen) yield break;
 
@@ -4272,16 +4336,66 @@ public partial class MainWindow : Window
         // person is about to authorise one of them with a single click.
         yield return TranslationOffers.For(report, chosen) switch
         {
-            TranslationOffer.ReplacesWork =>
-                "replace the translation here, losing what was never uploaded (it will ask first)",
-            TranslationOffer.ReplacesChoice =>
-                "swap the translation here for another one (it will ask first)",
+            TranslationOffer.ReplacesWork => new(OneClickAct.ReplaceTranslation,
+                "replace the translation here, losing what was never uploaded (it will ask first)"),
+            TranslationOffer.ReplacesChoice => new(OneClickAct.ReplaceTranslation,
+                "swap the translation here for another one (it will ask first)"),
             TranslationOffer.FreeToTake when report.LocalTranslation is not null =>
-                "update the translation",
-            _ =>
+                new(OneClickAct.UpdateTranslation, "update the translation"),
+            _ => new(OneClickAct.TakeTranslation,
                 $"take the {chosen.TargetLanguage ?? Languages.NameOf(_settings.ResolveTargetLanguage())} "
-                + $"translation by {chosen.Author ?? "its author"}",
+                + $"translation by {chosen.Author ?? "its author"}"),
         };
+    }
+
+    /// <summary>
+    /// Whether writing the defaults into this game would change anything at all.
+    ///
+    /// Three answers, and the first two are yes for the same reason: there is no configuration
+    /// here yet, so applying the defaults creates one. Only a game that HAS a config can be found
+    /// to already agree with them — which is exactly what <see cref="GameConfigWriter.Compare"/>
+    /// answers, and what the list of differences on this card already shows.
+    /// </summary>
+    private bool SettingsWouldChangeAnything(GameReport report, GamePreference preference)
+    {
+        var descriptor = InstalledDescriptor(report);
+
+        // No loader yet: nothing has been written anywhere, and the install will write it.
+        if (descriptor is null) return true;
+
+        if (!LocalTranslationProbe.HasConfig(report.Game.Path, descriptor)) return true;
+
+        var target = GameLanguages.TargetFor(report, descriptor, _settings.ResolveTargetLanguage());
+
+        return new GameConfigWriter()
+            .Compare(report.Game.Path, descriptor, _settings.Current, target, preference).Count > 0;
+    }
+
+    /// <summary>
+    /// The button's own words, taken from the acts it is about to perform.
+    ///
+    /// ⚠ Named after the DOMINANT act, in the order somebody would describe the job themselves:
+    /// putting something in place outranks updating it, updating the tool outranks fetching a
+    /// translation, and settings come last because they are the one act nobody would call a
+    /// set-up. An empty list says so instead of pretending — the button is disabled beneath it.
+    /// </summary>
+    private static string OneClickVerb(IReadOnlyList<OneClickStep> steps)
+    {
+        if (steps.Count == 0) return "Nothing to OneClick";
+
+        if (steps.Any(s => s.Act is OneClickAct.InstallLoader or OneClickAct.InstallMod))
+            return "OneClick Set Up this Game";
+
+        if (steps.Any(s => s.Act is OneClickAct.UpdateLoader or OneClickAct.UpdateMod))
+            return "OneClick Update this Game";
+
+        if (steps.Any(s => s.Act is OneClickAct.UpdateTranslation))
+            return "OneClick Update the Translation";
+
+        if (steps.Any(s => s.Act is OneClickAct.TakeTranslation or OneClickAct.ReplaceTranslation))
+            return "OneClick Get the Translation";
+
+        return "OneClick Apply your Settings";
     }
 
     /// <summary>
@@ -4340,7 +4454,7 @@ public partial class MainWindow : Window
         body.Children.Add(new TextBlock
         {
             Text = string.Join(Environment.NewLine,
-                OneClickSteps(report, preference).Select(step => "• " + step)),
+                OneClickSteps(report, preference).Select(step => "• " + step.Text)),
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("TextSecondary"),
         });
@@ -4536,7 +4650,9 @@ public partial class MainWindow : Window
             // if needed", and forcing would replace a perfectly current loader on every click.
             InstallLoader = loader && (force
                                        || plan.InstallLoader
-                                       || report.LoaderStanding is { UpdateAvailable: true }),
+                                       // ⚠ Offered, not merely available: a newer loader we did
+                                       // not install is reported and never written.
+                                       || report.LoaderUpdateOffered),
             InstallPlugin = plugin,
         };
     }
@@ -5452,8 +5568,8 @@ public partial class MainWindow : Window
             // Same three verbs as the mod's section, in the same order, for the same reasons.
             // "Reinstall" is what puts back a loader whose files were damaged — reachable only by
             // removing everything first, until now.
-            return report.LoaderStanding is { UpdateAvailable: true } standing
-                ? $"Update the loader to {standing.Available}"
+            return report.LoaderUpdateOffered
+                ? $"Update the loader to {report.LoaderStanding!.Available}"
                 : "Reinstall the loader";
         }
 

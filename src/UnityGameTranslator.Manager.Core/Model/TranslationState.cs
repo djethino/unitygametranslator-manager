@@ -308,6 +308,21 @@ public sealed class GameReport
     public VersionStanding? LoaderStanding { get; set; }
 
     /// <summary>
+    /// A newer loader exists AND replacing it is ours to offer.
+    ///
+    /// ⚠ The distinction the whole card rests on. <see cref="LoaderStanding"/> reports what the
+    /// catalog knows about the loader in this game, whoever put it there — that is information,
+    /// and withholding it left people looking at a version months behind with nothing said. This
+    /// is the other question: a loader installed by somebody else belongs to them, very likely to
+    /// another mod that needs that exact version, and touching it is not ours to propose.
+    ///
+    /// Every path that ACTS or offers to act reads this one. Every path that merely informs reads
+    /// LoaderStanding.
+    /// </summary>
+    public bool LoaderUpdateOffered =>
+        InstalledLoader is { InstalledByUs: true } && LoaderStanding is { UpdateAvailable: true };
+
+    /// <summary>
     /// The community entry that is the same lineage as the local file, matched on uuid.
     ///
     /// This is the difference between "3 translations available" and "you already have this

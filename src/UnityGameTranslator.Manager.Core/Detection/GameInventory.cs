@@ -217,17 +217,23 @@ public sealed class GameInventory
     }
 
     /// <summary>
-    /// The installed loader against the catalog's entry for it.
+    /// The installed loader against the catalog's entry for it — WHOEVER installed it.
     ///
-    /// ⚠ Only for a loader WE installed. One that was already there belongs to whoever put it
-    /// there — very likely another mod that needs that exact version — and telling its owner it
-    /// is out of date invites them to let us replace it, which is the one thing this tool has
-    /// promised not to do. The receipt is what separates the two.
+    /// ⚠ This used to answer null for a loader that was already there, so that no update could be
+    /// offered on somebody else's files. It withheld the FACT along with the offer: a card could
+    /// show "BepInEx 6.0.0" beside a catalog that had known about 6.0.2 for months and say
+    /// nothing, on a screen whose whole purpose is to tell you where you stand.
+    ///
+    /// ⚠ Knowing is not acting, and the second half of that rule still holds without reservation:
+    /// a loader we did not install is never updated or replaced from here — other mods may need
+    /// that exact version. The refusal now lives where the ACTION is decided
+    /// (<see cref="GameReport.LoaderUpdateOffered"/>, LoaderVerb, the install plan), which is
+    /// where it belonged, and the screen says both things at once: what exists, and why we leave
+    /// it alone.
     /// </summary>
     private VersionStanding? ReadLoaderStanding(GameReport report)
     {
         if (report.InstalledLoader is not { } installed) return null;
-        if (!installed.InstalledByUs) return null;
 
         var known = _catalog.Loaders.FirstOrDefault(l => l.Id == installed.Id);
         if (known is null) return null;

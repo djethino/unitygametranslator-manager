@@ -137,7 +137,12 @@ public static class SituationReader
     private static GameSituationInfo? Behind(GameReport report)
     {
         var plugin = report.PluginStanding is { UpdateAvailable: true } p ? p : null;
-        var loader = report.LoaderStanding is { UpdateAvailable: true } l ? l : null;
+
+        // ⚠ LoaderUpdateOffered, not LoaderStanding: this situation carries the verb "Update", and
+        // a card that offers to update a loader we may not touch would be promising something it
+        // refuses to do. The newer version is still reported on the game's own card, as a fact
+        // with the reason we leave it alone beside it.
+        var loader = report.LoaderUpdateOffered ? report.LoaderStanding : null;
 
         if (plugin is null && loader is null) return null;
 

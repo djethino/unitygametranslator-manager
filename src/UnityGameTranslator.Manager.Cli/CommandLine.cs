@@ -295,6 +295,15 @@ public static class CommandLine
 
         if (report.LoaderStanding is { } loaderStanding) Console.WriteLine($"              {Standing(loaderStanding)}");
 
+        // ⚠ Right under the version it qualifies. The standing is now reported for a loader
+        // whoever installed it - withholding the fact was worse than stating it - but a bare
+        // "6.0.2 available" on somebody else's loader reads as a job this tool is failing to do.
+        if (report.InstalledLoader is { InstalledByUs: false })
+        {
+            Console.WriteLine("              not installed by this tool - other mods may need this "
+                              + "exact version, so it is never updated or removed from here");
+        }
+
         Console.WriteLine($"Plugin      : {report.InstalledPluginVersion ?? "not installed"}");
 
         if (report.PluginStanding is { } pluginStanding) Console.WriteLine($"              {Standing(pluginStanding)}");

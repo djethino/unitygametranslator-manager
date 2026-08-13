@@ -3358,6 +3358,16 @@ public partial class MainWindow : Window
     //    version, the game's name, the file — and say "UnityGameTranslator Manager", never "this
     //    tool" and never a bare "it". Two short sentences beat one long one, and a sentence that
     //    only sets a mood beats nothing at all.
+    //
+    //  · COLOUR SAYS WHAT KIND OF SENTENCE IT IS, and it is not decoration:
+    //      StatusError   — broken or impossible. Nothing to try here.
+    //      StatusWarning — a LIMIT or a risk: what we will not do, what could be lost. "This
+    //                      loader is not ours, so it is never updated from here" is this one.
+    //      StatusInfo    — something is available, an act is offered.
+    //      StatusSuccess — the state somebody wanted is reached.
+    //      muted/opacity — context. Nothing to decide, nothing at stake.
+    //    ⚠ A warning faded to 0.65 with no colour reads as a footnote, which is exactly how the
+    //    "not installed by us" line ended up looking less important than the version above it.
     // ─────────────────────────────────────────────────────────────────────────────────────────
 
     private Control LoaderSection(GameReport report)
@@ -3890,14 +3900,18 @@ public partial class MainWindow : Window
     /// </summary>
     private Control StandingLine(VersionStanding? standing, string? instead)
     {
+        // ⚠ A warning, and it was dressed as a footnote — faded to 0.65 with no colour, so the one
+        // line saying "this is not ours, we will never update or remove it" read as less important
+        // than the version above it. It is the opposite: it is the sentence that explains why no
+        // update will ever be offered here.
         if (instead is not null)
         {
             return new TextBlock
             {
                 Text = instead,
                 FontSize = 12,
-                Opacity = 0.65,
                 TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("StatusWarning"),
             };
         }
 

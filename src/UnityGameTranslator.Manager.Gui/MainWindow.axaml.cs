@@ -2325,11 +2325,13 @@ public partial class MainWindow : Window
                                                            StringComparison.OrdinalIgnoreCase);
 
         ToolTip.SetTip(mark, linked
-            ? (elsewhere ? $"On {server} — not the site this tool is set to." : null)
-              ?? "Signing in happens inside the game, and is remembered per game. It is what lets "
-                 + "this one publish a translation or contribute to somebody else's."
-            : "Signing in happens inside the game, from the mod's own panel. Without it this game "
-              + "can use community translations but cannot publish or contribute.");
+            ? (elsewhere ? $"Signed in on {server}, which is not the site UnityGameTranslator "
+                         + "Manager is set to." : null)
+              ?? "Signed in from inside the game, and remembered per game — one machine can hold "
+                 + "several accounts. This is what lets this game publish a translation or "
+                 + "contribute to somebody else's."
+            : "Not signed in. Signing in happens inside the game, in the mod's own panel. This "
+              + "game can still use community translations, but cannot publish or contribute.");
 
         if (elsewhere) mark.Foreground = Brush("StatusWarning");
 
@@ -3349,6 +3351,13 @@ public partial class MainWindow : Window
     // files come back the moment it closes. It does NOT grey "Play": there the running game is
     // not an obstacle, it is the act already done, and the only thing a second press could do is
     // start a second copy. Same fact, two readings, and the rule above is what tells them apart.
+    //
+    //  · WORDING — name the subject, then the consequence. "It was here before you started using
+    //    this tool" said nothing about WHICH loader, WHICH version, or who "this tool" was: three
+    //    blanks the reader had to fill in to make sense of one sentence. Write the loader and its
+    //    version, the game's name, the file — and say "UnityGameTranslator Manager", never "this
+    //    tool" and never a bare "it". Two short sentences beat one long one, and a sentence that
+    //    only sets a mood beats nothing at all.
     // ─────────────────────────────────────────────────────────────────────────────────────────
 
     private Control LoaderSection(GameReport report)
@@ -3372,10 +3381,14 @@ public partial class MainWindow : Window
                 Foreground = Brush("TextPrimary"),
             });
 
+            // ⚠ Names what it is talking about. "It was here before you started using this tool"
+            // described a situation without ever saying WHICH loader, WHICH version, or who "this
+            // tool" was — three things the reader has to supply themselves to make sense of it.
             panel.Children.Add(StandingLine(standing, installed.InstalledByUs
                 ? null
-                : "It was here before you started using this tool, so it is left alone — other "
-                + "mods may depend on this exact version."));
+                : $"{installed.Display} {installed.Version} was not installed by "
+                + "UnityGameTranslator Manager. Other mods may need this exact version, so it is "
+                + "never updated or removed from here."));
         }
         else if (report.EligibleLoaders.Count > 0)
         {
@@ -3593,7 +3606,8 @@ public partial class MainWindow : Window
             // like one that can. Kept next to the buttons it explains.
             panel.Children.Add(new TextBlock
             {
-                Text = "The game is running. Close it and this comes back on its own.",
+                Text = $"{report.Game.Name} is running, so its files are locked. Close it to "
+                     + "install, update or remove anything.",
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("StatusWarning"),
@@ -3660,8 +3674,9 @@ public partial class MainWindow : Window
 
                 ToolTip.SetTip(control, preference.ApplyModDefaults
                     ? control.Tag as string
-                    : "Available when \"Use my mod defaults here\" is ticked — without it, this "
-                      + "game's configuration file is left untouched, and this is written into it.");
+                    : "Only applies while \"Use my mod defaults here\" is ticked: this setting is "
+                      + "written into the game's config.json, and that box decides whether "
+                      + "anything is written into it at all.");
             }
 
             ShowActionBar(report);
@@ -4496,8 +4511,8 @@ public partial class MainWindow : Window
 
         var lines = new List<string>
         {
-            $"{theirs.Display} was already here when this tool first saw this game, so it is left "
-            + "alone: it is not ours, and other mods may be running on it.",
+            $"{theirs.Display} was not installed by UnityGameTranslator Manager, so it is never "
+            + "modified or removed from here.",
         };
 
         // The count is already measured for the uninstaller's refusal; saying it here turns that
@@ -4519,8 +4534,8 @@ public partial class MainWindow : Window
                     + "you mean to start over.");
         }
 
-        lines.Add("To remove " + theirs.Display + " itself, follow its own instructions. This tool "
-                + "will not guess at another program's files.");
+        lines.Add($"To remove {theirs.Display} itself, follow its own documentation. "
+                + "UnityGameTranslator Manager does not guess at another program's files.");
 
         return string.Join(Environment.NewLine + Environment.NewLine, lines);
     }

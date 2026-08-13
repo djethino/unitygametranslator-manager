@@ -347,12 +347,40 @@ public sealed class InstallEngine
         // every version and cannot be switched off.
         CopyTree(archive.ExtractedPath, plan.Loader.PluginDir, files);
 
-        // A copy left somewhere else is not ours to delete — but two assemblies in one game means
-        // the loader may pick either, so it is named rather than left to be discovered.
+        // ⚠ Removed, not merely announced — and the distinction matters because this is OUR
+        // assembly, by name, not somebody else's file. "We never delete what we did not install"
+        // exists to protect other people's work; applied to a stray copy of UnityGameTranslator it
+        // protected nothing and left two of our own assemblies in one game, with the loader free
+        // to load either. Telling somebody to go and delete it themselves is asking them to finish
+        // an install we chose to leave broken.
+        //
+        // ⚠ The FILE by name, and the directory only if it empties. Anything else in there belongs
+        // to whoever put it there — and under BepInEx that same folder is where settings and
+        // translations live, which no install may touch.
         if (plan.StrayPluginDirectory is { } stray)
         {
-            Status?.Invoke($"Another plugin copy is still in {stray}. Remove it: with two of them " +
-                           "in one game, the loader may load either.");
+            var directory = Path.Combine(plan.Game.Path,
+                stray.Replace('/', Path.DirectorySeparatorChar));
+
+            var copy = Path.Combine(directory, LocalTranslationProbe.PluginAssemblyName);
+
+            try
+            {
+                if (File.Exists(copy))
+                {
+                    File.Delete(copy);
+                    Status?.Invoke($"Removed the other plugin copy in {stray}.");
+                }
+
+                FileOperations.TryRemoveEmptyDirectory(directory);
+            }
+            catch (Exception ex)
+            {
+                // Said, never silent: a copy still there is the one thing that makes this install
+                // behave unpredictably, and the reason it survived is worth reading.
+                Status?.Invoke($"Could not remove the plugin copy in {stray} ({ex.Message}). "
+                             + "Delete it by hand: with two in one game, the loader may load either.");
+            }
         }
 
         receipt.Plugin = new ReceiptPlugin

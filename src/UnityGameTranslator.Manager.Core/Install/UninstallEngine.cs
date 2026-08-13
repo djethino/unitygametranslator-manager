@@ -145,8 +145,19 @@ public sealed class UninstallEngine
 
             // A changed hash means the user (or another tool) rewrote this file. Deleting it
             // would destroy work we never made.
+            //
+            // ⚠ Except our own assembly, and the exception is the point of the rule rather than a
+            // hole in it. What this guard protects is WORK — a translation, a config, a font
+            // somebody replaced. UnityGameTranslator.dll is none of those: a different hash there
+            // means a build from elsewhere, a dev deployment, a partial update. Keeping it made
+            // "Uninstall" leave the mod running in a game it claimed to have cleaned, which is the
+            // one outcome this button must never produce.
+            var ours = string.Equals(Path.GetFileName(file.Path),
+                                     LocalTranslationProbe.PluginAssemblyName,
+                                     StringComparison.OrdinalIgnoreCase);
+
             var current = FileOperations.HashFile(path);
-            if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
+            if (!ours && !string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
             {
                 kept.Add($"{file.Path} (changed since install — left untouched)");
                 continue;

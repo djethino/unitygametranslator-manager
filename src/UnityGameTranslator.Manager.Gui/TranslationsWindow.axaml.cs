@@ -81,9 +81,19 @@ public sealed class TranslationsWindow : Window
     /// </summary>
     private readonly GamePreferences _preferences;
 
+    /// <summary>
+    /// Opened with every language shown, rather than filtered on the one this game uses.
+    ///
+    /// Asked for by the card, which offers two doors into this same list: the everyday one, and
+    /// this — for a game with nothing in your language, where the answer is somebody else's.
+    /// </summary>
+    private readonly bool _anyLanguage;
+
     public TranslationsWindow(GameReport report, LoaderDescriptor loader, SettingsStore settings,
-                              AccountLineages lineages, GamePreferences preferences)
+                              AccountLineages lineages, GamePreferences preferences,
+                              bool anyLanguage = false)
     {
+        _anyLanguage = anyLanguage;
         _report = report;
         _loader = loader;
         _settings = settings;
@@ -305,7 +315,7 @@ public sealed class TranslationsWindow : Window
 
         var source = installedSource ?? gameSource;
 
-        var hasTarget = _everything.Any(t =>
+        var hasTarget = !_anyLanguage && _everything.Any(t =>
             string.Equals(t.TargetLanguage, target, StringComparison.OrdinalIgnoreCase));
 
         Select(_target, hasTarget ? target : null);

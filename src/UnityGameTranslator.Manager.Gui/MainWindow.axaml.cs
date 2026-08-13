@@ -670,7 +670,7 @@ public partial class MainWindow : Window
     /// its plugins go, not where the mod keeps its file. Writing to the wrong one would put a
     /// translation somewhere the mod never looks, and it would read as "the download did nothing".
     /// </summary>
-    private async Task OpenTranslationsAsync(GameReport report)
+    private async Task OpenTranslationsAsync(GameReport report, bool anyLanguage = false)
     {
         var loaderId = report.InstalledLoader?.Id ?? report.RecommendedLoader?.Id;
         var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == loaderId);
@@ -681,7 +681,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        var window = new TranslationsWindow(report, descriptor, _settings, _lineages, _preferences);
+        var window = new TranslationsWindow(report, descriptor, _settings, _lineages, _preferences,
+                                            anyLanguage);
         await window.ShowDialog(this);
 
         // Only when something was actually written: re-reading the game on every close would
@@ -2568,16 +2569,43 @@ public partial class MainWindow : Window
 
         if (report.OnlineTranslations.Count > 0)
         {
-            var browse = new Button
+            // Two buttons rather than a language picker: the app already has one at the top, and a
+            // second would be two places to set the same thing. These open the SAME list, filtered
+            // differently — the everyday case first, the wider net beside it.
+            var buttons = new StackPanel
             {
-                Content = "See them and choose",
-                FontSize = 12,
-                HorizontalAlignment = HorizontalAlignment.Left,
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
                 Margin = new Avalonia.Thickness(0, 6, 0, 0),
             };
 
-            browse.Click += async (_, _) => await OpenTranslationsAsync(report);
-            question.Children.Add(browse);
+            if (inMyLanguage.Count > 0)
+            {
+                var mineFirst = new Button
+                {
+                    Content = $"Choose one in {Languages.NameOf(target)}",
+                    FontSize = 12,
+                    Classes = { "primary" },
+                };
+
+                mineFirst.Click += async (_, _) => await OpenTranslationsAsync(report);
+                buttons.Children.Add(mineFirst);
+            }
+
+            if (elsewhere > 0)
+            {
+                var anyLanguage = new Button
+                {
+                    Content = inMyLanguage.Count > 0 ? "See every language" : "See what exists",
+                    FontSize = 12,
+                    Classes = { inMyLanguage.Count > 0 ? "" : "primary" },
+                };
+
+                anyLanguage.Click += async (_, _) => await OpenTranslationsAsync(report, anyLanguage: true);
+                buttons.Children.Add(anyLanguage);
+            }
+
+            question.Children.Add(buttons);
         }
         else
         {

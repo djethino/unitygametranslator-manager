@@ -2772,7 +2772,7 @@ public partial class MainWindow : Window
         };
 
         body.Children.Add(take);
-        yield return Card(body);
+        yield return Callout(body, "CalloutInfoBg", "StatusInfo");
     }
 
     /// <summary>
@@ -3921,16 +3921,9 @@ public partial class MainWindow : Window
             });
         }
 
-        yield return new Border
-        {
-            Background = Brush("CalloutWarningBg"),
-            BorderBrush = Brush("StatusWarning"),
-            BorderThickness = new Avalonia.Thickness(1),
-            CornerRadius = new Avalonia.CornerRadius(6),
-            Padding = new Avalonia.Thickness(12, 10),
-            Margin = new Avalonia.Thickness(0, 8, 0, 0),
-            Child = body,
-        };
+        var notice = Callout(body, "CalloutWarningBg", "StatusWarning");
+        ((Border)notice).Margin = new Avalonia.Thickness(0, 8, 0, 0);
+        yield return notice;
     }
 
     /// <summary>
@@ -4635,7 +4628,7 @@ public partial class MainWindow : Window
         };
 
         body.Children.Add(fix);
-        yield return Card(body);
+        yield return Callout(body, "CalloutWarningBg", "StatusWarning");
     }
 
     /// <summary>
@@ -4711,7 +4704,7 @@ public partial class MainWindow : Window
         open.Click += (_, _) => Shell.OpenFolder(parent);
         body.Children.Add(open);
 
-        yield return Card(body);
+        yield return Callout(body, "CalloutWarningBg", "StatusWarning");
     }
 
     /// <summary>
@@ -5804,19 +5797,34 @@ public partial class MainWindow : Window
     /// A message that needs to stand out, tinted rather than shouted: the hue laid over the base
     /// surface, with a coloured edge. A flat saturated block would fight the rest of the window.
     /// </summary>
-    private static Control Callout(string text, string backgroundKey, string edgeKey) => new Border
-    {
-        Background = Brush(backgroundKey),
-        BorderBrush = Brush(edgeKey),
-        BorderThickness = new Avalonia.Thickness(3, 0, 0, 0),
-        CornerRadius = new Avalonia.CornerRadius(4),
-        Padding = new Avalonia.Thickness(12, 9),
-        Child = new TextBlock
+    private static Control Callout(string text, string backgroundKey, string edgeKey) =>
+        Callout(new TextBlock
         {
             Text = text,
             TextWrapping = TextWrapping.Wrap,
             FontSize = 12,
             Foreground = Brush("TextPrimary"),
-        },
+        }, backgroundKey, edgeKey);
+
+    /// <summary>
+    /// The same notice, around something richer than a sentence — a list, a button, both.
+    ///
+    /// ⚠ One shape for every notice on this screen, and it had drifted into three: the blockers
+    /// used this, the configuration differences built their own Border with a full outline and a
+    /// different radius, and the newest warnings were dressed as plain cards, which made a problem
+    /// look like a section. A notice is recognised by its edge before it is read; three edges mean
+    /// nothing is recognised at all.
+    /// </summary>
+    private static Control Callout(Control content, string backgroundKey, string edgeKey) => new Border
+    {
+        Background = Brush(backgroundKey),
+        BorderBrush = Brush(edgeKey),
+
+        // The left rule, not a box: it reads as a margin note against the cards it sits between,
+        // and an outlined rectangle inside another outlined rectangle reads as a dialog.
+        BorderThickness = new Avalonia.Thickness(3, 0, 0, 0),
+        CornerRadius = new Avalonia.CornerRadius(4),
+        Padding = new Avalonia.Thickness(12, 9),
+        Child = content,
     };
 }

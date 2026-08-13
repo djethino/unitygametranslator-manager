@@ -2534,7 +2534,7 @@ public partial class MainWindow : Window
 
             // What it is made of, whose it is, and what can be done with it — the three questions
             // this tab exists for, and none of them was answered here.
-            foreach (var control in TranslationMakeup(local)) body.Children.Add(control);
+            foreach (var control in TranslationMakeup(report, local)) body.Children.Add(control);
             foreach (var control in LineageNotes(report)) body.Children.Add(control);
             foreach (var control in TranslationWorkbench(report, heading: false)) body.Children.Add(control);
 
@@ -3237,7 +3237,7 @@ public partial class MainWindow : Window
             // borrowing its numbers would describe a stranger's file under the words "on this
             // machine". It is also the only thing that answers "is what I am using any good" —
             // which used to be unanswerable here, on the one screen devoted to it.
-            foreach (var control in TranslationMakeup(local)) panel.Children.Add(control);
+            foreach (var control in TranslationMakeup(report, local)) panel.Children.Add(control);
         }
         else
         {
@@ -3434,17 +3434,21 @@ public partial class MainWindow : Window
         return pair;
     }
 
-    private IEnumerable<Control> SideSwitch(EditSide chosen)
+    private IEnumerable<Control> SideSwitch(GameReport report, EditSide chosen)
     {
-        // What is reachable from a tool that holds the machine's files: everything local, and the
-        // published side only once signed in. Asked here so no caller can draw the control from a
-        // reading of its own.
+        // What is reachable from a tool that holds the machine's files, and what this account is
+        // ENTITLED to touch. Asked here so no caller can draw the control from a reading of its own.
+        //
+        // ⚠ **A branch counts as mine.** It is my row in somebody else's lineage: it lives on the
+        // server, it is written by me, and nobody else may touch it. Reading "published by this
+        // account" as "leads the lineage" would grey the server side for every contributor — the
+        // people who most need to see where their work goes.
         var sides = EditScope.Sides(
             hasLocalFile: true,
             canReachMachine: true,
             signedIn: !string.IsNullOrWhiteSpace(_settings.Current.ApiToken),
-            publishedByThisAccount: false,
-            publishedBySomebodyElse: false);
+            publishedByThisAccount: report.MyPosition is not null,
+            publishedBySomebodyElse: report.MyPosition is null && report.MatchingOnline is not null);
 
         var row = new StackPanel
         {
@@ -3507,12 +3511,18 @@ public partial class MainWindow : Window
     /// the moment somebody plays, their copy stops being the published one, and borrowing its
     /// numbers would describe a stranger's file under the words "on this machine".
     /// </summary>
-    private IEnumerable<Control> TranslationMakeup(LocalTranslation local)
+    private IEnumerable<Control> TranslationMakeup(GameReport report, LocalTranslation local)
     {
         if (local.Counts is not { } counts || !QualityBar.HasSomethingToShow(counts)) yield break;
 
-        // Whose figures these are. One chip, not the switch: this block reports, it does not act.
-        yield return SideChip(EditSide.Local, selected: true);
+        // ⚠ The full strip here, one chip per action below — the same two forms the website shows.
+        //
+        // It is not decoration: what it greys depends on the CONTEXT and on the RIGHTS. Signed out,
+        // the published side means nothing. A lineage somebody else leads is not ours to rewrite.
+        // A branch, on the other hand, IS ours — it lives on the server and nobody else may touch
+        // it — so it must not be greyed for the contributors who most need to see where their work
+        // goes.
+        foreach (var control in SideSwitch(report, EditSide.Local)) yield return control;
 
         if (QualityBar.StageOf(counts) is { } stage)
         {

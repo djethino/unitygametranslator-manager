@@ -3392,6 +3392,48 @@ public partial class MainWindow : Window
     /// control look different from one screen to the next, which is the whole thing this switch
     /// exists to avoid.
     /// </summary>
+    /// <summary>
+    /// One position of the switch, drawn on its own: the mark an ACTION carries to say where it
+    /// writes.
+    ///
+    /// ⚠ **This is the point of the whole control.** Edit and Publish do not aim at the same place,
+    /// and nothing on a button says so — the label describes the verb, never the destination. The
+    /// mark does, in the same three words used everywhere else, so the destination is read at a
+    /// glance rather than inferred.
+    /// </summary>
+    private Control SideChip(EditSide side, bool selected)
+    {
+        var chip = new Border
+        {
+            Background = Brush(selected ? "AccentSelected" : "SurfaceControl"),
+            BorderBrush = Brush(selected ? "AccentEdge" : "BorderSubtle"),
+            BorderThickness = new Avalonia.Thickness(1),
+            CornerRadius = new Avalonia.CornerRadius(4),
+            Padding = new Avalonia.Thickness(7, 2),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+            Margin = new Avalonia.Thickness(0, 4, 0, 0),
+            Child = new TextBlock
+            {
+                Text = EditScope.Name(side),
+                FontSize = 10,
+                Foreground = Brush(selected ? "TextPrimary" : "TextSecondary"),
+            },
+        };
+
+        ToolTip.SetTip(chip, EditScope.Effect(side));
+        return chip;
+    }
+
+    /// <summary>One action, with the place it writes to marked beside it.</summary>
+    private static Control ActionWithSide(Control chip, Button button)
+    {
+        var pair = new StackPanel { Orientation = Orientation.Vertical, Spacing = 2 };
+        pair.Children.Add(chip);
+        pair.Children.Add(button);
+        return pair;
+    }
+
     private IEnumerable<Control> SideSwitch(EditSide chosen)
     {
         // What is reachable from a tool that holds the machine's files: everything local, and the
@@ -3469,16 +3511,8 @@ public partial class MainWindow : Window
     {
         if (local.Counts is not { } counts || !QualityBar.HasSomethingToShow(counts)) yield break;
 
-        // ⚠ **Attached to the FIGURES, not to the buttons** — which is the answer to what this
-        // control is about. Every one of these numbers describes the file on this machine, and the
-        // very same bar on the website describes the published one: the two can differ by
-        // everything somebody has translated since they took it.
-        //
-        // Placed here rather than beside the actions on purpose. Above three buttons that each act
-        // on a different side, it looked like a choice and was none. Wherever the counts are shown,
-        // this says whose counts they are — the same reading as every screen on the site and in
-        // the game, which is what makes the glance worth learning.
-        foreach (var control in SideSwitch(EditSide.Local)) yield return control;
+        // Whose figures these are. One chip, not the switch: this block reports, it does not act.
+        yield return SideChip(EditSide.Local, selected: true);
 
         if (QualityBar.StageOf(counts) is { } stage)
         {
@@ -4031,7 +4065,8 @@ public partial class MainWindow : Window
         // nothing else. Ownership only decides what may be PUBLISHED.
         var edit = new Button { Content = "Edit in browser", FontSize = 12 };
         edit.Click += async (_, _) => await OpenLocalEditorAsync(report, descriptor, edit);
-        actions.Children.Add(edit);
+        // Editing changes the file here and nothing else — said, not assumed.
+        actions.Children.Add(ActionWithSide(SideChip(EditSide.Local, selected: true), edit));
 
         // ── Publish ───────────────────────────────────────────────────────────
         var publish = new Button
@@ -4041,7 +4076,8 @@ public partial class MainWindow : Window
             IsEnabled = standing.CanAct,
         };
         publish.Click += async (_, _) => await PublishTranslationAsync(report, descriptor, publish);
-        actions.Children.Add(publish);
+        // The one action that leaves this machine.
+        actions.Children.Add(ActionWithSide(SideChip(EditSide.Server, selected: true), publish));
 
         // ── Settle the difference ─────────────────────────────────────────────
         //
@@ -4057,7 +4093,8 @@ public partial class MainWindow : Window
                 FontSize = 12,
             };
             settle.Click += async (_, _) => await SettleWithPublishedAsync(report, descriptor, settle);
-            actions.Children.Add(settle);
+            // Reads the published version, writes here: the pair is what makes it Both.
+            actions.Children.Add(ActionWithSide(SideChip(EditSide.Both, selected: true), settle));
         }
 
         yield return actions;

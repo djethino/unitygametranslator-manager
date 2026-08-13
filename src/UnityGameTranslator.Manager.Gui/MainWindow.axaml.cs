@@ -5669,12 +5669,15 @@ public partial class MainWindow : Window
             });
         }
 
+        // The card surface, not a bare outline: inside a themed dialog an unfilled rectangle
+        // reads as a control that failed to render.
         var view = new Border
         {
+            Background = Brush("SurfaceCard"),
             BorderBrush = Brush("BorderSubtle"),
             BorderThickness = new Avalonia.Thickness(1),
-            CornerRadius = new Avalonia.CornerRadius(6),
-            Padding = new Avalonia.Thickness(10),
+            CornerRadius = new Avalonia.CornerRadius(8),
+            Padding = new Avalonia.Thickness(14, 12),
             Child = new ScrollViewer { MaxHeight = 260, Content = panel },
         };
 
@@ -5718,8 +5721,18 @@ public partial class MainWindow : Window
     {
         var result = false;
 
-        var confirm = new Button { Content = confirmLabel, IsDefault = true };
-        var cancel = new Button { Content = "Cancel", IsCancel = true };
+        // ⚠ Dressed like ConfirmationWindow, because it IS the same act asked in a richer form —
+        // and it was not. This one built a bare Window: no surface from the theme, no title inside
+        // the content, no primary button. So the plainest questions in this app arrived themed and
+        // the most consequential one — "uninstall from this game", with a list of files about to
+        // be deleted — arrived looking like a debug dialog.
+        var confirm = new Button { Content = confirmLabel, Classes = { "primary" } };
+
+        // IsCancel AND IsDefault on Cancel, exactly as ConfirmationWindow argues: Escape closes
+        // it, Enter closes it, and the destructive answer is only ever reached by aiming at it.
+        // This dialog had Enter on the confirm button, so the two paths to the same decision
+        // disagreed on what a reflex keypress means.
+        var cancel = new Button { Content = "Cancel", IsCancel = true, IsDefault = true };
 
         var buttons = new StackPanel
         {
@@ -5729,17 +5742,29 @@ public partial class MainWindow : Window
             Children = { cancel, confirm },
         };
 
-        var layout = new StackPanel { Spacing = 16, Margin = new Avalonia.Thickness(20) };
+        var layout = new StackPanel { Spacing = 14, Margin = new Avalonia.Thickness(24) };
+
+        layout.Children.Add(new TextBlock
+        {
+            Text = title,
+            FontSize = 15,
+            FontWeight = FontWeight.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("TextPrimary"),
+        });
+
         layout.Children.Add(body);
         layout.Children.Add(buttons);
 
         var dialog = new Window
         {
             Title = title,
-            Width = 520,
+            Width = 560,
             SizeToContent = SizeToContent.Height,
+            MinHeight = 200,
             CanResize = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = Brush("SurfaceBase"),
             Content = new ScrollViewer { Content = layout },
         };
 
@@ -5752,19 +5777,44 @@ public partial class MainWindow : Window
 
     private async Task MessageAsync(string title, string body)
     {
-        var ok = new Button { Content = "Close", IsDefault = true, HorizontalAlignment = HorizontalAlignment.Right };
+        var ok = new Button
+        {
+            Content = "Close",
+            IsDefault = true,
+            IsCancel = true,
+            Classes = { "primary" },
+            HorizontalAlignment = HorizontalAlignment.Right,
+        };
 
-        var layout = new StackPanel { Spacing = 16, Margin = new Avalonia.Thickness(20) };
-        layout.Children.Add(new TextBlock { Text = body, TextWrapping = TextWrapping.Wrap });
+        var layout = new StackPanel { Spacing = 14, Margin = new Avalonia.Thickness(24) };
+
+        layout.Children.Add(new TextBlock
+        {
+            Text = title,
+            FontSize = 15,
+            FontWeight = FontWeight.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("TextPrimary"),
+        });
+
+        layout.Children.Add(new TextBlock
+        {
+            Text = body,
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("TextSecondary"),
+        });
+
         layout.Children.Add(ok);
 
         var dialog = new Window
         {
             Title = title,
-            Width = 520,
+            Width = 560,
             SizeToContent = SizeToContent.Height,
             CanResize = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = Brush("SurfaceBase"),
             Content = new ScrollViewer { Content = layout },
         };
 

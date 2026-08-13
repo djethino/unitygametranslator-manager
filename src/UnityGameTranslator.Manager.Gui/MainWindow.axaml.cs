@@ -3652,7 +3652,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Settle the local translation against the published one.
+    /// Merge the local translation with the published one.
     ///
     /// ⚠ **Applies what nobody has to arbitrate, and refuses to arbitrate the rest.** A merge with
     /// no conflict is arithmetic — every line is settled by the shared rule, with a verdict this
@@ -3663,7 +3663,7 @@ public partial class MainWindow : Window
     /// all three sides, and fetching a translation for every game in a library to answer a question
     /// nobody asked would be minutes of network for a badge.
     /// </summary>
-    private async Task SettleWithPublishedAsync(GameReport report, LoaderDescriptor descriptor, Button button)
+    private async Task MergeWithPublishedAsync(GameReport report, LoaderDescriptor descriptor, Button button)
     {
         if (report.MatchingOnline is not { } published) return;
 
@@ -3716,7 +3716,7 @@ public partial class MainWindow : Window
 
             if (merge.Summary.Empty)
             {
-                await ConfirmationWindow.TellAsync(this, "Nothing to settle",
+                await ConfirmationWindow.TellAsync(this, "Nothing to merge",
                     "This translation and the published one already agree, line for line.");
                 return;
             }
@@ -3742,7 +3742,7 @@ public partial class MainWindow : Window
                     return;
                 }
 
-                if (!await ConfirmationWindow.AskAsync(this, "Settle these in the browser?",
+                if (!await ConfirmationWindow.AskAsync(this, "Merge these in the browser?",
                         summary + "\n\nA conflict is two people having written the same line "
                         + "differently. The site shows both versions side by side, you choose, and "
                         + "the result comes back here — nothing is published by doing this.",
@@ -3755,9 +3755,9 @@ public partial class MainWindow : Window
                 return;
             }
 
-            if (!await ConfirmationWindow.AskAsync(this, "Settle with the published version?",
+            if (!await ConfirmationWindow.AskAsync(this, "Merge with the published version?",
                     summary + "\n\nYour current file is kept aside before anything is written.",
-                    "Settle"))
+                    "Merge"))
             {
                 return;
             }
@@ -3778,7 +3778,7 @@ public partial class MainWindow : Window
                 return;
             }
 
-            await ConfirmationWindow.TellAsync(this, "Settled",
+            await ConfirmationWindow.TellAsync(this, "Merged",
                 summary
                 + (result.BackupPath is not null
                     ? $"\n\nYour previous file is in {TranslationInstaller.BackupFolderName}/"
@@ -3790,8 +3790,8 @@ public partial class MainWindow : Window
         finally
         {
             button.IsEnabled = true;
-            button.Content = report.Sync == SyncDirection.Merge ? "Settle with the published version…"
-                                                                : "Take what changed online…";
+            button.Content = report.Sync == SyncDirection.Merge ? "Merge with the published version…"
+                                                                : "Download what changed online…";
         }
     }
 
@@ -3829,7 +3829,7 @@ public partial class MainWindow : Window
         var deadline = DateTimeOffset.UtcNow.AddMinutes(30);
         string? settled = null;
 
-        Status("Waiting for the comparison to be settled in the browser…");
+        Status("Waiting for the comparison to be merged in the browser…");
 
         while (DateTimeOffset.UtcNow < deadline)
         {
@@ -3858,7 +3858,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        await ConfirmationWindow.TellAsync(this, "Settled",
+        await ConfirmationWindow.TellAsync(this, "Merged",
             "What you chose in the browser is now the translation in this game."
             + (result.BackupPath is not null
                 ? $"\n\nYour previous file is in {TranslationInstaller.BackupFolderName}/"
@@ -4086,15 +4086,15 @@ public partial class MainWindow : Window
         if (report.Sync is SyncDirection.Merge or SyncDirection.Download
             && report.MatchingOnline is not null)
         {
-            var settle = new Button
+            var merge = new Button
             {
-                Content = report.Sync == SyncDirection.Merge ? "Settle with the published version…"
-                                                             : "Take what changed online…",
+                Content = report.Sync == SyncDirection.Merge ? "Merge with the published version…"
+                                                             : "Download what changed online…",
                 FontSize = 12,
             };
-            settle.Click += async (_, _) => await SettleWithPublishedAsync(report, descriptor, settle);
+            merge.Click += async (_, _) => await MergeWithPublishedAsync(report, descriptor, merge);
             // Reads the published version, writes here: the pair is what makes it Both.
-            actions.Children.Add(ActionWithSide(SideChip(EditSide.Both, selected: true), settle));
+            actions.Children.Add(ActionWithSide(SideChip(EditSide.Both, selected: true), merge));
         }
 
         yield return actions;

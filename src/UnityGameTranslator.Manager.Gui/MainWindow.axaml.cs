@@ -231,6 +231,12 @@ public partial class MainWindow : Window
         GameList.SelectionChanged += async (_, _) =>
         {
             if (_restoringSelection) return;
+
+            // ⚠ Back to Home on every game. The tab is a place in ONE card, not a preference about
+            // the tool: carried across a click in the list, it would drop somebody into the
+            // machinery of a game they have not looked at yet.
+            _gameTab = GameTab.Home;
+
             await ShowSelectedAsync();
         };
 
@@ -2415,11 +2421,240 @@ public partial class MainWindow : Window
         _takeTranslation = TranslationOffers.MayDefaultToYes(offer)
                            && _preferences.Read(report.Game.Path).InstallTranslation;
 
+        // ⚠ Two tabs, and the split is not cosmetic. Everything below answers "how do I set this
+        // up", which is the second question somebody has. The first — "is there a translation for
+        // this game, in my language?" — had no place of its own and was answered halfway down a
+        // card about loaders. Home answers that one; Set up keeps all the machinery, unchanged,
+        // and is fed by what Home selects.
+        DetailPanel.Children.Add(TabStrip(report));
+
+        if (_gameTab == GameTab.Home)
+        {
+            foreach (var control in GameHome(report)) DetailPanel.Children.Add(control);
+
+            // No fixed bar on Home: it offers one way forward at a time, and a second call to
+            // action pinned underneath would compete with the one the page is built around.
+            ActionBar.IsVisible = false;
+            ActionBar.Content = null;
+            return;
+        }
+
         DetailPanel.Children.Add(Card(LoaderSection(report)));
         DetailPanel.Children.Add(Card(ModSection(report)));
         DetailPanel.Children.Add(Card(Translations(report)));
 
         ShowActionBar(report);
+    }
+
+    /// <summary>
+    /// The answer somebody came for, before any machinery: what this game has, what exists for it,
+    /// and the one thing to do next.
+    /// </summary>
+    private IEnumerable<Control> GameHome(GameReport report)
+    {
+        var target = _settings.ResolveTargetLanguage();
+        var mine = MyTranslationHere(report);
+
+        var inMyLanguage = report.OnlineTranslations
+            .Where(t => Languages.Matches(t.TargetLanguage, target))
+            .ToList();
+
+        var elsewhere = report.OnlineTranslations.Count - inMyLanguage.Count;
+
+        // ── What this game carries right now ──────────────────────────────────────────────────
+        if (report.LocalTranslation is { } local)
+        {
+            var body = new StackPanel { Spacing = 4 };
+
+            body.Children.Add(new TextBlock
+            {
+                Text = mine
+                    ? "This game is running your own translation."
+                    : "This game already has a translation installed.",
+                FontSize = 13,
+                FontWeight = FontWeight.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextPrimary"),
+            });
+
+            var detail = local.EntryCount < 0
+                ? "The file could not be read."
+                : $"{local.EntryCount} entries"
+                  + (local.LocalChanges > 0 ? $", {local.LocalChanges} never uploaded" : "");
+
+            body.Children.Add(new TextBlock
+            {
+                Text = detail,
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextSecondary"),
+            });
+
+            yield return Card(body);
+        }
+
+        // ── Is there one in my language? The first question, answered first ───────────────────
+        var question = new StackPanel { Spacing = 4 };
+
+        question.Children.Add(new TextBlock
+        {
+            Text = inMyLanguage.Count > 0
+                ? inMyLanguage.Count == 1
+                    ? $"One translation exists in {Languages.NameOf(target)}."
+                    : $"{inMyLanguage.Count} translations exist in {Languages.NameOf(target)}."
+                : $"No translation exists in {Languages.NameOf(target)} for this game.",
+            FontSize = 13,
+            FontWeight = FontWeight.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush(inMyLanguage.Count > 0 ? "StatusSuccess" : "TextPrimary"),
+        });
+
+        // Said even when the answer above is no — especially then. A game with nothing in your
+        // language may well have five in others, and somebody who reads one of them would rather
+        // know than start from a blank sheet.
+        if (elsewhere > 0)
+        {
+            question.Children.Add(new TextBlock
+            {
+                Text = elsewhere == 1
+                    ? "One more exists in another language."
+                    : $"{elsewhere} more exist in other languages.",
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextSecondary"),
+            });
+        }
+
+        if (report.OnlineTranslations.Count > 0)
+        {
+            var browse = new Button
+            {
+                Content = "See them and choose",
+                FontSize = 12,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Avalonia.Thickness(0, 6, 0, 0),
+            };
+
+            browse.Click += async (_, _) => await OpenTranslationsAsync(report);
+            question.Children.Add(browse);
+        }
+        else
+        {
+            question.Children.Add(new TextBlock
+            {
+                Text = TranslationBackendLabel(_settings.Current) is not null
+                    ? "Yours would be the first: play with the mod on and it translates as it "
+                      + "meets text, then you can publish it for everyone else."
+                    : "You can still make one without any translator: the mod captures the game's "
+                      + "text as you play, and its live editor lets you write the lines yourself.",
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextSecondary"),
+            });
+        }
+
+        yield return Card(question);
+
+        // ── The one thing to do next ──────────────────────────────────────────────────────────
+        var next = new StackPanel { Spacing = 6 };
+        var installed = report.InstalledPluginVersion is not null;
+
+        next.Children.Add(new TextBlock
+        {
+            Text = installed
+                ? "The mod is installed here."
+                : "The mod is not installed in this game yet.",
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("TextSecondary"),
+        });
+
+        var go = new Button
+        {
+            Content = installed ? "Manage this game" : "Set this game up",
+            FontSize = 12,
+            Classes = { "primary" },
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+
+        go.Click += async (_, _) =>
+        {
+            _gameTab = GameTab.Setup;
+            await ShowSelectedAsync();
+        };
+
+        next.Children.Add(go);
+        yield return Card(next);
+    }
+
+    /// <summary>
+    /// Whether the translation installed here belongs to the account THIS GAME is signed in as.
+    ///
+    /// ⚠ The game's account, never this tool's. One machine can carry several — one game signed in
+    /// as one person, the next as another, a third not signed in at all — and judging with the
+    /// installer's own account would claim somebody else's work as yours. The rule AccountLineages
+    /// already states: a role is read, never inferred from a game and a language.
+    ///
+    /// False whenever anything is missing: no file, no lineage, nobody signed in, or nothing
+    /// published under that lineage. "Unknown" and "not mine" lead to the same restraint, so they
+    /// are answered the same way rather than guessed apart.
+    /// </summary>
+    private bool MyTranslationHere(GameReport report)
+    {
+        if (report.LocalTranslation?.Uuid is not { } uuid) return false;
+
+        var descriptor = InstalledDescriptor(report);
+        var account = GameConfigWriter.InGameValue(report.Game.Path, descriptor, GameConfigWriter.ApiUserKey);
+        if (string.IsNullOrWhiteSpace(account)) return false;
+
+        return report.OnlineTranslations.Any(t =>
+            string.Equals(t.Uuid, uuid, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(t.Author, account, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>Which half of a game's card is showing. Home first, always — see TabStrip.</summary>
+    private enum GameTab { Home, Setup }
+
+    private GameTab _gameTab = GameTab.Home;
+
+    /// <summary>
+    /// The two tabs, and the only place that switches between them.
+    ///
+    /// ⚠ Reset to Home on every game, deliberately: the tab is a place in ONE game's card, not a
+    /// preference about the tool. Carrying "Set up" across a click in the list would drop somebody
+    /// into the machinery of a game they have not yet looked at.
+    /// </summary>
+    private Control TabStrip(GameReport report)
+    {
+        var strip = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+
+        foreach (var tab in new[] { GameTab.Home, GameTab.Setup })
+        {
+            var active = tab == _gameTab;
+
+            var button = new Button
+            {
+                Content = tab == GameTab.Home ? "This game" : "Set up",
+                FontSize = 12,
+
+                // The active tab wears the section colour; the other stays plain. No "quiet"
+                // class is invented here — App.axaml has no such style, and naming one that does
+                // not exist styles nothing while looking deliberate.
+                Classes = { active ? "primary" : "" },
+            };
+
+            var chosen = tab;
+            button.Click += async (_, _) =>
+            {
+                if (_gameTab == chosen) return;
+                _gameTab = chosen;
+                await ShowSelectedAsync();
+            };
+
+            strip.Children.Add(button);
+        }
+
+        return strip;
     }
 
     /// <summary>

@@ -80,6 +80,18 @@ public sealed class GameConfigWriter
     public const string TargetLanguageKey = "target_language";
 
     /// <summary>
+    /// Who the MOD is signed in as, in this game.
+    ///
+    /// ⚠ Read only, and never written — like api_token, which this class does not touch at all.
+    /// It is read for one reason: telling "this translation is mine" from "somebody else's"
+    /// needs the account the GAME uses, and one machine can carry several. A household where one
+    /// game is signed in as one person and the next as another is ordinary, and judging with this
+    /// tool's own account would award somebody a Main they do not own — the very mistake
+    /// AccountLineages was written to avoid.
+    /// </summary>
+    public const string ApiUserKey = "api_user";
+
+    /// <summary>
     /// Where this game's config.json lives. One composition, because three callers needing the
     /// same path is exactly how two of them end up disagreeing about it.
     /// </summary>

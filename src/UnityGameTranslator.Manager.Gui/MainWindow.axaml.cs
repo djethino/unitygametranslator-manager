@@ -3513,8 +3513,6 @@ public partial class MainWindow : Window
 
         if (loaderButtons.Children.Count > 0) panel.Children.Add(loaderButtons);
 
-        foreach (var control in DuplicatePluginNotice(report)) panel.Children.Add(control);
-        foreach (var control in DataBesideThePlugin(report)) panel.Children.Add(control);
 
         // Not ours: no verb, because nothing here may touch it. But a refusal with nowhere to go
         // is a dead end — the uninstaller already declines this loader, and somebody who wants it
@@ -3594,6 +3592,12 @@ public partial class MainWindow : Window
         });
 
         panel.Children.Add(StandingLine(standing, null));
+
+        // ⚠ The MOD's problems, on the MOD's card. Both were under the loader, where they read
+        // as facts about BepInEx or MelonLoader — but a second copy of our assembly and our own
+        // config left in the wrong folder are ours, and the buttons that settle them are here.
+        foreach (var control in DuplicatePluginNotice(report)) panel.Children.Add(control);
+        foreach (var control in DataBesideThePlugin(report)) panel.Children.Add(control);
 
         var buttons = new StackPanel
         {

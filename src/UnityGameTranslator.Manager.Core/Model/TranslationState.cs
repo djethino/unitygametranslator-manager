@@ -266,6 +266,27 @@ public sealed class GameReport
     /// <summary>Installed plugin version read from the deployed assembly, or null.</summary>
     public string? InstalledPluginVersion { get; set; }
 
+    /// <summary>Where this loader expects our plugin, relative to the game. Null with no loader.</summary>
+    public string? PluginDirectory { get; set; }
+
+    /// <summary>
+    /// Copies of our assembly outside that folder, relative to the game.
+    ///
+    /// ⚠ Carried by the report rather than recomputed per screen, so the window and the CLI cannot
+    /// disagree — `report` is what somebody pastes into an issue, and it said "up to date" about a
+    /// plugin sitting where the loader may never read it.
+    /// </summary>
+    public IReadOnlyList<string> StrayPluginDirectories { get; set; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Whether <see cref="PluginDirectory"/> holds the assembly.
+    ///
+    /// ⚠ With a stray present this is what separates the two faults: true means a DUPLICATE (one
+    /// of the two is outside what we update — remove the stray), false means a MISPLACED install
+    /// (nothing to remove — it must be put back, taking whatever files it wrote with it).
+    /// </summary>
+    public bool PluginInPlace { get; set; }
+
     /// <summary>
     /// The plugin here against what is published on the chosen channel.
     ///

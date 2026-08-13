@@ -298,6 +298,21 @@ public static class CommandLine
         Console.WriteLine($"Plugin      : {report.InstalledPluginVersion ?? "not installed"}");
 
         if (report.PluginStanding is { } pluginStanding) Console.WriteLine($"              {Standing(pluginStanding)}");
+
+        // ⚠ Printed right under the version, because it changes what that version MEANS. This
+        // command is what gets pasted into an issue, and it reported "0.11 , up to date" about a
+        // game running an assembly the loader reads first from somewhere else — or possibly not
+        // at all. The window said so; this did not, and the two must not disagree.
+        if (report.StrayPluginDirectories.Count > 0)
+        {
+            // ASCII only on this line: the console this ends up in mangles the em dash the rest
+            // of this file uses, and a report pasted into an issue must stay readable.
+            Console.WriteLine(report.PluginInPlace
+                ? $"              ALSO installed in {string.Join(", ", report.StrayPluginDirectories)}"
+                  + $" - only {report.PluginDirectory}/ is updated, so the game may keep running the other"
+                : $"              installed in {report.StrayPluginDirectories[0]}/, not "
+                  + $"{report.PluginDirectory}/ - it may load late or not at all");
+        }
         Console.WriteLine($"Recommends  : {report.RecommendedLoader?.Display ?? "nothing"}");
         if (report.RecommendationReason is not null) Console.WriteLine($"              {report.RecommendationReason}");
         if (report.PluginBuildId is not null) Console.WriteLine($"Build       : {report.PluginBuildId}");

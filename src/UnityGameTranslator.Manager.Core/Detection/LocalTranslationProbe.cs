@@ -408,9 +408,15 @@ public static class LocalTranslationProbe
     /// two copies it reported the good one and nothing else — the stray was invisible precisely
     /// when it mattered, since one copy alone is not a conflict.
     ///
-    /// Two of our assemblies in one game is the worst kind of bug to meet: BepInEx loads plugins/
-    /// before its subfolders and MelonLoader scans Mods/ before subfolders too, so the OLD one
-    /// wins. Every update lands correctly and changes nothing anybody can see.
+    /// Two of our assemblies in one game is the worst kind of bug to meet, and NOT because of any
+    /// rule we know: which one a loader keeps is its own business — scan order, plugin GUID,
+    /// version comparison, and it differs between loaders and between their versions. What is
+    /// certain is that this tool updates ONE of the two, so an update can land correctly and
+    /// change nothing anybody can see.
+    ///
+    /// ⚠ Do not write "the older one runs" anywhere. It was written here and on the card, inferred
+    /// from scan order alone and never measured — and it is topologically backwards for BepInEx,
+    /// where the stray sits in the PARENT of the documented folder rather than under it.
     /// </summary>
     public static IReadOnlyList<string> FindStrayPlugins(string gamePath, LoaderDescriptor descriptor)
     {
@@ -435,6 +441,17 @@ public static class LocalTranslationProbe
 
         return found;
     }
+
+    /// <summary>
+    /// Whether the documented folder actually holds our assembly.
+    ///
+    /// ⚠ Asked of the disk, and separate from "is the mod installed": FindInstalledPlugin answers
+    /// yes for a copy sitting anywhere it looks, so it cannot tell a duplicate (remove the stray)
+    /// from a misplaced install (there is nothing to remove — deleting it uninstalls the mod).
+    /// </summary>
+    public static bool IsPluginInPlace(string gamePath, LoaderDescriptor descriptor) =>
+        File.Exists(Path.Combine(gamePath,
+            descriptor.PluginDir.Replace('/', Path.DirectorySeparatorChar), PluginAssemblyName));
 
     /// <summary>
     /// The folder this mod carries its own name in. Written once: it appears as the documented

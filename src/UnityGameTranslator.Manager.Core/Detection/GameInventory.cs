@@ -135,6 +135,9 @@ public sealed class GameInventory
         {
             report.LocalTranslation = LocalTranslationProbe.Read(game.Path, descriptor);
             report.InstalledPluginVersion = LocalTranslationProbe.ReadInstalledPluginVersion(game.Path, descriptor);
+            report.PluginDirectory = descriptor.PluginDir;
+            report.PluginInPlace = LocalTranslationProbe.IsPluginInPlace(game.Path, descriptor);
+            report.StrayPluginDirectories = LocalTranslationProbe.FindStrayPlugins(game.Path, descriptor);
             report.PluginBuildId = ResolvePluginBuild(descriptor, game.Runtime);
             CollectRequirements(report, descriptor, game);
 

@@ -4565,15 +4565,15 @@ public partial class MainWindow : Window
         var descriptor = InstalledDescriptor(report);
         if (descriptor is null) yield break;
 
-        var strays = LocalTranslationProbe.FindStrayPlugins(report.Game.Path, descriptor);
+        var strays = report.StrayPluginDirectories;
         if (strays.Count == 0) yield break;
 
         var home = Path.Combine(report.Game.Path,
             descriptor.PluginDir.Replace('/', Path.DirectorySeparatorChar));
 
-        // Asked of the disk, not inferred from the stray list: "somewhere else has a copy" says
-        // nothing about whether the right place has one.
-        var duplicate = File.Exists(Path.Combine(home, LocalTranslationProbe.PluginAssemblyName));
+        // Read from the report, which the CLI reads too — the disk is consulted once, in the
+        // inventory, and every screen tells the same story about it.
+        var duplicate = report.PluginInPlace;
 
         var body = new StackPanel { Spacing = 4 };
 
@@ -4592,9 +4592,14 @@ public partial class MainWindow : Window
 
         body.Children.Add(new TextBlock
         {
+            // ⚠ Says which copy is MANAGED, never which one runs. That second claim was written
+            // here as fact, deduced from scan order and measured nowhere: loaders arbitrate two
+            // assemblies carrying the same plugin id by their own rules, which differ between
+            // loaders and between versions of one.
             Text = duplicate
-                ? $"{descriptor.PluginDir}/ is read before anything under it, so the older copy is "
-                  + "the one that runs. Updates install correctly and change nothing you can see."
+                ? $"This tool only ever updates the one in {descriptor.PluginDir}/. Which of the two "
+                  + "the loader actually runs is its own decision, so an update can install "
+                  + "correctly and change nothing you can see."
                 : "It was not put there by this tool. Depending on the loader and its version, a "
                   + "copy outside the documented folder may load late or not at all — and this is "
                   + "not where an update or a removal looks first.",

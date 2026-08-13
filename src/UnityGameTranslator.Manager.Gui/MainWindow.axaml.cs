@@ -5418,13 +5418,41 @@ public partial class MainWindow : Window
         content.Children.Add(loaderBox);
         content.Children.Add(dataBox);
 
+        // The list appears once somebody asks for it, and everything in it starts ticked. Ticking
+        // the box above IS the decision to remove the data; the list exists to take part of it
+        // back - a font pack, an old backup - not to make somebody assemble a deletion from
+        // nothing. Hidden until then, because most uninstalls never open it.
+        var picker = UserDataPicker(report);
+        if (picker is not null)
+        {
+            content.Children.Add(picker.View);
+            picker.View.IsVisible = false;
+            dataBox.IsCheckedChanged += (_, _) => picker.View.IsVisible = dataBox.IsChecked == true;
+        }
+
         if (!await ConfirmAsync($"Uninstall from {report.Game.Name}?", content, "Uninstall")) return;
+
+        var chosenData = dataBox.IsChecked == true ? picker?.Chosen() : null;
+
+        // Asked again, and only here: everything above was a form. This is the last moment before
+        // files leave the disk, and the sentence NAMES what goes rather than asking "are you
+        // sure" - somebody told "12 files, including your translation" can decide; somebody asked
+        // "are you sure" can only guess.
+        if (dataBox.IsChecked == true && chosenData is { Count: > 0 })
+        {
+            var summary = $"{chosenData.Count} file(s) will be deleted from {report.Game.Name}, "
+                        + "including anything captured while playing that was never uploaded. "
+                        + "A copy is kept aside first.";
+
+            if (!await ConfirmAsync("Delete this game's data?", summary, "Delete them")) return;
+        }
 
         Busy(true, "Removing...");
         var outcome = engine.Apply(report.Game, new UninstallChoice(
             RemovePlugin: true,
             RemoveLoader: loaderBox.IsChecked == true,
-            RemoveUserData: dataBox.IsChecked == true));
+            RemoveUserData: dataBox.IsChecked == true,
+            UserDataFiles: chosenData));
         Busy(false, "Ready.");
 
         var message = outcome.Message;
@@ -5437,6 +5465,135 @@ public partial class MainWindow : Window
 
         await MessageAsync("Uninstalled", message);
         await ShowSelectedAsync();
+    }
+
+    /// <summary>The list, and a way to read back what stayed ticked.</summary>
+    private sealed record DataPicker(Control View, Func<IReadOnlyList<string>> Chosen);
+
+    /// <summary>
+    /// Every file the mod wrote into this game, grouped, each with its own tick.
+    ///
+    /// Groups rather than a flat list, because "my data" is several things with nothing in common:
+    /// a translation may be work nobody else has, fonts rebuild themselves in seconds, a config is
+    /// two minutes of settings. One tick for all three made somebody choose between keeping a
+    /// stale config and losing months of captured lines.
+    ///
+    /// A group tick reflects its files rather than only driving them: untick one file and the
+    /// group shows a partial state, which is what says at a glance that a collapsed section is no
+    /// longer "everything".
+    /// </summary>
+    private DataPicker? UserDataPicker(GameReport report)
+    {
+        var descriptor = InstalledDescriptor(report);
+        if (descriptor is null) return null;
+
+        var groups = UserDataInventory.Scan(report.Game.Path, descriptor);
+        if (groups.Count == 0) return null;
+
+        var boxes = new List<CheckBox>();
+        var panel = new StackPanel { Spacing = 6 };
+
+        foreach (var group in groups)
+        {
+            var files = new StackPanel { Spacing = 2, Margin = new Avalonia.Thickness(22, 4, 0, 0) };
+            var groupBoxes = new List<CheckBox>();
+
+            foreach (var item in group.Items)
+            {
+                var box = new CheckBox
+                {
+                    IsChecked = true,
+                    Tag = item.RelativePath,
+                    Content = new TextBlock
+                    {
+                        // Red says "this leaves the disk", which a list of paths does not.
+                        Text = $"{item.RelativePath}   {UserDataInventory.Describe(item.Bytes)}",
+                        FontSize = 11,
+                        TextWrapping = TextWrapping.Wrap,
+                        Foreground = Brush("StatusError"),
+                    },
+                };
+
+                groupBoxes.Add(box);
+                boxes.Add(box);
+                files.Children.Add(box);
+            }
+
+            var header = new CheckBox
+            {
+                IsChecked = true,
+                IsThreeState = true,
+                Content = new TextBlock
+                {
+                    Text = $"{group.Label} - {group.Items.Count} file(s), "
+                         + UserDataInventory.Describe(group.Bytes),
+                    FontSize = 12,
+                    FontWeight = FontWeight.SemiBold,
+                },
+            };
+
+            var settling = false;
+
+            header.IsCheckedChanged += (_, _) =>
+            {
+                // Null is how a mixed state is DISPLAYED, never a command: driving the files from
+                // it would wipe the very selection that produced it.
+                if (settling || header.IsChecked is null) return;
+
+                foreach (var box in groupBoxes) box.IsChecked = header.IsChecked;
+            };
+
+            foreach (var box in groupBoxes)
+            {
+                box.IsCheckedChanged += (_, _) =>
+                {
+                    settling = true;
+
+                    var ticked = groupBoxes.Count(b => b.IsChecked == true);
+                    header.IsChecked = ticked == groupBoxes.Count ? true
+                                     : ticked == 0 ? false
+                                     : null;
+
+                    settling = false;
+                };
+            }
+
+            var body = new StackPanel { Spacing = 0 };
+            body.Children.Add(new TextBlock
+            {
+                Text = group.Consequence,
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Avalonia.Thickness(22, 0, 0, 0),
+                Foreground = Brush("TextMuted"),
+            });
+            body.Children.Add(files);
+
+            panel.Children.Add(new Expander
+            {
+                Header = header,
+                Content = body,
+
+                // Open on what cannot be got back, closed on what rebuilds itself: the one thing
+                // somebody must actually look at should not need a click to be seen.
+                IsExpanded = group.Label is "Translation" or "Replacement images",
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+            });
+        }
+
+        var view = new Border
+        {
+            BorderBrush = Brush("BorderSubtle"),
+            BorderThickness = new Avalonia.Thickness(1),
+            CornerRadius = new Avalonia.CornerRadius(6),
+            Padding = new Avalonia.Thickness(10),
+            Child = new ScrollViewer { MaxHeight = 260, Content = panel },
+        };
+
+        return new DataPicker(view,
+            () => boxes.Where(b => b.IsChecked == true)
+                       .Select(b => (string)b.Tag!)
+                       .ToList());
     }
 
     private void OnEngineStatus(string message) =>

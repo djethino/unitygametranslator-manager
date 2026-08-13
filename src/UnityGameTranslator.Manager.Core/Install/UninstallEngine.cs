@@ -5,10 +5,19 @@ using UnityGameTranslator.Manager.Core.Platform;
 namespace UnityGameTranslator.Manager.Core.Install;
 
 /// <summary>What the user chose to remove. Each level is opt-in and independent.</summary>
+/// <param name="UserDataFiles">
+/// Exactly which data files go, relative to the mod's folder — or null for "everything the
+/// inventory found", which is what a caller that never asked should mean.
+///
+/// ⚠ A list, not a flag, because "delete my settings and translations" is several decisions
+/// wearing one word: somebody may want the fonts gone and the translation kept, and the old
+/// all-or-nothing forced them to choose between a stale config and losing work.
+/// </param>
 public sealed record UninstallChoice(
     bool RemovePlugin = true,
     bool RemoveLoader = false,
-    bool RemoveUserData = false);
+    bool RemoveUserData = false,
+    IReadOnlyList<string>? UserDataFiles = null);
 
 public sealed record UninstallOutcome(
     bool Success,
@@ -139,7 +148,7 @@ public sealed class UninstallEngine
         // anything else is touched, even if the rest fails afterwards.
         if (choice.RemoveUserData)
         {
-            backupPath = BackupUserData(game, receipt, removed, kept);
+            backupPath = BackupUserData(game, receipt, choice, removed, kept);
         }
 
         if (choice.RemovePlugin && receipt.Plugin is not null)
@@ -276,46 +285,76 @@ public sealed class UninstallEngine
     /// Copies settings and translations out before deleting them. A translation can be months of
     /// work, and someone uninstalling a mod is not necessarily throwing that away.
     /// </summary>
-    private string? BackupUserData(GameInstall game, Receipt receipt,
+    /// <summary>
+    /// Copies the chosen data aside, then removes it. Returns where the copy went, or null.
+    ///
+    /// ⚠ The copy happens FIRST and the removal only follows a copy that worked. A translation is
+    /// the one irreplaceable thing in a game folder, and an uninstall that half-succeeded must
+    /// leave it recoverable rather than merely reported.
+    ///
+    /// ⚠ Works from what was TICKED, not from a list of names. Four names were hard-coded here, so
+    /// fonts, replacement images and dated backups survived every "remove my data" — the folder
+    /// stayed half full and nothing said which half.
+    /// </summary>
+    private string? BackupUserData(GameInstall game, Receipt receipt, UninstallChoice choice,
                                    List<string> removed, List<string> kept)
     {
         var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == receipt.Loader?.Id)
                          ?? _catalog.Loaders.FirstOrDefault(l => l.Id == receipt.Plugin?.Build);
         if (descriptor is null) return null;
 
-        var userData = Path.Combine(game.Path,
-            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar));
-        if (!Directory.Exists(userData)) return null;
+        var userData = UserDataInventory.FolderFor(game.Path, descriptor);
+        if (userData is null) return null;
 
-        var names = new[]
-        {
-            LocalTranslationProbe.TranslationFileName,
-            LocalTranslationProbe.ConfigFileName,
-            LocalTranslationProbe.TranslationFileName + ".ancestor",
-            LocalTranslationProbe.TranslationFileName + ".mainancestor",
-        };
+        var chosen = choice.UserDataFiles
+                     ?? UserDataInventory.Scan(game.Path, descriptor)
+                                         .SelectMany(g => g.Items)
+                                         .Select(i => i.RelativePath)
+                                         .ToList();
+
+        if (chosen.Count == 0) return null;
 
         var stamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss");
         var backupDir = Path.Combine(_platform.UserDataDirectory, "removed", $"{SafeName(game.Name)}-{stamp}");
 
         var any = false;
-        foreach (var name in names)
+
+        foreach (var relative in chosen)
         {
-            var source = Path.Combine(userData, name);
-            if (!File.Exists(source)) continue;
+            var source = Path.Combine(userData, relative.Replace('/', Path.DirectorySeparatorChar));
+
+            // ⚠ Never outside the mod's folder, whatever the list says. A relative path is data,
+            // and data that walks up with ".." would have this delete something it never listed.
+            var full = Path.GetFullPath(source);
+            if (!full.StartsWith(Path.GetFullPath(userData), StringComparison.OrdinalIgnoreCase))
+            {
+                kept.Add($"{relative} (outside the mod's folder)");
+                continue;
+            }
+
+            if (!File.Exists(full)) continue;
 
             try
             {
-                Directory.CreateDirectory(backupDir);
-                File.Copy(source, Path.Combine(backupDir, name), overwrite: true);
-                File.Delete(source);
-                removed.Add(name);
+                var target = Path.Combine(backupDir, relative.Replace('/', Path.DirectorySeparatorChar));
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Copy(full, target, overwrite: true);
+                File.Delete(full);
+                removed.Add(relative);
                 any = true;
             }
             catch (Exception ex)
             {
-                kept.Add($"{name} ({ex.GetType().Name})");
+                kept.Add($"{relative} ({ex.GetType().Name})");
             }
+        }
+
+        // Folders the mod made for its own files — fonts/, images/ — go once they are empty, and
+        // only then: one left behind by a file we could not remove still holds that file.
+        foreach (var directory in Directory.EnumerateDirectories(userData, "*", SearchOption.AllDirectories)
+                                           .OrderByDescending(d => d.Length))
+        {
+            FileOperations.TryRemoveEmptyDirectory(directory);
         }
 
         return any ? backupDir : null;

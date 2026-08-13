@@ -18,7 +18,16 @@ public partial class App : Application
     /// </summary>
     public static bool OpenRemovalOnStart { get; set; }
 
-    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+    public override void Initialize()
+    {
+        AvaloniaXamlLoader.Load(this);
+
+        // The palette comes from the shared library rather than from the XAML — see ThemeResources
+        // for what was wrong with the literals it replaces. It has to happen HERE: a
+        // {DynamicResource} resolves when its style is applied, so anything posted after the first
+        // window exists would reach only what is built next.
+        ThemeResources.Apply(this);
+    }
 
     public override void OnFrameworkInitializationCompleted()
     {

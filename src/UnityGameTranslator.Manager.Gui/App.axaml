@@ -70,67 +70,28 @@
       overriding the template border was silently ignored and the field stayed near-black
       (#10151E against the site's #3C4758). These are the knobs that actually work.
     -->
+    <!--
+      Fields and pickers. Fluent paints them through named theme resources of its own, NOT through
+      the control Background — those live in ThemeResources.ApplyFluentOverrides now, posted
+      application-wide from the shared palette.
+
+      ⚠ They used to be `Style.Resources` blocks right here, and that was already known to be a
+      trap: Style.Resources is not scoped to the controls its selector matches, the resources are
+      poured into the surrounding scope. A `TextBox.recessed` block once quietly restyled every
+      field in the window. Application-wide is what was happening anyway; now it is declared as
+      such, in one place, from one palette.
+
+      The site's distinction is kept there: a form field inside a card is recessed and darker, a
+      search field sits on a surface and is lighter.
+    -->
     <Style Selector="TextBox">
       <Setter Property="CornerRadius" Value="{DynamicResource RadiusControl}" />
       <Setter Property="Padding" Value="12,7" />
-      <Style.Resources>
-        <SolidColorBrush x:Key="TextControlBackground" Color="#3C4758" />
-        <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#455164" />
-        <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#455164" />
-        <SolidColorBrush x:Key="TextControlBorderBrush" Color="#4B5A70" />
-        <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#5A6A82" />
-        <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#A855F7" />
-        <SolidColorBrush x:Key="TextControlForeground" Color="#F3F4F6" />
-        <SolidColorBrush x:Key="TextControlForegroundPointerOver" Color="#F3F4F6" />
-        <SolidColorBrush x:Key="TextControlForegroundFocused" Color="#FFFFFF" />
-        <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="#9CA3AF" />
-        <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="#9CA3AF" />
-        <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="#9CA3AF" />
-      </Style.Resources>
     </Style>
 
-    <!--
-      There is NO "recessed" variant here, and adding one this way would be a mistake.
-
-      Style.Resources is not scoped to the controls a selector matches: the resources are poured
-      into the surrounding scope, so a `TextBox.recessed` block quietly overrode the default for
-      every field in the window. Measuring caught it — the search box was rendering the recessed
-      shade while nothing carried that class.
-
-      When a field inside a card needs the darker shade, set it on that instance, or give it its
-      own ControlTheme. Do not reach for Style.Resources again.
-    -->
-
-    <!--
-      The picker gets the search field's shade too: it sits in the same toolbar and answers the
-      same kind of question. Fluent drives it through named resources, exactly like TextBox.
-    -->
     <Style Selector="ComboBox">
       <Setter Property="CornerRadius" Value="{DynamicResource RadiusControl}" />
       <Setter Property="Padding" Value="12,6" />
-      <Style.Resources>
-        <SolidColorBrush x:Key="ComboBoxBackground" Color="#3C4758" />
-        <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#455164" />
-        <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="#455164" />
-        <SolidColorBrush x:Key="ComboBoxBackgroundFocused" Color="#455164" />
-        <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#4B5A70" />
-        <SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver" Color="#5A6A82" />
-        <SolidColorBrush x:Key="ComboBoxBorderBrushPressed" Color="#A855F7" />
-        <SolidColorBrush x:Key="ComboBoxBorderBrushFocused" Color="#A855F7" />
-        <SolidColorBrush x:Key="ComboBoxForeground" Color="#F3F4F6" />
-        <SolidColorBrush x:Key="ComboBoxForegroundPointerOver" Color="#F3F4F6" />
-        <SolidColorBrush x:Key="ComboBoxForegroundPressed" Color="#FFFFFF" />
-        <SolidColorBrush x:Key="ComboBoxForegroundFocused" Color="#FFFFFF" />
-        <SolidColorBrush x:Key="ComboBoxDropDownBackground" Color="#273141" />
-        <SolidColorBrush x:Key="ComboBoxDropDownBorderBrush" Color="#3C4758" />
-        <SolidColorBrush x:Key="ComboBoxDropDownForeground" Color="#F3F4F6" />
-        <SolidColorBrush x:Key="ComboBoxItemBackgroundPointerOver" Color="#3C4758" />
-        <SolidColorBrush x:Key="ComboBoxItemBackgroundSelected" Color="#382C55" />
-        <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedPointerOver" Color="#443466" />
-        <SolidColorBrush x:Key="ComboBoxItemForeground" Color="#D1D5DB" />
-        <SolidColorBrush x:Key="ComboBoxItemForegroundSelected" Color="#FFFFFF" />
-        <SolidColorBrush x:Key="ComboBoxItemForegroundPointerOver" Color="#FFFFFF" />
-      </Style.Resources>
     </Style>
 
     <!--

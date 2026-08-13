@@ -768,15 +768,22 @@ public partial class MainWindow : Window
         // A stable hash of our own: string.GetHashCode is randomised per process in .NET, so it
         // would give a different colour on every launch.
         var hash = name.Aggregate(17, (current, c) => current * 31 + c);
-        var hues = new[] { "#9333EA", "#3B82F6", "#22C55E", "#F97316", "#A855F7", "#06B6D4" };
-        var colour = hues[Math.Abs(hash) % hues.Length];
+        // Six shades of the product's own palette rather than six hexadecimals of nobody's: these
+        // were Tailwind v3 values, which the site has not used since it moved to v4.
+        var hues = new[]
+        {
+            Common.Theme.Accent, Common.Theme.QualityValidated, Common.Theme.QualityHuman,
+            Common.Theme.QualityAi, Common.Theme.AccentEdge, Common.Theme.TagModUi,
+        };
+        var hue = hues[Math.Abs(hash) % hues.Length];
 
         return new Border
         {
             Width = 26,
             Height = 26,
             CornerRadius = new Avalonia.CornerRadius(13),
-            Background = Avalonia.Media.SolidColorBrush.Parse(colour),
+            Background = new Avalonia.Media.SolidColorBrush(
+                Avalonia.Media.Color.FromRgb(hue.R, hue.G, hue.B)),
             Child = new TextBlock
             {
                 Text = initial,

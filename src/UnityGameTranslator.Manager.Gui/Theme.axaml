@@ -2,84 +2,32 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
   <!--
-    One palette for three products.
+    One palette for three products — and it is NO LONGER HERE.
 
-    The website, the mod and this installer are pieces of the same thing, and a family that does
-    not look like a family reads as three unrelated tools. Nothing here is invented.
+    Every colour this file used to declare now comes from `Common.Theme`, the shared library the
+    mod and this tool both consume, and is posted into the application's resources by
+    ThemeResources.Apply before the first window is built. The keys are unchanged, so every
+    {DynamicResource} in this project still resolves exactly as it did.
 
-    Surfaces, borders and text are the WEBSITE's, which is the reference: its own recurring
-    card is `bg-gray-800 rounded-lg p-6 border border-gray-700` and its inputs are
-    `bg-gray-800/80 border-gray-600/50 rounded-lg focus:border-purple-500`. Those two patterns
-    are reproduced literally below, so a player moving between the site and this window is
-    looking at the same thing.
+    ⚠ Why it moved, because the reason matters more than the move (the full account is in
+    ThemeResources and in Common.Theme):
 
-    (An earlier revision took the surfaces from the mod's E0–E4 elevation scale. Same family,
-    a touch bluer — but the mod's values are tuned to stay readable ON TOP OF a running game,
-    a constraint neither the site nor this tool has. The site is the closer reference here.)
+      · the literals here were **Tailwind v3** while the website has moved to **v4**, whose palette
+        was rebuilt in oklch. The tool written to look like the site had quietly drifted from it —
+        purple-600 #9333EA against #9810FA, orange-500 #F97316 against #FF6900;
+      · the surfaces had been sampled from a SCREENSHOT of the running site, where animated
+        coloured blobs in the background lighten anything picked off them. That is why this window
+        came out a shade paler than both the site and the mod;
+      · and the previous comment in this file claimed the status colours were "shared by the site
+        and the mod already". They were not. Checked line by line: the mod's were neighbours of
+        these, never equal, and its quality bar disagreed on three bands out of five.
 
-    The accent is the site's purple, which is also the pairing in its icon, so the app icon and
-    the interface agree. Status colours are shared by the site and the mod already.
+    ⚠ Do not put a colour back in here. Two copies of a palette is what produced all of the above,
+    and the socle's check project now refuses a drift.
+
+    What stays: shape. It is a XAML notion, no consumer of the library needs it, and there is
+    nothing to keep in step.
   -->
-
-  <!--
-    Surfaces — SAMPLED from a screenshot of the running site, not read off its classes.
-
-    Reading `bg-gray-800` and using #1F2937 produced a window visibly darker and cooler than the
-    site: the page carries gradients and overlays, so what Tailwind declares is not what the
-    player sees. These are the values actually on screen.
-  -->
-  <SolidColorBrush x:Key="SurfaceBase" Color="#181E2D" />      <!-- page body -->
-  <SolidColorBrush x:Key="SurfaceBar" Color="#273141" />       <!-- nav bar, status bar -->
-  <SolidColorBrush x:Key="SurfaceCard" Color="#273141" />      <!-- the site's card -->
-  <SolidColorBrush x:Key="SurfaceCardHover" Color="#2F3A4C" />
-  <SolidColorBrush x:Key="SurfaceInput" Color="#222B3A" />     <!-- form field, recessed in a card -->
-  <SolidColorBrush x:Key="SurfaceControl" Color="#3C4758" />   <!-- the site's search field -->
-
-  <SolidColorBrush x:Key="BorderSubtle" Color="#3C4758" />     <!-- the card's edge -->
-  <SolidColorBrush x:Key="BorderStrong" Color="#4B5A70" />     <!-- the field's edge -->
-
-  <!-- Text — the site's gray ramp -->
-  <SolidColorBrush x:Key="TextPrimary" Color="#F3F4F6" />      <!-- gray-100 -->
-  <SolidColorBrush x:Key="TextSecondary" Color="#D1D5DB" />    <!-- gray-300 -->
-  <SolidColorBrush x:Key="TextMuted" Color="#9CA3AF" />        <!-- gray-400 -->
-
-  <!-- Accent: the site's purple -->
-  <SolidColorBrush x:Key="Accent" Color="#9333EA" />           <!-- purple-600, the site button -->
-  <SolidColorBrush x:Key="AccentEdge" Color="#A855F7" />       <!-- purple-500, borders and highlights -->
-  <SolidColorBrush x:Key="AccentDeep" Color="#7C3AED" />       <!-- violet-600 -->
-  <SolidColorBrush x:Key="AccentSoft" Color="#C084FC" />       <!-- purple-400 -->
-  <SolidColorBrush x:Key="AccentSelected" Color="#382C55" />   <!-- selected row, purple over the card -->
-
-  <LinearGradientBrush x:Key="AccentGradient" StartPoint="0%,0%" EndPoint="100%,100%">
-    <GradientStop Color="#7C3AED" Offset="0" />
-    <GradientStop Color="#A855F7" Offset="1" />
-  </LinearGradientBrush>
-
-  <!-- Status, shared with the mod and the site -->
-  <SolidColorBrush x:Key="StatusSuccess" Color="#4ADE80" />    <!-- green-400 -->
-  <SolidColorBrush x:Key="StatusWarning" Color="#FBBF24" />    <!-- amber-400 -->
-  <SolidColorBrush x:Key="StatusError" Color="#F87171" />      <!-- red-400 -->
-
-  <!--
-    The five shares a translation is made of, in the website's own colours and in its order.
-    The mod draws the same bar with the same meaning; a file that looked different depending on
-    where it was read would make the measure worthless. Kept-as-is owns a band because it is
-    neither translated nor missing, and capture is what was seen but not yet worked on.
-  -->
-  <SolidColorBrush x:Key="QualityHuman" Color="#22C55E" />     <!-- green-500 -->
-  <SolidColorBrush x:Key="QualityValidated" Color="#3B82F6" /> <!-- blue-500 -->
-  <SolidColorBrush x:Key="QualityAi" Color="#F97316" />        <!-- orange-500 -->
-  <SolidColorBrush x:Key="QualityKept" Color="#A855F7" />      <!-- purple-500 -->
-  <SolidColorBrush x:Key="QualityCapture" Color="#6B7280" />   <!-- gray-500 -->
-  <SolidColorBrush x:Key="QualityTrack" Color="#374151" />     <!-- gray-700, the empty bar -->
-  <SolidColorBrush x:Key="StatusInfo" Color="#60A5FA" />       <!-- blue-400 -->
-  <SolidColorBrush x:Key="StatusNeutral" Color="#6B7280" />    <!-- gray-500 -->
-
-  <!-- Callouts: the hue laid over the surface, never a flat saturated block -->
-  <SolidColorBrush x:Key="CalloutErrorBg" Color="#2C1B20" />
-  <SolidColorBrush x:Key="CalloutWarningBg" Color="#2B2419" />
-  <SolidColorBrush x:Key="CalloutInfoBg" Color="#1A2333" />
-  <SolidColorBrush x:Key="CalloutSuccessBg" Color="#1B2A20" />
 
   <!-- Shape — rounded-lg is the site's radius on cards, inputs and buttons alike -->
   <CornerRadius x:Key="RadiusCard">8</CornerRadius>

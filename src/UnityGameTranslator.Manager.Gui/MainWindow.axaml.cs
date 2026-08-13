@@ -3500,7 +3500,7 @@ public partial class MainWindow : Window
             {
                 Header = new TextBlock
                 {
-                    Text = "What is ours to remove, and what is not",
+                    Text = "How to let this Manager look after the loader",
                     FontSize = 12,
                     Foreground = Brush("TextSecondary"),
                 },
@@ -4537,19 +4537,20 @@ public partial class MainWindow : Window
                     + $"{theirs.PluginDir}/. Removing the loader removes those too.");
         }
 
-        lines.Add($"Ours, and safe to delete by hand: the UnityGameTranslator folder in "
-                + $"{theirs.PluginDir}/");
+        // ⚠ This note answers ONE question: how to let this Manager look after the loader. It used
+        // to name "the UnityGameTranslator folder" as safe to delete by hand, which was wrong three
+        // times over — it holds translations that may exist nowhere else, under MelonLoader the mod
+        // is a DLL in Mods/ rather than a folder at all, and under BepInEx the named directory is
+        // the one holding everything. Removing OUR files is what the Uninstall button is for, and
+        // it asks about your data first.
+        lines.Add($"To let UnityGameTranslator Manager look after the loader instead, remove "
+                + $"{theirs.Display} by hand — follow its own documentation — then install it "
+                + "again from this card.");
 
-        if (descriptor is not null
-            && !string.Equals(descriptor.UserDataDir, theirs.PluginDir, StringComparison.OrdinalIgnoreCase))
-        {
-            lines.Add($"Your settings and translations live in {descriptor.UserDataDir}/ — deleting "
-                    + "that folder loses the lines you captured while playing, so keep it unless "
-                    + "you mean to start over.");
-        }
-
-        lines.Add($"To remove {theirs.Display} itself, follow its own documentation. "
-                + "UnityGameTranslator Manager does not guess at another program's files.");
+        lines.Add("⚠ Do not delete the mod's folder or files to do that. They hold your settings "
+                + "and your translation, including lines captured while playing that may exist "
+                + "nowhere else. Use \"Uninstall...\" above instead: it asks whether to keep them, "
+                + "and copies them aside before removing anything.");
 
         return string.Join(Environment.NewLine + Environment.NewLine, lines);
     }

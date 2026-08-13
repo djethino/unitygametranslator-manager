@@ -3513,6 +3513,8 @@ public partial class MainWindow : Window
 
         if (loaderButtons.Children.Count > 0) panel.Children.Add(loaderButtons);
 
+        foreach (var control in DataBesideThePlugin(report)) panel.Children.Add(control);
+
         // Not ours: no verb, because nothing here may touch it. But a refusal with nowhere to go
         // is a dead end — the uninstaller already declines this loader, and somebody who wants it
         // gone has to be told where to look. So the way to act becomes a way to act BY HAND.
@@ -4539,6 +4541,82 @@ public partial class MainWindow : Window
                                        || report.LoaderStanding is { UpdateAvailable: true }),
             InstallPlugin = plugin,
         };
+    }
+
+    /// <summary>
+    /// Our own data files sitting one level above where the mod reads them — reported, never
+    /// touched.
+    ///
+    /// ⚠ BepInEx only, and it follows from where the mod keeps things. Its documented home is
+    /// plugins/UnityGameTranslator/, so a config, a translation or a font dropped straight into
+    /// plugins/ is invisible to the mod: it will read none of them and quietly start from
+    /// defaults, which somebody experiences as "my translation disappeared".
+    ///
+    /// ⚠ We do NOT move or delete them, and that is deliberate rather than lazy. A translation
+    /// there may be work nobody else has, the mod's own file may already exist in the right place,
+    /// and merging two is a decision with a loser. So the folder is opened and the choice is left
+    /// to the person who made those files.
+    /// </summary>
+    private IEnumerable<Control> DataBesideThePlugin(GameReport report)
+    {
+        var descriptor = InstalledDescriptor(report);
+        if (descriptor is null) yield break;
+
+        var pluginDir = Path.Combine(report.Game.Path,
+            descriptor.PluginDir.Replace('/', Path.DirectorySeparatorChar));
+
+        // Only where our folder IS the documented location — under MelonLoader the parent is the
+        // game's root and everything in it belongs to the game.
+        if (!string.Equals(Path.GetFileName(pluginDir), LocalTranslationProbe.PluginFolderName,
+                           StringComparison.OrdinalIgnoreCase))
+        {
+            yield break;
+        }
+
+        if (Path.GetDirectoryName(pluginDir) is not { } parent || !Directory.Exists(parent)) yield break;
+
+        var strays = new List<string>();
+
+        foreach (var name in new[] { LocalTranslationProbe.ConfigFileName, "translations.json" })
+        {
+            if (File.Exists(Path.Combine(parent, name))) strays.Add(name);
+        }
+
+        foreach (var folder in new[] { "fonts", "images" })
+        {
+            if (Directory.Exists(Path.Combine(parent, folder))) strays.Add(folder + "/");
+        }
+
+        if (strays.Count == 0) yield break;
+
+        var body = new StackPanel { Spacing = 4 };
+
+        body.Children.Add(new TextBlock
+        {
+            Text = $"{string.Join(", ", strays)} sit in {descriptor.PluginDir}/../ rather than "
+                 + "beside the mod. It reads none of them.",
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("StatusWarning"),
+        });
+
+        body.Children.Add(new TextBlock
+        {
+            Text = "Nothing here moves or deletes them: a translation there may be work nobody "
+                 + "else has, and the mod may already have its own file in the right place. "
+                 + "Compare them yourself and keep the one you want.",
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("TextMuted"),
+        });
+
+        var open = Glyphs.Button(Glyphs.Folder(), "Open that folder");
+        open.FontSize = 12;
+        open.HorizontalAlignment = HorizontalAlignment.Left;
+        open.Click += (_, _) => Shell.OpenFolder(parent);
+        body.Children.Add(open);
+
+        yield return Card(body);
     }
 
     /// <summary>

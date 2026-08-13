@@ -367,8 +367,28 @@ public static class LocalTranslationProbe
     {
         var root = Path.Combine(gamePath, descriptor.PluginDir.Replace('/', Path.DirectorySeparatorChar));
 
-        var candidates = new[] { (Dir: root, Canonical: true),
-                                 (Dir: Path.Combine(root, "UnityGameTranslator"), Canonical: false) };
+        var candidates = new List<(string Dir, bool Canonical)>
+        {
+            (root, true),
+
+            // MelonLoader's case: the documented place is Mods/, so a stray copy sits in a
+            // subfolder of it.
+            (Path.Combine(root, PluginFolderName), false),
+        };
+
+        // ⚠ BepInEx's case, and it is the mirror image — which is why it was missed. There the
+        // documented place IS BepInEx/plugins/UnityGameTranslator/, so a copy dropped in by hand
+        // lands in its PARENT, plugins/, beside every other mod. BepInEx loads that one too, and
+        // the loader reads plugins/ before its subfolders: every update would go to the right
+        // folder while the game kept running the old assembly, with nothing to explain why.
+        //
+        // Only when our own folder name is the last segment — under MelonLoader the parent is the
+        // game's root, and hunting for a DLL there would be looking outside the loader entirely.
+        if (string.Equals(Path.GetFileName(root), PluginFolderName, StringComparison.OrdinalIgnoreCase)
+            && Path.GetDirectoryName(root) is { } parent)
+        {
+            candidates.Add((parent, false));
+        }
 
         foreach (var (directory, canonical) in candidates)
         {
@@ -379,6 +399,13 @@ public static class LocalTranslationProbe
 
         return null;
     }
+
+    /// <summary>
+    /// The folder this mod carries its own name in. Written once: it appears as the documented
+    /// location under BepInEx and as the stray one under MelonLoader, and the two must stay the
+    /// same string.
+    /// </summary>
+    public const string PluginFolderName = "UnityGameTranslator";
 
     /// <summary>Version of the deployed plugin, or null when it is not installed.</summary>
     public static string? ReadInstalledPluginVersion(string gamePath, LoaderDescriptor descriptor) =>

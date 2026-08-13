@@ -2398,12 +2398,34 @@ public partial class MainWindow : Window
         DetailPanel.Children.Add(BackToOverview(report));
         DetailPanel.Children.Add(Header(report));
 
+        // ⚠ Directly under the name. Placed after the technical card, the tabs sat below a screenful
+        // of paths and engine versions — somebody had to scroll to discover the card even had two
+        // halves, which is the same as not having them.
+        DetailPanel.Children.Add(TabStrip(report));
+
         if (BeTheFirstBanner(report) is { } invitation) DetailPanel.Children.Add(invitation);
 
-        DetailPanel.Children.Add(Card(Facts(report)));
-
+        // A blocker belongs to both halves: "this game cannot be modded" IS the answer somebody
+        // came for, and hiding it behind a tab would let Home offer a translation for a game that
+        // can never run one.
         foreach (var blocker in report.Blockers)
             DetailPanel.Children.Add(Callout(blocker, "CalloutErrorBg", "StatusError"));
+
+        if (_gameTab == GameTab.Home)
+        {
+            foreach (var control in GameHome(report)) DetailPanel.Children.Add(control);
+
+            // No fixed bar on Home: it offers one way forward at a time, and a second call to
+            // action pinned underneath would compete with the one the page is built around.
+            ActionBar.IsVisible = false;
+            ActionBar.Content = null;
+            return;
+        }
+
+        // ⚠ Paths, engine version, architecture: the technical answer, and it opens the SET UP
+        // half rather than the card. It was the first thing on every game — before knowing whether
+        // a translation even existed — which is the wrong first question for almost everybody.
+        DetailPanel.Children.Add(Card(Facts(report)));
 
         foreach (var warning in report.Warnings)
             DetailPanel.Children.Add(Callout(warning, "CalloutWarningBg", "StatusWarning"));
@@ -2493,36 +2515,71 @@ public partial class MainWindow : Window
             yield return Card(body);
         }
 
-        // ── Is there one in my language? The first question, answered first ───────────────────
+        // ── What exists for this game ─────────────────────────────────────────────────────────
+        //
+        // ⚠ Built on WHAT EXISTS, never on what is missing from one language. The first version
+        // announced "no translation exists in <your language>" — which, next to a card saying the
+        // game was running one, read as a plain lie. It was worse than wrong: the language it
+        // judged against is resolved from the system when set to "auto", so a locale we fail to
+        // read turns into a denial about a translation sitting right there.
+        //
+        // Only one fact here cannot be misread: whether anything is published at all. Everything
+        // else is stated as a list of what there IS, per language.
         var question = new StackPanel { Spacing = 4 };
 
-        question.Children.Add(new TextBlock
-        {
-            Text = inMyLanguage.Count > 0
-                ? inMyLanguage.Count == 1
-                    ? $"One translation exists in {Languages.NameOf(target)}."
-                    : $"{inMyLanguage.Count} translations exist in {Languages.NameOf(target)}."
-                : $"No translation exists in {Languages.NameOf(target)} for this game.",
-            FontSize = 13,
-            FontWeight = FontWeight.SemiBold,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Brush(inMyLanguage.Count > 0 ? "StatusSuccess" : "TextPrimary"),
-        });
-
-        // Said even when the answer above is no — especially then. A game with nothing in your
-        // language may well have five in others, and somebody who reads one of them would rather
-        // know than start from a blank sheet.
-        if (elsewhere > 0)
+        if (report.OnlineTranslations.Count == 0)
         {
             question.Children.Add(new TextBlock
             {
-                Text = elsewhere == 1
-                    ? "One more exists in another language."
-                    : $"{elsewhere} more exist in other languages.",
+                Text = "Nothing has been published for this game yet.",
+                FontSize = 13,
+                FontWeight = FontWeight.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextPrimary"),
+            });
+        }
+        else
+        {
+            var byLanguage = report.OnlineTranslations
+                .GroupBy(t => t.TargetLanguage ?? "unknown")
+                .OrderByDescending(g => Languages.Matches(g.Key, target))
+                .ThenByDescending(g => g.Count())
+                .Select(g => g.Count() == 1 ? g.Key : $"{g.Key} ({g.Count()})")
+                .ToList();
+
+            question.Children.Add(new TextBlock
+            {
+                Text = report.OnlineTranslations.Count == 1
+                    ? "One translation is published for this game."
+                    : $"{report.OnlineTranslations.Count} translations are published for this game.",
+                FontSize = 13,
+                FontWeight = FontWeight.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextPrimary"),
+            });
+
+            // The languages themselves, yours first when there is one. A list somebody can read
+            // and judge, rather than a verdict about a language we may have resolved wrongly.
+            question.Children.Add(new TextBlock
+            {
+                Text = string.Join(" · ", byLanguage),
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
-                Foreground = Brush("TextSecondary"),
+                Foreground = Brush(inMyLanguage.Count > 0 ? "StatusSuccess" : "TextSecondary"),
             });
+
+            if (inMyLanguage.Count == 0 && elsewhere > 0)
+            {
+                question.Children.Add(new TextBlock
+                {
+                    Text = $"None of them is in {Languages.NameOf(target)}, the language set in "
+                         + "your mod defaults — taking one still works, and the game can be "
+                         + "pointed at its language.",
+                    FontSize = 11,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = Brush("TextMuted"),
+                });
+            }
         }
 
         if (report.OnlineTranslations.Count > 0)

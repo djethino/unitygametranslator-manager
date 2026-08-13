@@ -81,20 +81,6 @@ public sealed class GamePreference
     /// </summary>
     [JsonPropertyName("install_translation")] public bool InstallTranslation { get; set; } = true;
 
-    /// <summary>
-    /// What this person wants to DO about this game's translation: read one, complete one, or
-    /// make one. Null follows <see cref="InstallerSettings.DefaultPosture"/>.
-    ///
-    /// ⚠ It decides nothing on its own, and that is deliberate. It PROPOSES the two settings above
-    /// — take a translation, translate while playing — which stay visible and editable next to it.
-    /// Changing posture therefore never touches a game: it moves an intention, and the buttons are
-    /// what act, with the warnings they already carry. That is what makes switching safe after an
-    /// install rather than a way to lose a file.
-    ///
-    /// Kept per game because it is a per-game question: one may be a language one reads well
-    /// enough to only want the missing lines, the next a game one is translating outright.
-    /// </summary>
-    [JsonPropertyName("posture")] public Posture? Posture { get; set; }
 }
 
 /// <summary>

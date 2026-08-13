@@ -4,19 +4,22 @@ using UnityGameTranslator.Manager.Core.Install;
 namespace UnityGameTranslator.Manager.Core.Model;
 
 /// <summary>
-/// What the player does with what the mod captures, for one game.
+/// What a game is set up to do about its translation.
 ///
-/// The situation suggests a default — a translation exists, or none does — but it never decides:
-/// "complete" is declared by an author at a point in time, and the total number of lines in a
-/// game is unknowable, so a game marked complete can still be missing whatever its author never
-/// walked past. All four remain offered, including on a complete translation.
-/// </summary>
+/// ⚠ **Read from the game's state, never stored.** It was a stored preference for a day, and that
+/// was the bug: a value kept in a file is a claim about a game somebody may have changed since —
+/// and for every game that existed before the field did, a claim nobody ever made. So a game
+/// already carrying its owner's translation reported itself as "use somebody else's". It is now
+/// deduced from the file present, the selection, and the translate-while-playing switch, so it
+/// cannot go stale. See MainWindow.DeducedPosture.
+///
 /// ⚠ **Three, not four, and the two that left were not dropped by accident.** "Contribute" and
 /// "fork" are decisions taken when PUBLISHING, inside the mod: they choose what a lineage does with
 /// what you wrote. This tool writes config.json, which has no key for either — so offering them
 /// here would have produced exactly the same configuration as "complete it", three buttons for one
 /// outcome. What this tool can honestly settle is whether a translation is taken, and whether one
 /// is being made while you play.
+/// </summary>
 public enum Posture
 {
     /// <summary>Take the published translation and read it. Nothing is generated while playing.</summary>
@@ -242,11 +245,6 @@ public sealed class InstallerSettings
             ? ReleaseChannel.Beta
             : ReleaseChannel.Stable;
 
-    /// <summary>
-    /// What to do when a game could go either way: a translation exists AND could be improved.
-    /// Only a default — the choice stays on the game itself.
-    /// </summary>
-    [JsonPropertyName("default_posture")] public Posture DefaultPosture { get; set; } = Posture.Use;
 
     /// <summary>
     /// True once the user has been through the settings at least once. Until then we must not

@@ -2443,24 +2443,6 @@ public partial class MainWindow : Window
         _takeTranslation = TranslationOffers.MayDefaultToYes(offer)
                            && _preferences.Read(report.Game.Path).InstallTranslation;
 
-        // ⚠ Two tabs, and the split is not cosmetic. Everything below answers "how do I set this
-        // up", which is the second question somebody has. The first — "is there a translation for
-        // this game, in my language?" — had no place of its own and was answered halfway down a
-        // card about loaders. Home answers that one; Set up keeps all the machinery, unchanged,
-        // and is fed by what Home selects.
-        DetailPanel.Children.Add(TabStrip(report));
-
-        if (_gameTab == GameTab.Home)
-        {
-            foreach (var control in GameHome(report)) DetailPanel.Children.Add(control);
-
-            // No fixed bar on Home: it offers one way forward at a time, and a second call to
-            // action pinned underneath would compete with the one the page is built around.
-            ActionBar.IsVisible = false;
-            ActionBar.Content = null;
-            return;
-        }
-
         DetailPanel.Children.Add(Card(LoaderSection(report)));
         DetailPanel.Children.Add(Card(ModSection(report)));
         DetailPanel.Children.Add(Card(Translations(report)));
@@ -2612,18 +2594,35 @@ public partial class MainWindow : Window
 
         yield return Card(question);
 
+        // ── Mine, published, and not the one running here ─────────────────────────────────────
+        //
+        // The case that had nowhere to appear: a translation of yours sits on the site for this
+        // game while the file installed belongs to somebody else's lineage. Both are legitimate —
+        // testing another one is ordinary — but nothing said the first still existed, so it looked
+        // lost. AccountLineages knows every lineage the account holds; nobody was asking it.
+        foreach (var control in MyOtherTranslations(report)) yield return control;
+
         // ── The one thing to do next ──────────────────────────────────────────────────────────
         var next = new StackPanel { Spacing = 6 };
         var installed = report.InstalledPluginVersion is not null;
 
+        // What Set up would have to do, said here rather than found there. "Up to date" is worth
+        // as much as a pending update: it is the answer to "do I need to go and look".
+        var pending = new List<string>();
+        if (report.InstalledLoader is null) pending.Add("the loader");
+        else if (report.LoaderStanding is { UpdateAvailable: true }) pending.Add("a newer loader");
+
+        if (!installed) pending.Add("the mod");
+        else if (report.PluginStanding is { UpdateAvailable: true }) pending.Add("a newer mod");
+
         next.Children.Add(new TextBlock
         {
-            Text = installed
-                ? "The mod is installed here."
-                : "The mod is not installed in this game yet.",
+            Text = pending.Count == 0
+                ? "The loader and the mod are installed and up to date."
+                : $"Needs {string.Join(" and ", pending)}.",
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
-            Foreground = Brush("TextSecondary"),
+            Foreground = Brush(pending.Count == 0 ? "StatusSuccess" : "TextSecondary"),
         });
 
         var go = new Button
@@ -2642,6 +2641,108 @@ public partial class MainWindow : Window
 
         next.Children.Add(go);
         yield return Card(next);
+    }
+
+    /// <summary>
+    /// Translations this account published for THIS game that are not the one installed.
+    ///
+    /// ⚠ Reads the account's lineages, never infers them. And it is deliberately silent when the
+    /// answer is unknown — signed out, offline, or a site too old to report roles — because
+    /// "you have none" and "we could not ask" must not look alike on a screen about someone's own
+    /// work.
+    /// </summary>
+    private IEnumerable<Control> MyOtherTranslations(GameReport report)
+    {
+        var installedUuid = report.LocalTranslation?.Uuid;
+
+        // The account THIS GAME uses, as everywhere else on this card: one machine can carry
+        // several, and judging with the tool's own would claim a stranger's work.
+        var descriptor = InstalledDescriptor(report);
+        var account = GameConfigWriter.InGameValue(
+            report.Game.Path, descriptor, GameConfigWriter.ApiUserKey);
+
+        if (string.IsNullOrWhiteSpace(account)) yield break;
+
+        var mine = report.OnlineTranslations
+            .Where(t => string.Equals(t.Author, account, StringComparison.OrdinalIgnoreCase))
+            .Where(t => !string.Equals(t.Uuid, installedUuid, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (mine.Count == 0) yield break;
+
+        var body = new StackPanel { Spacing = 4 };
+
+        body.Children.Add(new TextBlock
+        {
+            Text = mine.Count == 1
+                ? "You have published a translation for this game."
+                : $"You have published {mine.Count} translations for this game.",
+            FontSize = 13,
+            FontWeight = FontWeight.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("TextPrimary"),
+        });
+
+        foreach (var owned in mine)
+        {
+            body.Children.Add(new TextBlock
+            {
+                Text = $"{owned.SourceLanguage} → {owned.TargetLanguage} · {owned.LineCount} lines",
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextSecondary"),
+            });
+        }
+
+        body.Children.Add(new TextBlock
+        {
+            Text = installedUuid is null
+                ? "It is not the one installed here — this game has no translation file yet."
+                : "The file in this game is a different one. Yours is still on the site, untouched.",
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("TextMuted"),
+        });
+
+        var take = new Button
+        {
+            Content = mine.Count == 1 ? "Put mine back in this game" : "Choose which one to install",
+            FontSize = 12,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            IsEnabled = !_running.IsRunning(report.Game),
+            Margin = new Avalonia.Thickness(0, 4, 0, 0),
+        };
+
+        take.Click += async (_, _) =>
+        {
+            // More than one: the choice needs what separates them, which is the list's job.
+            if (mine.Count > 1)
+            {
+                await OpenTranslationsAsync(report);
+                return;
+            }
+
+            var preference = _preferences.Read(report.Game.Path);
+            preference.TranslationId = mine[0].Id;
+            _preferences.Set(report.Game.Path, preference);
+
+            // Selected, then acted on through the same path as any other translation — including
+            // the warnings, because putting mine back still replaces what is there.
+            if (report.InstalledPluginVersion is null)
+            {
+                _gameTab = GameTab.Setup;
+                await ShowSelectedAsync();
+                return;
+            }
+
+            var replacing = TranslationOffers.For(report, mine[0])
+                is TranslationOffer.ReplacesWork or TranslationOffer.ReplacesChoice;
+
+            await TakeSelectedTranslationAsync(report, mine[0], replacing);
+        };
+
+        body.Children.Add(take);
+        yield return Card(body);
     }
 
     /// <summary>
@@ -4468,19 +4569,41 @@ public partial class MainWindow : Window
     /// it, so changing it never touches a game: the buttons act, with the warnings they carry.
     /// That is what makes it safe to switch after an install rather than a way to lose a file.
     /// </summary>
+    /// <summary>
+    /// What this game is set up to do, READ from its state rather than from a stored answer.
+    ///
+    /// ⚠ This is the whole reason the posture stopped being a picker. A value kept in preferences
+    /// is a claim about a game somebody may have changed since — and for every game that existed
+    /// before the field did, it is a claim nobody ever made. Reading it from the file, the
+    /// selection and the translate-while-playing switch cannot go stale: a game already carrying
+    /// somebody's own translation reports itself as such at first sight, on a refresh, and on a
+    /// machine that has never seen it. That was the original complaint — a jeu already has a
+    /// profile, so do not overwrite it with a default.
+    /// </summary>
+    private Posture DeducedPosture(GameReport report, GamePreference preference)
+    {
+        var translating = preference.StartTranslation ?? _settings.Current.EnableAi;
+
+        // Nothing to read and nothing chosen: whatever happens here starts from nothing.
+        var hasTranslation = report.LocalTranslation is not null
+                             || (preference.InstallTranslation && PickTranslation(report) is not null);
+
+        if (!hasTranslation) return Posture.Start;
+
+        return translating ? Posture.Complete : Posture.Use;
+    }
+
     private IEnumerable<Control> TranslationPlanning(GameReport report)
     {
-        var settings = _settings.Current;
         var preference = _preferences.Read(report.Game.Path);
         var descriptor = InstalledDescriptor(report);
 
-        var postures = SituationReader.PosturesFor(report, _settings.ResolveTargetLanguage());
-        var posture = preference.Posture ?? settings.DefaultPosture;
-
-        // Nothing published means "Use" cannot be honoured, whatever was stored — a preference
-        // from another day must not survive as a choice the catalogue can no longer answer.
-        if (!postures.Contains(posture)) posture = postures[0];
-
+        // ⚠ No posture picker here, and it was here for a day. Asking "use it / complete it /
+        // start from nothing" as three radio buttons put the same question twice: the Home tab
+        // already answers it by what somebody does — select a translation, or choose to make one
+        // — and a form repeating a decision the journey has taken is how two answers end up
+        // disagreeing. The posture stays as a stored value that the journey writes; it is no
+        // longer something to fill in.
         yield return new Border
         {
             Height = 1,
@@ -4488,54 +4611,7 @@ public partial class MainWindow : Window
             Margin = new Avalonia.Thickness(0, 10, 0, 6),
         };
 
-        yield return new TextBlock
-        {
-            Text = "What do you want for this game?",
-            FontSize = 12,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = Brush("TextSecondary"),
-        };
-
-        // ⚠ Rebuilt on its own rather than through the whole card: redrawing a section from inside
-        // one of its own controls destroys that control while its event is still running and takes
-        // the keyboard focus with it.
         var planHost = new StackPanel { Spacing = 4 };
-
-        var group = $"posture-{report.Game.Path.GetHashCode()}";
-
-        foreach (var option in postures)
-        {
-            var choice = new RadioButton
-            {
-                Content = SituationReader.Describe(option),
-                GroupName = group,
-                IsChecked = option == posture,
-                FontSize = 12,
-            };
-
-            var chosen = option;
-            choice.IsCheckedChanged += (_, _) =>
-            {
-                if (choice.IsChecked != true) return;
-
-                preference.Posture = chosen;
-
-                // What the posture MEANS, written into the two settings it governs. Written here
-                // and not read on the fly, so they remain what somebody can then override one by
-                // one — the posture is a starting point, not a lock.
-                preference.InstallTranslation = chosen != Posture.Start;
-                preference.StartTranslation = chosen != Posture.Use;
-
-                _preferences.Set(report.Game.Path, preference);
-
-                RefreshPlan();
-                ShowActionBar(report);
-            };
-
-            yield return choice;
-        }
-
-        yield return planHost;
 
         void RefreshPlan()
         {
@@ -4545,6 +4621,7 @@ public partial class MainWindow : Window
         }
 
         RefreshPlan();
+        yield return planHost;
     }
 
     /// <summary>
@@ -4680,7 +4757,7 @@ public partial class MainWindow : Window
                                             LoaderDescriptor? descriptor, Action refresh)
     {
         var settings = _settings.Current;
-        var posture = preference.Posture ?? settings.DefaultPosture;
+        var posture = DeducedPosture(report, preference);
         var backend = TranslationBackendLabel(settings);
 
         yield return new TextBlock

@@ -139,7 +139,6 @@ public sealed class SettingsWindow : Window
             MergeStrategy = current.MergeStrategy,
             NotificationsEnabled = current.NotificationsEnabled,
             NotificationPosition = current.NotificationPosition,
-            DefaultPosture = current.DefaultPosture,
             Reviewed = current.Reviewed,
         };
 
@@ -2110,7 +2109,6 @@ public sealed class SettingsWindow : Window
         stored.NotificationPosition = _draft.NotificationPosition;
         stored.SettingsHotkey = _draft.SettingsHotkey;
         stored.Channel = _draft.Channel;
-        stored.DefaultPosture = _draft.DefaultPosture;
         stored.Reviewed = true;
 
         var count = CountPendingChanges();

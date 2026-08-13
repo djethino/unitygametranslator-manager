@@ -201,11 +201,19 @@ public sealed class GameInventory
             && report.LocalTranslation is { } local
             && ResolveDescriptor(report, game) is { } loader)
         {
+            // ⚠ Measured against the ancestor when there is one, and only otherwise taken from the
+            // counter the mod keeps. That counter describes what the MOD did: a file edited from
+            // the browser editor, or by hand, carries a number that stopped describing it — and
+            // reading it as "nothing changed here" is what turns a merge into an offer to download
+            // over somebody's work.
+            //
+            // Null — no ancestor AND no counter to trust — is read as "there is work here": the
+            // safe direction is the one that refuses to overwrite.
             report.Sync = Common.Sync.Decide(
                 LocalTranslationProbe.ComputeContentHash(game.Path, loader),
                 published.FileHash,
                 local.SourceHash,
-                local.LocalChanges > 0);
+                local.HasLocalWork ?? true);
         }
 
         // Deliberately outside the community lookup: whether this account leads or contributes to

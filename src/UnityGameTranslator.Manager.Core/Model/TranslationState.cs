@@ -54,6 +54,29 @@ public sealed class LocalTranslation
     public int LocalChanges { get; init; }
 
     /// <summary>
+    /// Entries that differ from the snapshot taken at the last sync — MEASURED here, against the
+    /// ancestor file sitting beside the translation.
+    ///
+    /// ⚠ Null means there is no ancestor to measure against, and that is not zero. Zero is a claim
+    /// that nothing was changed; null is "nobody can say", and the difference decides whether it is
+    /// safe to offer replacing this file with the published one.
+    ///
+    /// ⚠ Preferred over <see cref="LocalChanges"/> wherever both exist. That one is a counter the
+    /// mod keeps as it writes, so it describes what the MOD did — a file edited by any other means
+    /// carries a number that no longer describes it.
+    /// </summary>
+    public int? ChangedSinceAncestor { get; init; }
+
+    /// <summary>
+    /// Whether anything here has been changed since the last sync, and whether that can be known
+    /// at all. Null when there is neither an ancestor to measure nor a counter to trust.
+    /// </summary>
+    public bool? HasLocalWork =>
+        ChangedSinceAncestor is { } measured ? measured > 0
+        : SourceHash is null ? null
+        : LocalChanges > 0;
+
+    /// <summary>
     /// The server's hash at the last sync, from _source.hash. Null on a file that has never been
     /// synced, or that predates the field.
     ///

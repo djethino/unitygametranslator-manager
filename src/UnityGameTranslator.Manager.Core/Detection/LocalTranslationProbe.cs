@@ -139,6 +139,94 @@ public static class LocalTranslationProbe
     }
 
     /// <summary>
+    /// The snapshot the mod keeps of the file as it stood at the last sync, beside the file itself.
+    ///
+    /// ⚠ It is what makes a three-way comparison possible at all: without it there is no way to
+    /// tell "I changed this" from "the published version moved", and every difference has to be
+    /// reported as an unknown.
+    /// </summary>
+    public const string AncestorFileName = TranslationFileName + ".ancestor";
+
+    /// <summary>
+    /// Every translated line of a file, keyed as the file keys them. Null when there is no such
+    /// file or it cannot be read — which is not the same as an empty one, and callers must keep
+    /// those apart.
+    /// </summary>
+    public static Dictionary<string, TranslationLine>? ReadLines(string path)
+    {
+        if (!File.Exists(path)) return null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(path));
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return null;
+
+            var lines = new Dictionary<string, TranslationLine>(StringComparer.Ordinal);
+
+            foreach (var property in root.EnumerateObject())
+            {
+                if (ContentHash.IsMetadataKey(property.Name)) continue;
+                lines[property.Name] = LineOf(property.Value);
+            }
+
+            return lines;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// How many lines here differ from the snapshot taken at the last sync — measured, not asked.
+    ///
+    /// ⚠ **This is the number the mod used to be the only one able to give.** It kept a running
+    /// count in the file (_local_changes), so anything outside a game had to take its word for it,
+    /// and a file edited by any other means carried a count that no longer described it. The
+    /// ancestor sits on disk next to the translation: the answer was always computable here.
+    ///
+    /// ⚠ Null means "no ancestor, so nobody can say" — a file never synced, or written before the
+    /// snapshot existed. It must never be read as zero: zero is a claim that nothing was changed,
+    /// and acting on it would offer to replace work with the published version.
+    ///
+    /// A line counts as changed when its value or its tag differs, by the same rule the merge uses
+    /// — the same words tagged H rather than A means somebody read it, which is a change.
+    /// </summary>
+    public static int? CountChangedSinceAncestor(string gamePath, LoaderDescriptor descriptor)
+    {
+        var folder = Path.Combine(gamePath, descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar));
+
+        var ancestor = ReadLines(Path.Combine(folder, AncestorFileName));
+        if (ancestor is null) return null;
+
+        var local = ReadLines(Path.Combine(folder, TranslationFileName));
+        if (local is null) return null;
+
+        var changed = 0;
+
+        foreach (var line in local)
+        {
+            if (!ancestor.TryGetValue(line.Key, out var before))
+            {
+                // Added since the last sync: work that exists nowhere else.
+                changed++;
+                continue;
+            }
+
+            if (!Merge.Same(line.Value, before)) changed++;
+        }
+
+        // Removed since the last sync counts too: a deletion is a change somebody made.
+        foreach (var line in ancestor)
+        {
+            if (!local.ContainsKey(line.Key)) changed++;
+        }
+
+        return changed;
+    }
+
+    /// <summary>
     /// One entry exactly as the file holds it.
     ///
     /// ⚠ Nothing is tidied here, and that is the whole point: the server hashes the file as
@@ -286,6 +374,9 @@ public static class LocalTranslationProbe
                 SteamId = steamId,
                 EntryCount = entryCount,
                 LocalChanges = localChanges,
+                // Measured rather than believed. Costs one more read of a file we have just read,
+                // and only when the mod left a snapshot to compare against.
+                ChangedSinceAncestor = CountChangedSinceAncestor(gamePath, descriptor),
                 SourceHash = sourceHash,
                 Counts = new TagCounts(human, validated, ai, captured, skipped),
                 LastWrite = File.GetLastWriteTimeUtc(path),

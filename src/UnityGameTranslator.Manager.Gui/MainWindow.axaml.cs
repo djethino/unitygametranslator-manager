@@ -3430,10 +3430,10 @@ public partial class MainWindow : Window
         button.IsEnabled = false;
         button.Content = "Opening…";
 
-        var runner = new EditSessionRunner();
+        var runner = new EditSessionRunner(_platform);
         var languages = LocalTranslationProbe.ReadLanguages(report.Game.Path, descriptor);
 
-        var session = await runner.OpenAsync(report.Game.Path, descriptor, report.Game.Name,
+        var session = await runner.OpenAsync(report.Game, descriptor,
                                              languages.Source, languages.Target);
 
         if (session is null)
@@ -4932,8 +4932,8 @@ public partial class MainWindow : Window
         if (json is null)
             return $"The translation could not be downloaded ({api.LastError ?? "no reason given"}). Everything else is in place.";
 
-        var result = new TranslationInstaller()
-            .Install(report.Game.Path, loader, json, translation.FileHash);
+        var result = new TranslationInstaller(_platform)
+            .Install(report.Game, loader, json, translation.FileHash);
 
         if (!result.Written)
             return $"The translation could not be written ({result.Failure}). Everything else is in place.";

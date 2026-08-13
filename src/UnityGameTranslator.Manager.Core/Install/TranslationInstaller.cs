@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using UnityGameTranslator.Manager.Core.Detection;
 using UnityGameTranslator.Manager.Core.Model;
+using UnityGameTranslator.Manager.Core.Platform;
 
 namespace UnityGameTranslator.Manager.Core.Install;
 
@@ -33,15 +34,70 @@ public sealed class TranslationInstaller
     public const string BackupFolderName = "removed";
 
     /// <summary>
+    /// What a write refuses to do while the game is open.
+    ///
+    /// ⚠ **Not a locked file — a lost one.** The mod holds the whole translation in memory and
+    /// rewrites it WHOLE on its own timer. A file written here while a game runs is not in
+    /// conflict with anything: it is overwritten at the mod's next save, silently, and the person
+    /// who took a translation sees it vanish minutes later with nothing said. That is worse than a
+    /// refusal, which is why this is a refusal.
+    ///
+    /// ⚠ The check is <see cref="IPlatform.IsGameRunning"/> — the precise one, which opens each
+    /// candidate process — and not the cheap sweep the game list uses. That one answers "not
+    /// running" for a game belonging to another operating-system account, and this is exactly the
+    /// machine where several accounts share one game folder.
+    /// </summary>
+    public const string GameRunningRefusal =
+        "This game is open. The mod rewrites its translation file from memory while it runs, so "
+        + "anything written now would be replaced without warning. Close the game and try again.";
+
+    private readonly IPlatform? _platform;
+
+    /// <summary>
+    /// ⚠ The platform is what makes a write refuse while the game is open, and it is asked for
+    /// rather than optional-by-default on purpose: a caller that forgets it does not get a
+    /// silently unguarded writer, it gets a compile error. The null case exists only for callers
+    /// holding a game that provably cannot be running — none today.
+    /// </summary>
+    public TranslationInstaller(IPlatform? platform)
+    {
+        _platform = platform;
+    }
+
+    /// <summary>
+    /// Whether writing to this game is allowed right now. Null when it is.
+    ///
+    /// ⚠ Fails towards refusing: an answer we cannot get is not permission.
+    /// </summary>
+    public string? WhyNotNow(GameInstall game)
+    {
+        if (_platform is null) return null;
+
+        try
+        {
+            return _platform.IsGameRunning(game) ? GameRunningRefusal : null;
+        }
+        catch
+        {
+            // Could not tell. The install engine treats this the same way — the cost of a needless
+            // refusal is a second attempt; the cost of a wrong permission is somebody's work.
+            return GameRunningRefusal;
+        }
+    }
+
+    /// <summary>
     /// Writes the file, after moving any existing one aside.
     ///
     /// <paramref name="serverHash"/> is written as _source.hash, which is how the mod later tells
     /// "the server moved on" from "I edited this". Without it every downloaded file would look
     /// locally modified from the first launch, and the mod would offer to merge against nothing.
     /// </summary>
-    public TranslationWriteResult Install(string gamePath, LoaderDescriptor descriptor,
+    public TranslationWriteResult Install(GameInstall game, LoaderDescriptor descriptor,
                                           string json, string? serverHash)
     {
+        if (WhyNotNow(game) is { } refusal) return new TranslationWriteResult(false, null, refusal);
+
+        var gamePath = game.Path;
         var folder = Path.Combine(gamePath,
             descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar));
         var target = Path.Combine(folder, LocalTranslationProbe.TranslationFileName);
@@ -91,9 +147,12 @@ public sealed class TranslationInstaller
     /// </summary>
     /// <param name="sentJson">What was uploaded when the session opened.</param>
     /// <param name="receivedJson">What the session holds now.</param>
-    public TranslationWriteResult WriteEditedSession(string gamePath, LoaderDescriptor descriptor,
+    public TranslationWriteResult WriteEditedSession(GameInstall game, LoaderDescriptor descriptor,
                                                      string sentJson, string receivedJson)
     {
+        if (WhyNotNow(game) is { } refusal) return new TranslationWriteResult(false, null, refusal);
+
+        var gamePath = game.Path;
         var folder = Path.Combine(gamePath,
             descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar));
         var target = Path.Combine(folder, LocalTranslationProbe.TranslationFileName);

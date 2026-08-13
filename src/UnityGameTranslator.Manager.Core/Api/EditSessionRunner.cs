@@ -1,6 +1,7 @@
 using UnityGameTranslator.Manager.Core.Detection;
 using UnityGameTranslator.Manager.Core.Install;
 using UnityGameTranslator.Manager.Core.Model;
+using UnityGameTranslator.Manager.Core.Platform;
 
 namespace UnityGameTranslator.Manager.Core.Api;
 
@@ -67,10 +68,10 @@ public sealed class EditSessionRunner
     private readonly EditSessionClient _client;
     private readonly TranslationInstaller _installer;
 
-    public EditSessionRunner(EditSessionClient? client = null, TranslationInstaller? installer = null)
+    public EditSessionRunner(IPlatform platform, EditSessionClient? client = null)
     {
         _client = client ?? new EditSessionClient();
-        _installer = installer ?? new TranslationInstaller();
+        _installer = new TranslationInstaller(platform);
     }
 
     /// <summary>The session currently being followed, or null.</summary>
@@ -82,12 +83,24 @@ public sealed class EditSessionRunner
     /// Returns null on failure, with the reason in <see cref="EditSessionClient.LastError"/> —
     /// surfaced through <see cref="LastError"/>.
     /// </summary>
-    public async Task<EditSession?> OpenAsync(string gamePath, LoaderDescriptor descriptor,
-                                              string? gameName, string? sourceLanguage,
-                                              string? targetLanguage, CancellationToken ct = default)
+    public async Task<EditSession?> OpenAsync(GameInstall game, LoaderDescriptor descriptor,
+                                              string? sourceLanguage, string? targetLanguage,
+                                              CancellationToken ct = default)
     {
         LastError = null;
 
+        // ⚠ Asked HERE as well as at the write, and the duplication is the point: a session opened
+        // over a running game would be edited for twenty minutes before the first save is refused.
+        // The door stays on the write — that is what protects the file — and this one exists so
+        // nobody spends that twenty minutes.
+        if (_installer.WhyNotNow(game) is { } refusal)
+        {
+            LastError = refusal + " While it is open, the mod's own live editor is the one that "
+                      + "can change this translation.";
+            return null;
+        }
+
+        var gamePath = game.Path;
         var path = Path.Combine(gamePath,
             descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar),
             LocalTranslationProbe.TranslationFileName);
@@ -113,7 +126,7 @@ public sealed class EditSessionRunner
         // ⚠ ai_available stays false: the per-line Retranslate button in the browser is answered by
         // whatever holds the translation loop, and the game is not running. Promising it would
         // leave somebody waiting on nobody.
-        var session = await _client.OpenAsync(sent, gameName, sourceLanguage, targetLanguage,
+        var session = await _client.OpenAsync(sent, game.Name, sourceLanguage, targetLanguage,
                                               aiAvailable: false, aiModel: null, ct)
             .ConfigureAwait(false);
 
@@ -125,7 +138,7 @@ public sealed class EditSessionRunner
 
         Current = session;
         _sentJson = sent;
-        _gamePath = gamePath;
+        _game = game;
         _descriptor = descriptor;
         return session;
     }
@@ -140,7 +153,7 @@ public sealed class EditSessionRunner
     public async Task FollowAsync(IProgress<EditSessionProgress>? progress, CancellationToken ct)
     {
         var session = Current;
-        if (session is null || _gamePath is null || _descriptor is null) return;
+        if (session is null || _game is null || _descriptor is null) return;
 
         var applied = 0;
         string? lastHash = null;
@@ -236,7 +249,7 @@ public sealed class EditSessionRunner
             return false;
         }
 
-        var result = _installer.WriteEditedSession(_gamePath!, _descriptor!, _sentJson ?? "{}", received);
+        var result = _installer.WriteEditedSession(_game!, _descriptor!, _sentJson ?? "{}", received);
         if (!result.Written)
         {
             LastError = result.Failure;
@@ -271,6 +284,6 @@ public sealed class EditSessionRunner
     // The file as it stood when the session last agreed with disk. Kept so a save can be counted
     // rather than guessed — see TranslationInstaller.WriteEditedSession.
     private string? _sentJson;
-    private string? _gamePath;
+    private GameInstall? _game;
     private LoaderDescriptor? _descriptor;
 }

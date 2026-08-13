@@ -28,7 +28,7 @@ public sealed record InstallPlan(
     /// the user can remove it: we never delete files we did not install, and two copies of the
     /// assembly in one game leave the loader free to pick either.
     /// </summary>
-    public string? StrayPluginDirectory { get; init; }
+    public IReadOnlyList<string> StrayPluginDirectories { get; init; } = Array.Empty<string>();
 
     /// <summary>
     /// The settings to write into this game's config.json, or null to leave it alone entirely.
@@ -76,10 +76,10 @@ public sealed record InstallPlan(
 
         yield return "Existing settings and translations are left untouched";
 
-        if (StrayPluginDirectory is { } stray)
+        foreach (var stray in StrayPluginDirectories)
         {
-            yield return $"! A plugin copy is also in {stray}/ — remove it yourself afterwards, " +
-                         "two copies in one game let the loader pick either";
+            yield return $"! Remove the other copy of the mod in {stray}/ — with two of them, the "
+                       + "loader reads the older one and updates appear to do nothing";
         }
     }
 }
@@ -140,10 +140,10 @@ public sealed class InstallEngine
         var runtime = report.Game.Runtime == UnityRuntime.Il2Cpp ? "il2cpp" : "mono";
         if (!_catalog.PluginBuilds.TryGetValue($"{loader.Id}:{runtime}", out var pattern)) return null;
 
-        var existing = LocalTranslationProbe.FindInstalledPlugin(report.Game.Path, loader);
-        var stray = existing is { IsCanonical: false }
-            ? Path.GetRelativePath(report.Game.Path, existing.Value.Directory).Replace('\\', '/')
-            : null;
+        // Every copy that is not where it belongs, whether or not a good one exists beside it.
+        // Reading this from FindInstalledPlugin missed the case that matters: it stops at the
+        // first hit, canonical first, so a game holding both reported no stray at all.
+        var stray = LocalTranslationProbe.FindStrayPlugins(report.Game.Path, loader);
 
         return new InstallPlan(
             Game: report.Game,
@@ -152,7 +152,7 @@ public sealed class InstallEngine
             PluginAssetPattern: pattern,
             Channel: channel)
         {
-            StrayPluginDirectory = stray,
+            StrayPluginDirectories = stray,
             Settings = settings,
             Preference = preference,
 
@@ -357,7 +357,7 @@ public sealed class InstallEngine
         // ⚠ The FILE by name, and the directory only if it empties. Anything else in there belongs
         // to whoever put it there — and under BepInEx that same folder is where settings and
         // translations live, which no install may touch.
-        if (plan.StrayPluginDirectory is { } stray)
+        foreach (var stray in plan.StrayPluginDirectories)
         {
             var directory = Path.Combine(plan.Game.Path,
                 stray.Replace('/', Path.DirectorySeparatorChar));

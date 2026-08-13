@@ -401,6 +401,42 @@ public static class LocalTranslationProbe
     }
 
     /// <summary>
+    /// Every copy of our assembly that is NOT where it belongs, as paths relative to the game.
+    ///
+    /// Separate from FindInstalledPlugin, and the difference is the whole point: that one answers
+    /// "is the mod installed" and stops at the first hit, canonical first. So on a game holding
+    /// two copies it reported the good one and nothing else — the stray was invisible precisely
+    /// when it mattered, since one copy alone is not a conflict.
+    ///
+    /// Two of our assemblies in one game is the worst kind of bug to meet: BepInEx loads plugins/
+    /// before its subfolders and MelonLoader scans Mods/ before subfolders too, so the OLD one
+    /// wins. Every update lands correctly and changes nothing anybody can see.
+    /// </summary>
+    public static IReadOnlyList<string> FindStrayPlugins(string gamePath, LoaderDescriptor descriptor)
+    {
+        var root = Path.Combine(gamePath, descriptor.PluginDir.Replace('/', Path.DirectorySeparatorChar));
+
+        var elsewhere = new List<string> { Path.Combine(root, PluginFolderName) };
+
+        if (string.Equals(Path.GetFileName(root), PluginFolderName, StringComparison.OrdinalIgnoreCase)
+            && Path.GetDirectoryName(root) is { } parent)
+        {
+            elsewhere.Add(parent);
+        }
+
+        var found = new List<string>();
+
+        foreach (var directory in elsewhere)
+        {
+            if (!File.Exists(Path.Combine(directory, PluginAssemblyName))) continue;
+
+            found.Add(Path.GetRelativePath(gamePath, directory).Replace('\\', '/'));
+        }
+
+        return found;
+    }
+
+    /// <summary>
     /// The folder this mod carries its own name in. Written once: it appears as the documented
     /// location under BepInEx and as the stray one under MelonLoader, and the two must stay the
     /// same string.

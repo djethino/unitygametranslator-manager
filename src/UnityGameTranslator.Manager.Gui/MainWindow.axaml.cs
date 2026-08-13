@@ -3513,6 +3513,7 @@ public partial class MainWindow : Window
 
         if (loaderButtons.Children.Count > 0) panel.Children.Add(loaderButtons);
 
+        foreach (var control in DuplicatePluginNotice(report)) panel.Children.Add(control);
         foreach (var control in DataBesideThePlugin(report)) panel.Children.Add(control);
 
         // Not ours: no verb, because nothing here may touch it. But a refusal with nowhere to go
@@ -4541,6 +4542,96 @@ public partial class MainWindow : Window
                                        || report.LoaderStanding is { UpdateAvailable: true }),
             InstallPlugin = plugin,
         };
+    }
+
+    /// <summary>
+    /// A second copy of the mod in this game, and the button that settles it.
+    ///
+    /// Said on the card, not only in an install confirmation nobody has opened yet. Two assemblies
+    /// is the quietest serious fault this tool can meet: both loaders read the shared folder before
+    /// its subfolders, so the OLDER copy wins, and every update lands correctly while the game goes
+    /// on running the previous version. Nothing fails, nothing is logged, and the person concludes
+    /// the update did nothing.
+    /// </summary>
+    private IEnumerable<Control> DuplicatePluginNotice(GameReport report)
+    {
+        var descriptor = InstalledDescriptor(report);
+        if (descriptor is null) yield break;
+
+        var strays = LocalTranslationProbe.FindStrayPlugins(report.Game.Path, descriptor);
+        if (strays.Count == 0) yield break;
+
+        var body = new StackPanel { Spacing = 4 };
+
+        body.Children.Add(new TextBlock
+        {
+            Text = strays.Count == 1
+                ? $"Another copy of the mod is installed in {strays[0]}/."
+                : $"Other copies of the mod are installed in {string.Join(", ", strays)}.",
+            FontSize = 12,
+            FontWeight = FontWeight.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("StatusWarning"),
+        });
+
+        body.Children.Add(new TextBlock
+        {
+            Text = $"The loader reads {descriptor.PluginDir}/ before anything under it, so the older "
+                 + "copy is the one that runs. Updates would install correctly and change nothing "
+                 + "you can see.",
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("TextMuted"),
+        });
+
+        var fix = new Button
+        {
+            Content = strays.Count == 1 ? "Remove the other copy" : "Remove the other copies",
+            FontSize = 12,
+            Classes = { "primary" },
+            HorizontalAlignment = HorizontalAlignment.Left,
+            IsEnabled = !_running.IsRunning(report.Game),
+            Margin = new Avalonia.Thickness(0, 4, 0, 0),
+        };
+
+        fix.Click += async (_, _) =>
+        {
+            // Our assembly by name, nothing else in those folders - the same rule the installer
+            // follows. A folder that empties goes with it; anything else there is somebody's.
+            var removed = new List<string>();
+            var failed = new List<string>();
+
+            foreach (var stray in strays)
+            {
+                var directory = Path.Combine(report.Game.Path,
+                    stray.Replace('/', Path.DirectorySeparatorChar));
+
+                var copy = Path.Combine(directory, LocalTranslationProbe.PluginAssemblyName);
+
+                try
+                {
+                    if (File.Exists(copy)) File.Delete(copy);
+                    FileOperations.TryRemoveEmptyDirectory(directory);
+                    removed.Add(stray);
+                }
+                catch (Exception ex)
+                {
+                    failed.Add($"{stray} ({ex.Message})");
+                }
+            }
+
+            await MessageAsync(failed.Count == 0 ? "Removed" : "Partly removed",
+                failed.Count == 0
+                    ? $"The extra copy in {string.Join(", ", removed)} is gone. This game now runs "
+                      + "the one version installed here."
+                    : "Some copies could not be removed:" + Environment.NewLine
+                      + string.Join(Environment.NewLine, failed.Select(f => "- " + f)));
+
+            await ShowSelectedAsync();
+        };
+
+        body.Children.Add(fix);
+        yield return Card(body);
     }
 
     /// <summary>

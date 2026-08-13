@@ -105,6 +105,44 @@ public static class UserDataInventory
         return groups;
     }
 
+    /// <summary>
+    /// The entries in one folder that the mod itself wrote — by name, never by sweep.
+    ///
+    /// ⚠ Exists for the misplaced-install case, where the folder to read is SHARED. Under BepInEx
+    /// the mod keeps its files beside its own assembly (userdata_dir == plugin_dir), so a copy
+    /// dropped straight into plugins/ writes the translation there, among every other mod's files.
+    /// Moving the assembly back without them would leave the mod starting from nothing while the
+    /// work sat two folders away — which is how "repair" turns into "lost my translation".
+    ///
+    /// ⚠ Recognised kinds ONLY. Whatever <see cref="Scan"/> files under "Other" is deliberately
+    /// left out here: in a shared folder, unrecognised means somebody else's.
+    /// </summary>
+    public static IReadOnlyList<string> RecognisedDataIn(string directory)
+    {
+        if (!Directory.Exists(directory)) return Array.Empty<string>();
+
+        var found = new List<string>();
+
+        foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
+        {
+            var name = Path.GetFileName(entry);
+
+            // The assembly is the thing being moved, not data that travels with it.
+            if (string.Equals(name, LocalTranslationProbe.PluginAssemblyName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var ours = name.StartsWith(LocalTranslationProbe.TranslationFileName, StringComparison.OrdinalIgnoreCase)
+                       || string.Equals(name, LocalTranslationProbe.ConfigFileName, StringComparison.OrdinalIgnoreCase)
+                       || string.Equals(name, "fonts", StringComparison.OrdinalIgnoreCase)
+                       || string.Equals(name, "images", StringComparison.OrdinalIgnoreCase);
+
+            if (ours) found.Add(name);
+        }
+
+        found.Sort(StringComparer.OrdinalIgnoreCase);
+        return found;
+    }
+
     private static void Add(List<UserDataGroup> groups, string label,
                             List<UserDataItem> items, string consequence)
     {

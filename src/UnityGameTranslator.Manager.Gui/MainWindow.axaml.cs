@@ -4542,13 +4542,23 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// A second copy of the mod in this game, and the button that settles it.
+    /// The mod sitting where the loader does not look first — and what settles it.
     ///
-    /// Said on the card, not only in an install confirmation nobody has opened yet. Two assemblies
-    /// is the quietest serious fault this tool can meet: both loaders read the shared folder before
-    /// its subfolders, so the OLDER copy wins, and every update lands correctly while the game goes
-    /// on running the previous version. Nothing fails, nothing is logged, and the person concludes
-    /// the update did nothing.
+    /// ⚠ TWO faults share that description, and the right answer is opposite. Telling them apart
+    /// is the whole of this method:
+    ///
+    ///   · a copy in the documented place TOO — a DUPLICATE. Both loaders read the shared folder
+    ///     before its subfolders, so the OLDER assembly runs: updates land correctly and change
+    ///     nothing anybody can see. Removing the stray settles it.
+    ///
+    ///   · nothing in the documented place — a MISPLACED install, where there is nothing to
+    ///     remove. Deleting the only assembly in the game would uninstall the mod while claiming
+    ///     to repair it. This offered exactly that until the two cases were separated.
+    ///
+    /// ⚠ And repairing is not just moving a DLL. Under BepInEx the mod keeps its files beside its
+    /// own assembly (userdata_dir == plugin_dir), so a copy that ran from plugins/ wrote the
+    /// translation there. The move takes them along, or the mod restarts on an empty folder with
+    /// the work still on disk, two levels up, invisible.
     /// </summary>
     private IEnumerable<Control> DuplicatePluginNotice(GameReport report)
     {
@@ -4558,13 +4568,22 @@ public partial class MainWindow : Window
         var strays = LocalTranslationProbe.FindStrayPlugins(report.Game.Path, descriptor);
         if (strays.Count == 0) yield break;
 
+        var home = Path.Combine(report.Game.Path,
+            descriptor.PluginDir.Replace('/', Path.DirectorySeparatorChar));
+
+        // Asked of the disk, not inferred from the stray list: "somewhere else has a copy" says
+        // nothing about whether the right place has one.
+        var duplicate = File.Exists(Path.Combine(home, LocalTranslationProbe.PluginAssemblyName));
+
         var body = new StackPanel { Spacing = 4 };
 
         body.Children.Add(new TextBlock
         {
-            Text = strays.Count == 1
-                ? $"Another copy of the mod is installed in {strays[0]}/."
-                : $"Other copies of the mod are installed in {string.Join(", ", strays)}.",
+            Text = duplicate
+                ? strays.Count == 1
+                    ? $"The mod is installed twice — here and in {strays[0]}/."
+                    : $"The mod is installed more than once — here and in {string.Join(", ", strays)}."
+                : $"The mod is installed in {strays[0]}/ instead of {descriptor.PluginDir}/.",
             FontSize = 12,
             FontWeight = FontWeight.SemiBold,
             TextWrapping = TextWrapping.Wrap,
@@ -4573,9 +4592,12 @@ public partial class MainWindow : Window
 
         body.Children.Add(new TextBlock
         {
-            Text = $"The loader reads {descriptor.PluginDir}/ before anything under it, so the older "
-                 + "copy is the one that runs. Updates would install correctly and change nothing "
-                 + "you can see.",
+            Text = duplicate
+                ? $"{descriptor.PluginDir}/ is read before anything under it, so the older copy is "
+                  + "the one that runs. Updates install correctly and change nothing you can see."
+                : "It was not put there by this tool. Depending on the loader and its version, a "
+                  + "copy outside the documented folder may load late or not at all — and this is "
+                  + "not where an update or a removal looks first.",
             FontSize = 11,
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("TextMuted"),
@@ -4583,7 +4605,9 @@ public partial class MainWindow : Window
 
         var fix = new Button
         {
-            Content = strays.Count == 1 ? "Remove the other copy" : "Remove the other copies",
+            Content = duplicate
+                ? strays.Count == 1 ? "Remove the other copy" : "Remove the other copies"
+                : "Put it back where it belongs",
             FontSize = 12,
             Classes = { "primary" },
             HorizontalAlignment = HorizontalAlignment.Left,
@@ -4593,42 +4617,142 @@ public partial class MainWindow : Window
 
         fix.Click += async (_, _) =>
         {
-            // Our assembly by name, nothing else in those folders - the same rule the installer
-            // follows. A folder that empties goes with it; anything else there is somebody's.
-            var removed = new List<string>();
-            var failed = new List<string>();
-
-            foreach (var stray in strays)
-            {
-                var directory = Path.Combine(report.Game.Path,
-                    stray.Replace('/', Path.DirectorySeparatorChar));
-
-                var copy = Path.Combine(directory, LocalTranslationProbe.PluginAssemblyName);
-
-                try
-                {
-                    if (File.Exists(copy)) File.Delete(copy);
-                    FileOperations.TryRemoveEmptyDirectory(directory);
-                    removed.Add(stray);
-                }
-                catch (Exception ex)
-                {
-                    failed.Add($"{stray} ({ex.Message})");
-                }
-            }
-
-            await MessageAsync(failed.Count == 0 ? "Removed" : "Partly removed",
-                failed.Count == 0
-                    ? $"The extra copy in {string.Join(", ", removed)} is gone. This game now runs "
-                      + "the one version installed here."
-                    : "Some copies could not be removed:" + Environment.NewLine
-                      + string.Join(Environment.NewLine, failed.Select(f => "- " + f)));
-
-            await ShowSelectedAsync();
+            if (duplicate) await RemoveStrayCopiesAsync(report, descriptor, strays);
+            else await RepairMisplacedInstallAsync(report, descriptor, strays[0], home);
         };
 
         body.Children.Add(fix);
         yield return Callout(body, "CalloutWarningBg", "StatusWarning");
+    }
+
+    /// <summary>
+    /// Deletes the copies that are not where they belong, the good one staying put.
+    ///
+    /// ⚠ Asks first. It deletes a file inside somebody's game, and it did it on a single click —
+    /// the one act on this card with no way back sat behind less ceremony than picking a language.
+    /// </summary>
+    private async Task RemoveStrayCopiesAsync(GameReport report, LoaderDescriptor descriptor,
+                                              IReadOnlyList<string> strays)
+    {
+        var listed = string.Join(Environment.NewLine,
+            strays.Select(s => $"- {s}/{LocalTranslationProbe.PluginAssemblyName}"));
+
+        var confirmed = await ConfirmAsync(
+            strays.Count == 1 ? "Remove the other copy?" : "Remove the other copies?",
+            "This deletes:" + Environment.NewLine + listed + Environment.NewLine + Environment.NewLine
+            + $"The mod stays installed in {descriptor.PluginDir}/, and that is the version this "
+            + "game will run. Nothing else in those folders is touched.",
+            strays.Count == 1 ? "Remove the copy" : "Remove the copies");
+
+        if (!confirmed) return;
+
+        // Our assembly by name, nothing else in those folders — the same rule the installer
+        // follows. A folder that empties goes with it; anything else there is somebody's.
+        var removed = new List<string>();
+        var failed = new List<string>();
+
+        foreach (var stray in strays)
+        {
+            var directory = Path.Combine(report.Game.Path,
+                stray.Replace('/', Path.DirectorySeparatorChar));
+
+            var copy = Path.Combine(directory, LocalTranslationProbe.PluginAssemblyName);
+
+            try
+            {
+                if (File.Exists(copy)) File.Delete(copy);
+                FileOperations.TryRemoveEmptyDirectory(directory);
+                removed.Add(stray);
+            }
+            catch (Exception ex)
+            {
+                failed.Add($"{stray} ({ex.Message})");
+            }
+        }
+
+        await MessageAsync(failed.Count == 0 ? "Removed" : "Partly removed",
+            failed.Count == 0
+                ? $"The extra copy in {string.Join(", ", removed)} is gone. This game now runs the "
+                  + "one version installed here."
+                : "Some copies could not be removed:" + Environment.NewLine
+                  + string.Join(Environment.NewLine, failed.Select(f => "- " + f)));
+
+        await ShowSelectedAsync();
+    }
+
+    /// <summary>
+    /// Reinstalls the mod where the loader reads it, taking the files it wrote along.
+    ///
+    /// ⚠ Files FIRST, install second, and the order is the point: landing them before the
+    /// installer runs means it meets a folder that already holds this person's settings and
+    /// translation, so it behaves exactly as it does on any update — keeping what it must keep.
+    /// Moving them afterwards would overwrite what it had just written.
+    /// </summary>
+    private async Task RepairMisplacedInstallAsync(GameReport report, LoaderDescriptor descriptor,
+                                                   string stray, string home)
+    {
+        var from = Path.Combine(report.Game.Path, stray.Replace('/', Path.DirectorySeparatorChar));
+
+        // Only under BepInEx does anything travel: MelonLoader keeps its data in UserData/, which
+        // the assembly's location never affected.
+        var carry = string.Equals(descriptor.UserDataDir, descriptor.PluginDir, StringComparison.OrdinalIgnoreCase)
+            ? UserDataInventory.RecognisedDataIn(from)
+            : Array.Empty<string>();
+
+        var body = $"The mod moves from {stray}/ to {descriptor.PluginDir}/, where the loader reads it.";
+
+        if (carry.Count > 0)
+        {
+            body += Environment.NewLine + Environment.NewLine
+                  + "Your files move with it, because the mod keeps them beside itself:"
+                  + Environment.NewLine
+                  + string.Join(Environment.NewLine, carry.Select(c => "- " + c))
+                  + Environment.NewLine + Environment.NewLine
+                  + "Left behind, the mod would start over on an empty folder.";
+        }
+
+        if (!await ConfirmAsync("Put the mod back where it belongs?", body, "Put it back")) return;
+
+        Directory.CreateDirectory(home);
+
+        var stuck = new List<string>();
+
+        foreach (var name in carry)
+        {
+            var source = Path.Combine(from, name);
+            var target = Path.Combine(home, name);
+
+            try
+            {
+                // Never over something already there: that file is the mod's current state, and
+                // this one is from an installation that was not being read.
+                if (File.Exists(target) || Directory.Exists(target))
+                {
+                    stuck.Add($"{name} (already present)");
+                    continue;
+                }
+
+                if (Directory.Exists(source)) Directory.Move(source, target);
+                else File.Move(source, target);
+            }
+            catch (Exception ex)
+            {
+                stuck.Add($"{name} ({ex.Message})");
+            }
+        }
+
+        if (stuck.Count > 0)
+        {
+            await MessageAsync("Some files stayed behind",
+                "These were left in " + stray + "/ and the mod will not read them there:"
+                + Environment.NewLine
+                + string.Join(Environment.NewLine, stuck.Select(f => "- " + f))
+                + Environment.NewLine + Environment.NewLine
+                + "Move them by hand if you need them. Nothing was deleted.");
+        }
+
+        // The installer writes the documented folder and clears the stray copy on its way.
+        await RunModInstallAsync(report);
     }
 
     /// <summary>

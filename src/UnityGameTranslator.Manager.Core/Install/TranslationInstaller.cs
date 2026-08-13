@@ -70,6 +70,127 @@ public sealed class TranslationInstaller
     }
 
     /// <summary>
+    /// Writes back a file that came home from a browser edit session.
+    ///
+    /// ⚠ **Not the same act as installing a downloaded translation, and the difference is not
+    /// cosmetic.** A download comes from the server, so it is stamped with the server's hash and
+    /// its local-change count is reset — it is, by definition, in step with what was published.
+    /// A file that went to an editor and came back is the opposite: the server hash it carries is
+    /// still true (nothing was published), and what changed is precisely the local work.
+    ///
+    /// ⚠ **So the count has to move, and leaving it alone would be dangerous rather than merely
+    /// untidy.** <see cref="UnityGameTranslator.Common.Sync.Decide"/> reads "has local changes" to
+    /// tell "I edited this" from "the server moved on". A file edited here whose count still said
+    /// zero would be read as the second — and the interface would offer to DOWNLOAD over the work
+    /// that had just been done.
+    ///
+    /// The count is raised by the number of entries that actually differ from what was sent. It is
+    /// an approximation in one direction only: the mod recomputes it exactly against the ancestor
+    /// at the next launch, and until then over-counting merely protects the file, while
+    /// under-counting would offer to overwrite it.
+    /// </summary>
+    /// <param name="sentJson">What was uploaded when the session opened.</param>
+    /// <param name="receivedJson">What the session holds now.</param>
+    public TranslationWriteResult WriteEditedSession(string gamePath, LoaderDescriptor descriptor,
+                                                     string sentJson, string receivedJson)
+    {
+        var folder = Path.Combine(gamePath,
+            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar));
+        var target = Path.Combine(folder, LocalTranslationProbe.TranslationFileName);
+
+        try
+        {
+            var prepared = StampEdits(sentJson, receivedJson);
+
+            Directory.CreateDirectory(folder);
+
+            string? backup = null;
+            if (File.Exists(target)) backup = MoveAside(target);
+
+            var temp = target + ".tmp";
+            File.WriteAllText(temp, prepared, new UTF8Encoding(false));
+            File.Move(temp, target, overwrite: true);
+
+            return new TranslationWriteResult(true, backup, null);
+        }
+        catch (Exception ex)
+        {
+            return new TranslationWriteResult(false, null, $"{ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Raises _local_changes by what the editing session actually changed, leaving every other key
+    /// — including _source.hash — exactly as it came back.
+    /// </summary>
+    private static string StampEdits(string sentJson, string receivedJson)
+    {
+        var node = JsonNode.Parse(receivedJson, documentOptions: new JsonDocumentOptions
+        {
+            CommentHandling = JsonCommentHandling.Skip,
+            AllowTrailingCommas = true,
+        });
+
+        if (node is not JsonObject root) return receivedJson;
+
+        var changed = CountChangedEntries(sentJson, root);
+        if (changed <= 0) return receivedJson;
+
+        var previous = root["_local_changes"]?.GetValue<int?>() ?? 0;
+        root["_local_changes"] = previous + changed;
+
+        return root.ToJsonString(new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        });
+    }
+
+    /// <summary>
+    /// How many translated entries differ between what was sent and what came back.
+    ///
+    /// ⚠ Metadata keys are skipped: they are about the file, not about its content, and the site
+    /// rewrites some of them on its own. Counting those would report work nobody did.
+    /// </summary>
+    private static int CountChangedEntries(string sentJson, JsonObject received)
+    {
+        JsonNode? sentNode;
+        try
+        {
+            sentNode = JsonNode.Parse(sentJson);
+        }
+        catch
+        {
+            // Unreadable: every entry is treated as new, which errs towards protecting the file.
+            return received.Count;
+        }
+
+        if (sentNode is not JsonObject sent) return received.Count;
+
+        var changed = 0;
+
+        foreach (var entry in received)
+        {
+            if (UnityGameTranslator.Common.ContentHash.IsMetadataKey(entry.Key)) continue;
+
+            var before = sent[entry.Key];
+            if (before is null)
+            {
+                changed++;
+                continue;
+            }
+
+            // Compared as written JSON: an entry is {"v":…,"t":…} or a bare string depending on
+            // the file's age, and normalising the two shapes here would be a third opinion about
+            // what an entry is.
+            if (!string.Equals(before.ToJsonString(), entry.Value?.ToJsonString(), StringComparison.Ordinal))
+                changed++;
+        }
+
+        return changed;
+    }
+
+    /// <summary>
     /// Records the server's hash in the file, leaving everything else exactly as received.
     ///
     /// Edited as a JSON tree for the same reason config.json is: the file carries the mod's own

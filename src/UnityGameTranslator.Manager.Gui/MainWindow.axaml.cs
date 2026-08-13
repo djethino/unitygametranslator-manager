@@ -3322,6 +3322,7 @@ public partial class MainWindow : Window
             panel.Children.Add(browse);
         }
 
+        foreach (var control in TranslationWorkbench(report)) panel.Children.Add(control);
         foreach (var control in TranslationVerb(report)) panel.Children.Add(control);
         foreach (var control in TranslationPlanning(report)) panel.Children.Add(control);
 
@@ -3400,6 +3401,321 @@ public partial class MainWindow : Window
         }
 
         return panel;
+    }
+
+    /// <summary>
+    /// The edit session being followed for the selected game, and the token that stops it.
+    ///
+    /// ⚠ One at a time, deliberately. Two editors open on two games is a thing somebody would try
+    /// once and never be able to reason about afterwards — which browser tab writes into which
+    /// game — and the file being written is not a mistake worth risking for that.
+    /// </summary>
+    private EditSessionRunner? _editSession;
+    private CancellationTokenSource? _editSessionStop;
+
+    /// <summary>
+    /// Open the browser editor on this game's translation and follow it until it closes.
+    ///
+    /// ⚠ The file is written as each save arrives, not once at the end: "saved" is the word the
+    /// browser uses, and it has to mean the same thing here.
+    /// </summary>
+    private async Task OpenLocalEditorAsync(GameReport report, LoaderDescriptor descriptor, Button button)
+    {
+        if (_editSession is not null)
+        {
+            await StopLocalEditorAsync();
+            return;
+        }
+
+        button.IsEnabled = false;
+        button.Content = "Opening…";
+
+        var runner = new EditSessionRunner();
+        var languages = LocalTranslationProbe.ReadLanguages(report.Game.Path, descriptor);
+
+        var session = await runner.OpenAsync(report.Game.Path, descriptor, report.Game.Name,
+                                             languages.Source, languages.Target);
+
+        if (session is null)
+        {
+            button.IsEnabled = true;
+            button.Content = "Edit in browser";
+            await ConfirmationWindow.TellAsync(this, "The editor could not be opened",
+                runner.LastError ?? "The site did not answer.");
+            return;
+        }
+
+        _editSession = runner;
+        _editSessionStop = new CancellationTokenSource();
+
+        button.IsEnabled = true;
+        button.Content = "Close the editor";
+
+        Shell.OpenUrl(session.Url);
+
+        var progress = new Progress<EditSessionProgress>(state =>
+        {
+            // Reported on the UI thread by Progress<T>; only the button's wording changes here, so
+            // an arriving save never rebuilds the card under the user's pointer.
+            button.Content = state.Stage switch
+            {
+                EditSessionStage.Applied => $"Close the editor ({state.AppliedCount} applied)",
+                EditSessionStage.Failed => "Close the editor (a save failed)",
+                _ => "Close the editor",
+            };
+        });
+
+        // Followed in the background: the window stays usable while somebody edits in a browser.
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await runner.FollowAsync(progress, _editSessionStop.Token);
+            }
+            finally
+            {
+                await runner.CloseAsync();
+                await Dispatcher.UIThread.InvokeAsync(async () =>
+                {
+                    if (ReferenceEquals(_editSession, runner))
+                    {
+                        _editSession = null;
+                        _editSessionStop?.Dispose();
+                        _editSessionStop = null;
+                        // The file on disk has changed under everything this card says about it.
+                        await RereadAsync(report.Game);
+                    }
+                });
+            }
+        });
+    }
+
+    /// <summary>
+    /// Stop following, and close the session on the site.
+    ///
+    /// ⚠ Closing matters: sessions are a bounded resource there, and one abandoned per window
+    /// closed adds up to a queue nobody can get into.
+    /// </summary>
+    private async Task StopLocalEditorAsync()
+    {
+        var stop = _editSessionStop;
+        if (stop is null) return;
+
+        try { await stop.CancelAsync(); }
+        catch (ObjectDisposedException) { /* the follower finished first and cleaned up */ }
+    }
+
+    /// <summary>
+    /// Publish this game's translation under the account signed into this window.
+    ///
+    /// ⚠ Two gates, in this order and neither skippable:
+    ///
+    /// 1. <see cref="ServerIdentity"/> — may this account act for this game at all. A machine holds
+    ///    games belonging to different people, and the folder they sit in is shared.
+    /// 2. check-uuid — what the upload would BECOME, asked of the server and shown before sending.
+    ///    Uploading into a lineage somebody else leads files the work as a contribution to their
+    ///    translation; that is a fine thing to choose and a bad thing to discover.
+    /// </summary>
+    private async Task PublishTranslationAsync(GameReport report, LoaderDescriptor descriptor, Button button)
+    {
+        var standing = ServerIdentity.For(_settings.Current, report.SiteAccount, BuildInfo.ApiBaseUrl);
+        if (!standing.CanAct)
+        {
+            await ConfirmationWindow.TellAsync(this, "Not under this account",
+                standing.Reason ?? "This game is linked to another account.");
+            return;
+        }
+
+        var token = _settings.Current.ApiToken;
+        if (string.IsNullOrWhiteSpace(token)) return;
+
+        var path = Path.Combine(report.Game.Path,
+            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar),
+            LocalTranslationProbe.TranslationFileName);
+
+        string content;
+        try
+        {
+            content = await File.ReadAllTextAsync(path);
+        }
+        catch (Exception ex)
+        {
+            await ConfirmationWindow.TellAsync(this, "The file could not be read", ex.Message);
+            return;
+        }
+
+        button.IsEnabled = false;
+        button.Content = "Checking…";
+
+        var publisher = new TranslationPublisher();
+        var lineage = await publisher.CheckAsync(report.LocalTranslation?.Uuid ?? "", token);
+
+        button.IsEnabled = true;
+        button.Content = "Publish…";
+
+        if (lineage is null)
+        {
+            await ConfirmationWindow.TellAsync(this, "Could not check this translation",
+                publisher.LastError ?? "The site did not answer.");
+            return;
+        }
+
+        var languages = LocalTranslationProbe.ReadLanguages(report.Game.Path, descriptor);
+        if (languages.Source is null || languages.Target is null)
+        {
+            await ConfirmationWindow.TellAsync(this, "Languages are not set",
+                "Publishing needs to know which language this translates from, and into. Both are "
+                + "set in the game's own settings, from the mod.");
+            return;
+        }
+
+        // Said before it happens, in the server's own terms.
+        var agreed = await ConfirmationWindow.AskAsync(this, "Publish this translation?",
+            lineage.Describe() + "\n\n"
+            + $"{languages.Source} → {languages.Target}, as \"{standing.SignedInAs}\".",
+            lineage.Outcome == PublishOutcome.ContributeToTheirs ? "Send as a contribution" : "Publish");
+
+        if (!agreed) return;
+
+        button.IsEnabled = false;
+        button.Content = "Publishing…";
+
+        var id = await publisher.PublishAsync(content, token, report.Game.SteamAppId, report.Game.Name,
+                                              languages.Source, languages.Target);
+
+        button.IsEnabled = true;
+        button.Content = "Publish…";
+
+        if (id is null)
+        {
+            await ConfirmationWindow.TellAsync(this, "Nothing was published",
+                publisher.LastError ?? "The site did not answer.");
+            return;
+        }
+
+        await ConfirmationWindow.TellAsync(this, "Sent",
+            lineage.Outcome == PublishOutcome.ContributeToTheirs
+                ? "Your contribution is waiting for the translation's owner to review it."
+                : "Your translation is published.");
+
+        await RereadAsync(report.Game);
+    }
+
+    /// <summary>
+    /// What can be DONE with the translation on this machine: edit it, publish it, settle it
+    /// against the published one.
+    ///
+    /// ⚠ **This is the part that used to be missing.** Everything above informs — how complete the
+    /// file is, where it stands against the server — and the only action offered was to replace it
+    /// with somebody else's. Publishing meant launching the game and finding the mod's upload
+    /// panel, which this very card told people to go and do.
+    ///
+    /// ⚠ **Nothing here decides on the user's behalf.** The verdict is read from
+    /// <see cref="GameReport.Sync"/> — the shared rule, the same one the mod reaches — and each
+    /// button says what it will do before it does it.
+    /// </summary>
+    private IEnumerable<Control> TranslationWorkbench(GameReport report)
+    {
+        // Nothing here to work on. The community list above is the whole offer in that case.
+        if (report.LocalTranslation is null) yield break;
+
+        var loaderId = report.InstalledLoader?.Id ?? report.RecommendedLoader?.Id;
+        var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == loaderId);
+        if (descriptor is null) yield break;
+
+        var standing = ServerIdentity.For(_settings.Current, report.SiteAccount, BuildInfo.ApiBaseUrl);
+
+        yield return new TextBlock
+        {
+            Text = "This translation",
+            FontSize = 12,
+            FontWeight = FontWeight.SemiBold,
+            Margin = new Avalonia.Thickness(0, 12, 0, 0),
+            Foreground = Brush("TextPrimary"),
+        };
+
+        // Where it stands, in the words the mod uses for the same verdict.
+        //
+        // ⚠ Null is NOT "everything is fine": no translation published for this game, or a file we
+        // could not read. Saying "in sync" there would be a claim nothing supports.
+        if (report.Sync is { } sync)
+        {
+            yield return new TextBlock
+            {
+                Text = sync switch
+                {
+                    SyncDirection.InSync => "In step with the published version.",
+                    SyncDirection.Download => "The published version has moved on. Nothing of yours "
+                                            + "is at risk — you have no unpublished changes here.",
+                    SyncDirection.Upload => "You have changes here that the published version does not.",
+                    _ => "Both this file and the published one have moved. Settling that is done "
+                       + "line by line.",
+                },
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Avalonia.Thickness(0, 2, 0, 0),
+                Foreground = Brush(sync == SyncDirection.Merge ? "StatusWarning" : "TextSecondary"),
+            };
+        }
+
+        var actions = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Margin = new Avalonia.Thickness(0, 8, 0, 0),
+        };
+
+        // ── Edit, in a browser ────────────────────────────────────────────────
+        //
+        // Available whoever the file belongs to: editing changes the copy on this machine and
+        // nothing else. Ownership only decides what may be PUBLISHED.
+        var edit = new Button { Content = "Edit in browser", FontSize = 12 };
+        edit.Click += async (_, _) => await OpenLocalEditorAsync(report, descriptor, edit);
+        actions.Children.Add(edit);
+
+        // ── Publish ───────────────────────────────────────────────────────────
+        var publish = new Button
+        {
+            Content = "Publish…",
+            FontSize = 12,
+            IsEnabled = standing.CanAct,
+        };
+        publish.Click += async (_, _) => await PublishTranslationAsync(report, descriptor, publish);
+        actions.Children.Add(publish);
+
+        // ── Settle the difference ─────────────────────────────────────────────
+        //
+        // ⚠ Only offered when there IS something to settle. A merge button on a file in step with
+        // the server invites somebody to fix what is not broken.
+        if (report.Sync is SyncDirection.Merge or SyncDirection.Download
+            && report.MatchingOnline is not null)
+        {
+            var settle = new Button
+            {
+                Content = report.Sync == SyncDirection.Merge ? "Settle line by line…" : "Take the newer one…",
+                FontSize = 12,
+            };
+            settle.Click += async (_, _) => await OpenTranslationsAsync(report);
+            actions.Children.Add(settle);
+        }
+
+        yield return actions;
+
+        // ⚠ The refusal is stated, never silent. A greyed button with no reason is how somebody
+        // concludes the tool is broken — and here the reason is precise and actionable: this game
+        // belongs to another account.
+        if (standing.Reason is { } reason)
+        {
+            yield return new TextBlock
+            {
+                Text = reason,
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Avalonia.Thickness(0, 4, 0, 0),
+                Foreground = Brush(standing.Kind == ServerStandingKind.SignedOut ? "TextMuted" : "StatusWarning"),
+            };
+        }
+
     }
 
     /// <summary>

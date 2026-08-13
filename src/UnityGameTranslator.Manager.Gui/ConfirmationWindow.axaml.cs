@@ -20,7 +20,7 @@ public sealed class ConfirmationWindow : Window
 {
     private bool _confirmed;
 
-    private ConfirmationWindow(string title, string body, string confirm)
+    private ConfirmationWindow(string title, string body, string confirm, bool question = true)
     {
         Title = title;
         Width = 560;
@@ -56,15 +56,27 @@ public sealed class ConfirmationWindow : Window
             HorizontalAlignment = HorizontalAlignment.Right,
         };
 
-        // IsCancel and IsDefault both on Cancel: Escape closes it, and so does Enter. The
-        // destructive answer is only ever reached by aiming at it.
-        var cancel = new Button { Content = "Cancel", IsCancel = true, IsDefault = true };
-        cancel.Click += (_, _) => Close();
+        if (question)
+        {
+            // IsCancel and IsDefault both on Cancel: Escape closes it, and so does Enter. The
+            // destructive answer is only ever reached by aiming at it.
+            var cancel = new Button { Content = "Cancel", IsCancel = true, IsDefault = true };
+            cancel.Click += (_, _) => Close();
+            buttons.Children.Add(cancel);
+        }
 
-        var go = new Button { Content = confirm, Classes = { "primary" } };
+        // ⚠ On a statement there is nothing to aim at, so this one IS the default and the escape:
+        // making somebody hunt for the way out of a message that only reports something would be
+        // the mirror of the rule above, applied where it protects nobody.
+        var go = new Button
+        {
+            Content = confirm,
+            Classes = { "primary" },
+            IsDefault = !question,
+            IsCancel = !question,
+        };
         go.Click += (_, _) => { _confirmed = true; Close(); };
 
-        buttons.Children.Add(cancel);
         buttons.Children.Add(go);
         layout.Children.Add(buttons);
 
@@ -77,5 +89,16 @@ public sealed class ConfirmationWindow : Window
         var window = new ConfirmationWindow(title, body, confirm);
         await window.ShowDialog(owner);
         return window._confirmed;
+    }
+
+    /// <summary>
+    /// States something and waits to be acknowledged. One button, because there is no choice to
+    /// make — an outcome reported through a Cancel/OK pair invites somebody to look for the
+    /// difference between them.
+    /// </summary>
+    public static async Task TellAsync(Window owner, string title, string body)
+    {
+        var window = new ConfirmationWindow(title, body, "Close", question: false);
+        await window.ShowDialog(owner);
     }
 }

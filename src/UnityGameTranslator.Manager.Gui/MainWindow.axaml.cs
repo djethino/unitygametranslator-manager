@@ -3534,6 +3534,136 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// Settle the local translation against the published one.
+    ///
+    /// ⚠ **Applies what nobody has to arbitrate, and refuses to arbitrate the rest.** A merge with
+    /// no conflict is arithmetic — every line is settled by the shared rule, with a verdict this
+    /// tool did not invent. A conflict is a judgement about two people's wording, and resolving it
+    /// silently, by taking a side or the newest, would be deciding that on somebody's behalf.
+    ///
+    /// ⚠ The published file is downloaded HERE rather than during the scan: the comparison needs
+    /// all three sides, and fetching a translation for every game in a library to answer a question
+    /// nobody asked would be minutes of network for a badge.
+    /// </summary>
+    private async Task SettleWithPublishedAsync(GameReport report, LoaderDescriptor descriptor, Button button)
+    {
+        if (report.MatchingOnline is not { } published) return;
+
+        button.IsEnabled = false;
+        button.Content = "Comparing…";
+
+        try
+        {
+            var api = new CatalogApiClient();
+            var remote = await api.DownloadAsync(published.Id, _settings.Current.ApiToken);
+
+            if (remote is null)
+            {
+                await ConfirmationWindow.TellAsync(this, "Could not fetch the published version",
+                    api.LastError ?? "The site did not answer.");
+                return;
+            }
+
+            var folder = Path.Combine(report.Game.Path,
+                descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar));
+
+            var localPath = Path.Combine(folder, LocalTranslationProbe.TranslationFileName);
+            var ancestorPath = Path.Combine(folder, LocalTranslationProbe.AncestorFileName);
+
+            var local = await File.ReadAllTextAsync(localPath);
+            var ancestor = File.Exists(ancestorPath) ? await File.ReadAllTextAsync(ancestorPath) : null;
+
+            var merge = TranslationMerge.Build(local, remote, ancestor);
+            if (merge is null)
+            {
+                await ConfirmationWindow.TellAsync(this, "The files could not be compared",
+                    "One of them is not a translation file this tool can read. Nothing was changed.");
+                return;
+            }
+
+            if (merge.Summary.Empty)
+            {
+                await ConfirmationWindow.TellAsync(this, "Nothing to settle",
+                    "This translation and the published one already agree, line for line.");
+                return;
+            }
+
+            // ⚠ Said before anything is written, in figures rather than in a verdict: "12 lines
+            // taken, 3 of yours kept" is something somebody can judge; "merge?" is not.
+            var summary = Describe(merge.Summary, ancestor is null);
+
+            if (merge.Summary.HasConflicts)
+            {
+                await ConfirmationWindow.TellAsync(this, "This one needs a decision, line by line",
+                    summary + "\n\nA conflict is two people having written the same line differently, "
+                    + "and nothing here can choose between them for you. The mod's own merge screens "
+                    + "settle those while the game runs — they show both versions side by side.");
+                return;
+            }
+
+            if (!await ConfirmationWindow.AskAsync(this, "Settle with the published version?",
+                    summary + "\n\nYour current file is kept aside before anything is written.",
+                    "Settle"))
+            {
+                return;
+            }
+
+            var merged = merge.BuildMergedJson();
+            if (merged is null) return;
+
+            button.Content = "Writing…";
+
+            var result = new TranslationInstaller(_platform).WriteMerged(
+                report.Game, descriptor, merged, remote, published.FileHash,
+                merge.CountAheadOfServer(merged));
+
+            if (!result.Written)
+            {
+                await ConfirmationWindow.TellAsync(this, "Nothing was written",
+                    result.Failure ?? "The file could not be written.");
+                return;
+            }
+
+            await ConfirmationWindow.TellAsync(this, "Settled",
+                summary
+                + (result.BackupPath is not null
+                    ? $"\n\nYour previous file is in {TranslationInstaller.BackupFolderName}/"
+                      + Path.GetFileName(result.BackupPath) + "."
+                    : ""));
+
+            await RereadAsync(report.Game);
+        }
+        finally
+        {
+            button.IsEnabled = true;
+            button.Content = report.Sync == SyncDirection.Merge ? "Settle with the published version…"
+                                                                : "Take what changed online…";
+        }
+    }
+
+    /// <summary>A merge in figures, and the one caveat that changes how they should be read.</summary>
+    private static string Describe(MergeSummary summary, bool blind)
+    {
+        var parts = new List<string>();
+        if (summary.TakenFromServer > 0) parts.Add($"{summary.TakenFromServer} line(s) taken from the published version");
+        if (summary.KeptHere > 0) parts.Add($"{summary.KeptHere} of yours kept");
+        if (summary.Removed > 0) parts.Add($"{summary.Removed} removed on both sides");
+        if (summary.Conflicts > 0) parts.Add($"{summary.Conflicts} in conflict");
+
+        var text = string.Join(", ", parts) + ".";
+
+        // ⚠ Without an ancestor every disagreement is a conflict, and saying so matters: otherwise
+        // a file that was never synced looks like one somebody fought over.
+        if (blind && summary.Conflicts > 0)
+        {
+            text += "\n\nThis translation has no record of a last sync, so there is no way to tell "
+                  + "which side changed what — every difference has to count as a conflict.";
+        }
+
+        return text;
+    }
+
+    /// <summary>
     /// Publish this game's translation under the account signed into this window.
     ///
     /// ⚠ Two gates, in this order and neither skippable:
@@ -3729,10 +3859,11 @@ public partial class MainWindow : Window
         {
             var settle = new Button
             {
-                Content = report.Sync == SyncDirection.Merge ? "Settle line by line…" : "Take the newer one…",
+                Content = report.Sync == SyncDirection.Merge ? "Settle with the published version…"
+                                                             : "Take what changed online…",
                 FontSize = 12,
             };
-            settle.Click += async (_, _) => await OpenTranslationsAsync(report);
+            settle.Click += async (_, _) => await SettleWithPublishedAsync(report, descriptor, settle);
             actions.Children.Add(settle);
         }
 

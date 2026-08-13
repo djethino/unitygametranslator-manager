@@ -126,6 +126,95 @@ public sealed class TranslationInstaller
     }
 
     /// <summary>
+    /// Writes a merged translation, and the bookkeeping that has to go with it.
+    ///
+    /// ⚠ **A merge is not one write, it is three facts**, and getting the other two wrong is worse
+    /// than not merging at all — the NEXT comparison would be computed against a baseline that
+    /// never existed, inventing conflicts or hiding them:
+    ///
+    /// · the merged file itself;
+    /// · _source.hash ← the published version's hash. It is the version we have now seen, whether
+    ///   or not we kept all of it;
+    /// · the ancestor ← the PUBLISHED content, NOT the merged one. The ancestor answers "what did
+    ///   the two sides last agree on", and what they last agreed on is what was published. Writing
+    ///   the merged file there would make every line we just kept look like common ground, so the
+    ///   next merge would silently drop them.
+    ///
+    /// And _local_changes becomes what the merged file has that the published one does not — which
+    /// is precisely what still needs publishing.
+    /// </summary>
+    /// <param name="remoteJson">The published file, written aside as the new ancestor.</param>
+    public TranslationWriteResult WriteMerged(GameInstall game, LoaderDescriptor descriptor,
+                                              string mergedJson, string remoteJson,
+                                              string? serverHash, int aheadOfServer)
+    {
+        if (WhyNotNow(game) is { } refusal) return new TranslationWriteResult(false, null, refusal);
+
+        var folder = Path.Combine(game.Path,
+            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar));
+        var target = Path.Combine(folder, LocalTranslationProbe.TranslationFileName);
+
+        try
+        {
+            var prepared = StampMerged(mergedJson, serverHash, aheadOfServer);
+
+            Directory.CreateDirectory(folder);
+
+            string? backup = null;
+            if (File.Exists(target)) backup = MoveAside(target);
+
+            var temp = target + ".tmp";
+            File.WriteAllText(temp, prepared, new UTF8Encoding(false));
+            File.Move(temp, target, overwrite: true);
+
+            // ⚠ After the translation, never before: an ancestor updated over a write that then
+            // failed would describe an agreement that never happened, and nothing would ever
+            // notice. Losing it the other way round only costs the next merge its precision.
+            var ancestor = Path.Combine(folder, LocalTranslationProbe.AncestorFileName);
+            var ancestorTemp = ancestor + ".tmp";
+            File.WriteAllText(ancestorTemp, remoteJson, new UTF8Encoding(false));
+            File.Move(ancestorTemp, ancestor, overwrite: true);
+
+            return new TranslationWriteResult(true, backup, null);
+        }
+        catch (Exception ex)
+        {
+            return new TranslationWriteResult(false, null, $"{ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>The two facts a merged file has to carry about where it now stands.</summary>
+    private static string StampMerged(string json, string? serverHash, int aheadOfServer)
+    {
+        var node = JsonNode.Parse(json, documentOptions: new JsonDocumentOptions
+        {
+            CommentHandling = JsonCommentHandling.Skip,
+            AllowTrailingCommas = true,
+        });
+
+        if (node is not JsonObject root) return json;
+
+        if (!string.IsNullOrWhiteSpace(serverHash))
+        {
+            if (root["_source"] is not JsonObject source)
+            {
+                source = new JsonObject();
+                root["_source"] = source;
+            }
+
+            source["hash"] = serverHash;
+        }
+
+        root["_local_changes"] = aheadOfServer;
+
+        return root.ToJsonString(new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        });
+    }
+
+    /// <summary>
     /// Writes back a file that came home from a browser edit session.
     ///
     /// ⚠ **Not the same act as installing a downloaded translation, and the difference is not

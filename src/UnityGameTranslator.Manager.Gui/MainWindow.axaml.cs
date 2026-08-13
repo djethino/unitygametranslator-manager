@@ -3573,6 +3573,21 @@ public partial class MainWindow : Window
             var local = await File.ReadAllTextAsync(localPath);
             var ancestor = File.Exists(ancestorPath) ? await File.ReadAllTextAsync(ancestorPath) : null;
 
+            // ⚠ No snapshot on disk does not always mean "we cannot tell". When the version this
+            // file last synced with IS the one still published, the file just downloaded is the
+            // ancestor — exactly, not approximately: both sides last agreed on it, which is the
+            // definition. Every difference is then provably ours, and nothing has to be put to the
+            // user as a conflict.
+            //
+            // This is the ordinary case for a translation somebody took and then played with, and
+            // it used to be reported as a pile of conflicts.
+            if (ancestor is null
+                && report.LocalTranslation?.SourceHash is { Length: > 0 } lastSynced
+                && string.Equals(lastSynced, published.FileHash, StringComparison.OrdinalIgnoreCase))
+            {
+                ancestor = remote;
+            }
+
             var merge = TranslationMerge.Build(local, remote, ancestor);
             if (merge is null)
             {

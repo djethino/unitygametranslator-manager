@@ -117,6 +117,34 @@ public sealed class TranslationInstaller
             File.WriteAllText(temp, prepared, new UTF8Encoding(false));
             File.Move(temp, target, overwrite: true);
 
+            // ⚠ **The one moment when an ancestor is free and exact.** What was just written IS the
+            // published version, so the two sides provably agree right now — which is the whole
+            // definition of an ancestor.
+            //
+            // Without it the FIRST merge is blind: once both sides have moved, nothing can tell
+            // "I changed this" from "the published version moved", and every disagreement of equal
+            // standing has to be put to the user. The mod writes one on its own downloads
+            // (SaveAncestorFromRemote); taking the same translation from here left the file
+            // without one, so it started life less mergeable than the identical file taken in game.
+            //
+            // ⚠ Additive, and in the mod's own format: a mod that predates any of this reads it if
+            // it looks for one and is unaffected otherwise. Nothing to migrate, and no version of
+            // either program has to move first.
+            //
+            // Never fatal: an ancestor we failed to write costs precision later, not the
+            // translation now.
+            try
+            {
+                var ancestor = Path.Combine(folder, LocalTranslationProbe.AncestorFileName);
+                var ancestorTemp = ancestor + ".tmp";
+                File.WriteAllText(ancestorTemp, json, new UTF8Encoding(false));
+                File.Move(ancestorTemp, ancestor, overwrite: true);
+            }
+            catch
+            {
+                // The translation is in place, which is what was asked for.
+            }
+
             return new TranslationWriteResult(true, backup, null);
         }
         catch (Exception ex)

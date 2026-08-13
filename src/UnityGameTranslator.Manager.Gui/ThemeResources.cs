@@ -90,6 +90,11 @@ internal static class ThemeResources
         r["CalloutInfoBg"] = Brush(Theme.CalloutInfo);
         r["CalloutSuccessBg"] = Brush(Theme.CalloutSuccess);
 
+        // Computed here rather than in the socle: it dresses ONE control in ONE product — the play
+        // button hovered — where the callout tints above are a shared language the mod and the
+        // site speak too. Same green, same surface, simply held a little stronger.
+        r["CalloutSuccessHoverBg"] = Brush(Theme.StatusSuccess.Over(Theme.SurfaceDeep, 0.30));
+
         ApplyFluentOverrides(r);
     }
 

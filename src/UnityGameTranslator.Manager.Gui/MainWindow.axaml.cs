@@ -1529,6 +1529,11 @@ public partial class MainWindow : Window
             }
             : Glyphs.Button(Glyphs.Play("StatusSuccess"), "Play");
 
+        // Tonal green, and only on the full-size one: the small mark in the list has no fill at
+        // all, so there is nothing there to tint. See the Button.play block in App.axaml for why
+        // this is the single control in the application allowed a colour of its own.
+        if (!small) button.Classes.Add("play");
+
         ToolTip.SetTip(button, $"Start {game.Name}. {route.Why}");
 
         button.Click += async (_, _) =>
@@ -2421,14 +2426,26 @@ public partial class MainWindow : Window
         foreach (var blocker in report.Blockers)
             DetailPanel.Children.Add(Callout(blocker, "CalloutErrorBg", "StatusError"));
 
+        // ⚠ Settled BEFORE the tabs split, and it used to live in the Setup branch alone. The bar
+        // reads it, and the bar now exists on Home too: left where it was, a game opened on Home
+        // would have been offered the answer computed for whichever game was looked at last.
+        var offer = TranslationOffers.For(report, PickTranslation(report));
+        _takeTranslation = TranslationOffers.MayDefaultToYes(offer)
+                           && _preferences.Read(report.Game.Path).InstallTranslation;
+
         if (_gameTab == GameTab.Home)
         {
             foreach (var control in GameHome(report)) DetailPanel.Children.Add(control);
 
-            // No fixed bar on Home: it offers one way forward at a time, and a second call to
-            // action pinned underneath would compete with the one the page is built around.
-            ActionBar.IsVisible = false;
-            ActionBar.Content = null;
+            // ⚠ The bar belongs to BOTH tabs, where it used to be hidden here on the argument that
+            // Home offers one way forward at a time. What settles it is Play: wanting to start the
+            // game has nothing to do with which tab is open, and Home — the "where does this game
+            // stand" tab — is exactly where it was missing. A bar that appears and disappears
+            // between tabs also changes the height of the content on every switch.
+            //
+            // The competition that argument feared is real, and it is answered in GameHome: while
+            // this bar has something to do, the buttons in the body drop to the outlined register.
+            ShowActionBar(report);
             return;
         }
 
@@ -2446,13 +2463,6 @@ public partial class MainWindow : Window
         // installed by separate steps; folding them into one block meant their versions could not
         // both be shown, and the single button had to pretend they moved together. Each card now
         // carries its own version, its own verb, and nothing that belongs to the other.
-        // Settled once per card, before anything reads it. A stored "yes" is deliberately ignored
-        // where a translation would replace something — that answer was given about a game in
-        // another state, and re-applying it is precisely the mistake this is here to prevent.
-        var offer = TranslationOffers.For(report, PickTranslation(report));
-        _takeTranslation = TranslationOffers.MayDefaultToYes(offer)
-                           && _preferences.Read(report.Game.Path).InstallTranslation;
-
         DetailPanel.Children.Add(Card(LoaderSection(report)));
         DetailPanel.Children.Add(Card(ModSection(report)));
         DetailPanel.Children.Add(Card(Translations(report)));
@@ -2468,6 +2478,18 @@ public partial class MainWindow : Window
     {
         var target = _settings.ResolveTargetLanguage();
         var mine = MyTranslationHere(report);
+
+        // ⚠ ONE filled button on screen at a time, and the bar has first claim on it: it is the
+        // fixed place, in the same spot on both tabs, and what it runs is the whole job rather
+        // than a step of it. These open a list to choose from — a refinement of what one click
+        // would take by itself — so they step down to the outlined register while there is
+        // anything for that click to do.
+        //
+        // Not a constant: on a game with nothing left to install, choosing a translation IS the
+        // act of this screen, and it takes the fill back. Same reading either way — the loudest
+        // thing on the card is the thing to do next.
+        var barActs = OneClickSteps(report, _preferences.Read(report.Game.Path)).Any();
+        var bodyLead = barActs ? "" : "primary";
 
         var inMyLanguage = report.OnlineTranslations
             .Where(t => Languages.Matches(t.TargetLanguage, target))
@@ -2592,7 +2614,7 @@ public partial class MainWindow : Window
                 {
                     Content = $"Choose one in {Languages.NameOf(target)}",
                     FontSize = 12,
-                    Classes = { "primary" },
+                    Classes = { bodyLead },
                 };
 
                 mineFirst.Click += async (_, _) => await OpenTranslationsAsync(report);
@@ -2605,7 +2627,10 @@ public partial class MainWindow : Window
                 {
                     Content = inMyLanguage.Count > 0 ? "See every language" : "See what exists",
                     FontSize = 12,
-                    Classes = { inMyLanguage.Count > 0 ? "" : "primary" },
+
+                    // Second of the two, so it never leads: the wider net is the fallback, and
+                    // it only carries the lead when it is the only button here.
+                    Classes = { inMyLanguage.Count > 0 ? "" : bodyLead },
                 };
 
                 anyLanguage.Click += async (_, _) => await OpenTranslationsAsync(report, anyLanguage: true);

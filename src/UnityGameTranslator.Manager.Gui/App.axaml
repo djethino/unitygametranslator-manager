@@ -19,9 +19,44 @@
       controls are restated once here rather than fought property by property in every window.
     -->
 
+    <!--
+      THREE REGISTERS, AND THEY ARE TOLD APART BY MATTER RATHER THAN BY SHADE.
+
+        primary     filled purple      the act of the section
+        secondary   outlined           possible, and less loud than the one above
+        disabled    neither            nothing to press
+
+      ⚠ The rule this replaces was "different greys", and it collided: a disabled primary was
+      painted SurfaceControl, which is exactly what a secondary button looked like when it was
+      perfectly pressable. The same grey meant "press me" and "you cannot press me" on one screen.
+      No amount of tuning two greys fixes that — so availability is now carried by the PRESENCE of
+      a fill or an outline, which survives a bad screen, low light and colour blindness, where two
+      shades of grey do not.
+
+      ⚠ Nothing is blue. Blue is taken: StatusInfo is what "0.7.3 is available" is written in.
+      Painting secondary buttons blue would steal that meaning AND put a second call-to-action
+      colour against the purple — two action colours is no hierarchy at all.
+
+      ⚠ Set on the Button, not on its ContentPresenter, so a button that declares its own
+      Background in code (the bare glyph buttons) still wins. The states below have to reach the
+      presenter, because that is where Fluent paints them.
+    -->
     <Style Selector="Button">
       <Setter Property="CornerRadius" Value="{DynamicResource RadiusControl}" />
       <Setter Property="Padding" Value="14,6" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource BorderStrong}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+    </Style>
+    <Style Selector="Button:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource SurfaceCardHover}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource BorderStrong}" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+    </Style>
+    <Style Selector="Button:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource SurfaceControl}" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
     </Style>
 
     <!--
@@ -50,14 +85,35 @@
       <Setter Property="Foreground" Value="#FFFFFF" />
     </Style>
     <!--
-      Repainting the template presenter covers every state, disabled included: the button stopped
-      responding while still looking fully available, which reads as the application being stuck
-      rather than as the action being unavailable. Any state overridden here must be overridden
-      completely.
+      PLAY, and it is the one exception to "a single action colour".
+
+      Not louder than the purple and not quieter: of another NATURE. Everything else on this
+      screen prepares a game; this one ends the preparation. Tonal rather than filled — two solid
+      buttons side by side compete for the same glance, and the one-click has to keep winning that
+      glance while there is anything left to do.
+
+      The fill is the callout green already used by the notices, so this introduces no colour the
+      palette did not have: it is the same green, at the same tint, as "this went well".
     -->
-    <Style Selector="Button.primary:disabled /template/ ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource SurfaceControl}" />
-      <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
+    <Style Selector="Button.play">
+      <Setter Property="Padding" Value="16,7" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button.play /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource CalloutSuccessBg}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StatusSuccess}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Foreground" Value="{DynamicResource StatusSuccess}" />
+      <Setter Property="CornerRadius" Value="{DynamicResource RadiusControl}" />
+    </Style>
+    <Style Selector="Button.play:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource CalloutSuccessHoverBg}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StatusSuccess}" />
+      <Setter Property="Foreground" Value="{DynamicResource StatusSuccess}" />
+    </Style>
+    <Style Selector="Button.play:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource CalloutSuccessHoverBg}" />
+      <Setter Property="Foreground" Value="{DynamicResource StatusSuccess}" />
     </Style>
 
     <!--
@@ -165,6 +221,22 @@
     <Style Selector="ListBox.cards > ListBoxItem:selected:pointerover /template/ ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource AccentSelected}" />
       <Setter Property="BorderBrush" Value="{DynamicResource AccentSoft}" />
+    </Style>
+    <!--
+      DISABLED, FOR EVERY BUTTON, AND DECLARED LAST ON PURPOSE.
+
+      At comparable specificity Avalonia applies the last matching style, so this is what keeps a
+      class — primary, play, filter — from dressing up a button nobody can press.
+
+      ⚠ BorderThickness stays 1 with a transparent brush. Dropping it to 0 would resize the button
+      as it becomes available again, moving whatever sits beside it under the pointer.
+    -->
+    <Style Selector="Button:disabled /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
+      <Setter Property="Opacity" Value="0.5" />
     </Style>
   </Application.Styles>
 </Application>

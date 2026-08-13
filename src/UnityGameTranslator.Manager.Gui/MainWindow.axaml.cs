@@ -2513,10 +2513,16 @@ public partial class MainWindow : Window
                 Foreground = Brush("TextPrimary"),
             });
 
+            // ⚠ The measured figure when there is one, and the mod's counter only otherwise. That
+            // counter describes what the MOD did — a file edited from a browser or by hand carries
+            // a number that stopped describing it. Silent when neither can be trusted: a count
+            // nobody can vouch for is worse than none.
+            var unpublished = local.ChangedSinceAncestor ?? (local.SourceHash is null ? null : local.LocalChanges);
+
             var detail = local.EntryCount < 0
                 ? "The file could not be read."
                 : $"{local.EntryCount} entries"
-                  + (local.LocalChanges > 0 ? $", {local.LocalChanges} never uploaded" : "");
+                  + (unpublished > 0 ? $", {unpublished} never uploaded" : "");
 
             body.Children.Add(new TextBlock
             {
@@ -2525,6 +2531,12 @@ public partial class MainWindow : Window
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("TextSecondary"),
             });
+
+            // What it is made of, whose it is, and what can be done with it — the three questions
+            // this tab exists for, and none of them was answered here.
+            foreach (var control in TranslationMakeup(local)) body.Children.Add(control);
+            foreach (var control in LineageNotes(report)) body.Children.Add(control);
+            foreach (var control in TranslationWorkbench(report, heading: false)) body.Children.Add(control);
 
             yield return Card(body);
         }
@@ -3225,42 +3237,7 @@ public partial class MainWindow : Window
             // borrowing its numbers would describe a stranger's file under the words "on this
             // machine". It is also the only thing that answers "is what I am using any good" —
             // which used to be unanswerable here, on the one screen devoted to it.
-            if (local.Counts is { } counts && QualityBar.HasSomethingToShow(counts))
-            {
-                if (QualityBar.StageOf(counts) is { } stage)
-                {
-                    // The verdict first, the make-up under it: somebody wants to know where this
-                    // stands before they want to know what it is made of.
-                    panel.Children.Add(new TextBlock
-                    {
-                        Text = counts.Completeness is { } done
-                            ? $"{stage} · {done * 100:F0}% of what it has met is settled"
-                            : stage,
-                        FontSize = 12,
-                        TextWrapping = TextWrapping.Wrap,
-                        Foreground = Brush("TextSecondary"),
-                        Margin = new Avalonia.Thickness(0, 4, 0, 0),
-                    });
-                }
-                else if (counts.IsCaptureOnly)
-                {
-                    // Not "a translation at zero": nothing has been attempted. The difference
-                    // decides whether somebody is looking at work in progress or at the game's
-                    // own text handed back to them.
-                    panel.Children.Add(new TextBlock
-                    {
-                        Text = "Nothing translated yet — the mod has met "
-                             + $"{counts.Captured} line(s) and is waiting on a translation for them.",
-                        FontSize = 12,
-                        TextWrapping = TextWrapping.Wrap,
-                        Foreground = Brush("TextSecondary"),
-                        Margin = new Avalonia.Thickness(0, 4, 0, 0),
-                    });
-                }
-
-                panel.Children.Add(new QualityBar(counts) { Margin = new Avalonia.Thickness(0, 6, 0, 2) });
-                if (QualityBar.Legend(counts) is { } legend) panel.Children.Add(legend);
-            }
+            foreach (var control in TranslationMakeup(local)) panel.Children.Add(control);
         }
         else
         {
@@ -3401,6 +3378,57 @@ public partial class MainWindow : Window
         }
 
         return panel;
+    }
+
+    /// <summary>
+    /// What a translation file is MADE OF: the stage it has reached, and the bar that shows the
+    /// five buckets.
+    ///
+    /// ⚠ Written once and shown on both tabs. It used to live inside the Set up card alone, which
+    /// meant the one screen answering "where does this game stand" — Home — could not say whether
+    /// the translation it announced was any good.
+    ///
+    /// ⚠ Counted from the file on disk, never taken from the published figures of the same lineage:
+    /// the moment somebody plays, their copy stops being the published one, and borrowing its
+    /// numbers would describe a stranger's file under the words "on this machine".
+    /// </summary>
+    private IEnumerable<Control> TranslationMakeup(LocalTranslation local)
+    {
+        if (local.Counts is not { } counts || !QualityBar.HasSomethingToShow(counts)) yield break;
+
+        if (QualityBar.StageOf(counts) is { } stage)
+        {
+            // The verdict first, the make-up under it: somebody wants to know where this stands
+            // before they want to know what it is made of.
+            yield return new TextBlock
+            {
+                Text = counts.Completeness is { } done
+                    ? $"{stage} · {done * 100:F0}% of what it has met is settled"
+                    : stage,
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextSecondary"),
+                Margin = new Avalonia.Thickness(0, 4, 0, 0),
+            };
+        }
+        else if (counts.IsCaptureOnly)
+        {
+            // Not "a translation at zero": nothing has been attempted. The difference decides
+            // whether somebody is looking at work in progress or at the game's own text handed
+            // back to them.
+            yield return new TextBlock
+            {
+                Text = "Nothing translated yet — the mod has met "
+                     + $"{counts.Captured} line(s) and is waiting on a translation for them.",
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextSecondary"),
+                Margin = new Avalonia.Thickness(0, 4, 0, 0),
+            };
+        }
+
+        yield return new QualityBar(counts) { Margin = new Avalonia.Thickness(0, 6, 0, 2) };
+        if (QualityBar.Legend(counts) is { } legend) yield return legend;
     }
 
     /// <summary>
@@ -3614,7 +3642,13 @@ public partial class MainWindow : Window
     /// <see cref="GameReport.Sync"/> — the shared rule, the same one the mod reaches — and each
     /// button says what it will do before it does it.
     /// </summary>
-    private IEnumerable<Control> TranslationWorkbench(GameReport report)
+    /// <param name="heading">
+    /// False inside a card that is already about this translation. On the Set up tab the block sits
+    /// under a section listing what the community has, and needs saying which one it is about;
+    /// on Home it follows two lines describing the very same file, where a title would only
+    /// announce what has just been said.
+    /// </param>
+    private IEnumerable<Control> TranslationWorkbench(GameReport report, bool heading = true)
     {
         // Nothing here to work on. The community list above is the whole offer in that case.
         if (report.LocalTranslation is null) yield break;
@@ -3625,14 +3659,17 @@ public partial class MainWindow : Window
 
         var standing = ServerIdentity.For(_settings.Current, report.SiteAccount, BuildInfo.ApiBaseUrl);
 
-        yield return new TextBlock
+        if (heading)
         {
-            Text = "This translation",
-            FontSize = 12,
-            FontWeight = FontWeight.SemiBold,
-            Margin = new Avalonia.Thickness(0, 12, 0, 0),
-            Foreground = Brush("TextPrimary"),
-        };
+            yield return new TextBlock
+            {
+                Text = "This translation",
+                FontSize = 12,
+                FontWeight = FontWeight.SemiBold,
+                Margin = new Avalonia.Thickness(0, 12, 0, 0),
+                Foreground = Brush("TextPrimary"),
+            };
+        }
 
         // Where it stands, in the words the mod uses for the same verdict.
         //

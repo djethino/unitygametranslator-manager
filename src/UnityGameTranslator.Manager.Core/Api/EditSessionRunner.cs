@@ -24,9 +24,12 @@ public sealed record EditSessionProgress(EditSessionStage Stage, string Message,
 /// why: a long-lived stream is exactly what fails silently behind the corporate proxies this tool
 /// spends its time working around, and the file runs to tens of megabytes.
 ///
-/// ⚠ **The session key never touches the game folder.** It authorises reading and rewriting this
-/// translation for as long as the session lives, and game folders are shared between the
-/// operating-system accounts of one machine.
+/// ⚠ **The session key IS written into the game folder now**, encrypted, and that reverses what was
+/// written here before. It said the key must never go there because game folders are shared between
+/// the operating-system accounts of one machine — a real risk, and the mod had already answered it:
+/// <see cref="Secrets"/> derives from the machine AND the user, so another account reads bytes it
+/// cannot decrypt. What the old rule cost was the only thing that can stop two browser editors from
+/// erasing each other on one file. See <see cref="EditSessionMarkers"/>.
 /// </summary>
 public sealed class EditSessionRunner
 {
@@ -133,7 +136,140 @@ public sealed class EditSessionRunner
         _sentJson = sent;
         _game = game;
         _descriptor = descriptor;
+
+        // Beside the translation, so the mod finds it. ⚠ After the session exists, never before: a
+        // marker pointing at a session that failed to open would refuse the next attempt on behalf
+        // of nothing at all.
+        if (EditSessionMarkers.Write(gamePath, descriptor, session.ModKey) is { } failure)
+        {
+            // Said, not swallowed: the session works, but the game will not know it is there, and
+            // that is the one guarantee this file exists to give.
+            LastError = "The session is open, but this game's folder could not be marked as being "
+                      + $"edited ({failure}). The mod will not know about it, so do not open a "
+                      + "second editor from inside the game — the last one to save would erase the "
+                      + "other.";
+        }
+
         return session;
+    }
+
+    /// <summary>
+    /// Somebody else's window is already editing this translation — or this one is, from a run that
+    /// did not end cleanly.
+    /// </summary>
+    /// <param name="Question">Worded by the socle, identical to what the mod would ask.</param>
+    /// <param name="ModKey">Null when the session belongs to another account of this computer.</param>
+    /// <param name="Ours">
+    /// This tool's own session, left behind. Not a conflict — an offer to pick it back up.
+    /// </param>
+    public sealed record Blocking(string Question, string? ModKey, bool Ours);
+
+    /// <summary>
+    /// Look for a session already open on this game's translation, before anything is uploaded.
+    ///
+    /// ⚠ Asked BEFORE the upload, because asking after would mean a second session already exists
+    /// on the site — the very state this prevents.
+    ///
+    /// Returns null when the way is clear, which includes a marker the site has forgotten: that one
+    /// is removed here rather than left to refuse every future session for ever.
+    /// </summary>
+    public async Task<Blocking?> FindBlockingAsync(GameInstall game, LoaderDescriptor descriptor,
+                                                   CancellationToken ct = default)
+    {
+        var marker = EditSessionMarkers.Read(game.Path, descriptor);
+        if (marker is null) return null;
+
+        var when = marker.OpenedUtc is { } opened
+            ? "on " + opened.ToLocalTime().ToString("d MMM, HH:mm")
+            : "at an unknown time";
+
+        if (!marker.Endable)
+        {
+            return new Blocking(
+                "A browser editing session for this game was opened from "
+                + EditSessions.HolderName(marker.Holder) + " " + when + " by another user of this "
+                + "computer, or before this game was moved here. It cannot be ended from your "
+                + "account, and two sessions on one translation erase each other's saves. "
+                + "Open yours anyway?",
+                null, Ours: false);
+        }
+
+        var state = await _client.PollAsync(marker.ModKey!, ct).ConfigureAwait(false);
+
+        // ⚠ Gone is the ONLY reading that clears a marker. A network hiccup answers null too, and
+        // treating that as "nobody is editing" would open a second session over a live one — the
+        // socle spells out why silence counts as alive.
+        if (state is null && _client.SessionGone)
+        {
+            EditSessionMarkers.Clear(game.Path, descriptor);
+            return null;
+        }
+
+        if (marker.IsOurs)
+        {
+            return new Blocking(
+                "A browser editing session opened from here " + when + " is still running. Your "
+                + "browser tab is probably still on it. Pick it back up, so that what you save "
+                + "there reaches this game again?",
+                marker.ModKey, Ours: true);
+        }
+
+        return new Blocking(
+            EditSessions.ConflictQuestion(marker.Holder, when, state?.PendingChanges ?? 0),
+            marker.ModKey, Ours: false);
+    }
+
+    /// <summary>
+    /// End a session somebody else's window opened, keeping what its browser had saved.
+    ///
+    /// ⚠ **Drained first**, exactly as <see cref="CloseAsync"/> drains our own. Saves the browser
+    /// made and nobody fetched exist in the session and nowhere else; deleting it first would
+    /// destroy work the site told somebody was saved.
+    /// </summary>
+    public async Task TakeOverAsync(GameInstall game, LoaderDescriptor descriptor, string modKey,
+                                    CancellationToken ct = default)
+    {
+        var path = Path.Combine(game.Path,
+            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar),
+            LocalTranslationProbe.TranslationFileName);
+
+        var received = await _client.FetchAsync(modKey, ct).ConfigureAwait(false);
+
+        if (received is not null)
+        {
+            var onDisk = File.Exists(path) ? File.ReadAllText(path) : "{}";
+            _installer.WriteEditedSession(game, descriptor, onDisk, received);
+        }
+
+        await _client.CloseAsync(modKey, ct).ConfigureAwait(false);
+        EditSessionMarkers.Clear(game.Path, descriptor);
+    }
+
+    /// <summary>
+    /// Pick up a session this tool left open — a crash, a kill, a window closed the hard way.
+    ///
+    /// ⚠ **The browser is not reopened**, and that is not a shortcut: the URL carried a one-time
+    /// token that died when the page first loaded. The tab that is still open stays attached on its
+    /// own, and what it saves reaches the game again the moment we start following. Somebody who
+    /// closed it can reach the session from the site's own editor page.
+    /// </summary>
+    public bool Resume(GameInstall game, LoaderDescriptor descriptor, string modKey)
+    {
+        var path = Path.Combine(game.Path,
+            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar),
+            LocalTranslationProbe.TranslationFileName);
+
+        if (!File.Exists(path)) return false;
+
+        Current = new EditSession(modKey, BuildInfo.WebsiteBaseUrl + "/edit-session", null);
+        // ⚠ The baseline is the file as it stands NOW, not as it stood when the session opened —
+        // that one died with the process. It is only used to count what a save changed, so the
+        // worst case is a count taken from a later starting point; guessing an older state would
+        // instead make lines captured since look like browser deletions.
+        _sentJson = File.ReadAllText(path);
+        _game = game;
+        _descriptor = descriptor;
+        return true;
     }
 
     /// <summary>
@@ -282,6 +418,11 @@ public sealed class EditSessionRunner
         catch { /* reported through LastError by ApplyAsync; the close must still happen */ }
 
         await _client.CloseAsync(session.ModKey, ct).ConfigureAwait(false);
+
+        // The marker goes last, and only here: while it exists, the game refuses to open its own
+        // editor. Removing it before the session is really gone would let a second one in.
+        if (_game is not null && _descriptor is not null)
+            EditSessionMarkers.Clear(_game.Path, _descriptor);
     }
 
     /// <summary>Why the last step failed, in words a user can act on.</summary>

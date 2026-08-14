@@ -1,3 +1,4 @@
+using UnityGameTranslator.Manager.Core.Api;
 using UnityGameTranslator.Manager.Core.Detection;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
@@ -148,6 +149,12 @@ public sealed class UninstallEngine
         // anything else is touched, even if the rest fails afterwards.
         if (choice.RemoveUserData)
         {
+            // ⚠ The session BEFORE the files. The marker is one of the files about to go, and
+            // deleting it only forgets the session — it does not end it. What is left behind is a
+            // browser tab still accepting saves into a session for a game folder that no longer
+            // exists, and a slot held on the site until it expires a day later.
+            EndAnyEditSession(game, receipt);
+
             backupPath = BackupUserData(game, receipt, choice, removed, kept);
         }
 
@@ -296,6 +303,37 @@ public sealed class UninstallEngine
     /// fonts, replacement images and dated backups survived every "remove my data" — the folder
     /// stayed half full and nothing said which half.
     /// </summary>
+    /// <summary>
+    /// End a browser session open on this game before its translation is removed.
+    ///
+    /// ⚠ Only one we can prove is ours to end. A marker whose key does not decrypt belongs to
+    /// another account of this computer; we are already refusing to write into their setup, and
+    /// closing their editor would be the same trespass by another route.
+    ///
+    /// ⚠ Best effort, and deliberately not awaited into a failure: an uninstall must not be
+    /// blocked by a site that does not answer. What is at stake is a slot on the site, not the
+    /// user's data — the data is copied aside a few lines below.
+    /// </summary>
+    private void EndAnyEditSession(GameInstall game, Receipt receipt)
+    {
+        var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == receipt.Loader?.Id)
+                         ?? _catalog.Loaders.FirstOrDefault(l => l.Id == receipt.Plugin?.Build);
+        if (descriptor is null) return;
+
+        var marker = EditSessionMarkers.Read(game.Path, descriptor);
+        if (marker is null || !marker.Endable) return;
+
+        try
+        {
+            new EditSessionClient().CloseAsync(marker.ModKey!).Wait(TimeSpan.FromSeconds(5));
+        }
+        catch
+        {
+            // Unreachable site, or slower than five seconds. The session then expires on its own;
+            // stopping an uninstall over it would be a worse answer than letting it lapse.
+        }
+    }
+
     private string? BackupUserData(GameInstall game, Receipt receipt, UninstallChoice choice,
                                    List<string> removed, List<string> kept)
     {

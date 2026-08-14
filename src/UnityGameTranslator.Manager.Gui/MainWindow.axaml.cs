@@ -3484,13 +3484,58 @@ public partial class MainWindow : Window
         // beside their label; assigning a string to Content would throw the marks away and leave the
         // one thing that says where the action writes missing for the rest of the session.
         button.IsEnabled = false;
-        ScopeMark.SetLabel(button, "Opening…");
+        ScopeMark.SetLabel(button, "Checking…");
 
         var runner = new EditSessionRunner(_platform);
         var languages = LocalTranslationProbe.ReadLanguages(report.Game.Path, descriptor);
 
-        var session = await runner.OpenAsync(report.Game, descriptor,
+        // 🔴 **Before anything is uploaded.** Two browser editors on one translation erase each
+        // other's saves — each holds the whole file and writes it back entire — and the site cannot
+        // notice, because sessions are anonymous. Asking after the upload would mean the second
+        // session already exists, which is the state this prevents.
+        var blocking = await runner.FindBlockingAsync(report.Game, descriptor);
+        var resuming = false;
+
+        if (blocking is not null)
+        {
+            var agreed = await ConfirmationWindow.AskAsync(this,
+                blocking.Ours ? "A session of yours is still open" : "Already being edited",
+                blocking.Question,
+                blocking.Ours ? "Pick it back up"
+                              : blocking.ModKey is not null ? "End it and open mine"
+                              : "Open mine anyway");
+
+            if (!agreed)
+            {
+                button.IsEnabled = true;
+                ScopeMark.SetLabel(button, "Edit in browser");
+                return;
+            }
+
+            if (blocking.Ours)
+            {
+                resuming = runner.Resume(report.Game, descriptor, blocking.ModKey!);
+
+                // There is nothing here to resume INTO — the translation file is gone since. End
+                // that session rather than leaving it alive beside a new one nobody can reconcile.
+                if (!resuming)
+                    await runner.TakeOverAsync(report.Game, descriptor, blocking.ModKey!);
+            }
+            else if (blocking.ModKey is not null)
+            {
+                ScopeMark.SetLabel(button, "Ending the other one…");
+                await runner.TakeOverAsync(report.Game, descriptor, blocking.ModKey);
+            }
+        }
+
+        EditSession? session = runner.Current;
+
+        if (!resuming)
+        {
+            ScopeMark.SetLabel(button, "Opening…");
+            session = await runner.OpenAsync(report.Game, descriptor,
                                              languages.Source, languages.Target);
+        }
 
         if (session is null)
         {
@@ -3507,7 +3552,16 @@ public partial class MainWindow : Window
         button.IsEnabled = true;
         ScopeMark.SetLabel(button, "Stop browser session");
 
-        Shell.OpenUrl(session.Url);
+        // ⚠ Not on a resume: the tab that is still open is already attached, and the URL that would
+        // open a new one carried a one-time token that died when that page first loaded.
+        if (!resuming) Shell.OpenUrl(session.Url);
+
+        // ⚠ A session that opened WITH a complaint. The only one possible here is "the game folder
+        // could not be marked", which costs the guarantee that the mod will not open a second
+        // editor — silent success would be a lie about the one thing that protects the file.
+        if (runner.LastError is { } warning)
+            await ConfirmationWindow.TellAsync(this, "The editor is open, with one reservation",
+                                               warning);
 
         var progress = new Progress<EditSessionProgress>(state =>
         {

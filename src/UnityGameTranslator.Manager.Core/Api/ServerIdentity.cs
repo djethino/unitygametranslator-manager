@@ -1,3 +1,4 @@
+using UnityGameTranslator.Common;
 using UnityGameTranslator.Manager.Core.Model;
 
 namespace UnityGameTranslator.Manager.Core.Api;
@@ -54,6 +55,36 @@ public sealed record ServerStanding(ServerStandingKind Kind, string? GameAccount
     public bool CanAct => Kind is ServerStandingKind.Unlinked or ServerStandingKind.Mine;
 
     /// <summary>
+    /// This standing said in the shared vocabulary, so the RULE about it lives in one place.
+    ///
+    /// ⚠ The reading is the manager's — only it looks at another program's config — but what
+    /// follows from the reading is <see cref="Standings"/>'s, because the mod answers the same
+    /// question about itself and the two must not diverge.
+    /// </summary>
+    public AccountStanding Standing => Kind switch
+    {
+        ServerStandingKind.Mine => AccountStanding.Ours,
+        ServerStandingKind.Unlinked => AccountStanding.Ours,
+        ServerStandingKind.OtherAccount => AccountStanding.SomebodyElses,
+        ServerStandingKind.OtherServer => AccountStanding.SomebodyElses,
+
+        // Nobody signed in HERE. Whose game it is decides: a game linked to somebody is theirs
+        // whether or not this window has a name; a game linked to nobody is anybody's to set up.
+        _ => GameAccount is null ? AccountStanding.Anonymous : AccountStanding.SomebodyElses,
+    };
+
+    /// <summary>
+    /// 🔴 May this window change the translation FILE in that game folder?
+    ///
+    /// Editing in a browser and merging write only the local file — no server is involved — which is
+    /// exactly why they were never guarded. They still must be: one must not break, by inattention,
+    /// the setup another user of this computer put in place. Somebody who launches the game and
+    /// switches account there has made a deliberate choice, and that is between the users of that
+    /// machine; a stray click from a tool that lists everybody's games is not.
+    /// </summary>
+    public bool CanWriteLocally => Standings.MayWriteLocally(Standing);
+
+    /// <summary>
     /// What to tell the user, in terms they can act on. Null when there is nothing to say — the
     /// ordinary case, where saying anything would be noise.
     /// </summary>
@@ -106,10 +137,15 @@ public static class ServerIdentity
         // ⚠ A name without a token is not being signed in. The token can be dropped on load — when
         // the tool is pointed at another server — while the name stays in the file, and treating
         // that as an account would produce a refusal-free path to a request nobody can authorise.
-        if (!hasToken || signedInAs is null) return new ServerStanding(ServerStandingKind.SignedOut, null, null);
-
         var gameUser = Trimmed(gameAccount.User);
         var gameServer = Trimmed(gameAccount.Server);
+
+        // ⚠ The game's account travels even when nobody is signed in HERE. Without it, a window
+        // signed out could not tell a fresh machine — where everything is allowed — from somebody
+        // else's game, where the local translation must not be touched either. That was the case
+        // the rule missed: "not signed in here" is not the same as "nobody's game".
+        if (!hasToken || signedInAs is null)
+            return new ServerStanding(ServerStandingKind.SignedOut, gameUser, null);
 
         // Never linked: there is no other owner to step on.
         if (gameUser is null) return new ServerStanding(ServerStandingKind.Unlinked, null, signedInAs);

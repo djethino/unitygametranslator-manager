@@ -4195,7 +4195,10 @@ public partial class MainWindow : Window
         // ⚠ The marks live INSIDE the button, before the label. A label names the verb and never
         // the destination — Edit and Publish do not aim at the same place, and nothing but this
         // says so.
-        var edit = ScopeMark.Marked(EditSide.Local, "Edit in browser");
+        // ⚠ Guarded on CanWriteLocally, not on CanAct. Editing writes the game's own translation
+        // file and touches no server — which is why it was open to everybody, and why it must not
+        // be: breaking the setup another user of this computer put in place needs no server at all.
+        var edit = ScopeMark.Marked(EditSide.Local, "Edit in browser", standing.CanWriteLocally);
         edit.Click += async (_, _) => await OpenLocalEditorAsync(report, descriptor, edit);
         actions.Children.Add(edit);
 
@@ -4240,9 +4243,11 @@ public partial class MainWindow : Window
             && report.MatchingOnline is not null)
         {
             // Reads the published version, writes here: the pair is what makes it Both.
+            // Same guard: merging and taking the newer version both rewrite the game's file.
             var merge = ScopeMark.Marked(EditSide.Both,
                 report.Sync == SyncDirection.Merge ? "Merge with the published version…"
-                                                   : "Download what changed online…");
+                                                   : "Download what changed online…",
+                standing.CanWriteLocally);
             merge.Click += async (_, _) => await MergeWithPublishedAsync(report, descriptor, merge);
             actions.Children.Add(merge);
         }
@@ -4252,7 +4257,21 @@ public partial class MainWindow : Window
         // ⚠ The refusal is stated, never silent. A greyed button with no reason is how somebody
         // concludes the tool is broken — and here the reason is precise and actionable: this game
         // belongs to another account.
-        if (standing.Reason is { } reason)
+        if (!standing.CanWriteLocally)
+        {
+            // ⚠ Said FIRST and louder, because it is the wider refusal: nothing on this card can be
+            // used at all. Leaving only the publishing reason would explain the greyed Publish and
+            // leave somebody wondering why Edit is greyed too.
+            yield return new TextBlock
+            {
+                Text = Standings.ExplainRefusal(standing.Standing, toServer: false),
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Avalonia.Thickness(0, 4, 0, 0),
+                Foreground = Brush("StatusWarning"),
+            };
+        }
+        else if (standing.Reason is { } reason)
         {
             yield return new TextBlock
             {

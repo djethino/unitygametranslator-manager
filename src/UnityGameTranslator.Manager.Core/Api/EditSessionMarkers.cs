@@ -32,11 +32,17 @@ public sealed record EditSessionMarker(string? ModKey,
 /// folder.
 ///
 /// ⚠ **This reverses "the session key never touches the game folder"**, which used to be written in
-/// <see cref="EditSessionRunner"/>. The fear behind it was right — a key left in a shared folder
-/// would hand the next person a live handle on somebody else's translation — but the answer was
-/// already in the mod, which has kept its key there for months: <see cref="Secrets"/> derives from
-/// the machine AND the user, so another account of this computer reads bytes it cannot decrypt. It
-/// then sees a session it cannot end, which is exactly what it should see.
+/// <see cref="EditSessionRunner"/>. That rule feared handing the next account of this computer a
+/// live handle on somebody else's translation — and the encryption is NOT what answers it. Read
+/// the header of <see cref="Secrets"/>: the key comes from the machine name, the user name and the
+/// home path, all of them values another local account can look up, so a deliberate one rebuilds
+/// it. What actually answers the fear is that the key reaches no further than the translation lying
+/// beside it in plain JSON: anyone able to read the marker can already edit that file directly.
+/// The rule about what may be written here is in the socle, above <c>MarkerSuffix</c>.
+///
+/// ⚠ **So an unreadable key is not a wall, it is a fact**: this session was opened under another
+/// account, or before this game moved here. We cannot prove it is over, and it is not ours to end
+/// — the same reason we refuse to write into a game somebody else set up.
 ///
 /// ⚠ **Holder and time stay in the clear, deliberately.** They are not credentials, and they are
 /// what makes the refusal answerable: "a session was opened from the manager on 14 Aug at 14:32"
@@ -82,8 +88,12 @@ public static class EditSessionMarkers
             if (DateTimeOffset.TryParse(Text(root, EditSessions.MarkerOpenedField), out var parsed))
                 opened = parsed;
 
-            return new EditSessionMarker(Secrets.Unprotect(Text(root, EditSessions.MarkerKeyField)),
-                                         holder, opened);
+            // ⚠ Checked before it is believed, let alone put in a URL. This file is writable by
+            // anybody with an account on this computer, so what comes out of it is data.
+            var key = Secrets.Unprotect(Text(root, EditSessions.MarkerKeyField));
+            if (key is not null && !EditSessions.IsPlausibleKey(key)) key = null;
+
+            return new EditSessionMarker(key, holder, opened);
         }
         catch
         {

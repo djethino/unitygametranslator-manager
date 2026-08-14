@@ -25,11 +25,12 @@ public sealed record EditSessionProgress(EditSessionStage Stage, string Message,
 /// spends its time working around, and the file runs to tens of megabytes.
 ///
 /// ⚠ **The session key IS written into the game folder now**, encrypted, and that reverses what was
-/// written here before. It said the key must never go there because game folders are shared between
-/// the operating-system accounts of one machine — a real risk, and the mod had already answered it:
-/// <see cref="Secrets"/> derives from the machine AND the user, so another account reads bytes it
-/// cannot decrypt. What the old rule cost was the only thing that can stop two browser editors from
-/// erasing each other on one file. See <see cref="EditSessionMarkers"/>.
+/// written here before. The old rule feared a shared folder handing the next account a live handle
+/// on somebody else's translation; what it cost was the only thing that can stop two browser
+/// editors from erasing each other on one file. ⚠ The encryption is not what makes it acceptable —
+/// it is machine-and-user obfuscation, defeated by anybody who bothers — the key simply reaches no
+/// further than the plain-JSON translation beside it. The full reasoning, and the two fields that
+/// must never be added, are in the socle above <c>MarkerSuffix</c>.
 /// </summary>
 public sealed class EditSessionRunner
 {

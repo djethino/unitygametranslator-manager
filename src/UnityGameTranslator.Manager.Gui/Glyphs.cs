@@ -106,6 +106,61 @@ public static class Glyphs
         "M3,3.6 L6,3.6 L6,2.2 L10,2.2 L10,3.6 L13,3.6 L13,5.2 L3,5.2 Z "
         + "M4.3,6.3 L11.7,6.3 L11,14.2 L5,14.2 Z");
 
+    // ── The three marks of the edit-scope switch ──────────────────────────────────────────────
+    //
+    // ⚠ **The same three pictures exist in the mod and on the website**, and somebody who learns
+    // the control in one must recognise it in the next. Which picture stands for which side is
+    // decided once, in UnityGameTranslator.Common.EditScope.Mark — these are only this program's
+    // rendering of that decision. Change a metaphor and all three have to move together.
+    //
+    // ⚠ Drawn here rather than taken from an icon font on purpose: FontAwesome is CC BY, which
+    // would put an attribution obligation on a binary that gets copied into game folders on its
+    // own. A path costs nothing and owes nothing.
+
+    /// <summary>A cloud, for the published version — what lives away from this machine.</summary>
+    public static Control Cloud(string? colour = null) => Shape(colour,
+        // Four layers: the puffs overlap one another and the base, and a single even-odd geometry
+        // would punch every crossing into a hole. Their bottoms are aligned on 12.6 so the base
+        // reads as one flat edge rather than three circles resting on a bar.
+        "M2.2,9.6 A3,3 0 1 1 8.2,9.6 A3,3 0 1 1 2.2,9.6 Z",
+        "M5.8,7.6 A3.8,3.8 0 1 1 13.4,7.6 A3.8,3.8 0 1 1 5.8,7.6 Z",
+        "M9.3,10 A2.6,2.6 0 1 1 14.5,10 A2.6,2.6 0 1 1 9.3,10 Z",
+        "M5.2,9.6 L11.9,9.6 L11.9,12.6 L5.2,12.6 Z");
+
+    /// <summary>A screen, for the file on this machine — the one in front of whoever is reading.</summary>
+    public static Control Display(string? colour = null) => Shape(colour,
+        // One geometry: the bezel's hole is punched by the even-odd rule, and the neck and foot
+        // only TOUCH the parts above them. Nothing overlaps, so nothing needs layering.
+        "M1.6,2.8 L14.4,2.8 L14.4,11.2 L1.6,11.2 Z "
+        + "M3.1,4.3 L12.9,4.3 L12.9,9.7 L3.1,9.7 Z "
+        + "M6.6,11.2 L9.4,11.2 L9.4,13 L6.6,13 Z "
+        + "M4.6,13 L11.4,13 L11.4,14.4 L4.6,14.4 Z");
+
+    /// <summary>Two links of a chain, for both at once — the pair, not a third place.</summary>
+    public static Control Link(string? colour = null) => Shape(colour,
+        // One layer per link, because they overlap. Each is a capsule with a capsule punched out
+        // of it, which is what makes it read as a ring rather than a lozenge.
+        "M3.9,5.4 L6.6,5.4 A2.6,2.6 0 0 1 6.6,10.6 L3.9,10.6 A2.6,2.6 0 0 1 3.9,5.4 Z "
+        + "M3.9,6.9 L6.6,6.9 A1.1,1.1 0 0 1 6.6,9.1 L3.9,9.1 A1.1,1.1 0 0 1 3.9,6.9 Z",
+        "M9.4,5.4 L12.1,5.4 A2.6,2.6 0 0 1 12.1,10.6 L9.4,10.6 A2.6,2.6 0 0 1 9.4,5.4 Z "
+        + "M9.4,6.9 L12.1,6.9 A1.1,1.1 0 0 1 12.1,9.1 L9.4,9.1 A1.1,1.1 0 0 1 9.4,6.9 Z");
+
+    /// <summary>
+    /// The same mark, drawn smaller.
+    ///
+    /// ⚠ Scales the whole 16x16 box, never a single path to its own outline — which is the rule
+    /// this file is built on. Three marks shrunk together keep the weights they were drawn with;
+    /// three marks each stretched to fit would come back out at three different sizes.
+    /// </summary>
+    public static Control Sized(Control glyph, double size) => new Viewbox
+    {
+        Child = glyph,
+        Width = size,
+        Height = size,
+        Stretch = Stretch.Uniform,
+        VerticalAlignment = VerticalAlignment.Center,
+    };
+
     /// <summary>Shared by the two folder marks, so the second cannot drift from the first.</summary>
     private const string FolderOutline =
         "M2,3 L6,3 L7.5,4.5 L13,4.5 A1,1 0 0,1 14,5.5 L14,12 A1,1 0 0,1 13,13 "

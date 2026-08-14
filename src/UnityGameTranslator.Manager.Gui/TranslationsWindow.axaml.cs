@@ -493,6 +493,12 @@ public sealed class TranslationsWindow : Window
 
         if (QualityBar.HasSomethingToShow(translation))
         {
+            // ⚠ **The same bar is drawn on the game's page over the file on disk.** Identical
+            // shape, identical colours, and until now nothing said which of the two you were
+            // reading — so published figures could be taken for a description of your own work,
+            // which they stop being the moment somebody plays.
+            body.Children.Add(ProvenanceTag.For(
+                Provenance.Of(countedFromDisk: false, haveCopyHere: installed)));
             body.Children.Add(new QualityBar(translation) { Margin = new Thickness(0, 4, 0, 2) });
             if (QualityBar.Legend(translation) is { } legend) body.Children.Add(legend);
         }

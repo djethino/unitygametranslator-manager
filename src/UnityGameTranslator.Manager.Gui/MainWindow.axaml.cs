@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
@@ -3381,125 +3381,6 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// The three-position switch: published / both / on this machine.
-    ///
-    /// ⚠ Drawn from <see cref="EditScope"/> and nothing else — the positions, their order, their
-    /// names, the sentence saying what a save does, and the reason a position is out of reach all
-    /// come from the socle. This method only turns that into Avalonia controls; the mod's editor
-    /// and the site's turn the same answers into their own.
-    ///
-    /// ⚠ A position that cannot be chosen keeps its place and states why. Hiding it would make the
-    /// control look different from one screen to the next, which is the whole thing this switch
-    /// exists to avoid.
-    /// </summary>
-    /// <summary>
-    /// One position of the switch, drawn on its own: the mark an ACTION carries to say where it
-    /// writes.
-    ///
-    /// ⚠ **This is the point of the whole control.** Edit and Publish do not aim at the same place,
-    /// and nothing on a button says so — the label describes the verb, never the destination. The
-    /// mark does, in the same three words used everywhere else, so the destination is read at a
-    /// glance rather than inferred.
-    /// </summary>
-    private Control SideChip(EditSide side, bool selected)
-    {
-        var chip = new Border
-        {
-            Background = Brush(selected ? "AccentSelected" : "SurfaceControl"),
-            BorderBrush = Brush(selected ? "AccentEdge" : "BorderSubtle"),
-            BorderThickness = new Avalonia.Thickness(1),
-            CornerRadius = new Avalonia.CornerRadius(4),
-            Padding = new Avalonia.Thickness(7, 2),
-            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
-            Margin = new Avalonia.Thickness(0, 4, 0, 0),
-            Child = new TextBlock
-            {
-                Text = EditScope.Name(side),
-                FontSize = 10,
-                Foreground = Brush(selected ? "TextPrimary" : "TextSecondary"),
-            },
-        };
-
-        ToolTip.SetTip(chip, EditScope.Effect(side));
-        return chip;
-    }
-
-    /// <summary>One action, with the place it writes to marked beside it.</summary>
-    private static Control ActionWithSide(Control chip, Button button)
-    {
-        var pair = new StackPanel { Orientation = Orientation.Vertical, Spacing = 2 };
-        pair.Children.Add(chip);
-        pair.Children.Add(button);
-        return pair;
-    }
-
-    private IEnumerable<Control> SideSwitch(GameReport report, EditSide chosen)
-    {
-        // What is reachable from a tool that holds the machine's files, and what this account is
-        // ENTITLED to touch. Asked here so no caller can draw the control from a reading of its own.
-        //
-        // ⚠ **A branch counts as mine.** It is my row in somebody else's lineage: it lives on the
-        // server, it is written by me, and nobody else may touch it. Reading "published by this
-        // account" as "leads the lineage" would grey the server side for every contributor — the
-        // people who most need to see where their work goes.
-        var sides = EditScope.Sides(
-            hasLocalFile: true,
-            canReachMachine: true,
-            signedIn: !string.IsNullOrWhiteSpace(_settings.Current.ApiToken),
-            publishedByThisAccount: report.MyPosition is not null,
-            publishedBySomebodyElse: report.MyPosition is null && report.MatchingOnline is not null);
-
-        var row = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 0,
-            Margin = new Avalonia.Thickness(0, 10, 0, 0),
-        };
-
-        foreach (var side in sides)
-        {
-            var selected = side.Side == chosen && side.Available;
-
-            // ⚠ Keys that exist. Naming one that does not styles nothing while looking deliberate
-            // — the same trap the tab strip carries a warning about.
-            var segment = new Border
-            {
-                Background = Brush(selected ? "AccentSelected" : "SurfaceControl"),
-                BorderBrush = Brush(selected ? "AccentEdge" : "BorderSubtle"),
-                BorderThickness = new Avalonia.Thickness(1),
-                Padding = new Avalonia.Thickness(10, 4),
-                Opacity = side.Available ? 1 : 0.45,
-                Child = new TextBlock
-                {
-                    Text = EditScope.Name(side.Side),
-                    FontSize = 11,
-                    FontWeight = selected ? FontWeight.SemiBold : FontWeight.Normal,
-                    Foreground = Brush(selected ? "TextPrimary" : "TextSecondary"),
-                },
-            };
-
-            ToolTip.SetTip(segment, side.Available
-                ? EditScope.Effect(side.Side)
-                : EditScope.Explain(side.Block));
-
-            row.Children.Add(segment);
-        }
-
-        yield return row;
-
-        // What the chosen side means, spelled out rather than left to a tooltip nobody hovers.
-        yield return new TextBlock
-        {
-            Text = EditScope.Effect(chosen),
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Avalonia.Thickness(0, 4, 0, 0),
-            Foreground = Brush("TextMuted"),
-        };
-    }
-
-    /// <summary>
     /// What a translation file is MADE OF: the stage it has reached, and the bar that shows the
     /// five buckets.
     ///
@@ -3515,14 +3396,12 @@ public partial class MainWindow : Window
     {
         if (local.Counts is not { } counts || !QualityBar.HasSomethingToShow(counts)) yield break;
 
-        // ⚠ The full strip here, one chip per action below — the same two forms the website shows.
-        //
-        // It is not decoration: what it greys depends on the CONTEXT and on the RIGHTS. Signed out,
-        // the published side means nothing. A lineage somebody else leads is not ours to rewrite.
-        // A branch, on the other hand, IS ours — it lives on the server and nobody else may touch
-        // it — so it must not be greyed for the contributors who most need to see where their work
-        // goes.
-        foreach (var control in SideSwitch(report, EditSide.Local)) yield return control;
+        // ⚠ **Whose figures these are, not where a save would land.** The edit-scope switch used to
+        // sit here, and it was wrong twice over: it selected nothing, and it answered a question
+        // nobody was asking of a row of numbers. What a bar needs is its origin — this program
+        // draws the same bar over a published translation in the community list, and the two
+        // diverge the moment somebody plays.
+        yield return ProvenanceTag.For(Provenance.Of(countedFromDisk: true, haveCopyHere: true));
 
         if (QualityBar.StageOf(counts) is { } stage)
         {
@@ -3583,8 +3462,11 @@ public partial class MainWindow : Window
             return;
         }
 
+        // ⚠ Through SetLabel, never `button.Content = …`. These buttons carry the three scope marks
+        // beside their label; assigning a string to Content would throw the marks away and leave the
+        // one thing that says where the action writes missing for the rest of the session.
         button.IsEnabled = false;
-        button.Content = "Opening…";
+        ScopeMark.SetLabel(button, "Opening…");
 
         var runner = new EditSessionRunner(_platform);
         var languages = LocalTranslationProbe.ReadLanguages(report.Game.Path, descriptor);
@@ -3595,7 +3477,7 @@ public partial class MainWindow : Window
         if (session is null)
         {
             button.IsEnabled = true;
-            button.Content = "Edit in browser";
+            ScopeMark.SetLabel(button, "Edit in browser");
             await ConfirmationWindow.TellAsync(this, "The editor could not be opened",
                 runner.LastError ?? "The site did not answer.");
             return;
@@ -3605,7 +3487,7 @@ public partial class MainWindow : Window
         _editSessionStop = new CancellationTokenSource();
 
         button.IsEnabled = true;
-        button.Content = "Close the editor";
+        ScopeMark.SetLabel(button, "Close the editor");
 
         Shell.OpenUrl(session.Url);
 
@@ -3613,12 +3495,12 @@ public partial class MainWindow : Window
         {
             // Reported on the UI thread by Progress<T>; only the button's wording changes here, so
             // an arriving save never rebuilds the card under the user's pointer.
-            button.Content = state.Stage switch
+            ScopeMark.SetLabel(button, state.Stage switch
             {
                 EditSessionStage.Applied => $"Close the editor ({state.AppliedCount} applied)",
                 EditSessionStage.Failed => "Close the editor (a save failed)",
                 _ => "Close the editor",
-            };
+            });
         });
 
         // Followed in the background: the window stays usable while somebody edits in a browser.
@@ -3678,7 +3560,7 @@ public partial class MainWindow : Window
         if (report.MatchingOnline is not { } published) return;
 
         button.IsEnabled = false;
-        button.Content = "Comparing…";
+        ScopeMark.SetLabel(button, "Comparing…");
 
         try
         {
@@ -3775,7 +3657,7 @@ public partial class MainWindow : Window
             var merged = merge.BuildMergedJson();
             if (merged is null) return;
 
-            button.Content = "Writing…";
+            ScopeMark.SetLabel(button, "Writing…");
 
             var result = new TranslationInstaller(_platform).WriteMerged(
                 report.Game, descriptor, merged, remote, published.FileHash,
@@ -3800,8 +3682,9 @@ public partial class MainWindow : Window
         finally
         {
             button.IsEnabled = true;
-            button.Content = report.Sync == SyncDirection.Merge ? "Merge with the published version…"
-                                                                : "Download what changed online…";
+            ScopeMark.SetLabel(button, report.Sync == SyncDirection.Merge
+                ? "Merge with the published version…"
+                : "Download what changed online…");
         }
     }
 
@@ -3940,13 +3823,13 @@ public partial class MainWindow : Window
         }
 
         button.IsEnabled = false;
-        button.Content = "Checking…";
+        ScopeMark.SetLabel(button, "Checking…");
 
         var publisher = new TranslationPublisher();
         var lineage = await publisher.CheckAsync(report.LocalTranslation?.Uuid ?? "", token);
 
         button.IsEnabled = true;
-        button.Content = "Publish…";
+        ScopeMark.SetLabel(button, "Publish…");
 
         if (lineage is null)
         {
@@ -3973,13 +3856,13 @@ public partial class MainWindow : Window
         if (!agreed) return;
 
         button.IsEnabled = false;
-        button.Content = "Publishing…";
+        ScopeMark.SetLabel(button, "Publishing…");
 
         var id = await publisher.PublishAsync(content, token, report.Game.SteamAppId, report.Game.Name,
                                               languages.Source, languages.Target);
 
         button.IsEnabled = true;
-        button.Content = "Publish…";
+        ScopeMark.SetLabel(button, "Publish…");
 
         if (id is null)
         {
@@ -4062,10 +3945,14 @@ public partial class MainWindow : Window
             };
         }
 
-        var actions = new StackPanel
+        // ⚠ A WrapPanel, not a StackPanel. Each button now carries the three scope marks before its
+        // label, which is some forty pixels more per button — a horizontal stack would have run off
+        // the edge of a narrow window with no way to reach the last action.
+        var actions = new WrapPanel
         {
             Orientation = Orientation.Horizontal,
-            Spacing = 8,
+            ItemSpacing = 8,
+            LineSpacing = 8,
             Margin = new Avalonia.Thickness(0, 8, 0, 0),
         };
 
@@ -4073,21 +3960,20 @@ public partial class MainWindow : Window
         //
         // Available whoever the file belongs to: editing changes the copy on this machine and
         // nothing else. Ownership only decides what may be PUBLISHED.
-        var edit = new Button { Content = "Edit in browser", FontSize = 12 };
+        //
+        // ⚠ The marks live INSIDE the button, before the label. A label names the verb and never
+        // the destination — Edit and Publish do not aim at the same place, and nothing but this
+        // says so.
+        var edit = ScopeMark.Marked(EditSide.Local, "Edit in browser");
         edit.Click += async (_, _) => await OpenLocalEditorAsync(report, descriptor, edit);
-        // Editing changes the file here and nothing else — said, not assumed.
-        actions.Children.Add(ActionWithSide(SideChip(EditSide.Local, selected: true), edit));
+        actions.Children.Add(edit);
 
         // ── Publish ───────────────────────────────────────────────────────────
-        var publish = new Button
-        {
-            Content = "Publish…",
-            FontSize = 12,
-            IsEnabled = standing.CanAct,
-        };
-        publish.Click += async (_, _) => await PublishTranslationAsync(report, descriptor, publish);
+        //
         // The one action that leaves this machine.
-        actions.Children.Add(ActionWithSide(SideChip(EditSide.Server, selected: true), publish));
+        var publish = ScopeMark.Marked(EditSide.Server, "Publish…", standing.CanAct);
+        publish.Click += async (_, _) => await PublishTranslationAsync(report, descriptor, publish);
+        actions.Children.Add(publish);
 
         // ── Settle the difference ─────────────────────────────────────────────
         //
@@ -4096,15 +3982,12 @@ public partial class MainWindow : Window
         if (report.Sync is SyncDirection.Merge or SyncDirection.Download
             && report.MatchingOnline is not null)
         {
-            var merge = new Button
-            {
-                Content = report.Sync == SyncDirection.Merge ? "Merge with the published version…"
-                                                             : "Download what changed online…",
-                FontSize = 12,
-            };
-            merge.Click += async (_, _) => await MergeWithPublishedAsync(report, descriptor, merge);
             // Reads the published version, writes here: the pair is what makes it Both.
-            actions.Children.Add(ActionWithSide(SideChip(EditSide.Both, selected: true), merge));
+            var merge = ScopeMark.Marked(EditSide.Both,
+                report.Sync == SyncDirection.Merge ? "Merge with the published version…"
+                                                   : "Download what changed online…");
+            merge.Click += async (_, _) => await MergeWithPublishedAsync(report, descriptor, merge);
+            actions.Children.Add(merge);
         }
 
         yield return actions;

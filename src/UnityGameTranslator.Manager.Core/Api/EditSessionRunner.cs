@@ -1,3 +1,4 @@
+using UnityGameTranslator.Common;
 using UnityGameTranslator.Manager.Core.Detection;
 using UnityGameTranslator.Manager.Core.Install;
 using UnityGameTranslator.Manager.Core.Model;
@@ -5,24 +6,8 @@ using UnityGameTranslator.Manager.Core.Platform;
 
 namespace UnityGameTranslator.Manager.Core.Api;
 
-/// <summary>What the session is doing, for a screen that shows it.</summary>
-public enum EditSessionStage
-{
-    /// <summary>Uploading the file and asking the site for a page.</summary>
-    Opening,
-
-    /// <summary>The page is open somewhere; nothing has been saved yet.</summary>
-    Waiting,
-
-    /// <summary>A save came back and was written into the game.</summary>
-    Applied,
-
-    /// <summary>The page said it was leaving, or the session ended.</summary>
-    Finished,
-
-    /// <summary>Something went wrong; <see cref="EditSessionProgress.Message"/> says what.</summary>
-    Failed,
-}
+// ⚠ EditSessionStage lived here and moved to the socle: the mod names the same five moments, and
+// two lists of states for one session is how they come to describe it differently.
 
 /// <param name="AppliedCount">How many times a save has been written into the game so far.</param>
 public sealed record EditSessionProgress(EditSessionStage Stage, string Message, int AppliedCount);
@@ -49,13 +34,18 @@ public sealed class EditSessionRunner
     /// How often the session is asked whether anything happened. Short enough that a save feels
     /// immediate, long enough that a whole afternoon of editing costs a few hundred requests.
     /// </summary>
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan PollInterval =
+        TimeSpan.FromSeconds(UnityGameTranslator.Common.EditSessions.PollSeconds);
 
     /// <summary>
     /// How often we say we are still here. The site ends an idle session on a sliding window, and
     /// somebody reading a long file without saving is not idle.
     /// </summary>
-    private static readonly TimeSpan KeepAliveInterval = TimeSpan.FromMinutes(5);
+    // From the socle, which derives it from the server's own TTL. It was five minutes here and
+    // ten in the mod — two answers to one question, neither aware of the other nor of the fifteen
+    // minutes the site actually grants a fresh session.
+    private static readonly TimeSpan KeepAliveInterval =
+        TimeSpan.FromSeconds(UnityGameTranslator.Common.EditSessions.KeepAliveSeconds);
 
     /// <summary>
     /// How long to keep following after the page says it is leaving.
@@ -63,7 +53,10 @@ public sealed class EditSessionRunner
     /// ⚠ Not zero, on purpose: a refresh and a navigation both announce a departure, and ending the
     /// session on the first one would close the editor under somebody who pressed F5.
     /// </summary>
-    private static readonly TimeSpan DepartureGrace = TimeSpan.FromSeconds(45);
+    // Ninety seconds, not forty-five: the mod's figure won, because ending too early leaves
+    // somebody's next save with nowhere to land, while waiting too long only holds a slot.
+    private static readonly TimeSpan DepartureGrace =
+        TimeSpan.FromSeconds(UnityGameTranslator.Common.EditSessions.BrowserGraceSeconds);
 
     private readonly EditSessionClient _client;
     private readonly TranslationInstaller _installer;

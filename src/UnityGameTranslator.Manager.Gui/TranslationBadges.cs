@@ -22,7 +22,7 @@ public static class TranslationBadges
     /// nothing else — which is exactly how "Your file" shipped unreadable, on a background that
     /// was never a colour anybody chose.
     /// </summary>
-    private static string Colour(BadgeTone tone) => tone switch
+    public static string ToneKey(BadgeTone tone) => tone switch
     {
         BadgeTone.Good => "StatusSuccess",
         BadgeTone.Notice => "StatusInfo",
@@ -45,7 +45,7 @@ public static class TranslationBadges
             {
                 Text = badge.Text,
                 FontSize = 11,
-                Foreground = Palette.Of(Colour(badge.Tone)),
+                Foreground = Palette.Of(ToneKey(badge.Tone)),
             },
         };
 

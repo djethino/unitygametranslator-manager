@@ -3947,14 +3947,6 @@ public partial class MainWindow : Window
             Foreground = Brush("TextPrimary"),
         });
 
-        row.Children.Add(new TextBlock
-        {
-            Text = published.VoteCount == 1 ? "· 1 vote" : $"· {published.VoteCount} votes",
-            FontSize = 12,
-            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-            Foreground = Brush("TextMuted"),
-        });
-
         // ⚠ Counts from the local file, not from the published entry: the question is whether THIS
         // machine has run the translation, and the published figures describe somebody else's copy.
         var metText = report.LocalTranslation?.Counts is { } counts
@@ -3964,16 +3956,40 @@ public partial class MainWindow : Window
         var block = Voting.Rating(
             signedIn: !string.IsNullOrWhiteSpace(_settings.Current.ApiToken),
             published: true,
+
+            // ⚠ Only the Main's owner is refused. Holding a BRANCH of this lineage does not make
+            // the Main yours — it is public and it belongs to somebody else, so the server allows
+            // it, and refusing here would silence the people who have worked with it most.
             isYourOwn: report.MyPosition is { IsMain: true },
             hasUsedIt: metText);
 
-        if (block == RateBlock.None)
+        // ── The same picture as the site and the game: ▲ +47 ▼ ────────────────
+        //
+        // ⚠ Two arrows around a signed count, and the arrow YOU cast is the one that is filled.
+        // That filled arrow is the entire "you have already voted" signal, and it has to be the
+        // same picture in the three products — not a tick, not a word. An earlier version here
+        // said "Good"/"Poor" with a tick, which was a fourth vocabulary for a control that exists
+        // twice already.
+        var votable = block == RateBlock.None;
+
+        row.Children.Add(votable
+            ? RateArrow(report.Game, published, +1)
+            : DeadArrow(Voting.Up, Voting.Explain(block)));
+
+        row.Children.Add(new TextBlock
         {
-            row.Children.Add(RateButton(report.Game, published, +1, "Good",
-                                        "This translation is good"));
-            row.Children.Add(RateButton(report.Game, published, -1, "Poor",
-                                        "This translation needs work"));
-        }
+            Text = Voting.CountLabel(published.VoteCount),
+            FontSize = 13,
+            FontWeight = FontWeight.SemiBold,
+            MinWidth = 34,
+            TextAlignment = TextAlignment.Center,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Foreground = Brush(TranslationBadges.ToneKey(Voting.CountTone(published.VoteCount))),
+        });
+
+        row.Children.Add(votable
+            ? RateArrow(report.Game, published, -1)
+            : DeadArrow(Voting.Down, Voting.Explain(block)));
 
         yield return row;
 
@@ -3990,21 +4006,48 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>One arrow. Shows what this account already said, so a second click withdraws it.</summary>
-    private Button RateButton(GameInstall game, OnlineTranslation published, int value,
-                              string label, string tip)
+    /// <summary>
+    /// An arrow you cannot press, with the reason on it.
+    ///
+    /// ⚠ Drawn rather than dropped, exactly as the website does for an author looking at their own
+    /// translation: the control keeps its shape so the row does not change size between two people
+    /// looking at the same game, and hovering says why it is inert.
+    /// </summary>
+    private Control DeadArrow(string mark, string why)
     {
-        var mine = published.UserVote == value;
-
-        var button = new Button
+        var arrow = new TextBlock
         {
-            Content = mine ? label + " ✓" : label,
-            FontSize = 11,
-            Padding = new Avalonia.Thickness(9, 3),
-            Foreground = Brush(mine ? "AccentSoft" : "TextSecondary"),
+            Text = mark,
+            FontSize = 13,
+            Padding = new Avalonia.Thickness(6, 2),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Foreground = Brush("TextMuted"),
+            Opacity = 0.45,
         };
 
-        ToolTip.SetTip(button, mine ? "Click again to withdraw your rating" : tip);
+        if (why.Length > 0) ToolTip.SetTip(arrow, why);
+        return arrow;
+    }
+
+    /// <summary>
+    /// One arrow, filled when it is the one this account cast.
+    ///
+    /// 🔴 **The filled arrow IS the "you have already voted" signal**, and it is the same picture
+    /// on the website and in the game. Not a tick, not a word: somebody who learned it in a browser
+    /// has to recognise it here without being told. Two arrows are never filled at once, because
+    /// nobody can vote twice — the server keeps one vote per person and replaces it.
+    /// </summary>
+    private Button RateArrow(GameInstall game, OnlineTranslation published, int value)
+    {
+        var button = new Button
+        {
+            Content = value > 0 ? Voting.Up : Voting.Down,
+            FontSize = 13,
+            Padding = new Avalonia.Thickness(6, 1),
+            Foreground = Brush(TranslationBadges.ToneKey(Voting.ArrowTone(value, published.UserVote))),
+        };
+
+        ToolTip.SetTip(button, Voting.ArrowTip(value, published.UserVote));
 
         button.Click += async (_, _) =>
         {
@@ -4067,7 +4110,7 @@ public partial class MainWindow : Window
             {
                 Text = sync switch
                 {
-                    SyncDirection.InSync => "In step with the published version.",
+                    SyncDirection.InSync => "Up to date with the published version.",
                     SyncDirection.Download => "The published version has moved on. Nothing of yours "
                                             + "is at risk — you have no unpublished changes here.",
                     SyncDirection.Upload => "You have changes here that the published version does not.",
@@ -4120,7 +4163,7 @@ public partial class MainWindow : Window
         // nothing to publish". A greyed control with its reason under it says which.
         var nothingToSend = report.Sync switch
         {
-            SyncDirection.InSync => "Already in step with the published version — nothing to send.",
+            SyncDirection.InSync => "Already up to date with the published version — nothing to send.",
 
             // Behind means the site moved and this file did not. Publishing would push older
             // content over newer, which is not an update, it is a rollback nobody asked for.

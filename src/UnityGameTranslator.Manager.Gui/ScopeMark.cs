@@ -30,7 +30,7 @@ public static class ScopeMark
     /// <summary>
     /// The three marks, with <paramref name="side"/> lit and the other two dimmed.
     /// </summary>
-    public static Control For(EditSide side)
+    public static Control For(EditSide side, bool enabled = true)
     {
         var row = new StackPanel
         {
@@ -46,8 +46,18 @@ public static class ScopeMark
                                                  publishedBySomebodyElse: false))
         {
             var lit = standing.Side == side;
-            row.Children.Add(Glyphs.Sized(Draw(standing.Side, lit ? "AccentSoft" : "TextMuted"),
-                                          MarkSize));
+
+            // ⚠ **On a button nobody can press, the lit mark drops its colour.** The accent is
+            // there to catch an eye, and catching one for a dead control is exactly wrong — a
+            // disabled button was reading as the brightest thing in the row. It stays
+            // recognisable as the lit one, by being LIGHTER than the other two rather than a
+            // different hue: which side the action aims at is still worth knowing when you are
+            // reading why you cannot take it.
+            var colour = lit
+                ? (enabled ? "AccentSoft" : "TextSecondary")
+                : "TextMuted";
+
+            row.Children.Add(Glyphs.Sized(Draw(standing.Side, colour), MarkSize));
         }
 
         ToolTip.SetTip(row, EditScope.Effect(side));
@@ -69,7 +79,7 @@ public static class ScopeMark
             VerticalAlignment = VerticalAlignment.Center,
         };
 
-        row.Children.Add(For(side));
+        row.Children.Add(For(side, enabled));
         row.Children.Add(new Border
         {
             Width = 1,

@@ -146,11 +146,24 @@ public static class ModdabilityProbe
         return null;
     }
 
+    /// <summary>
+    /// Names the anti-cheat behind a marker.
+    ///
+    /// ⚠ **BattlEye was matched on the two letters "be", anywhere in the name.** It happens to be
+    /// right today because the only names reaching here are the two lists above — but the lists are
+    /// where somebody adds a marker, and this is a file nobody would think to re-read while doing
+    /// it. "Denuvo_beta", "SafeBoot", any future entry with those letters in it, and the tool tells
+    /// somebody their game is protected by BattlEye.
+    ///
+    /// It is matched on its real markers now. Whatever is not recognised is returned as it was
+    /// found, which names something true rather than something invented.
+    /// </summary>
     private static string Describe(string marker)
     {
         var lower = marker.ToLowerInvariant();
         if (lower.Contains("easyanticheat")) return "EasyAntiCheat";
-        if (lower.Contains("be")) return "BattlEye";
+        if (lower.Contains("battleye") || lower.StartsWith("beservice", StringComparison.Ordinal)
+            || lower.StartsWith("beclient", StringComparison.Ordinal)) return "BattlEye";
         if (lower.Contains("protected_game")) return "Anti-cheat launcher";
         return marker;
     }

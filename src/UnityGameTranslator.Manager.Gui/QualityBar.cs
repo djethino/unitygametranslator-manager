@@ -156,7 +156,15 @@ public sealed class QualityBar : Border
     /// mod works; calling that a poor grade tells a newcomer their starting point is worthless.
     /// Null when it is too early to say anything, and silence is then the honest answer.
     /// </summary>
-    public static string? StageOf(TagCounts counts) => counts.Stage switch
+    public static string? StageOf(TagCounts counts) => StageOf(counts.Stage);
+
+    /// <summary>
+    /// The same words from the stage itself, for callers that already hold one.
+    ///
+    /// ⚠ One body, two entry points. Two copies of this mapping would be two chances to call the
+    /// same file "fully reviewed" here and something else three lines lower.
+    /// </summary>
+    public static string? StageOf(ReviewStage? stage) => stage switch
     {
         ReviewStage.Reviewed => "Fully reviewed",
         ReviewStage.Advanced => "Review well under way",

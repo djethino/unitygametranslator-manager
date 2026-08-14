@@ -3396,12 +3396,12 @@ public partial class MainWindow : Window
     {
         if (local.Counts is not { } counts || !QualityBar.HasSomethingToShow(counts)) yield break;
 
-        // ⚠ **Whose figures these are, not where a save would land.** The edit-scope switch used to
-        // sit here, and it was wrong twice over: it selected nothing, and it answered a question
-        // nobody was asking of a row of numbers. What a bar needs is its origin — this program
-        // draws the same bar over a published translation in the community list, and the two
-        // diverge the moment somebody plays.
-        yield return ProvenanceTag.For(Provenance.Of(countedFromDisk: true, haveCopyHere: true));
+        // ⚠ **What this translation IS, before what it is made of.** Two earlier attempts sat here
+        // and both answered the wrong question: the edit-scope switch, which aims an action rather
+        // than describing a file, then a tag about where the figures were measured, which nobody
+        // needs. What was missing is what the website has always shown on its cards — published or
+        // not, Main or branch, up to date or not, reviewed or not, and what players made of it.
+        yield return TranslationBadges.ForLocal(report, counts);
 
         if (QualityBar.StageOf(counts) is { } stage)
         {
@@ -3971,7 +3971,33 @@ public partial class MainWindow : Window
         // ── Publish ───────────────────────────────────────────────────────────
         //
         // The one action that leaves this machine.
-        var publish = ScopeMark.Marked(EditSide.Server, "Publish…", standing.CanAct);
+        //
+        // ⚠ **Two refusals, not one.** The account may not be allowed to act (standing.CanAct),
+        // and separately there may be nothing to send. Offering a live Publish on a file already
+        // in step invites somebody to re-send what is already there; the merge button beside it
+        // has always followed that rule and this one did not.
+        //
+        // ⚠ Greyed rather than hidden, and that is a choice: Publish is the product's main act,
+        // and one that vanishes reads as "I have lost the right to publish" rather than "there is
+        // nothing to publish". A greyed control with its reason under it says which.
+        var nothingToSend = report.Sync switch
+        {
+            SyncDirection.InSync => "Already in step with the published version — nothing to send.",
+
+            // Behind means the site moved and this file did not. Publishing would push older
+            // content over newer, which is not an update, it is a rollback nobody asked for.
+            SyncDirection.Download => "The published version is ahead of this file. Take what "
+                                    + "changed first.",
+
+            // Both moved. Publishing now would drop whatever the other side gained.
+            SyncDirection.Merge => "Both sides have moved. Settle the difference before publishing, "
+                                 + "or what is online is overwritten.",
+
+            _ => null,
+        };
+
+        var publish = ScopeMark.Marked(EditSide.Server, "Publish…",
+                                       standing.CanAct && nothingToSend is null);
         publish.Click += async (_, _) => await PublishTranslationAsync(report, descriptor, publish);
         actions.Children.Add(publish);
 
@@ -4006,7 +4032,19 @@ public partial class MainWindow : Window
                 Foreground = Brush(standing.Kind == ServerStandingKind.SignedOut ? "TextMuted" : "StatusWarning"),
             };
         }
-
+        else if (nothingToSend is { } why)
+        {
+            // Only when the account COULD have acted: two refusals stacked would leave somebody
+            // fixing the second while the first still stands.
+            yield return new TextBlock
+            {
+                Text = why,
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Avalonia.Thickness(0, 4, 0, 0),
+                Foreground = Brush("TextMuted"),
+            };
+        }
     }
 
     /// <summary>

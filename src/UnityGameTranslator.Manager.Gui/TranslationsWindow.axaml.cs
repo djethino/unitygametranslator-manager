@@ -374,8 +374,8 @@ public sealed class TranslationsWindow : Window
         _list.Children.Clear();
 
         var found = _report.Game.SteamAppId is { } steamId
-            ? await _api.SearchBySteamIdAsync(steamId, target, source)
-            : await _api.SearchByNameAsync(_report.Game.Name, target, source);
+            ? await _api.SearchBySteamIdAsync(steamId, target, source, ApiToken())
+            : await _api.SearchByNameAsync(_report.Game.Name, target, source, ApiToken());
 
         _searching.IsVisible = false;
 

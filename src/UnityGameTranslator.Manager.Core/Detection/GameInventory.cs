@@ -20,11 +20,23 @@ public sealed class GameInventory
     private readonly LoaderCatalogDocument _catalog;
     private readonly CatalogApiClient? _api;
 
-    public GameInventory(IPlatform platform, LoaderCatalogDocument catalog, CatalogApiClient? api = null)
+    /// <summary>
+    /// The account this tool is signed in as, when it is — sent with the community search ONLY so
+    /// the answer can carry this account's own vote on each translation.
+    ///
+    /// ⚠ Not permission: the listing is public and identical without it. Without it the arrows on
+    /// the game card cannot show what somebody already chose, so a second click withdraws the vote
+    /// they meant to confirm.
+    /// </summary>
+    private readonly string? _apiToken;
+
+    public GameInventory(IPlatform platform, LoaderCatalogDocument catalog, CatalogApiClient? api = null,
+                         string? apiToken = null)
     {
         _platform = platform;
         _catalog = catalog;
         _api = api;
+        _apiToken = apiToken;
         Folders = new CustomFolders(platform);
         Overrides = new GameOverrides(platform);
     }
@@ -173,8 +185,8 @@ public sealed class GameInventory
         if (!offline && _api is not null && (game.SteamAppId is not null || !string.IsNullOrWhiteSpace(game.Name)))
         {
             report.OnlineTranslations = game.SteamAppId is not null
-                ? await _api.SearchBySteamIdAsync(game.SteamAppId, ct: ct).ConfigureAwait(false)
-                : await _api.SearchByNameAsync(game.Name, ct: ct).ConfigureAwait(false);
+                ? await _api.SearchBySteamIdAsync(game.SteamAppId, apiToken: _apiToken, ct: ct).ConfigureAwait(false)
+                : await _api.SearchByNameAsync(game.Name, apiToken: _apiToken, ct: ct).ConfigureAwait(false);
 
             // "No translation exists" and "the search failed" look identical to a user, and
             // only one of them is our problem. Keep them apart.

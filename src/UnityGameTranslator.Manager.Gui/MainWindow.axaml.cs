@@ -389,7 +389,11 @@ public partial class MainWindow : Window
         // refresh button that refreshes some things.
         _releases.Forget();
 
-        _inventory = new GameInventory(_platform, _catalog, new CatalogApiClient())
+        // ⚠ The token goes with the search, and only so the answer carries this account's own vote.
+        // Without it every arrow drew neutral whatever somebody had chosen, so a second click
+        // withdrew the vote they meant to confirm.
+        _inventory = new GameInventory(_platform, _catalog, new CatalogApiClient(),
+                                       _settings.Current.ApiToken)
         {
             Lineages = _lineages,
             Releases = _settings.Current.OnlineMode ? _releases : null,

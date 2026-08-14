@@ -1,3 +1,4 @@
+using System.Net.Http;
 using System.Text.Json;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Net;
@@ -5,12 +6,16 @@ using UnityGameTranslator.Manager.Core.Net;
 namespace UnityGameTranslator.Manager.Core.Api;
 
 /// <summary>
-/// Talks to the community site, anonymously and read-only.
+/// Talks to the community site, read-only.
 ///
 /// This is the part no other installer can offer: Steam hands us the app id for free, and the
 /// public search endpoint turns it into "this game already has a French translation by someone".
-/// No token, no account, no identifier of any kind is sent — the endpoint is public and rate
-/// limited, and a search that fails simply means we show nothing.
+/// The endpoint is public, rate limited, and a search that fails simply means we show nothing.
+///
+/// ⚠ **A token is sent only when this tool has one, and only for `user_vote`** — never for
+/// permission. Nothing here is refused without it and no result changes; what the server cannot do
+/// for an unnamed caller is say whether THIS account has already rated each translation, and
+/// without that the arrows cannot show what somebody already chose.
 /// </summary>
 public sealed class CatalogApiClient
 {
@@ -51,9 +56,19 @@ public sealed class CatalogApiClient
     /// top fifty French.
     /// </param>
     /// <param name="sourceLanguage">Same, for the language translated FROM.</param>
+    /// <param name="apiToken">
+    /// 🔴 **Optional, and NOT for permission — for `user_vote`.** The listing is public and answers
+    /// perfectly well without a name; what it cannot do without one is say whether YOU have already
+    /// rated each translation. `routes/api.php` states it outright: "the caller sends one so the
+    /// response can carry that user's own vote."
+    ///
+    /// ⚠ Leaving it out is invisible until somebody votes. The arrows then draw in the neutral
+    /// tone whatever this account did, so a person who has already voted is shown an unvoted
+    /// control, clicks it, and WITHDRAWS the vote they meant to confirm. That is what happened.
+    /// </param>
     public async Task<IReadOnlyList<OnlineTranslation>> SearchBySteamIdAsync(
         string steamAppId, string? targetLanguage = null, string? sourceLanguage = null,
-        CancellationToken ct = default)
+        string? apiToken = null, CancellationToken ct = default)
     {
         LastError = null;
         if (string.IsNullOrWhiteSpace(steamAppId)) return Array.Empty<OnlineTranslation>();
@@ -63,7 +78,7 @@ public sealed class CatalogApiClient
 
         try
         {
-            var json = await _http.GetStringAsync(url, ct).ConfigureAwait(false);
+            var json = await GetAsync(url, apiToken, ct).ConfigureAwait(false);
             var results = Parse(json, out var parseError);
             if (parseError is not null) LastError = parseError;
             return results;
@@ -73,6 +88,28 @@ public sealed class CatalogApiClient
             LastError = $"{ex.GetType().Name}: {ex.Message}";
             return Array.Empty<OnlineTranslation>();
         }
+    }
+
+    /// <summary>
+    /// A public GET that carries a name when we have one.
+    ///
+    /// ⚠ Not authentication: nothing here is refused without it. It only lets the server add what
+    /// it can only know for a named caller — this account's own vote on each translation.
+    /// </summary>
+    private async Task<string> GetAsync(string url, string? apiToken, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+
+        if (!string.IsNullOrWhiteSpace(apiToken))
+        {
+            request.Headers.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiToken);
+        }
+
+        using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+
+        return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
     }
 
     /// <summary>
@@ -87,7 +124,7 @@ public sealed class CatalogApiClient
     /// </summary>
     public async Task<IReadOnlyList<OnlineTranslation>> SearchByNameAsync(
         string gameName, string? targetLanguage = null, string? sourceLanguage = null,
-        CancellationToken ct = default)
+        string? apiToken = null, CancellationToken ct = default)
     {
         LastError = null;
         var name = gameName.Trim();
@@ -98,7 +135,7 @@ public sealed class CatalogApiClient
 
         try
         {
-            var json = await _http.GetStringAsync(url, ct).ConfigureAwait(false);
+            var json = await GetAsync(url, apiToken, ct).ConfigureAwait(false);
             var results = Parse(json, out var parseError);
             if (parseError is not null) LastError = parseError;
             return results;

@@ -228,12 +228,19 @@
       At comparable specificity Avalonia applies the last matching style, so this is what keeps a
       class — primary, play, filter — from dressing up a button nobody can press.
 
-      ⚠ BorderThickness stays 1 with a transparent brush. Dropping it to 0 would resize the button
-      as it becomes available again, moving whatever sits beside it under the pointer.
+      ⚠ BorderThickness stays 1. Dropping it to 0 would resize the button as it becomes available
+      again, moving whatever sits beside it under the pointer.
+
+      ⚠ AND THE BRUSH STAYS VISIBLE. It used to be transparent, which was survivable while a button
+      was a word: the word alone still read as a button. It stopped being survivable when buttons
+      started carrying the scope marks before their label — with no outline, the icons float beside
+      the text belonging to nothing, and the whole thing reads as debris rather than as one control
+      that cannot be pressed. A quiet edge says "this is a control"; the muted text and the opacity
+      say "not now". Those are two different statements and both are needed.
     -->
     <Style Selector="Button:disabled /template/ ContentPresenter">
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtle}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
       <Setter Property="Opacity" Value="0.5" />

@@ -105,6 +105,14 @@ public sealed class OnlineTranslation
     [JsonPropertyName("line_count")] public int LineCount { get; set; }
     [JsonPropertyName("download_count")] public int DownloadCount { get; set; }
     [JsonPropertyName("vote_count")] public int VoteCount { get; set; }
+
+    /// <summary>
+    /// This account's own vote: 1, -1, or null for none.
+    ///
+    /// ⚠ Only present when the request carried a token. Null therefore means "not voted OR not
+    /// asked as anybody" — the caller knows which, this field does not.
+    /// </summary>
+    [JsonPropertyName("user_vote")] public int? UserVote { get; set; }
     [JsonPropertyName("status")] public string? Status { get; set; }
     [JsonPropertyName("notes")] public string? Notes { get; set; }
 

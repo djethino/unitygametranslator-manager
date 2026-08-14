@@ -3898,6 +3898,142 @@ public partial class MainWindow : Window
     /// on Home it follows two lines describing the very same file, where a title would only
     /// announce what has just been said.
     /// </param>
+    /// <summary>
+    /// Whose translation this is, and the one thing a player can give back for it.
+    ///
+    /// ⚠ **Written because using somebody's work said nothing about them.** Running a downloaded
+    /// translation, the tool named no author anywhere — the person whose hours you are playing on
+    /// was a hash in a lineage. The name comes first for that reason, before the arrows.
+    ///
+    /// ⚠ **Who may rate is <see cref="Voting"/>'s answer, restated from the server's own rules** so
+    /// an arrow is never drawn for a request that would come back 403. The refusal is always
+    /// written out: a dead arrow with no reason is how somebody decides the tool is broken.
+    ///
+    /// 🔴 **One rule is weaker here than in the mod, and it is stated rather than hidden.** The mod
+    /// only offers the arrows after it has actually put translated lines on screen this session —
+    /// a rating from somebody who never ran the translation measures nothing. That counter is a
+    /// runtime fact the manager cannot see. The nearest honest substitute is used: the local file
+    /// has met text in game at some point, which proves the game HAS been played with it, without
+    /// proving it was played recently.
+    /// </summary>
+    private IEnumerable<Control> PublishedBy(GameReport report)
+    {
+        if (report.MatchingOnline is not { } published) yield break;
+        if (string.IsNullOrWhiteSpace(published.Author)) yield break;
+
+        var row = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Margin = new Avalonia.Thickness(0, 8, 0, 0),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        };
+
+        row.Children.Add(new TextBlock
+        {
+            Text = "Published by",
+            FontSize = 12,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Foreground = Brush("TextMuted"),
+        });
+
+        // The name itself louder than the label around it: it is the part worth reading.
+        row.Children.Add(new TextBlock
+        {
+            Text = published.Author,
+            FontSize = 13,
+            FontWeight = FontWeight.SemiBold,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Foreground = Brush("TextPrimary"),
+        });
+
+        row.Children.Add(new TextBlock
+        {
+            Text = published.VoteCount == 1 ? "· 1 vote" : $"· {published.VoteCount} votes",
+            FontSize = 12,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Foreground = Brush("TextMuted"),
+        });
+
+        // ⚠ Counts from the local file, not from the published entry: the question is whether THIS
+        // machine has run the translation, and the published figures describe somebody else's copy.
+        var metText = report.LocalTranslation?.Counts is { } counts
+                      && (counts.Captured > 0 || counts.Human > 0 || counts.Ai > 0
+                          || counts.Validated > 0);
+
+        var block = Voting.Rating(
+            signedIn: !string.IsNullOrWhiteSpace(_settings.Current.ApiToken),
+            published: true,
+            isYourOwn: report.MyPosition is { IsMain: true },
+            hasUsedIt: metText);
+
+        if (block == RateBlock.None)
+        {
+            row.Children.Add(RateButton(report.Game, published, +1, "Good",
+                                        "This translation is good"));
+            row.Children.Add(RateButton(report.Game, published, -1, "Poor",
+                                        "This translation needs work"));
+        }
+
+        yield return row;
+
+        if (Voting.Explain(block) is { Length: > 0 } why)
+        {
+            yield return new TextBlock
+            {
+                Text = why,
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Avalonia.Thickness(0, 2, 0, 0),
+                Foreground = Brush("TextMuted"),
+            };
+        }
+    }
+
+    /// <summary>One arrow. Shows what this account already said, so a second click withdraws it.</summary>
+    private Button RateButton(GameInstall game, OnlineTranslation published, int value,
+                              string label, string tip)
+    {
+        var mine = published.UserVote == value;
+
+        var button = new Button
+        {
+            Content = mine ? label + " ✓" : label,
+            FontSize = 11,
+            Padding = new Avalonia.Thickness(9, 3),
+            Foreground = Brush(mine ? "AccentSoft" : "TextSecondary"),
+        };
+
+        ToolTip.SetTip(button, mine ? "Click again to withdraw your rating" : tip);
+
+        button.Click += async (_, _) =>
+        {
+            button.IsEnabled = false;
+
+            // ⚠ One instance, kept: LastError lives on it. Building a second client to read the
+            // error would read a fresh object that never made a call.
+            var client = new VoteClient();
+            var outcome = await client.CastAsync(published.Id, value,
+                                                 _settings.Current.ApiToken ?? "");
+
+            if (outcome is null)
+            {
+                button.IsEnabled = true;
+                await ConfirmationWindow.TellAsync(this, "The rating was not recorded",
+                    client.LastError ?? "The site did not answer.");
+                return;
+            }
+
+            // Written back onto the entry the card was drawn from, then redrawn: the count and the
+            // tick both come from the server's answer rather than from what we assumed it would be.
+            published.VoteCount = outcome.Count;
+            published.UserVote = outcome.Mine;
+            await RereadAsync(game);
+        };
+
+        return button;
+    }
+
     private IEnumerable<Control> TranslationWorkbench(GameReport report, bool heading = true)
     {
         // Nothing here to work on. The community list above is the whole offer in that case.
@@ -3944,6 +4080,8 @@ public partial class MainWindow : Window
                 Foreground = Brush(sync == SyncDirection.Merge ? "StatusWarning" : "TextSecondary"),
             };
         }
+
+        foreach (var control in PublishedBy(report)) yield return control;
 
         // ⚠ A WrapPanel, not a StackPanel. Each button now carries the three scope marks before its
         // label, which is some forty pixels more per button — a horizontal stack would have run off

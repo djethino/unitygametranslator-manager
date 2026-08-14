@@ -3458,7 +3458,21 @@ public partial class MainWindow : Window
     {
         if (_editSession is not null)
         {
+            // ⚠ **Say something IMMEDIATELY.** Everything visible after this click happens in the
+            // background follower's cleanup, and until it gets there the screen was identical to
+            // before — click, nothing, click again, still nothing. A control that does not
+            // acknowledge a press is indistinguishable from a broken one.
+            button.IsEnabled = false;
+            ScopeMark.SetLabel(button, "Stopping…");
+
             await StopLocalEditorAsync();
+
+            // ⚠ And the state is put right HERE rather than trusted to the follower. That cleanup
+            // is a fire-and-forget task: if it has already died — an error path, a session the
+            // site dropped — nothing ever resets _editSession, the button keeps offering to stop
+            // a session that is gone, and every further click cancels an already-cancelled token,
+            // which is precisely "clicking does nothing".
+            await StrandedEditorGuard(button);
             return;
         }
 
@@ -3487,7 +3501,7 @@ public partial class MainWindow : Window
         _editSessionStop = new CancellationTokenSource();
 
         button.IsEnabled = true;
-        ScopeMark.SetLabel(button, "Close the editor");
+        ScopeMark.SetLabel(button, "Stop browser session");
 
         Shell.OpenUrl(session.Url);
 
@@ -3497,9 +3511,9 @@ public partial class MainWindow : Window
             // an arriving save never rebuilds the card under the user's pointer.
             ScopeMark.SetLabel(button, state.Stage switch
             {
-                EditSessionStage.Applied => $"Close the editor ({state.AppliedCount} applied)",
-                EditSessionStage.Failed => "Close the editor (a save failed)",
-                _ => "Close the editor",
+                EditSessionStage.Applied => $"Stop browser session ({state.AppliedCount} applied)",
+                EditSessionStage.Failed => "Stop browser session (a save failed)",
+                _ => "Stop browser session",
             });
         });
 
@@ -3541,6 +3555,42 @@ public partial class MainWindow : Window
 
         try { await stop.CancelAsync(); }
         catch (ObjectDisposedException) { /* the follower finished first and cleaned up */ }
+    }
+
+    /// <summary>
+    /// Waits briefly for the follower to tidy up, and tidies up itself if it does not.
+    ///
+    /// 🔴 **The follower's cleanup runs in a fire-and-forget task, so nothing guarantees it runs.**
+    /// It resets the state in a `finally`, which covers the ordinary paths — but a task nobody
+    /// awaits has no owner: if it has already ended for a reason the window never learned about,
+    /// `_editSession` stays set forever. The button then keeps offering to stop a session that is
+    /// gone, and every click cancels a token that is already cancelled — a control that does
+    /// nothing, which is exactly what was reported.
+    ///
+    /// ⚠ This is NOT a try/catch hiding a fault. The window OWNS what it displays; making that
+    /// display depend on an unowned task was the fault, and this is where the ownership goes back.
+    /// The wait is short and bounded because the follower normally wins the race — it is only the
+    /// fallback that matters.
+    /// </summary>
+    private async Task StrandedEditorGuard(Button button)
+    {
+        for (var waited = 0; waited < 20 && _editSession is not null; waited++)
+            await Task.Delay(100);
+
+        if (_editSession is null) return;
+
+        // The follower did not come back. Say so rather than leaving a dead button: whatever
+        // happened to it, the session on the site is no longer being followed from here.
+        _editSession = null;
+        _editSessionStop?.Dispose();
+        _editSessionStop = null;
+
+        button.IsEnabled = true;
+        ScopeMark.SetLabel(button, "Edit in browser");
+
+        await ConfirmationWindow.TellAsync(this, "The browser session was dropped",
+            "It is no longer followed from here, so saves made in the browser will not reach the "
+            + "game. If the page is still open, close it.");
     }
 
     /// <summary>

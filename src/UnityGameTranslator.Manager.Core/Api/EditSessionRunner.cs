@@ -175,7 +175,7 @@ public sealed class EditSessionRunner
                 {
                     // A session the site no longer knows is over; anything else is a hiccup worth
                     // retrying on the next tick rather than a reason to abandon the editor.
-                    if (_client.LastError?.Contains("expired", StringComparison.OrdinalIgnoreCase) == true)
+                    if (_client.SessionGone)
                     {
                         progress?.Report(new EditSessionProgress(EditSessionStage.Finished,
                             "The edit session has ended.", applied));
@@ -274,6 +274,19 @@ public sealed class EditSessionRunner
         var session = Current;
         Current = null;
         if (session is null) return;
+
+        // 🔴 **Drained before it is deleted.** Ending a session used to throw away whatever had
+        // been saved in the browser since the last tick: somebody clicked Save on the site and
+        // closed the editor a second later, and their work was gone with nothing said.
+        //
+        // ⚠ The inversion this removes is the telling part: a session that survived a CRASH was
+        // picked up again at the next start and applied, while one closed properly was deleted
+        // with its last save inside. Quitting cleanly was worse than being killed.
+        //
+        // Failure here is not allowed to prevent the close — a session left open on the site is a
+        // slot held until it expires, for everybody.
+        try { await ApplyAsync(session.ModKey, ct).ConfigureAwait(false); }
+        catch { /* reported through LastError by ApplyAsync; the close must still happen */ }
 
         await _client.CloseAsync(session.ModKey, ct).ConfigureAwait(false);
     }

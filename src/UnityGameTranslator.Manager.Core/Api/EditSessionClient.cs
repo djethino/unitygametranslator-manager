@@ -161,9 +161,20 @@ public sealed class EditSessionClient
     /// separate call on purpose, so a window nobody has looked at since yesterday stops holding a
     /// slot on the site.
     /// </summary>
+    /// <summary>
+    /// The site no longer has this session: it expired, or somebody closed it there.
+    ///
+    /// 🔴 **A flag, because the caller used to look for the word "expired" in LastError.** That
+    /// message is written for a person to read; matching on it couples the end of a session to a
+    /// turn of phrase, and rewording it — a translation, a softer sentence — would silently turn
+    /// "the session is over" into "a hiccup, try again in three seconds", for ever.
+    /// </summary>
+    public bool SessionGone { get; private set; }
+
     public async Task<EditSessionState?> PollAsync(string modKey, CancellationToken ct = default)
     {
         LastError = null;
+        SessionGone = false;
 
         try
         {
@@ -172,7 +183,8 @@ public sealed class EditSessionClient
 
             if (!response.IsSuccessStatusCode)
             {
-                LastError = response.StatusCode == System.Net.HttpStatusCode.NotFound
+                SessionGone = response.StatusCode == System.Net.HttpStatusCode.NotFound;
+                LastError = SessionGone
                     ? "That edit session has expired or was closed."
                     : $"The server answered {(int)response.StatusCode}.";
                 return null;
@@ -218,7 +230,8 @@ public sealed class EditSessionClient
 
             if (!response.IsSuccessStatusCode)
             {
-                LastError = response.StatusCode == System.Net.HttpStatusCode.NotFound
+                SessionGone = response.StatusCode == System.Net.HttpStatusCode.NotFound;
+                LastError = SessionGone
                     ? "That edit session has expired or was closed."
                     : $"The server answered {(int)response.StatusCode}.";
                 return null;

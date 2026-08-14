@@ -3581,7 +3581,16 @@ public partial class MainWindow : Window
         for (var waited = 0; waited < 20 && _editSession is not null; waited++)
             await Task.Delay(100);
 
-        if (_editSession is null) return;
+        if (_editSession is null)
+        {
+            // ⚠ **Put the button back HERE, whatever the follower did.** It was left to the card
+            // being rebuilt, which does happen — except when it does not, and then "Stopping…" is
+            // what the window says for the rest of the session. A control that has finished its
+            // work says so itself rather than hoping somebody else redraws it.
+            button.IsEnabled = true;
+            ScopeMark.SetLabel(button, "Edit in browser");
+            return;
+        }
 
         // The follower did not come back. Say so rather than leaving a dead button: whatever
         // happened to it, the session on the site is no longer being followed from here.

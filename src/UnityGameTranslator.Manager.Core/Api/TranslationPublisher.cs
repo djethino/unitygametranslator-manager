@@ -170,7 +170,8 @@ public sealed class TranslationPublisher
     public async Task<int?> PublishAsync(string contentJson, string apiToken,
                                          string? steamId, string? gameName,
                                          string sourceLanguage, string targetLanguage,
-                                         string? notes = null, CancellationToken ct = default)
+                                         string? notes = null, string? status = null,
+                                         CancellationToken ct = default)
     {
         LastError = null;
 
@@ -202,6 +203,12 @@ public sealed class TranslationPublisher
                 writer.WriteString("target_language", targetLanguage);
                 writer.WriteString("content", contentJson);
                 if (!string.IsNullOrWhiteSpace(notes)) writer.WriteString("notes", notes);
+
+                // ⚠ OMITTED rather than defaulted when null. The server then keeps whatever the
+                // translation already had — which is how this tool has always behaved, and why it
+                // never undid a "complete" the way the mod did. A caller that has no opinion must
+                // send nothing at all.
+                if (!string.IsNullOrWhiteSpace(status)) writer.WriteString("status", status);
                 writer.WriteEndObject();
             }
 

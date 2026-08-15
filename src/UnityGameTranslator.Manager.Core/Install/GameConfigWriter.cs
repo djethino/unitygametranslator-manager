@@ -377,21 +377,35 @@ public sealed class GameConfigWriter
         // Get it wrong and the mod says nothing: the panel simply stops opening, in a game where it
         // used to, and the settings screen that could fix it is the one behind that key.
         // See analyse/hotkey-keycode-divergence.md.
-        if (BindableKeys.IsUniversal(settings.SettingsHotkey)
-            && BindableKeys.IsValid(settings.SettingsHotkey))
+        // 🔴 **WHICH key reaches a game is decided HERE, once, and nowhere else.** Three things can
+        // answer it and they have a strict order — a fallback chain spread over a resolver and a
+        // screen is how the question ends up answered twice, differently.
+        //
+        //   1. the box ticked  → the key from Mod defaults, replacing what the game has;
+        //   2. a key set for THIS game → that one (it is an explicit act about this very game);
+        //   3. otherwise → the game keeps its own, and gets Mod defaults' key only if it has none.
+        //
+        // ⚠ Only universal keys ever travel from here, whichever of the three it is. What a Unity
+        // KeyCode designates depends on a per-project setting no runtime API reports, so a key that
+        // prints a character means different things in different games — six of thirteen test games
+        // disagreed with the other five about the same physical key. Get it wrong and the mod says
+        // nothing: its panel simply stops opening, in a game where it used to, and the screen that
+        // could fix it is the one behind that key. See analyse/hotkey-keycode-divergence.md.
+        var chosenKey = (perGame?.ReplaceHotkey ?? false)
+            ? settings.SettingsHotkey
+            : perGame?.Mod?.SettingsHotkey ?? settings.SettingsHotkey;
+
+        if (BindableKeys.IsUniversal(chosenKey) && BindableKeys.IsValid(chosenKey))
         {
-            // 🔴 **ReplaceHotkey, and nothing else, decides.** There is deliberately no per-game
-            // hotkey setting to consult here: the key inside a game was measured against the real
-            // keyboard, so the only question worth asking is "do I replace THAT one", asked on that
-            // game's card with both keys on screen. Anything else answering it — a field in a form,
-            // a global preference — decides for somebody out of sight of the thing being decided.
-            var replaces = perGame?.ReplaceHotkey ?? false;
+            // Whether it overwrites a key the game already carries, or only fills an empty slot.
+            var replaces = (perGame?.ReplaceHotkey ?? false)
+                           || perGame?.Mod?.SettingsHotkey is not null;
 
             // ⚠ Unticked does NOT mean "never write it": a game that has no hotkey yet has nothing
             // to overwrite, and skipping it there would leave the mod on its own default while
             // first_run_completed claims the question was answered — AnswersTheWizard counts this
             // setting among the answers. So: always on a fresh config, only on demand afterwards.
-            intents.Add(new Intent(null, HotkeyKey, settings.SettingsHotkey, "in-game hotkey",
+            intents.Add(new Intent(null, HotkeyKey, chosenKey, "in-game hotkey",
                 Note: "set in the game itself — applying replaces the key you chose there",
                 OnlyIfAbsent: !replaces,
                 AskedSeparately: true));

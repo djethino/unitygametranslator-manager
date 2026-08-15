@@ -29,6 +29,17 @@ public enum Situation
     UnpublishedWork,
 
     /// <summary>
+    /// Set up, and BOTH sides moved: the published translation changed and so did the one here.
+    ///
+    /// ⚠ Its own state rather than a shade of <see cref="UnpublishedWork"/>, because nothing about
+    /// it is the same. Unpublished work waits for a decision that costs nothing to postpone; a
+    /// conflict has to be settled line by line, in the mod, and pressing the ordinary verb would
+    /// pick a side. It also has to LOOK different — folded into the other it inherited the calm
+    /// blue of "there is something to send".
+    /// </summary>
+    Conflict,
+
+    /// <summary>
     /// Online mode is off, or the catalog could not be reached: we know what is installed, and
     /// nothing about what exists elsewhere. Said plainly rather than shown as "no translation",
     /// which would be a claim we cannot make.
@@ -51,6 +62,11 @@ public sealed record GameSituationInfo(
         Situation.Ready => "StatusSuccess",
         Situation.UpdateAvailable => "StatusInfo",
         Situation.UnpublishedWork => "StatusInfo",
+
+        // ⚠ Warning, not info. Both sides moved, and the row is asking for an arbitration rather
+        // than announcing something pending — the one state here where doing nothing has a cost.
+        Situation.Conflict => "StatusWarning",
+
         _ => null,
     };
 

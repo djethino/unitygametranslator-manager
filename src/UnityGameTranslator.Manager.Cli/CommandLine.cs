@@ -215,9 +215,21 @@ public static class CommandLine
 
         var platform = PlatformFactory.Create();
         var catalog = new CatalogProvider(platform).Get(offline);
+        var settings = new SettingsStore(platform).Current;
+
+        // 🔴 **The token and the lineages, exactly as the window passes them.** Without them this
+        // command answered a strictly smaller question than the screen it is meant to describe: no
+        // role, so "your Main" and "somebody else's lineage" printed identically, and no vote on
+        // the community entries. One binary with two faces has to reach one answer.
+        var lineages = new AccountLineages();
+        if (!offline) await lineages.EnsureAsync(settings.ApiToken);
+
         var inventory = new GameInventory(platform, catalog.Document,
-                                          offline ? null : new CatalogApiClient())
+                                          offline ? null : new CatalogApiClient(),
+                                          offline ? null : settings.ApiToken)
         {
+            Lineages = offline ? null : lineages,
+
             // The same version comparison the window makes. This command is what somebody pastes
             // into an issue, describing the state the window described to them — a CLI that
             // quietly knew less would send whoever reads it after a difference that is not there.
@@ -252,8 +264,31 @@ public static class CommandLine
 
         var report = await inventory.BuildReportAsync(game, offline);
         PrintReport(report);
+        PrintSituation(platform, report, offline);
         PrintModSettings(platform, catalog.Document, report);
         return report.Blockers.Count > 0 ? 3 : 0;
+    }
+
+    /// <summary>
+    /// The two lines the game list shows for this game, in the words it shows them.
+    ///
+    /// 🔴 Printed because otherwise they are **unverifiable without opening the window** — and the
+    /// list is precisely where a wrong sync verdict or a missing role hides, since nothing else
+    /// renders them. SituationReader had been re-deriving both from a line count and a file
+    /// timestamp; that survived a long time because no command ever said what it produced.
+    /// </summary>
+    private static void PrintSituation(IPlatform platform, GameReport report, bool offline)
+    {
+        var language = new SettingsStore(platform).ResolveTargetLanguage();
+        var situation = SituationReader.Read(report, language, onlineChecked: !offline);
+
+        Console.WriteLine();
+        Console.WriteLine($"In the list : {situation.Headline}");
+
+        if (situation.Detail is { Length: > 0 } detail)
+            Console.WriteLine($"              {detail}");
+
+        if (report.Sync is { } sync) Console.WriteLine($"              (sync verdict: {sync})");
     }
 
     /// <summary>

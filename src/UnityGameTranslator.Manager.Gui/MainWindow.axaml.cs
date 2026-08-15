@@ -1335,7 +1335,11 @@ public partial class MainWindow : Window
         _situations.TryGetValue(game.Path, out var situation)
         && situation.Situation is Situation.Ready
             or Situation.UpdateAvailable
-            or Situation.UnpublishedWork;
+            or Situation.UnpublishedWork
+
+            // A game in conflict is emphatically set up — it has a translation on both sides. It
+            // would have dropped out of the "Set up" lens the day that state was split out.
+            or Situation.Conflict;
 
     /// <summary>
     /// A row states a situation and offers a verb, in the player's terms.
@@ -1412,24 +1416,30 @@ public partial class MainWindow : Window
         // information, and on Linux there is never an icon at all.
         if (GameIcons.For(game.ExecutablePath) is { } icon)
         {
-            var row = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Spacing = 10,
-            };
+            // 🔴 **A Grid, not a horizontal StackPanel — and this was the bug.** A horizontal
+            // StackPanel measures its children with UNBOUNDED width, so every TextBlock in here
+            // reported the width of its longest unbroken line and TextWrapping never fired. The
+            // text then ran the full length of that line, straight under the Play button and the
+            // account mark sitting in the column beside it.
+            //
+            // The comment that used to sit here claimed the text column "takes what is left". It
+            // does now.
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
 
-            row.Children.Add(new Image
+            var image = new Image
             {
                 Source = icon,
                 Width = 28,
                 Height = 28,
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
-                Margin = new Avalonia.Thickness(0, 2, 0, 0),
-            });
+                Margin = new Avalonia.Thickness(0, 2, 10, 0),
+            };
 
-            // The text column takes what is left, so a long name still wraps and trims as before
-            // instead of pushing the icon out of view.
+            Grid.SetColumn(image, 0);
+            row.Children.Add(image);
+
             body.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
+            Grid.SetColumn(body, 1);
             row.Children.Add(body);
 
             return WithAccountMark(game, row);
@@ -4738,11 +4748,12 @@ public partial class MainWindow : Window
         // that says what one click would do.
         var driftHost = new StackPanel { Spacing = 4 };
         var ownHost = new StackPanel { Spacing = 4 };
+        var hotkeyHost = new StackPanel { Spacing = 4 };
 
         void Refresh()
         {
             driftHost.Children.Clear();
-            foreach (var control in ConfigDrift(report, preference, Refresh))
+            foreach (var control in ConfigDrift(report, preference))
                 driftHost.Children.Add(control);
 
             // ⚠ Present ONLY while the box is unticked, because that is the only state in which it
@@ -4756,6 +4767,10 @@ public partial class MainWindow : Window
                 foreach (var control in OwnModSettings(report, preference, Refresh))
                     ownHost.Children.Add(control);
             }
+
+            hotkeyHost.Children.Clear();
+            foreach (var control in HotkeyDecision(report, preference, Refresh))
+                hotkeyHost.Children.Add(control);
 
             ShowActionBar(report);
         }
@@ -4792,12 +4807,18 @@ public partial class MainWindow : Window
         // the game, and the connection between the two had to be guessed.
         yield return driftHost;
 
-        // ⚠ The hotkey question is NOT here any more. It used to be a checkbox of its own plus a
-        // line in a shape nothing else on this card used — while being, exactly like every line in
-        // the block above, one key of one config.json. It now sits in that block, on its own line,
-        // carrying its own answer (ConfigDifference.Key / Writes). The reason it is asked at all
-        // has not changed: a key set inside a game was measured against the real keyboard there.
         yield return ownHost;
+
+        // 🔴 **The hotkey question sits HERE — governed by the box above, beside the differences,
+        // and outside both.** It belongs to "Use Mod defaults in this game" exactly as the list of
+        // differences does; it is not one of this game's own settings, so it is not in that form.
+        //
+        // ⚠ And it is NOT inside the differences callout. That callout holds MODIFICATIONS — what
+        // applying would change. This is an OPTION: it decides whether one of those modifications
+        // happens at all. Wrapping a control in the banner that reports consequences makes the
+        // control read as one of them. The difference itself does appear in that callout, in the
+        // same shape as every other line — which was the whole point of moving its rendering.
+        yield return hotkeyHost;
 
         // The first fill, which also settles whether the form above starts out on screen.
         Refresh();
@@ -4822,13 +4843,20 @@ public partial class MainWindow : Window
         var form = new GameModSettingsForm(_platform, _settings.Current, snapshot, preference.Mod,
                                            LanguagePinnedTo(report, preference));
 
-        form.Applied += () =>
+        form.Applied += async () =>
         {
             // ⚠ Emptied rather than stored empty. A game that answers nothing of its own must come
             // back as "nothing decided here", not as an object full of nulls — the two read the
             // same on screen and only the first lets a later default reach this game.
+            //
+            // ⚠ Kept as well as written, and both are needed. Written, because a brick whose verb
+            // does not reach the game is not a brick — that was the hole. Kept, because these can
+            // be answered before there is anywhere to write them (no loader yet), and because a
+            // game reinstalled from scratch should get them back rather than silently lose them.
             preference.Mod = form.Draft.IsEmpty ? null : form.Draft.Copy();
             _preferences.Set(report.Game.Path, preference);
+
+            await ApplyOwnSettingsAsync(report, preference);
 
             // The differences block and the band below both describe what would be written, which
             // is exactly what has just changed.
@@ -4857,6 +4885,42 @@ public partial class MainWindow : Window
             HorizontalAlignment = HorizontalAlignment.Stretch,
             Margin = new Avalonia.Thickness(0, 8, 0, 0),
         };
+    }
+
+    /// <summary>
+    /// Writes THIS GAME's own settings into its config.json — the verb of that brick.
+    ///
+    /// 🔴 It exists because a brick whose verb never reaches the game is not a brick. The form used
+    /// to store its answers and stop there, which left them waiting on some other button to notice
+    /// them; with the one-click reading the box (and so writing Mod defaults or nothing at all),
+    /// they would simply never have arrived.
+    ///
+    /// ⚠ Silent on a game with no loader: there is nowhere to write yet. The answers are kept, and
+    /// the next install lays them down — which is the whole reason they are stored as well as
+    /// written.
+    /// </summary>
+    private async Task ApplyOwnSettingsAsync(GameReport report, GamePreference preference)
+    {
+        if (InstalledDescriptor(report) is not { } descriptor) return;
+        if (_running.IsRunning(report.Game)) return;
+
+        Busy(true, "Applying this game's settings...");
+
+        // The values the form shows, resolved by the Core — this game's answers first, what it
+        // already holds next, Mod defaults last.
+        var settings = SettingsFor(report, preference);
+
+        var result = new GameConfigWriter().Apply(
+            report.Game.Path, descriptor, settings,
+            TargetFor(report, descriptor, settings), perGame: preference);
+
+        Busy(false, "Ready.");
+
+        if (!result.Written)
+        {
+            await MessageAsync("Nothing was changed",
+                $"This game's settings could not be written ({result.Failure}).");
+        }
     }
 
     /// <summary>
@@ -4942,8 +5006,7 @@ public partial class MainWindow : Window
     /// person who made it. Shown once the mod has a configuration to disagree with; a game that
     /// has never been launched has nothing to say.
     /// </summary>
-    private IEnumerable<Control> ConfigDrift(GameReport report, GamePreference preference,
-                                             Action refresh)
+    private IEnumerable<Control> ConfigDrift(GameReport report, GamePreference preference)
     {
         // ⚠ Shown whether or not the box above is ticked, and it used to be hidden when it was not.
         // That was backwards: what this game holds against what would be written is precisely the
@@ -4970,7 +5033,17 @@ public partial class MainWindow : Window
             yield break;
         }
 
-        var differences = Differences(report, preference);
+        // 🔴 **The hotkey is NOT in this list, and that is the whole point of the two blocks.**
+        // This callout says what the box directly above it writes. The hotkey is governed by a box
+        // of its own, further down, and it has a comparison callout of its own beneath that box.
+        // Showing it here would put a line under a control that does not command it — which is
+        // exactly what somebody would then click, and nothing would happen.
+        //
+        // ⚠ It is still counted by SettingsWouldChangeAnything and by the one-click's figure: it IS
+        // a modification, and the split is about WHERE it is shown, not about whether it happens.
+        var differences = Differences(report, preference)
+            .Where(d => d.Key != GameConfigWriter.HotkeyKey)
+            .ToList();
 
         // Nothing to settle. Said in one quiet line rather than in nothing at all: an empty space
         // where a warning sometimes appears reads as a block that failed to draw, and it is the
@@ -5026,14 +5099,6 @@ public partial class MainWindow : Window
                 Foreground = Brush("TextMuted"),
             });
 
-            // The one line that carries its own answer. Rendered under its own row, in the place a
-            // note would take, so it reads as belonging to that setting and to no other.
-            if (difference.Key == GameConfigWriter.HotkeyKey)
-            {
-                foreach (var control in HotkeyDecision(report, preference, refresh))
-                    body.Children.Add(control);
-            }
-
             // Indented under its own line rather than appended to it: this is a caveat about ONE
             // setting, and folded into the row it would read as part of the value.
             //
@@ -5059,13 +5124,15 @@ public partial class MainWindow : Window
         //
         // Its words follow the source, because they are two different acts: writing what everybody
         // gets, or writing what this game alone was given.
+        // 🔴 **ONE button, ONE function, whatever the box says: put Mod defaults onto this game's
+        // configuration.** It was relabelled by the box for a while, which made it two buttons
+        // wearing one name — and left nobody able to say what a click would write. The box decides
+        // whether an install does this on its own; it does not change what this button is.
         if (writes > 0)
         {
             var apply = new Button
             {
-                Content = ticked
-                    ? "Apply Mod defaults to this game"
-                    : "Apply this game's own settings",
+                Content = "Apply Mod defaults to this game",
                 FontSize = 12,
                 HorizontalAlignment = HorizontalAlignment.Left,
                 IsEnabled = !_running.IsRunning(report.Game),
@@ -5076,13 +5143,13 @@ public partial class MainWindow : Window
             body.Children.Add(apply);
         }
 
-        // ⚠ Three colours for three situations, where there used to be one. Orange said "something
-        // you chose is about to be overwritten" — true of the first case and of neither other, so
-        // it cried wolf on a game that was merely being configured as asked, and it cried it just
-        // as loudly on a line that was deliberately being left alone.
+        // 🔴 **Unticked is the CAUTIOUS case, and the colours said the opposite.** Ticked means
+        // "set this game up from Mod defaults" — applying them is the thing that was asked for, so
+        // it is ordinary. Unticked means "do not use Mod defaults here": pushing them in anyway is
+        // the act to think twice about, and it is the one that was painted as routine.
         var (background, edge) = ticked
-            ? ("CalloutWarningBg", "StatusWarning")   // your defaults will overwrite this game
-            : ("CalloutInfoBg", "StatusInfo");        // this game's own settings will be written
+            ? ("CalloutInfoBg", "StatusInfo")          // asked for: Mod defaults belong here
+            : ("CalloutWarningBg", "StatusWarning");   // refused: applying goes against the box
 
         var notice = Callout(body, background, edge);
         ((Border)notice).Margin = new Avalonia.Thickness(0, 8, 0, 0);
@@ -5090,51 +5157,221 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// The one difference that carries its own answer: whether this game's hotkey is replaced.
+    /// The in-game hotkey: a brick of its own, with its state, its question, its capture and its
+    /// verb.
+    ///
+    /// 🔴 **Same shape and same ORDER as the block above: the box, the callout of what it writes,
+    /// then the setting of one's own.** The box above governs the settings and carries their list;
+    /// this one governs the key and carries its own. Folded into the list above, this line sat
+    /// under a control that does not command it — so ticking that box would leave it stubbornly
+    /// unchanged, with nothing on screen to explain why. And laid out in a different order from its
+    /// twin, it made the reader relearn the layout halfway down a section they had just understood.
     ///
     /// ⚠ Asked about this game, and nowhere else. Inside it, the mod captured the key against the
     /// real keyboard, which is the only measurement that exists — so the question is never "do I
     /// replace hotkeys" but "do I replace THIS one", unanswerable without both keys in front of
     /// you. That is why it left the defaults screen, and it is not going back.
     ///
-    /// 🔴 **Always offered, and never suppressed by anything in the form above.** It was, for a
-    /// day: a hotkey field in this game's own settings hid this box, on the argument that naming a
-    /// key was already the answer. That got it backwards — it let a form decide, out of sight of
-    /// the key being replaced, exactly what this box exists to keep in sight. There is no such
-    /// field any more, and there must not be one again.
+    /// 🔴 **Never suppressed by anything in the settings form.** It was, for a day: a hotkey row
+    /// there hid this box, on the argument that naming a key was already the answer. That got it
+    /// backwards — it let a form decide, out of sight of the key being replaced, exactly what this
+    /// box exists to keep in sight. The key is settable again, but HERE, beside the question.
     /// </summary>
     private IEnumerable<Control> HotkeyDecision(GameReport report, GamePreference preference,
                                                 Action refresh)
     {
-        // ⚠ "with mine" named nobody. The key that would replace it comes from Mod defaults, which
-        // is a screen with a title — and on a machine whose games may belong to different people,
-        // a first person is not merely vague, it claims something.
-        var replace = new CheckBox
-        {
-            Content = "Replace this game's key with the one in Mod defaults",
-            IsChecked = preference.ReplaceHotkey,
-            FontSize = 11,
-            Margin = new Avalonia.Thickness(12, 0, 0, 2),
-        };
+        if (!_settings.Current.Reviewed) yield break;
 
-        ToolTip.SetTip(replace,
-            "Left unticked, this game keeps the key it already has — every other setting is still "
-            + "written into it. A key set inside a game was measured against the real keyboard "
-            + "there, so it wins unless this box says otherwise.");
+        var descriptor = InstalledDescriptor(report);
 
-        // ⚠ Posted, unlike the box above it. That one is a sibling of the block being redrawn and
-        // survives it; this one lives INSIDE the block, so redrawing from its own event destroys
-        // it mid-handler and takes the keyboard focus with it — the box is left looking pressed and
-        // the next Space goes nowhere. Moving this question into the differences list is what made
-        // that true, and it is the price of it reading like every other line there.
-        replace.IsCheckedChanged += (_, _) =>
+        // Nothing installed to write into. The brick has no state to report and no verb to offer,
+        // which is exactly what the loader and mod cards do in the same situation.
+        if (descriptor is null) yield break;
+
+        var inGame = GameConfig(report).InGameHotkey;
+
+        // ⚠ Read from the same comparison that feeds the block above — one source, so the two can
+        // never disagree about this key. Null means there is nothing to REPORT: the game already
+        // agrees, or the key that would be written is one that cannot travel between games. The
+        // capture below is offered either way; being settled is not a reason to take the control
+        // away.
+        var difference = Differences(report, preference)
+            .FirstOrDefault(d => d.Key == GameConfigWriter.HotkeyKey);
+
+        // ⚠ The box only where there is something to DECIDE. A game with no key of its own has
+        // nothing to protect: the key is written outright, and a box asking permission to replace
+        // a key that does not exist would be a question about nothing.
+        if (inGame is not null)
         {
-            preference.ReplaceHotkey = replace.IsChecked == true;
+            // ⚠ "with mine" named nobody. The key that would replace it comes from Mod defaults,
+            // which is a screen with a title — and on a machine whose games may belong to different
+            // people, a first person is not merely vague, it claims something.
+            var replace = new CheckBox
+            {
+                Content = "Replace this game's key with the one in Mod defaults",
+                IsChecked = preference.ReplaceHotkey,
+                FontSize = 12,
+                Margin = new Avalonia.Thickness(0, 12, 0, 0),
+            };
+
+            replace.IsCheckedChanged += (_, _) =>
+            {
+                preference.ReplaceHotkey = replace.IsChecked == true;
+                _preferences.Set(report.Game.Path, preference);
+
+                // ⚠ Posted, unlike the box governing the whole section. That one is a sibling of
+                // the blocks a redraw empties and survives it; this one lives inside such a block,
+                // so calling the redraw from its own event destroys the box mid-handler and takes
+                // the keyboard focus with it — it is left looking pressed and the next Space goes
+                // nowhere.
+                Avalonia.Threading.Dispatcher.UIThread.Post(refresh);
+            };
+
+            yield return replace;
+        }
+
+        // 🔴 **Same order as the block above: control, then the callout of what it writes, then the
+        // setting of one's own.** This block had the last two the other way round for no reason at
+        // all, which is the kind of inconsistency that makes a screen feel arbitrary — the reader
+        // has to relearn the layout halfway down a section they had just understood.
+        if (difference is not null)
+        {
+            var state = new StackPanel { Spacing = 4 };
+
+            state.Children.Add(new TextBlock
+            {
+                // The same sentence shape as every other difference, which is what "the same
+                // feeling" asked for: it IS one key of one config.json, and it should read like one.
+                Text = difference.Writes
+                    ? $"• {difference.Label}: {difference.InGame} → {difference.Ours}"
+                    : $"• {difference.Label}: {difference.InGame} — kept. "
+                      + $"Mod defaults uses {difference.Ours}.",
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextMuted"),
+            });
+
+            // Same rule as the block above: orange only when something somebody chose is about to
+            // be replaced.
+            var reported = difference.Writes
+                ? Callout(state, "CalloutWarningBg", "StatusWarning")
+                : Callout(state, "CalloutInfoBg", "StatusInfo");
+
+            ((Border)reported).Margin = new Avalonia.Thickness(0, 6, 0, 0);
+            yield return reported;
+        }
+
+        // 🔴 **The same capture as Mod defaults, for THIS game.** The brick would be incomplete
+        // without it: one could see both keys and take the other one, but not choose a third — and
+        // a key is precisely the setting most likely to need to differ from one game to the next.
+        // The control is the shared HotkeyEditor, so the refusals it enforces (a key Unity cannot
+        // name, a key that means something else in another game) are the same ones Mod defaults
+        // enforces, in the same words.
+        var takesDefault = preference.ReplaceHotkey && inGame is not null;
+
+        // 🔴 **It shows what THIS GAME uses — the field says so, and every other field on this card
+        // is filled the same way.** It was seeded from Mod defaults for a while, so a field titled
+        // "Key for this game" displayed a key the game does not use, on the one screen whose whole
+        // promise is to show what the game holds.
+        //
+        // ⚠ warnOnArrival: false is what made that honest. A game's key is very often a character
+        // key — captured in the game, against the keyboard as that game reads it — and the editor
+        // used to greet the reader by declaring their own working choice unusable. It is only
+        // unusable FROM HERE, which matters when choosing a new one and not before.
+        var editor = new HotkeyEditor(
+            preference.Mod?.SettingsHotkey ?? inGame ?? _settings.Current.SettingsHotkey,
+            Brush("TextMuted"), Brush("StatusWarning"), warnOnArrival: false);
+
+        editor.Changed += () =>
+        {
+            preference.Mod ??= new GameModOverrides();
+            preference.Mod.SettingsHotkey = editor.Value;
             _preferences.Set(report.Game.Path, preference);
             Avalonia.Threading.Dispatcher.UIThread.Post(refresh);
         };
 
-        yield return replace;
+        var row = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 10,
+            Margin = new Avalonia.Thickness(0, 8, 0, 0),
+        };
+
+        row.Children.Add(new TextBlock
+        {
+            Text = "Key for this game",
+            Width = 120,
+            FontSize = 12,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = Brush("TextMuted"),
+        });
+
+        row.Children.Add(editor.Row);
+
+        // ⚠ Greyed rather than hidden, and never without words. Ticking the box above means "take
+        // the key from Mod defaults", which is an answer to this very question — leaving the
+        // capture live would offer a third key that would then not be written.
+        editor.Row.IsEnabled = !takesDefault;
+
+        ToolTip.SetTip(editor.Row, takesDefault
+            ? "Untick the box above to choose a key here instead."
+            : "Only keys every game detects the same way can be set from here.");
+
+        yield return row;
+        yield return editor.Problem;
+
+        // Its own verb, like every other brick: one key, written on its own. Going through the
+        // settings apply would write the language, the backend and the update preferences in the
+        // same breath, which is not what a button that changes a shortcut may do.
+        if (descriptor is not null && preference.Mod?.SettingsHotkey is { } own
+            && !string.Equals(own, inGame, StringComparison.Ordinal))
+        {
+            var write = new Button
+            {
+                Content = "Apply this key to the game",
+                FontSize = 12,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                IsEnabled = !_running.IsRunning(report.Game) && !takesDefault,
+                Margin = new Avalonia.Thickness(120, 4, 0, 0),
+            };
+
+            write.Click += async (_, _) =>
+            {
+                Busy(true, "Applying the key...");
+
+                var result = new GameConfigWriter().ApplyOne(
+                    report.Game.Path, descriptor, GameConfigWriter.HotkeyKey, own, "in-game hotkey");
+
+                Busy(false, "Ready.");
+
+                if (!result.Written)
+                {
+                    await MessageAsync("Nothing was changed",
+                        $"The key could not be written ({result.Failure}).");
+                    return;
+                }
+
+                await ShowSelectedAsync();
+            };
+
+            yield return write;
+        }
+
+        // 🔴 **THE REASON — one line, and it has to be TRUE.** It was a paragraph, then it was
+        // "a key can mean something different in each game", which is not a thing a key does: a key
+        // has no intent. Two facts make the replacement worth asking about, and both are ordinary:
+        // the same physical key is not detected identically by every game, and the game may already
+        // have bound that key to something of its own.
+        yield return new TextBlock
+        {
+            Text = "The same key is not detected the same way in every game, and this game may "
+                 + "already use it for something else.",
+            FontSize = 11,
+            Margin = new Avalonia.Thickness(120, 2, 0, 0),
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("TextMuted"),
+        };
+
     }
 
     /// <summary>
@@ -5149,7 +5386,14 @@ public partial class MainWindow : Window
         var descriptor = InstalledDescriptor(report);
         if (descriptor is null) return Array.Empty<ConfigDifference>();
 
-        var settings = SettingsFor(report, preference);
+        // 🔴 **Against Mod defaults, always.** This list answers one question — what would applying
+        // Mod defaults change here — and the button under it does exactly that. Comparing against
+        // the per-game resolution instead made the list mean something different depending on a
+        // checkbox, which is how a button ends up unable to say what it writes.
+        //
+        // This game's OWN settings are a different brick: the form shows them, and its own verb
+        // writes them.
+        var settings = _settings.Current;
 
         return new GameConfigWriter().Compare(
             report.Game.Path, descriptor, settings,
@@ -5535,12 +5779,11 @@ public partial class MainWindow : Window
         // one click to do" was unreachable on any game, and the button stayed lit offering to
         // rewrite a config.json with the values already in it.
         //
-        // ⚠ No longer conditional on the box. Unticking used to mean "write nothing here", so a
-        // game somebody had configured through this card could not be configured BY it — the one
-        // act the card exists for. It now means "this game has settings of its own", and they are
-        // written like anybody else's. Nothing is written unasked either way: the values start out
-        // as what the game already holds, so an untouched game produces no difference and no step.
-        if (_settings.Current.Reviewed && SettingsWouldChangeAnything(report, preference))
+        // ⚠ Conditional on the box, because the one-click applies the preference and decides
+        // nothing of its own. Unticked, this game's configuration is left alone — its own settings
+        // are written by their own button, which is what every other brick on this card does too.
+        if (preference.UsesModDefaults(GameConfig(report)) && _settings.Current.Reviewed
+            && SettingsWouldChangeAnything(report, preference))
         {
             yield return new(OneClickAct.ApplySettings, SettingsStepText(report, preference));
         }
@@ -5576,12 +5819,10 @@ public partial class MainWindow : Window
     /// </summary>
     private string SettingsStepText(GameReport report, GamePreference preference)
     {
-        var fromDefaults = preference.UsesModDefaults(GameConfig(report));
-        var what = fromDefaults ? "apply Mod defaults" : "apply this game's own settings";
-
+        // Only ever reached with the box ticked, so there is one source to name and no branch.
         var changes = Differences(report, preference).Count(d => d.Writes);
 
-        return changes > 0 ? $"{what} ({changes} changes)" : what;
+        return changes > 0 ? $"apply Mod defaults ({changes} changes)" : "apply Mod defaults";
     }
 
     /// <summary>
@@ -5934,24 +6175,25 @@ public partial class MainWindow : Window
     private InstallPlan? BuildPlan(GameReport report, GamePreference preference, bool loader, bool plugin,
                                    bool settings = true, bool force = false)
     {
-        // ⚠ No longer gated on the box. It means "this game has settings of its own", not "leave
-        // it alone": the resolved settings ARE this game's, starting from what it already holds,
-        // so writing them back is a no-op until somebody changes one. See ModSettingsResolver.
-        var writeSettings = settings && _settings.Current.Reviewed;
+        // 🔴 **The box, and nothing else.** An install and the one-click apply the PREFERENCE — they
+        // invent nothing. Ticked, this game is set up from Mod defaults; unticked, its own
+        // configuration is left exactly as it is, and the settings it holds are applied by their own
+        // button. That is what the box has always meant, and taking it out of this line was me
+        // letting the one-click decide.
+        var writeSettings = settings && preference.UsesModDefaults(GameConfig(report))
+                            && _settings.Current.Reviewed;
 
-        // Resolved once, and used for both the plan and the channel below: they are two questions
-        // about the same game and reading them from different places is how a beta plugin lands in
-        // a game configured for stable.
+        // ⚠ Per game, because that is where the risk is taken: putting a pre-release plugin in one
+        // game to test a fix is a different decision from putting it in all of them. Read from the
+        // game's own configuration whether or not the settings are being written — which build gets
+        // installed is not the same question as which values get written.
         var resolved = SettingsFor(report, preference);
 
         var plan = new InstallEngine(_platform, _catalog).Plan(
             report,
-
-            // ⚠ Per game, because that is where the risk is taken: putting a pre-release plugin in
-            // one game to test a fix is a different decision from putting it in all of them.
             resolved.Channel == "beta" ? ReleaseChannel.Beta : ReleaseChannel.Stable,
             _chosenLoader(),
-            writeSettings ? resolved : null,
+            writeSettings ? _settings.Current : null,
             writeSettings ? preference : null);
 
         if (plan is null) return null;
@@ -6905,12 +7147,17 @@ public partial class MainWindow : Window
     private async Task ApplyDefaultsAsync(GameReport report, LoaderDescriptor descriptor,
                                           GamePreference preference)
     {
-        Busy(true, "Applying your settings...");
+        Busy(true, "Applying Mod defaults...");
 
-        // ⚠ The settings resolved FOR THIS GAME, not the defaults. On a game holding answers of its
-        // own, writing the defaults here would be this button doing the one thing the box above
-        // says it will not — and it would do it under a label promising the opposite.
-        var settings = SettingsFor(report, preference);
+        // 🔴 **Mod defaults, and nothing else — this button has ONE function.** It writes the
+        // defaults onto this game's configuration, whatever the box says; the box decides whether
+        // an install does it unasked, not what this does when pressed. Passing the per-game
+        // resolution here made it write something different depending on a checkbox, under a label
+        // that promised the defaults — which is why nobody could say what a click would do.
+        //
+        // This game's OWN settings are a different brick with a different verb: the form applies
+        // those (ApplyOwnSettingsAsync).
+        var settings = _settings.Current;
         var target = TargetFor(report, descriptor, settings);
 
         var result = new GameConfigWriter()

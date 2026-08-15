@@ -42,28 +42,40 @@ public static class SituationReader
 
         if (installed)
         {
-            if (local is { LocalChanges: > 0 })
+            // 🔴 **The sync verdict comes from the shared rule, and this row used to invent its
+            // own.** GameReport.Sync is the answer the MOD reaches inside the game, from `common`;
+            // the card shows it. This list decided instead from two things that are not it:
+            //
+            //   · `LocalChanges > 0` alone → announced "not published" for a file whose server side
+            //     had ALSO moved, which is a conflict and needs settling, not an upload;
+            //   · the published date against the local file's LAST WRITE TIME → a filesystem
+            //     stamp the mod bumps whenever it caches a line, so a real update went unmentioned
+            //     for any game somebody had simply played.
+            //
+            // One verdict, one vocabulary. The four words are the ecosystem's own, fixed on
+            // 2026-08-14: Up to date / Update available / Unpublished changes / Conflict.
+            if (report.Sync is { } sync && sync != SyncDirection.InSync)
             {
-                return new GameSituationInfo(
-                    Situation.UnpublishedWork,
-                    $"{local.LocalChanges} change(s) not published",
-                    local.EntryCount > 0 ? $"{local.EntryCount} lines translated" : null,
-                    "Manage");
+                var (headline, verb, situation) = sync switch
+                {
+                    SyncDirection.Merge => ("Conflict", "Manage", Situation.Conflict),
+                    SyncDirection.Upload => ("Unpublished changes", "Manage", Situation.UnpublishedWork),
+                    SyncDirection.Download => ("Update available", "Update", Situation.UpdateAvailable),
+                    _ => ("", "", Situation.Ready),
+                };
+
+                if (headline.Length > 0)
+                    return new GameSituationInfo(situation, headline, Standing(report, local), verb);
             }
 
-            // A newer version of the very translation in use is worth surfacing; a different
-            // translation existing is not an update, it is an alternative.
-            var mine = report.MatchingOnline;
-            if (mine is not null && local is not null
-                && mine.ContentUpdatedAt is { } remoteDate
-                && local.LastWrite is { } localDate
-                && remoteDate > localDate)
+            // Nothing published to compare against — see GameReport.Sync, whose null covers exactly
+            // that. Work that exists in this game and nowhere else is still worth naming, and the
+            // shared verdict cannot name it because there is no other side to the comparison.
+            if (report.Sync is null && local is { LocalChanges: > 0 })
             {
                 return new GameSituationInfo(
-                    Situation.UpdateAvailable,
-                    "A newer version of this translation is available",
-                    Freshness(mine),
-                    "Update");
+                    Situation.UnpublishedWork, "Unpublished changes",
+                    Standing(report, local), "Manage");
             }
 
             // What we put there ourselves being out of date, which nothing used to notice: this
@@ -74,11 +86,8 @@ public static class SituationReader
             // waiting costs something that cannot be recovered.
             if (Behind(report) is { } behind) return behind;
 
-            var readyDetail = local is { EntryCount: > 0 }
-                ? $"{local.EntryCount} lines"
-                : "no translation file yet — it fills up as you play";
-
-            return new GameSituationInfo(Situation.Ready, "Ready to play", readyDetail, "Manage");
+            return new GameSituationInfo(Situation.Ready, "Ready to play",
+                                         Standing(report, local), "Manage");
         }
 
         if (!onlineChecked)
@@ -123,6 +132,35 @@ public static class SituationReader
                 ? $"{report.OnlineTranslations.Count} translation(s) in other languages"
                 : null,
             "Install and translate");
+    }
+
+    /// <summary>
+    /// The second line of a row: what this account IS to the translation here, and how big it is.
+    ///
+    /// 🔴 **The role was missing entirely, and it changes what the line above is worth.**
+    /// "Unpublished changes" on a translation this account LEADS means work only they can publish;
+    /// the same words on somebody else's lineage mean work that would go up as a branch, for its
+    /// Main to take or leave. Two different situations, and the list said the same thing for both.
+    ///
+    /// ⚠ The vocabulary is the ecosystem's: Main and Branch, never "Contributor" on its own — see
+    /// CLAUDE.md. A branch IS a contribution, so the two words travel together or not at all.
+    ///
+    /// ⚠ Silent when the role is unknown, which covers signed out, not read yet, and a lineage this
+    /// account has no part in. Those three are not distinguished on purpose: telling them apart
+    /// would let a row make a claim it cannot support.
+    /// </summary>
+    private static string? Standing(GameReport report, LocalTranslation? local)
+    {
+        var parts = new List<string>();
+
+        if (report.MyPosition is { } position)
+            parts.Add(position.IsMain ? "your Main" : "your branch (contributor)");
+
+        if (local is { EntryCount: > 0 }) parts.Add($"{local.EntryCount} lines");
+
+        return parts.Count > 0
+            ? string.Join(" · ", parts)
+            : local is null ? "no translation file yet — it fills up as you play" : null;
     }
 
     /// <summary>

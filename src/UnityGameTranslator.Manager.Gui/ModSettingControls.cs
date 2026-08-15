@@ -141,12 +141,12 @@ public static class ModSettingControls
 
     /// <summary>The one sentence explaining why so few keys are accepted here.</summary>
     public const string HotkeyAdvice =
-        "Click the key button, then press the key you want. Only keys that mean the same in every "
-        + "game are accepted here: F1 to F15, the keypad, Insert/Delete/Home/End/Page, the arrows, "
+        "Click the key button, then press the key you want. Only keys every game detects the same "
+        + "way are accepted here: F1 to F15, the keypad, Insert/Delete/Home/End/Page, the arrows, "
         + "Escape, Tab, Space and Enter. In the game itself the mod accepts far more - any key the "
         + "game does not already use - because there it reads your actual keyboard. A key that "
-        + "prints a character is read differently from one game to the next, so it cannot be sent "
-        + "from here.";
+        + "prints a character is detected differently from one game to the next, so it cannot be "
+        + "sent from here.";
 }
 
 /// <summary>
@@ -194,7 +194,17 @@ public sealed class HotkeyEditor
     /// <summary>Raised whenever <see cref="Value"/> actually changes, never on a refused capture.</summary>
     public event Action? Changed;
 
-    public HotkeyEditor(string? initial, IBrush? muted, IBrush? warning)
+    /// <param name="warnOnArrival">
+    /// Whether a starting key that cannot travel between games is flagged straight away.
+    ///
+    /// 🔴 **True for Mod defaults, false for a game's own key, and the difference is not cosmetic.**
+    /// A key sitting in Mod defaults exists to be pushed into games, so one that cannot travel is a
+    /// setting silently without effect — exactly what a screen must never leave behind. A key
+    /// sitting in a GAME is not a defect at all: it was captured there, against the keyboard as
+    /// that game reads it, and it works perfectly where it lives. Flagging it tells the player
+    /// their own good choice is broken, about the one setting this tool has no business judging.
+    /// </param>
+    public HotkeyEditor(string? initial, IBrush? muted, IBrush? warning, bool warnOnArrival = true)
     {
         Value = string.IsNullOrWhiteSpace(initial) ? BindableKeys.Default : initial;
 
@@ -212,7 +222,7 @@ public sealed class HotkeyEditor
             Foreground = warning,
         };
 
-        if (BindableKeys.ExplainNotUniversal(Value) is { } carriedOver)
+        if (warnOnArrival && BindableKeys.ExplainNotUniversal(Value) is { } carriedOver)
         {
             Problem.Text = carriedOver;
             Problem.IsVisible = true;

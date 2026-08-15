@@ -75,23 +75,25 @@ public sealed class GameModOverrides
 
     [JsonPropertyName("deepl_use_free")] public bool? DeeplUseFree { get; set; }
 
-    // 🔴 **THE HOTKEY IS NOT HERE, AND MUST NEVER BE ADDED.**
-    //
-    // It is the one setting a game may legitimately know better than we do: inside it, the mod
-    // captured the key against the REAL keyboard, which is the only measurement that exists. So the
-    // question is never "what key does this game use" — it is "do I replace the one it measured",
-    // and that is answered by GamePreference.ReplaceHotkey, on that game's card, with both keys on
-    // screen. See analyse/hotkey-keycode-divergence.md.
-    //
-    // ⚠ It was added here for a day, and it broke the mechanism in two ways at once. Setting a key
-    // in the form bypassed the question and wrote it outright; and because the resolver then read
-    // the game's own key as a source, unticking "use my mod defaults here" made the key we would
-    // write EQUAL the key the game had — so the comparison found nothing, and the question
-    // disappeared from the screen entirely. Measured on a real game: the line was there ticked and
-    // gone unticked.
-    //
-    // What a game holds is still READ, because it is a fact worth showing — see
-    // GameConfigSnapshot.InGameHotkey. Reading it is not the same as making it settable here.
+    /// <summary>
+    /// A panel shortcut chosen for THIS game, or null when none was.
+    ///
+    /// 🔴 **It belongs to the hotkey's own brick, never to the settings form.** The card gives the
+    /// key its own block: both keys on screen, a capture to set one for this game, the box that
+    /// says whether Mod defaults' key wins, and its own verb. That block is the only place this is
+    /// ever edited.
+    ///
+    /// ⚠ It was a row in the settings form for a day, and that broke the mechanism twice over:
+    /// setting a key there bypassed the question and wrote it outright, and it hid the box that
+    /// asks it. Worse, the resolver then read the GAME's key as a fallback source, so unticking
+    /// "use Mod defaults" made the key we would write equal the key the game already had — the
+    /// comparison found nothing and the question vanished from the screen. Measured on a real game.
+    ///
+    /// ⚠ Which key actually reaches a game is decided in ONE place — GameConfigWriter.Intended —
+    /// and never by a fallback chain here. See <see cref="ModSettingsResolver.Resolve"/>, which
+    /// deliberately leaves this field alone.
+    /// </summary>
+    [JsonPropertyName("settings_hotkey")] public string? SettingsHotkey { get; set; }
 
     /// <summary>Whether the MOD may reach the internet from inside this game.</summary>
     [JsonPropertyName("mod_online_mode")] public bool? ModOnlineMode { get; set; }
@@ -122,11 +124,18 @@ public sealed class GameModOverrides
     public bool IsEmpty =>
         TargetLanguage is null && TranslationBackend is null && AiUrl is null && AiModel is null
         && AiApiKey is null && GoogleApiKey is null && DeeplApiKey is null && DeeplUseFree is null
-        && ModOnlineMode is null && AutoDownload is null
+        && SettingsHotkey is null && ModOnlineMode is null && AutoDownload is null
         && NotifyUpdates is null && CheckModUpdates is null && MergeStrategy is null
         && NotificationsEnabled is null && NotificationPosition is null && Channel is null;
 
-    /// <summary>How many settings this game answers on its own. The figure a card shows.</summary>
+    /// <summary>
+    /// How many settings this game answers on its own — the figure the settings form shows.
+    ///
+    /// ⚠ **The hotkey is deliberately not counted, while <see cref="IsEmpty"/> does count it.** The
+    /// two answer different questions: this one labels a form the key is not part of, so counting
+    /// it would announce four answers above three rows. IsEmpty asks "is there anything to keep at
+    /// all", and a key set on its own is certainly something.
+    /// </summary>
     [JsonIgnore]
     public int Count =>
         (TargetLanguage is null ? 0 : 1) + (TranslationBackend is null ? 0 : 1)
@@ -258,12 +267,14 @@ public static class ModSettingsResolver
         resolved.GoogleApiKey = own?.GoogleApiKey ?? inGame?.GoogleApiKey ?? defaults.GoogleApiKey;
         resolved.DeeplApiKey = own?.DeeplApiKey ?? inGame?.DeeplApiKey ?? defaults.DeeplApiKey;
         resolved.DeeplUseFree = own?.DeeplUseFree ?? inGame?.DeeplUseFree ?? defaults.DeeplUseFree;
-        // 🔴 **SettingsHotkey is deliberately absent from this list, and the Copy() above keeps the
-        // defaults' key untouched.** Reading it from the game as a source would make the key we
-        // would write equal the key the game already has — so the comparison finds nothing, and
-        // "replace this game's key with mine" vanishes from the screen the moment somebody unticks
-        // the box. That question has to survive unticking: unticking is about the settings this
-        // tool pushes, and the hotkey is the one thing it never pushes without asking.
+        // 🔴 **SettingsHotkey is deliberately absent from this chain**, and the Copy() above leaves
+        // the defaults' key in place. Which key reaches a game is decided in ONE place —
+        // GameConfigWriter.Intended — from the box, the key set for this game, and what the game
+        // holds, in that order.
+        //
+        // ⚠ Reading the GAME's key here as a fallback source would make the key we would write
+        // equal the key the game already has: the comparison then finds nothing, and "replace this
+        // game's key" vanishes from the screen the moment somebody unticks the box. That happened.
         resolved.ModOnlineMode = own?.ModOnlineMode ?? inGame?.ModOnlineMode ?? defaults.ModOnlineMode;
         resolved.AutoDownload = own?.AutoDownload ?? inGame?.AutoDownload ?? defaults.AutoDownload;
         resolved.NotifyUpdates = own?.NotifyUpdates ?? inGame?.NotifyUpdates ?? defaults.NotifyUpdates;

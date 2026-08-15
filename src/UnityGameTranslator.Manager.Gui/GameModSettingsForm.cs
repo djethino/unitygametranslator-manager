@@ -24,9 +24,11 @@ namespace UnityGameTranslator.Manager.Gui;
 /// holds clears it again. Freezing what was shown would turn opening a card into twenty-five
 /// decisions nobody took — and every one of them would stop following the defaults for good.
 ///
-/// ⚠ **Nothing here reaches the game.** Apply stores the answers; writing them into config.json is
-/// a separate, named act — the button in the differences block, or the one-click. That is the same
-/// separation the defaults window keeps, and the reason the same word "Apply" is honest in both.
+/// ⚠ **Apply writes into the game, and keeps the answers.** This is a brick like the loader and the
+/// mod: its verb acts. Storing alone was the hole — with the one-click reading the box, and so
+/// writing Mod defaults or nothing at all, answers left in a preference file would never have
+/// arrived anywhere. They are kept as well, because they can be given before there is a loader to
+/// write into, and because a game reinstalled from scratch should get them back.
 ///
 /// ⚠ **No server sweep and no test bench.** Those set a translator up, once, for this machine;
 /// they live in the defaults window and this form links to it. What it does offer is a Refresh on
@@ -239,9 +241,8 @@ public sealed class GameModSettingsForm
 
         _host.Children.Add(new TextBlock
         {
-            Text = "These are the settings this game is set up with. Each one starts from what the "
-                 + "game already holds, or from Mod defaults when it holds nothing, and a change "
-                 + "made here applies to this game only.",
+            Text = "Settings for this game only. Each starts from what the game already holds, or "
+                 + "from Mod defaults when it holds nothing.",
             FontSize = 11,
             TextWrapping = TextWrapping.Wrap,
             Foreground = Palette.Of("TextSecondary"),
@@ -253,10 +254,8 @@ public sealed class GameModSettingsForm
         {
             _host.Children.Add(new TextBlock
             {
-                Text = $"This game stays on {_languagePinnedTo}: it already holds a translation in "
-                     + "that language, and pointing it elsewhere would leave the mod looking for a "
-                     + "file that is not there. Take a translation in another language, or start a "
-                     + "new one, and this follows.",
+                Text = $"Stays on {_languagePinnedTo}: this game already holds a "
+                     + $"{_languagePinnedTo} translation. Take one in another language to change it.",
                 FontSize = 11,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Avalonia.Thickness(120, 0, 0, 0),
@@ -441,8 +440,7 @@ public sealed class GameModSettingsForm
 
         panel.Children.Add(_modelStatus);
         panel.Children.Add(DefaultsLink(
-            "Looking for a server on this machine, and putting a model through the mod's own "
-            + "tests, is done once in Mod defaults."));
+            "Finding a local server and testing a model is done once, in Mod defaults."));
 
         return panel;
     }
@@ -545,8 +543,8 @@ public sealed class GameModSettingsForm
         panel.Children.Add(_deeplFree);
         panel.Children.Add(new TextBlock
         {
-            Text = "Both bill you on your own account. The key is stored encrypted and tied to "
-                 + "this machine.",
+            Text = "Both bill you on your own account. The key is stored encrypted, tied to this "
+                 + "machine.",
             FontSize = 11,
             TextWrapping = TextWrapping.Wrap,
             Foreground = Palette.Of("TextMuted"),
@@ -568,13 +566,13 @@ public sealed class GameModSettingsForm
         // drops one of its rows reads as an oversight, and somebody would put it back.
         yield return new TextBlock
         {
-            Text = "The in-game hotkey is not set here. Mod defaults uses "
-                 + $"{_defaults.SettingsHotkey}; "
+            Text = "The in-game hotkey is not one of these: the same key is not detected the same "
+                 + "way in every game. "
                  + (_inGameHotkey is null
-                    ? "this game has none yet, so that key is written when anything is installed."
-                    : $"this game uses {_inGameHotkey}, captured against the real keyboard inside "
-                      + "it. Whether Mod defaults replaces it is asked in the list of differences, "
-                      + "above this block."),
+                    ? $"This game has none yet, so the one from Mod defaults "
+                      + $"({_defaults.SettingsHotkey}) is written."
+                    : "It is asked on its own, under \"Replace this game's key with the one in "
+                      + "Mod defaults\"."),
             FontSize = 11,
             TextWrapping = TextWrapping.Wrap,
             Foreground = Palette.Of("TextMuted"),
@@ -711,9 +709,8 @@ public sealed class GameModSettingsForm
         _apply.IsEnabled = count > 0;
 
         ToolTip.SetTip(_apply, count > 0
-            ? $"{count} setting(s) set for this game. Applying stores them; writing them into the "
-              + "game is a separate act — \"Apply this game's own settings\", or the one-click."
-            : "Nothing to apply — no setting has been changed in this form.");
+            ? $"Writes these {count} setting(s) into the game, and keeps them for a later install."
+            : "Nothing has been changed here.");
     }
 
     // ---------------------------------------------------------------- layout

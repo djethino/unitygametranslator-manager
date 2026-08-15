@@ -267,9 +267,13 @@ public static class BindableKeys
 
         var key = BaseKeyOf(hotkey!);
 
-        return $"\"{key}\" prints a character, so what it means changes from one game to the next — "
-             + "the same physical key is read differently depending on a setting each studio chose. "
-             + "This tool only sends keys that mean the same everywhere: F1 to F15, the keypad, "
+        // ⚠ "what it means changes from one game to the next" — a key does not mean anything, and
+        // dressing a detection problem as intent made the sentence unserious. What actually varies
+        // is whether the same physical key is DETECTED as this key, which depends on a per-project
+        // setting each studio chose.
+        return $"\"{key}\" prints a character, and the same physical key is detected differently "
+             + "from one game to the next — it depends on a setting each studio chose. This tool "
+             + "only sends keys that are detected the same way everywhere: F1 to F15, the keypad, "
              + "Insert/Delete/Home/End/Page keys, arrows, Escape, Tab, Space, Enter. "
              + "To use this key, set it in the game itself — there the mod reads your actual "
              + "keyboard, so it is right whatever your layout or language.";

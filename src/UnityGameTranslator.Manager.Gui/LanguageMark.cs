@@ -19,6 +19,12 @@ namespace UnityGameTranslator.Manager.Gui;
 /// ⚠ **The flags are drawn by us, as pixels** — a national flag is an official symbol, not a
 /// copyrighted work, and what the usual icon sets license is their artwork. See the socle.
 /// </summary>
+/// <summary>One entry of a language picker: what it selects, and how it reads.</summary>
+/// <param name="Code">What gets saved. "auto" for "follow the system".</param>
+/// <param name="Name">The catalogue's language name, or null when there is none to mark.</param>
+/// <param name="Label">What is written beside the flag — sometimes more than the name.</param>
+public sealed record LanguageChoice(string Code, string? Name, string? Label);
+
 public static class LanguageMark
 {
     /// <summary>Height of the flag on screen. Its width follows the catalogue's grid.</summary>
@@ -70,6 +76,34 @@ public static class LanguageMark
                 VerticalAlignment = VerticalAlignment.Center,
             });
         }
+
+        return row;
+    }
+
+    /// <summary>
+    /// A flag followed by the language's name, for a list that names languages.
+    ///
+    /// ⚠ **Built fresh on every call, and that is not a detail here.** A control belongs to one
+    /// place in the tree; handing the same instance to a ComboBox item and to its closed box makes
+    /// it appear in whichever claimed it last and leaves the other empty. Glyphs carries the same
+    /// warning for the same reason.
+    /// </summary>
+    public static Control Named(string? languageName, string? label = null)
+    {
+        var row = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        if (For(languageName) is { } mark) row.Children.Add(mark);
+
+        row.Children.Add(new TextBlock
+        {
+            Text = label ?? languageName ?? "",
+            VerticalAlignment = VerticalAlignment.Center,
+        });
 
         return row;
     }

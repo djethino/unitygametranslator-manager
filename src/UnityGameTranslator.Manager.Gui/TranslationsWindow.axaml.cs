@@ -429,13 +429,40 @@ public sealed class TranslationsWindow : Window
 
         // The pair of languages is what a reader scans for; the author is context. Source matters
         // as much as target here — it is sometimes the only thing separating two entries.
-        body.Children.Add(new TextBlock
+        //
+        // ⚠ Flags AND words, never one or the other. A flag is faster to find in a list and cannot
+        // always name the language on its own — ten Indian languages share one — so the words stay
+        // and the pictures lead.
+        var pair = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        if (LanguageMark.For(translation.SourceLanguage) is { } fromMark) pair.Children.Add(fromMark);
+        if (LanguageMark.For(translation.TargetLanguage) is { } toMark)
+        {
+            pair.Children.Add(new TextBlock
+            {
+                Text = "→",
+                FontSize = 11,
+                Foreground = Brush("TextMuted"),
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+            pair.Children.Add(toMark);
+        }
+
+        pair.Children.Add(new TextBlock
         {
             Text = $"{translation.SourceLanguage ?? "?"} → {translation.TargetLanguage ?? "?"}",
             FontWeight = FontWeight.SemiBold,
             FontSize = 14,
             Foreground = Brush("TextPrimary"),
+            VerticalAlignment = VerticalAlignment.Center,
         });
+
+        body.Children.Add(pair);
 
         // Where this account stands on THIS card, which "installed" does not answer: a file can sit
         // in the game without being one's own, and one's own can be published without being on this

@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Templates;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -874,28 +875,39 @@ public partial class MainWindow : Window
         // machinery first made the one entry that matters most read as a setting rather than as an
         // answer; and it is the entry most likely to be selected, so it is the one the closed box
         // shows, where the language was pushed past the edge and cut off entirely.
+        // ⚠ Each entry gets its own control, never a shared one: a control belongs to one place in
+        // the tree, and the closed box renders the selected entry a second time. Handing it the
+        // same instance empties whichever of the two claimed it first.
         var detected = Languages.FromLocale(_platform.SystemLanguage());
-        var autoLabel = detected is not null
-            ? $"{Languages.NameOf(detected)} (system language)"
-            : "System language";
-        LanguageBox.Items.Add(new ComboBoxItem { Content = autoLabel, Tag = "auto" });
+        var autoName = detected is not null ? Languages.NameOf(detected) : null;
+        var autoLabel = autoName is not null ? $"{autoName} (system language)" : "System language";
+
+        // 🔴 **A template, not a Control per item.** A ComboBox renders the SELECTED entry a second
+        // time, in its closed box — and a control belongs to one place in the tree, so handing the
+        // same instance to both empties whichever claimed it first. The template is asked for a
+        // fresh one each time it is needed, which is the whole difference.
+        LanguageBox.ItemTemplate = new FuncDataTemplate<LanguageChoice>(
+            (choice, _) => LanguageMark.Named(choice?.Name, choice?.Label), supportsRecycling: false);
+
+        LanguageBox.Items.Add(new LanguageChoice("auto", autoName, autoLabel));
+
         foreach (var (code, name) in Languages.All())
-            LanguageBox.Items.Add(new ComboBoxItem { Content = name, Tag = code });
+            LanguageBox.Items.Add(new LanguageChoice(code, name, name));
 
         var current = _settings.Current.TargetLanguage;
-        foreach (var item in LanguageBox.Items.OfType<ComboBoxItem>())
+        foreach (var choice in LanguageBox.Items.OfType<LanguageChoice>())
         {
-            if (string.Equals(item.Tag as string, current, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(choice.Code, current, StringComparison.OrdinalIgnoreCase))
             {
-                LanguageBox.SelectedItem = item;
+                LanguageBox.SelectedItem = choice;
                 break;
             }
         }
-        LanguageBox.SelectedItem ??= LanguageBox.Items.OfType<ComboBoxItem>().FirstOrDefault();
+        LanguageBox.SelectedItem ??= LanguageBox.Items.OfType<LanguageChoice>().FirstOrDefault();
 
         LanguageBox.SelectionChanged += (_, _) =>
         {
-            if (LanguageBox.SelectedItem is not ComboBoxItem { Tag: string code }) return;
+            if (LanguageBox.SelectedItem is not LanguageChoice { Code: var code }) return;
             if (code == _settings.Current.TargetLanguage) return;
 
             var updated = _settings.Current;
@@ -4151,9 +4163,33 @@ public partial class MainWindow : Window
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
         };
 
+        // 🔴 **Which languages this translation is, said on its own card.** The card carried the
+        // author and the votes and never the pair — so the one line telling you whether it is even
+        // the translation you want was missing from the translation you are using.
+        if (LanguageMark.For(published.SourceLanguage) is { } fromMark) row.Children.Add(fromMark);
+        if (LanguageMark.For(published.TargetLanguage) is { } toMark)
+        {
+            row.Children.Add(new TextBlock
+            {
+                Text = "→",
+                FontSize = 11,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                Foreground = Brush("TextMuted"),
+            });
+            row.Children.Add(toMark);
+        }
+
         row.Children.Add(new TextBlock
         {
-            Text = "Published by",
+            Text = $"{published.SourceLanguage ?? "?"} → {published.TargetLanguage ?? "?"}",
+            FontSize = 12,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Foreground = Brush("TextSecondary"),
+        });
+
+        row.Children.Add(new TextBlock
+        {
+            Text = "· published by",
             FontSize = 12,
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
             Foreground = Brush("TextMuted"),

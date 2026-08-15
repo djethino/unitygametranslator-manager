@@ -37,9 +37,9 @@ public static class LanguageMark
     /// The mark for one language, or null when nothing can name it — an unknown language, which
     /// the caller then writes out in words rather than decorating.
     /// </summary>
-    public static Control? For(string? languageName)
+    public static Control? For(string? languageName, bool nameIsWritten = false)
     {
-        var mark = Flags.Mark(languageName ?? "");
+        var mark = Flags.Mark(languageName ?? "", nameIsWritten);
         if (mark.Flag is null && string.IsNullOrEmpty(mark.Tag)) return null;
 
         var row = new StackPanel
@@ -97,7 +97,9 @@ public static class LanguageMark
             VerticalAlignment = VerticalAlignment.Center,
         };
 
-        if (For(languageName) is { } mark) row.Children.Add(mark);
+        // ⚠ nameIsWritten: the chip is dropped, because the name right beside it answers the same
+        // question better. "IN hi Hindi" is the same thing said twice.
+        if (For(languageName, nameIsWritten: true) is { } mark) row.Children.Add(mark);
 
         row.Children.Add(new TextBlock
         {

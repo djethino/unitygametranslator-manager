@@ -2864,24 +2864,20 @@ public partial class MainWindow : Window
                 VerticalAlignment = VerticalAlignment.Center,
             };
 
-            if (LanguageMark.For(owned.SourceLanguage) is { } from) pair.Children.Add(from);
-            if (LanguageMark.For(owned.TargetLanguage) is { } to)
+            pair.Children.Add(LanguageMark.Named(owned.SourceLanguage));
+            pair.Children.Add(new TextBlock
             {
-                pair.Children.Add(new TextBlock
-                {
-                    Text = "→",
-                    FontSize = 11,
-                    Foreground = Brush("TextMuted"),
-                    VerticalAlignment = VerticalAlignment.Center,
-                });
-                pair.Children.Add(to);
-            }
+                Text = "→",
+                FontSize = 12,
+                Foreground = Brush("TextMuted"),
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+            pair.Children.Add(LanguageMark.Named(owned.TargetLanguage));
 
             pair.Children.Add(new TextBlock
             {
-                Text = $"{owned.SourceLanguage} → {owned.TargetLanguage} · {owned.LineCount} lines",
+                Text = $"· {owned.LineCount} lines",
                 FontSize = 12,
-                TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("TextSecondary"),
                 VerticalAlignment = VerticalAlignment.Center,
             });
@@ -4166,26 +4162,17 @@ public partial class MainWindow : Window
         // 🔴 **Which languages this translation is, said on its own card.** The card carried the
         // author and the votes and never the pair — so the one line telling you whether it is even
         // the translation you want was missing from the translation you are using.
-        if (LanguageMark.For(published.SourceLanguage) is { } fromMark) row.Children.Add(fromMark);
-        if (LanguageMark.For(published.TargetLanguage) is { } toMark)
-        {
-            row.Children.Add(new TextBlock
-            {
-                Text = "→",
-                FontSize = 11,
-                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-                Foreground = Brush("TextMuted"),
-            });
-            row.Children.Add(toMark);
-        }
-
+        row.Children.Add(LanguageMark.Named(published.SourceLanguage,
+                                            published.SourceLanguage ?? "?"));
         row.Children.Add(new TextBlock
         {
-            Text = $"{published.SourceLanguage ?? "?"} → {published.TargetLanguage ?? "?"}",
+            Text = "→",
             FontSize = 12,
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-            Foreground = Brush("TextSecondary"),
+            Foreground = Brush("TextMuted"),
         });
+        row.Children.Add(LanguageMark.Named(published.TargetLanguage,
+                                            published.TargetLanguage ?? "?"));
 
         row.Children.Add(new TextBlock
         {

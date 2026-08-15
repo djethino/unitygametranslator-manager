@@ -440,27 +440,19 @@ public sealed class TranslationsWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
         };
 
-        if (LanguageMark.For(translation.SourceLanguage) is { } fromMark) pair.Children.Add(fromMark);
-        if (LanguageMark.For(translation.TargetLanguage) is { } toMark)
-        {
-            pair.Children.Add(new TextBlock
-            {
-                Text = "→",
-                FontSize = 11,
-                Foreground = Brush("TextMuted"),
-                VerticalAlignment = VerticalAlignment.Center,
-            });
-            pair.Children.Add(toMark);
-        }
-
+        // Each flag beside the language it names, once: "GB English -> FR French". Naming them
+        // twice — two flags, then the two names — is what this replaces.
+        pair.Children.Add(LanguageMark.Named(translation.SourceLanguage,
+                                             translation.SourceLanguage ?? "?"));
         pair.Children.Add(new TextBlock
         {
-            Text = $"{translation.SourceLanguage ?? "?"} → {translation.TargetLanguage ?? "?"}",
-            FontWeight = FontWeight.SemiBold,
+            Text = "→",
             FontSize = 14,
-            Foreground = Brush("TextPrimary"),
+            Foreground = Brush("TextMuted"),
             VerticalAlignment = VerticalAlignment.Center,
         });
+        pair.Children.Add(LanguageMark.Named(translation.TargetLanguage,
+                                             translation.TargetLanguage ?? "?"));
 
         body.Children.Add(pair);
 

@@ -252,7 +252,98 @@ public static class CommandLine
 
         var report = await inventory.BuildReportAsync(game, offline);
         PrintReport(report);
+        PrintModSettings(platform, catalog.Document, report);
         return report.Blockers.Count > 0 ? 3 : 0;
+    }
+
+    /// <summary>
+    /// What this game would be configured with, and where that comes from.
+    ///
+    /// 🔴 **The only way to check any of this without a window.** Whether a game follows the
+    /// defaults or holds answers of its own, and which settings would move, is now a real question
+    /// with three possible sources — and this project's own rule is that the card gets judged by
+    /// clicking it, which nobody has done yet. A report that stops short of the answer leaves the
+    /// behaviour unverifiable until somebody does.
+    ///
+    /// ⚠ Same Core calls as the window, deliberately. A second way of working it out here would be
+    /// a second answer, and this text is what gets pasted into an issue.
+    /// </summary>
+    private static void PrintModSettings(IPlatform platform, LoaderCatalogDocument catalog,
+                                         GameReport report)
+    {
+        var defaults = new SettingsStore(platform).Current;
+        if (!defaults.Reviewed) return;
+
+        var preference = new GamePreferences(platform).Read(report.Game.Path);
+
+        var descriptor = report.InstalledLoader is null
+            ? null
+            : catalog.Loaders.FirstOrDefault(l => l.Id == report.InstalledLoader.Id);
+
+        var snapshot = GameConfigWriter.Read(report.Game.Path, descriptor);
+        var mine = preference.UsesModDefaults(snapshot);
+
+        Console.WriteLine();
+        Console.WriteLine($"Mod settings: {(mine
+            ? "Mod defaults"
+            : $"this game's own ({preference.Mod?.Count ?? 0} set for this game)")}");
+
+        // ⚠ Said whichever way the box went. "Nobody has decided, and this game is already
+        // configured, so it keeps what it has" is the whole rule, and it is invisible in the stored
+        // file — apply_mod_defaults is simply absent there.
+        if (preference.ApplyModDefaults is null)
+        {
+            Console.WriteLine(snapshot.IsConfigured
+                ? "              nobody has chosen for this game - it is already configured, so it keeps its own settings"
+                : "              nobody has chosen for this game - it is not configured yet, so it follows Mod defaults");
+        }
+
+        if (descriptor is null)
+        {
+            Console.WriteLine("              no loader installed, so nothing has been written yet");
+            return;
+        }
+
+        if (!snapshot.Exists)
+        {
+            Console.WriteLine("              this game has no configuration yet - one would be created");
+            return;
+        }
+
+        var settings = ModSettingsResolver.Resolve(defaults, preference, snapshot);
+
+        var picked = GameLanguages.Resolve(settings.TargetLanguage, platform.SystemLanguage());
+        var target = GameLanguages.TargetFor(report, descriptor, picked);
+
+        // ⚠ Said out loud, because otherwise the language setting looks broken. A game already
+        // holding a translation keeps that translation's language — its target is what the file IS,
+        // not a preference — so a language chosen here produces nothing, and nothing explains why.
+        if (!string.Equals(target, Languages.NameOf(picked), StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine($"              stays on {target}: it already holds a translation in "
+                              + $"that language, so {Languages.NameOf(picked)} is not written");
+        }
+
+        var differences = new GameConfigWriter()
+            .Compare(report.Game.Path, descriptor, settings, target, preference);
+
+        if (differences.Count == 0)
+        {
+            Console.WriteLine("              this game already matches - nothing would be written");
+            return;
+        }
+
+        foreach (var difference in differences)
+        {
+            // ASCII only, like the stray-plugin lines above: this ends up pasted into an issue,
+            // through a console that mangles the arrows the rest of this file uses.
+            // ⚠ The kept line names Mod defaults rather than saying "yours". Only the hotkey
+            // produces a non-writing difference, and its replacement can only ever come from Mod
+            // defaults — there is deliberately no per-game hotkey setting. See GameModOverrides.
+            Console.WriteLine(difference.Writes
+                ? $"              - {difference.Label}: {difference.InGame} -> {difference.Ours}"
+                : $"              . {difference.Label}: {difference.InGame} (kept; Mod defaults uses {difference.Ours})");
+        }
     }
 
     /// <summary>
@@ -472,8 +563,29 @@ public static class CommandLine
         // nothing to say about their language or their backend, and writing defaults into their
         // game would look like we decided for them.
         var configured = new SettingsStore(platform).Current;
+
+        // 🔴 The SAME settings the window would write, resolved by the same Core call. This command
+        // used to pass the bare defaults and no preference at all, so a game the card protects —
+        // one carrying a configuration somebody set up inside the mod — was quietly overwritten the
+        // moment it was installed into from a terminal. One binary with two faces has to mean one
+        // answer: what `manager install` writes is what the window would have written.
+        var preference = new GamePreferences(platform).Read(report.Game.Path);
+
+        var settings = ModSettingsResolver.Resolve(
+            configured, preference,
+            GameConfigWriter.Read(report.Game.Path, report.InstalledLoader is null
+                ? null
+                : catalog.Loaders.FirstOrDefault(l => l.Id == report.InstalledLoader.Id)));
+
+        // ⚠ --beta still wins: it is this run's explicit instruction, and an option typed on the
+        // line must not be overruled by something remembered. Without it, the game's own channel
+        // answers — which is the whole point of being able to test a pre-release in one game.
+        if (channel == ReleaseChannel.Stable && settings.Channel == "beta")
+            channel = ReleaseChannel.Beta;
+
         var plan = engine.Plan(report, channel, chosen,
-            configured.Reviewed ? configured : null);
+            configured.Reviewed ? settings : null,
+            configured.Reviewed ? preference : null);
 
         if (plan is null)
         {

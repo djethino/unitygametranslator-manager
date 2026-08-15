@@ -56,7 +56,7 @@ public sealed class SettingsWindow : Window
     private ComboBox _aiModel = null!;
     private ComboBox _testInto = null!;
     private ComboBox _testFrom = null!;
-    private TextBox _hotkey = null!;
+    private HotkeyEditor _hotkey = null!;
     private TextBlock _hotkeyProblem = null!;
     private ComboBox _channel = null!;
     private CheckBox _modOnline = null!;
@@ -280,19 +280,10 @@ public sealed class SettingsWindow : Window
 
     private Control LanguageCard()
     {
-        _language = new ComboBox { Width = 260 };
-
-        var detected = Languages.FromLocale(_platform.SystemLanguage());
-        _language.Items.Add(new ComboBoxItem
-        {
-            Content = detected is not null
-                ? $"Follow the system ({Languages.NameOf(detected)})"
-                : "Follow the system",
-            Tag = "auto",
-        });
-
-        foreach (var (code, name) in Languages.All())
-            _language.Items.Add(new ComboBoxItem { Content = name, Tag = code });
+        // 🔸 Built by ModSettingControls, which a game's own card reads too. The same question asked
+        // twice must offer the same answers, or a value chosen on one screen stops meaning the same
+        // thing on the other.
+        _language = ModSettingControls.LanguagePicker(_platform, 260);
 
         Select(_language, _draft.TargetLanguage);
 
@@ -307,11 +298,8 @@ public sealed class SettingsWindow : Window
         // The mod's own two-level shape, and its own words: one choice of kind, then a provider
         // if the kind has several. Listing Google and DeepL as siblings of "an AI" made them look
         // like three unrelated things, when the mod treats the last two as one backend with a
-        // provider setting.
-        _backend = new ComboBox { Width = 260 };
-        _backend.Items.Add(new ComboBoxItem { Content = "Community translations only", Tag = "none" });
-        _backend.Items.Add(new ComboBoxItem { Content = "AI (local or cloud)", Tag = "llm" });
-        _backend.Items.Add(new ComboBoxItem { Content = "Google / DeepL", Tag = "google" });
+        // provider setting. 🔸 Shared with a game's own card — see ModSettingControls.
+        _backend = ModSettingControls.BackendPicker(260);
         Select(_backend, _draft.TranslationBackend == "deepl" ? "google" : _draft.TranslationBackend);
 
         _backend.SelectionChanged += (_, _) => ShowBackendCards();
@@ -345,24 +333,14 @@ public sealed class SettingsWindow : Window
             Margin = new Thickness(20, 0, 0, 0),
         };
 
-        _mergeStrategy = new ComboBox { Width = 260 };
-        _mergeStrategy.Items.Add(new ComboBoxItem { Content = "Ask me every time", Tag = "ask" });
-        _mergeStrategy.Items.Add(new ComboBoxItem { Content = "Keep my own version", Tag = "local" });
-        _mergeStrategy.Items.Add(new ComboBoxItem { Content = "Take the newer one", Tag = "remote" });
+        // 🔸 Shared with a game's own card — see ModSettingControls.
+        _mergeStrategy = ModSettingControls.MergeStrategyPicker(260);
         Select(_mergeStrategy, _draft.MergeStrategy);
 
         _notificationsEnabled = new CheckBox { Content = "Show notices while playing",
                                               IsChecked = _draft.NotificationsEnabled };
 
-        _notificationPosition = new ComboBox { Width = 260 };
-        foreach (var (tag, label) in new[]
-                 {
-                     ("top-right", "Top right"), ("top-left", "Top left"),
-                     ("bottom-right", "Bottom right"), ("bottom-left", "Bottom left"),
-                 })
-        {
-            _notificationPosition.Items.Add(new ComboBoxItem { Content = label, Tag = tag });
-        }
+        _notificationPosition = ModSettingControls.NoticePositionPicker(260);
         Select(_notificationPosition, _draft.NotificationPosition);
 
         var panel = new StackPanel { Spacing = 10 };
@@ -450,9 +428,8 @@ public sealed class SettingsWindow : Window
     /// </summary>
     private Control ApiCard()
     {
-        _provider = new ComboBox { Width = 260 };
-        _provider.Items.Add(new ComboBoxItem { Content = "Google Translate", Tag = "google" });
-        _provider.Items.Add(new ComboBoxItem { Content = "DeepL", Tag = "deepl" });
+        // 🔸 Shared with a game's own card — see ModSettingControls.
+        _provider = ModSettingControls.ProviderPicker(260);
         Select(_provider, _draft.TranslationBackend == "deepl" ? "deepl" : "google");
 
         _providerKey = new TextBox { Width = 300, PasswordChar = '*' };
@@ -688,130 +665,18 @@ public sealed class SettingsWindow : Window
 
     private Control ModCard()
     {
-        // Same shape as the mod's own HotkeyCapture: three modifier boxes, a "+", and one button
-        // that captures the base key. Deliberately identical — it is the same setting in the same
-        // ecosystem, and someone who has met one should recognise the other. It also beats
-        // capturing the whole combination at once: changing Ctrl for Alt does not mean redoing
-        // the capture.
-        var initial = _draft.SettingsHotkey ?? BindableKeys.Default;
+        // 🔴 The capture itself lives in HotkeyEditor, shared with a game's own card. It is ninety
+        // lines of refusals — a key Unity cannot name, a key that means something different from
+        // one game to the next — and every one of them protects against the same outcome: a mod
+        // whose panel silently stops opening, in a game where it used to, with the screen that
+        // could fix it sitting behind that very key. Two copies of that is one copy too many.
+        _hotkey = new HotkeyEditor(_draft.SettingsHotkey, Brush("TextMuted"), Brush("StatusWarning"));
+        _hotkeyProblem = _hotkey.Problem;
 
-        var ctrlBox = new CheckBox { Content = "Ctrl", IsChecked = initial.Contains("Ctrl+") };
-        var altBox = new CheckBox { Content = "Alt", IsChecked = initial.Contains("Alt+") };
-        var shiftBox = new CheckBox { Content = "Shift", IsChecked = initial.Contains("Shift+") };
+        var hotkeyRow = _hotkey.Row;
 
-        var baseKey = BindableKeys.BaseKeyOf(initial);
-        var keyButton = new Button { Content = baseKey, MinWidth = 110, FontSize = 12 };
-
-        _hotkeyProblem = new TextBlock
-        {
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            IsVisible = false,
-            Foreground = Brush("StatusWarning"),
-        };
-
-        // Not shown, not editable: the field only exists so Save reads one value from one place.
-        _hotkey = new TextBox { IsVisible = false, Text = initial };
-
-        // ⚠ Said on arrival, not at the next capture. A key chosen before this tool learned that
-        // character keys do not travel is still sitting in the settings, and it is now skipped when
-        // writing to games — a setting silently without effect is the one thing this screen must
-        // never leave behind.
-        if (BindableKeys.ExplainNotUniversal(initial) is { } carriedOver)
-        {
-            _hotkeyProblem.Text = carriedOver;
-            _hotkeyProblem.IsVisible = true;
-        }
-
-        void Recompose()
-        {
-            var prefix = (ctrlBox.IsChecked == true ? "Ctrl+" : "")
-                       + (altBox.IsChecked == true ? "Alt+" : "")
-                       + (shiftBox.IsChecked == true ? "Shift+" : "");
-            _hotkey.Text = prefix + keyButton.Content;
-        }
-
-        ctrlBox.IsCheckedChanged += (_, _) => Recompose();
-        altBox.IsCheckedChanged += (_, _) => Recompose();
-        shiftBox.IsCheckedChanged += (_, _) => Recompose();
-
-        var capturing = false;
-
-        keyButton.Click += (_, _) =>
-        {
-            capturing = true;
-            keyButton.Content = "Press a key...";
-            _hotkeyProblem.IsVisible = false;
-            keyButton.Focus();
-        };
-
-        keyButton.KeyDown += (_, e) =>
-        {
-            if (!capturing) return;
-            e.Handled = true;
-
-            // Modifiers have their own boxes here, so pressing one alone is not an answer.
-            if (e.PhysicalKey is PhysicalKey.ControlLeft or PhysicalKey.ControlRight
-                or PhysicalKey.AltLeft or PhysicalKey.AltRight
-                or PhysicalKey.ShiftLeft or PhysicalKey.ShiftRight
-                or PhysicalKey.MetaLeft or PhysicalKey.MetaRight)
-            {
-                return;
-            }
-
-            capturing = false;
-
-            // The physical position, turned into the name Unity gives it. ⚠ That name only means
-            // the same thing in every game for keys that print nothing — see BindableKeys.
-            var unityName = BindableKeys.FromPhysicalKey(e.PhysicalKey.ToString());
-
-            if (unityName is null)
-            {
-                // Said, never worked around. Substituting another key silently would leave someone
-                // pressing the one they chose and concluding the mod is broken.
-                keyButton.Content = BindableKeys.BaseKeyOf(_hotkey.Text ?? BindableKeys.Default);
-                _hotkeyProblem.Text = "The mod cannot use that key: Unity has no name for its "
-                                    + "position, so it would never respond. Your previous key was kept.";
-                _hotkeyProblem.IsVisible = true;
-                return;
-            }
-
-            // ⚠ Refused HERE rather than filtered at write time, so the answer arrives while the
-            // key is still under the finger. Discovering three screens later that a choice was
-            // quietly dropped is how somebody stops trusting a tool.
-            if (BindableKeys.ExplainNotUniversal(unityName) is { } notUniversal)
-            {
-                keyButton.Content = BindableKeys.BaseKeyOf(_hotkey.Text ?? BindableKeys.Default);
-                _hotkeyProblem.Text = notUniversal;
-                _hotkeyProblem.IsVisible = true;
-                return;
-            }
-
-            keyButton.Content = unityName;
-            _hotkeyProblem.IsVisible = false;
-            Recompose();
-        };
-
-        var hotkeyRow = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        hotkeyRow.Children.Add(ctrlBox);
-        hotkeyRow.Children.Add(altBox);
-        hotkeyRow.Children.Add(shiftBox);
-        hotkeyRow.Children.Add(new TextBlock
-        {
-            Text = "+",
-            VerticalAlignment = VerticalAlignment.Center,
-            Foreground = Brush("TextMuted"),
-        });
-        hotkeyRow.Children.Add(keyButton);
-
-        _channel = new ComboBox { Width = 200 };
-        _channel.Items.Add(new ComboBoxItem { Content = "Stable", Tag = "stable" });
-        _channel.Items.Add(new ComboBoxItem { Content = "Beta (test releases)", Tag = "beta" });
+        // 🔸 Shared with a game's own card — see ModSettingControls.
+        _channel = ModSettingControls.ChannelPicker(200);
         Select(_channel, _draft.Channel);
 
         // ⚠ There is no "replace it in games too" box here any more, and putting one back would be
@@ -833,14 +698,7 @@ public sealed class SettingsWindow : Window
         var panel = new StackPanel { Spacing = 10 };
 
         panel.Children.Add(Row("In-game hotkey", hotkeyRow));
-        panel.Children.Add(_hotkey);
-        panel.Children.Add(Note(
-            "Click the key button, then press the key you want. Only keys that mean the same in "
-            + "every game are accepted here: F1 to F15, the keypad, Insert/Delete/Home/End/Page, "
-            + "the arrows, Escape, Tab, Space and Enter. In the game itself the mod accepts far "
-            + "more - any key the game does not already use - because there it reads your actual "
-            + "keyboard. A key that prints a character is read differently from one game to the "
-            + "next, so it cannot be sent from here.", "TextMuted"));
+        panel.Children.Add(Note(ModSettingControls.HotkeyAdvice, "TextMuted"));
         panel.Children.Add(_hotkeyProblem);
         panel.Children.Add(Note(
             "A game that already has its own key keeps it. This is a preference, and a key set "
@@ -2066,11 +1924,10 @@ public sealed class SettingsWindow : Window
         // every backend. Reading it as "the backend is an AI" is what once left every Google and
         // DeepL setup marked as switched off.
         _draft.EnableAi = _draft.TranslationBackend != "none";
-        // Whatever is on screen is what gets saved. The field can only hold something captured,
+        // Whatever is on screen is what gets saved. The editor can only hold something captured,
         // so it cannot be unusable — and quietly substituting a different key would be the exact
         // behaviour this whole mechanism exists to avoid.
-        var captured = _hotkey.Text?.Trim();
-        if (!string.IsNullOrWhiteSpace(captured)) _draft.SettingsHotkey = captured;
+        if (!string.IsNullOrWhiteSpace(_hotkey.Value)) _draft.SettingsHotkey = _hotkey.Value;
         _draft.Channel = Tag(_channel) ?? "stable";
 
         // Reviewed is what allows the mod's first-run wizard to be skipped later, and it is set
@@ -2147,7 +2004,7 @@ public sealed class SettingsWindow : Window
         Compare("AI server", _aiUrl.Text, saved.AiUrl);
         Compare("AI model", Tag(_aiModel), saved.AiModel);
         Compare("API key", _apiKey.Text, saved.AiApiKey);
-        Compare("hotkey", _hotkey.Text, saved.SettingsHotkey);
+        Compare("hotkey", _hotkey.Value, saved.SettingsHotkey);
         Compare("updates channel", Tag(_channel), saved.Channel);
 
         if ((_modOnline.IsChecked == true) != saved.ModOnlineMode)
@@ -2206,8 +2063,12 @@ public sealed class SettingsWindow : Window
         foreach (var box in new[] { _language, _backend, _aiModel, _channel })
             box.SelectionChanged += (_, _) => RefreshApplyButton();
 
-        foreach (var field in new[] { _aiUrl, _apiKey, _hotkey })
+        foreach (var field in new[] { _aiUrl, _apiKey })
             field.TextChanged += (_, _) => RefreshApplyButton();
+
+        // Its own event rather than a hidden TextBox's: the editor raises it only when the
+        // composed key actually moves, so a refused capture no longer counts as a pending change.
+        _hotkey.Changed += RefreshApplyButton;
 
         _modOnline.IsCheckedChanged += (_, _) => RefreshApplyButton();
         foreach (var box in new[] { _autoDownload, _notifyUpdates, _checkModUpdates, _notificationsEnabled })

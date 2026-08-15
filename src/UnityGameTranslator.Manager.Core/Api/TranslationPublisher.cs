@@ -31,9 +31,35 @@ public enum PublishOutcome
 /// </param>
 /// <param name="BranchesCount">Contributions waiting on this account's own Main, when it has one.</param>
 /// <param name="ServerFileHash">The published file's hash, when this account owns it.</param>
+/// <param name="OnABranch">
+/// This account's own row in the lineage is a CONTRIBUTION, not a translation of its own.
+///
+/// 🔴 Not the same question as <see cref="PublishOutcome.ContributeToTheirs"/>, and conflating the
+/// two is a mistake that shows. That outcome means "you have no row here yet and sending one would
+/// make you a contributor"; this flag means "you already are one". An established contributor comes
+/// back through <see cref="PublishOutcome.UpdateMine"/> — so reading the outcome alone offered them
+/// a "This translation is finished" box that the server discards on arrival, because a branch always
+/// inherits its Main's.
+/// </param>
+/// <param name="Notes">The description carried by this account's row, as the server holds it.</param>
+/// <param name="ResourcesUrl">
+/// The link carried by this account's row — its OWN, never the Main's it may be borrowing for
+/// display. Sending an inherited link back would pin a branch to a copy of it.
+/// </param>
+/// <param name="Status">"complete" or "in_progress", as published. Never guessed here.</param>
+/// <param name="RowId">This account's own row, the one anything written goes to.</param>
 public sealed record LineageStanding(PublishOutcome Outcome, string? MainOwner,
-                                     int? BranchesCount, string? ServerFileHash)
+                                     int? BranchesCount, string? ServerFileHash,
+                                     bool OnABranch = false, string? Notes = null,
+                                     string? ResourcesUrl = null, string? Status = null,
+                                     int? RowId = null)
 {
+    /// <summary>Whether this account has a row here at all — the thing details can be edited on.</summary>
+    public bool HasARowOfItsOwn => Outcome == PublishOutcome.UpdateMine;
+
+    /// <summary>Whether the author's "finished" declaration is theirs to make on this row.</summary>
+    public bool MayDeclareFinished => HasARowOfItsOwn && !OnABranch;
+
     /// <summary>
     /// What will happen, said before it happens.
     ///
@@ -129,12 +155,26 @@ public sealed class TranslationPublisher
                 int? branches = root.TryGetProperty("branches_count", out var b)
                                 && b.TryGetInt32(out var count) ? count : null;
 
-                string? hash = root.TryGetProperty("translation", out var mine)
-                               && mine.ValueKind == JsonValueKind.Object
-                    ? Text(mine, "file_hash")
-                    : null;
+                var mine = root.TryGetProperty("translation", out var block)
+                           && block.ValueKind == JsonValueKind.Object
+                    ? block
+                    : default;
 
-                return new LineageStanding(PublishOutcome.UpdateMine, null, branches, hash);
+                var has = mine.ValueKind == JsonValueKind.Object;
+
+                return new LineageStanding(
+                    PublishOutcome.UpdateMine, null, branches,
+                    has ? Text(mine, "file_hash") : null,
+                    OnABranch: role == "branch",
+                    Notes: has ? Text(mine, "notes") : null,
+                    // ⚠ The row's OWN link. "resources_url" beside it is the effective one — a
+                    // branch's Main's, when the branch has none — and is for showing, not for
+                    // sending back. Falls back on servers older than the distinction.
+                    ResourcesUrl: has ? Text(mine, "resources_url_own") ?? Text(mine, "resources_url") : null,
+                    Status: has ? Text(mine, "status") : null,
+                    RowId: has && mine.TryGetProperty("id", out var rowId) && rowId.TryGetInt32(out var row)
+                        ? row
+                        : null);
             }
 
             // Somebody else's lineage: we would be contributing to it.
@@ -166,11 +206,25 @@ public sealed class TranslationPublisher
     /// and validates it itself, and every key it carries — including ones this tool has never heard
     /// of — has to arrive intact.
     /// </summary>
+    /// <param name="notes">
+    /// The description to store. 🔴 <b>Null does NOT mean "keep".</b> The endpoint writes this
+    /// field from the request on every update, so an absent one stores null — which is how this
+    /// tool erased, on each publish, the description its author had written on the site or in the
+    /// game. A caller with nothing new to say must send back what the server already holds
+    /// (<see cref="LineageStanding.Notes"/>), not nothing.
+    /// </param>
+    /// <param name="resourcesUrl">The link to fonts or images, under the same rule as notes.</param>
+    /// <param name="status">
+    /// "complete" or "in_progress". This one IS kept when omitted — the endpoint reads it as
+    /// `?? existing`. The asymmetry is the server's, and it is why the two are documented apart
+    /// rather than together.
+    /// </param>
     /// <returns>The published translation's id, or null on failure.</returns>
     public async Task<int?> PublishAsync(string contentJson, string apiToken,
                                          string? steamId, string? gameName,
                                          string sourceLanguage, string targetLanguage,
                                          string? notes = null, string? status = null,
+                                         string? resourcesUrl = null,
                                          CancellationToken ct = default)
     {
         LastError = null;
@@ -202,7 +256,24 @@ public sealed class TranslationPublisher
                 writer.WriteString("source_language", sourceLanguage);
                 writer.WriteString("target_language", targetLanguage);
                 writer.WriteString("content", contentJson);
-                if (!string.IsNullOrWhiteSpace(notes)) writer.WriteString("notes", notes);
+
+                // ⚠ Written whenever the caller STATED something, empty string included — that is
+                // how a description or a link gets cleared on purpose. Omitted only when the
+                // caller passed null, which by the rule above means "I have nothing to say about
+                // this field", and costs the stored value. See the parameter docs.
+                if (notes is not null)
+                {
+                    if (notes.Length == 0) writer.WriteNull("notes");
+                    else writer.WriteString("notes", notes);
+                }
+
+                // ⚠ Empty rather than "" would be refused: the endpoint validates this as a URL
+                // when present, so a blank must go as null to mean "no link".
+                if (resourcesUrl is not null)
+                {
+                    if (resourcesUrl.Length == 0) writer.WriteNull("resources_url");
+                    else writer.WriteString("resources_url", resourcesUrl);
+                }
 
                 // ⚠ OMITTED rather than defaulted when null. The server then keeps whatever the
                 // translation already had — which is how this tool has always behaved, and why it
@@ -244,6 +315,81 @@ public sealed class TranslationPublisher
         {
             LastError = Net.Http.Describe(ex, "the community site");
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Change what is SAID about a published translation, without sending the file.
+    ///
+    /// 🔴 A description or a link is not a release. Doing this through an upload would send
+    /// whatever else the local file has gained since it was last published — so it goes to its own
+    /// endpoint, which touches those three fields and nothing else.
+    ///
+    /// ⚠ Each argument is sent only when it is non-null: null means "no opinion", empty means
+    /// "clear it". The endpoint reads absence the same way, so a caller can fix a link without
+    /// restating a description it never read.
+    ///
+    /// ⚠ <paramref name="status"/> must be null on a branch. The server refuses it rather than
+    /// ignoring it — a contribution inherits its Main's — and reporting that refusal as an error
+    /// is right: the alternative is a client believing it set something.
+    /// </summary>
+    /// <returns>True when the change was stored.</returns>
+    public async Task<bool> UpdateDetailsAsync(int translationId, string apiToken,
+                                               string? notes = null, string? resourcesUrl = null,
+                                               string? status = null,
+                                               CancellationToken ct = default)
+    {
+        LastError = null;
+
+        try
+        {
+            var payload = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(payload))
+            {
+                writer.WriteStartObject();
+
+                if (notes is not null)
+                {
+                    if (notes.Length == 0) writer.WriteNull("notes");
+                    else writer.WriteString("notes", notes);
+                }
+
+                if (resourcesUrl is not null)
+                {
+                    if (resourcesUrl.Length == 0) writer.WriteNull("resources_url");
+                    else writer.WriteString("resources_url", resourcesUrl);
+                }
+
+                if (!string.IsNullOrWhiteSpace(status)) writer.WriteString("status", status);
+                writer.WriteEndObject();
+            }
+
+            var url = $"{BuildInfo.ApiBaseUrl}/translations/{translationId}/details";
+            using var request = new HttpRequestMessage(HttpMethod.Patch, url);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiToken);
+            request.Content = new ByteArrayContent(payload.ToArray());
+            request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+
+            using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+
+            if (response.IsSuccessStatusCode) return true;
+
+            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+
+            // ⚠ 404 is the one worth its own words: this endpoint arrived after the tool did, so a
+            // site that has not been updated answers "no such route" — which is not the user
+            // having done anything wrong, and must not read as one.
+            LastError = (int)response.StatusCode == 404
+                ? "This site does not offer editing the details on their own yet. Publishing from "
+                  + "the game can still change them."
+                : Describe((int)response.StatusCode, body);
+
+            return false;
+        }
+        catch (Exception ex)
+        {
+            LastError = Net.Http.Describe(ex, "the community site");
+            return false;
         }
     }
 

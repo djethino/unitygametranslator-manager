@@ -4099,12 +4099,16 @@ public partial class MainWindow : Window
         //
         // ⚠ A contribution inherits its Main's, exactly as the server decides and as the other two
         // products say — so nothing is offered for one, rather than a control that does nothing.
+        //
+        // ⚠ **Two ways of being a contributor, and only one used to be covered.** The outcome says
+        // "sending this would MAKE you one"; somebody who already IS one comes back through
+        // UpdateMine, and was shown the box. The server discarded what they set, silently.
         var contributing = lineage.Outcome == PublishOutcome.ContributeToTheirs;
+        var branchWork = contributing || lineage.OnABranch;
 
-        // ⚠ Starts on what is PUBLISHED, never on a default. This window has always preserved the
-        // status by omitting the field; a box that opened unticked would start undoing it, which
-        // is exactly the bug the mod had.
-        var alreadyComplete = string.Equals(report.MatchingOnline?.Status, "complete",
+        // ⚠ Starts on what the SERVER holds for our own row — not on MatchingOnline, which is the
+        // lineage's public translation and belongs to somebody else whenever we are a branch.
+        var alreadyComplete = string.Equals(lineage.Status, "complete",
                                             StringComparison.OrdinalIgnoreCase);
 
         var body = lineage.Describe() + "\n\n"
@@ -4114,7 +4118,7 @@ public partial class MainWindow : Window
         bool agreed;
         var markComplete = alreadyComplete;
 
-        if (contributing)
+        if (branchWork)
         {
             agreed = await ConfirmationWindow.AskAsync(this, "Publish this translation?", body, confirm);
         }
@@ -4130,12 +4134,18 @@ public partial class MainWindow : Window
         button.IsEnabled = false;
         ScopeMark.SetLabel(button, "Publishing…");
 
-        // ⚠ Null when contributing: the server makes a branch inherit its Main's, and sending a
+        // ⚠ Null on any branch work: the server makes a branch inherit its Main's, and sending a
         // value would be this window deciding something it has no say in.
-        var status = contributing ? null : (markComplete ? "complete" : "in_progress");
+        var status = branchWork ? null : (markComplete ? "complete" : "in_progress");
 
+        // 🔴 **Sent back, not omitted.** The endpoint writes these two from the request on every
+        // update, so leaving them out stores null — and this window erased, on each publish, the
+        // description and the link their author had written in the game or on the site. Nothing
+        // here changes them; restating them is what keeps them.
         var id = await publisher.PublishAsync(content, token, report.Game.SteamAppId, report.Game.Name,
-                                              languages.Source, languages.Target, status: status);
+                                              languages.Source, languages.Target,
+                                              notes: lineage.Notes ?? "", status: status,
+                                              resourcesUrl: lineage.ResourcesUrl ?? "");
 
         button.IsEnabled = true;
         ScopeMark.SetLabel(button, "Publish…");
@@ -4154,6 +4164,98 @@ public partial class MainWindow : Window
 
         // ⚠ redraw: publishing changes what the SITE holds — the badges, the votes, the author's
         // "finished" — while the file on this machine says exactly what it said a second ago.
+        await RereadAsync(report.Game, redraw: true);
+    }
+
+    /// <summary>
+    /// Change what is SAID about a published translation: its description, the link to what it
+    /// needs, and — on a translation of one's own — whether its author calls it finished.
+    ///
+    /// 🔴 **Not a publication.** It goes to its own endpoint and sends no file, so a description
+    /// fixed months later does not drag along whatever the local translation has gained since. The
+    /// two acts were one for as long as the only way to change a word was to upload.
+    ///
+    /// ⚠ **Open to a contributor too**, minus the one thing that is not theirs to say. Proposing a
+    /// clearer description, or the link to the fonts the contribution needs, IS contributing.
+    ///
+    /// ⚠ The lineage is asked BEFORE the window opens, so what it shows is what the server holds
+    /// rather than what this machine last saw — everything in it is sent back as the new truth,
+    /// and a stale description would be quietly restored.
+    /// </summary>
+    private async Task EditTranslationDetailsAsync(GameReport report, Button button)
+    {
+        var standing = ServerIdentity.For(_settings.Current, report.SiteAccount, BuildInfo.ApiBaseUrl);
+        if (!standing.CanAct)
+        {
+            await ConfirmationWindow.TellAsync(this, "Not under this account",
+                standing.Reason ?? "This game is linked to another account.");
+            return;
+        }
+
+        var token = _settings.Current.ApiToken;
+        if (string.IsNullOrWhiteSpace(token)) return;
+
+        button.IsEnabled = false;
+        ScopeMark.SetLabel(button, "Checking…");
+
+        var publisher = new TranslationPublisher();
+        var lineage = await publisher.CheckAsync(report.LocalTranslation?.Uuid ?? "", token);
+
+        button.IsEnabled = true;
+        ScopeMark.SetLabel(button, "Edit details…");
+
+        if (lineage is null)
+        {
+            await ConfirmationWindow.TellAsync(this, "Could not check this translation",
+                publisher.LastError ?? "The site did not answer.");
+            return;
+        }
+
+        // ⚠ Nothing published means nothing to describe. Said rather than greyed: the button is
+        // drawn before this answer is known, so its refusal has to arrive as a sentence.
+        if (!lineage.HasARowOfItsOwn || lineage.RowId is not { } rowId)
+        {
+            await ConfirmationWindow.TellAsync(this, "Nothing is published yet",
+                "These details belong to a published translation. Publish this one first — the "
+                + "same description and link are asked for as part of it.");
+            return;
+        }
+
+        var heading = lineage.OnABranch
+            ? "What your contribution says about itself"
+            : "What your translation says about itself";
+
+        var edited = await TranslationDetailsWindow.EditAsync(
+            this, heading, lineage.Notes, lineage.ResourcesUrl,
+            string.Equals(lineage.Status, "complete", StringComparison.OrdinalIgnoreCase),
+            lineage.OnABranch);
+
+        if (!edited.Saved) return;
+
+        button.IsEnabled = false;
+        ScopeMark.SetLabel(button, "Saving…");
+
+        // ⚠ Null on a branch, and refused by the server if it were not: a contribution inherits
+        // whether it is finished. MayDeclareFinished is the shared answer, not a second reading.
+        var status = lineage.MayDeclareFinished
+            ? (edited.Finished ? "complete" : "in_progress")
+            : null;
+
+        var saved = await publisher.UpdateDetailsAsync(rowId, token, edited.Notes,
+                                                       edited.ResourcesUrl, status);
+
+        button.IsEnabled = true;
+        ScopeMark.SetLabel(button, "Edit details…");
+
+        if (!saved)
+        {
+            await ConfirmationWindow.TellAsync(this, "Nothing was changed",
+                publisher.LastError ?? "The site did not answer.");
+            return;
+        }
+
+        // ⚠ redraw: this changed the SITE. The file on this machine is untouched, so the reading
+        // would find the game exactly as it was and skip drawing the badge that just moved.
         await RereadAsync(report.Game, redraw: true);
     }
 
@@ -4486,6 +4588,22 @@ public partial class MainWindow : Window
                                        standing.CanAct && nothingToSend is null);
         publish.Click += async (_, _) => await PublishTranslationAsync(report, descriptor, publish);
         actions.Children.Add(publish);
+
+        // ── What is said about it ─────────────────────────────────────────────
+        //
+        // ⚠ Deliberately NOT guarded on nothingToSend. This is the one action that exists
+        // precisely for when there is nothing left to publish: a description written after the
+        // fact, a link that moved, a translation its author now calls finished.
+        //
+        // ⚠ Server, not Both: it changes what the site holds and writes nothing on this machine.
+        //
+        // ⚠ Shown whether the translation is published or not, because whether it IS cannot be
+        // answered from this card — MatchingOnline is the lineage's PUBLIC translation, and a
+        // contributor's own row is not in it. Asked on click, and answered in words.
+        var details = ScopeMark.Marked(EditScope.SideAfter(onThisMachine: false, yourPublishedCopy: true),
+                                       "Edit details…", standing.CanAct);
+        details.Click += async (_, _) => await EditTranslationDetailsAsync(report, details);
+        actions.Children.Add(details);
 
         // ── Settle the difference ─────────────────────────────────────────────
         //

@@ -47,14 +47,17 @@ public static class ScopeMark
         {
             var lit = standing.Side == side;
 
-            // ⚠ **On a button nobody can press, the lit mark drops its colour.** The accent is
-            // there to catch an eye, and catching one for a dead control is exactly wrong — a
-            // disabled button was reading as the brightest thing in the row. It stays
-            // recognisable as the lit one, by being LIGHTER than the other two rather than a
-            // different hue: which side the action aims at is still worth knowing when you are
-            // reading why you cannot take it.
+            // ⚠ **On a button nobody can press, the lit mark drops its colour.** MarkLit is there
+            // to catch an eye, and catching one for a dead control is exactly wrong — a disabled
+            // button was reading as the brightest thing in the row. It stays recognisable as the
+            // lit one, by being LIGHTER than the other two rather than a different hue: which side
+            // the action aims at is still worth knowing when you are reading why you cannot take it.
+            //
+            // ⚠ MarkLit, not AccentSoft. The accent was a light purple sitting on purple buttons,
+            // where it scored LESS against the fill than the two dimmed marks did — the socle
+            // measures this now, and says why cyan is what the palette leaves free.
             var colour = lit
-                ? (enabled ? "AccentSoft" : "TextSecondary")
+                ? (enabled ? "MarkLit" : "TextSecondary")
                 : "TextMuted";
 
             row.Children.Add(Glyphs.Sized(Draw(standing.Side, colour), MarkSize));

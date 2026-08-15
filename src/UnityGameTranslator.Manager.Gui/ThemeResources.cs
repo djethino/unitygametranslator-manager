@@ -56,6 +56,10 @@ internal static class ThemeResources
         r["AccentDeep"] = Brush(Theme.AccentDeep);
         r["AccentSoft"] = Brush(Theme.AccentSoft);
         r["AccentSelected"] = Brush(Theme.RowSelected);
+
+        // The chosen one of the three scope marks. ⚠ Outside the accent family on purpose — it
+        // sits INSIDE buttons, including accent-filled ones. See Theme.MarkLit.
+        r["MarkLit"] = Brush(Theme.MarkLit);
         r["AccentGradient"] = new LinearGradientBrush
         {
             StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),

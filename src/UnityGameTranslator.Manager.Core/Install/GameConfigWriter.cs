@@ -21,6 +21,14 @@ public sealed record ConfigWriteResult(
 /// Both sides are already rendered for reading: a difference is shown to somebody deciding
 /// whether to overwrite their own choice, and "true / false" answers nothing.
 /// </summary>
+/// <param name="Key">
+/// The config.json key this line is about — a stable identifier, unlike the label.
+///
+/// ⚠ Exists so a screen can attach something to ONE line (the hotkey carries a checkbox) without
+/// recognising it by its wording. The <paramref name="Label"/> is written for a reader and will be
+/// reworded; anything hanging off it silently stops working the day it is. Nested keys are spelled
+/// "parent.key", as the file has them.
+/// </param>
 /// <param name="Label">The setting in the words the screens use.</param>
 /// <param name="InGame">What the game says now.</param>
 /// <param name="Ours">What applying the defaults would put there.</param>
@@ -30,7 +38,19 @@ public sealed record ConfigWriteResult(
 /// known where the setting is declared, and a screen matching on labels would lose it at the first
 /// rewording.
 /// </param>
-public sealed record ConfigDifference(string Label, string InGame, string Ours, string? Note = null);
+/// <param name="Writes">
+/// Whether applying would actually change this one, or merely shows where the two stand.
+///
+/// 🔴 **False is not a lesser difference, it is a different sentence**: "this game keeps its own
+/// key, and here is yours for comparison". Only the hotkey produces it today — the one setting a
+/// game may legitimately know better than we do — and it is the reason the line exists at all,
+/// since deciding whether to replace a key is impossible without seeing both.
+///
+/// ⚠ Anything counting "what would one click do" must count only the lines that write. A list that
+/// mixes the two makes the button offer to apply something it will deliberately leave alone.
+/// </param>
+public sealed record ConfigDifference(string Key, string Label, string InGame, string Ours,
+                                      string? Note = null, bool Writes = true);
 
 /// <summary>
 /// Puts the installer's settings into a game's config.json, and nothing else.
@@ -140,6 +160,115 @@ public sealed class GameConfigWriter
     }
 
     /// <summary>
+    /// Everything this game holds under a key we own, read back into the terms this tool reasons in.
+    ///
+    /// ⚠ **The mirror of <see cref="Intended"/>, and it has to stay one.** A key written there and
+    /// not read here comes back as "this game says nothing about it", so a screen offering to
+    /// override it starts from the defaults instead of from what the player set inside the game —
+    /// which is the exact opposite of what pre-filling is for. The two lists are checked against
+    /// each other by the checks project.
+    ///
+    /// ⚠ Never throws. A config.json somebody hand-edited and broke comes back as
+    /// <see cref="GameConfigSnapshot.Unknown"/>; the install path is what reports it, and refuses
+    /// to touch it. Saying it twice, less accurately, helps nobody — the same silence
+    /// <see cref="Compare"/> keeps.
+    /// </summary>
+    public static GameConfigSnapshot Read(string gamePath, LoaderDescriptor? descriptor)
+    {
+        if (descriptor is null) return GameConfigSnapshot.Unknown;
+
+        var path = ConfigPath(gamePath, descriptor);
+        if (!File.Exists(path)) return GameConfigSnapshot.Unknown;
+
+        try
+        {
+            var root = Load(path);
+            var values = new GameModOverrides
+            {
+                TargetLanguage = Text(root, null, TargetLanguageKey),
+                TranslationBackend = Text(root, null, "translation_backend"),
+                AiUrl = Text(root, null, "ai_url"),
+                AiModel = Text(root, null, "ai_model"),
+
+                // Read into the CLEAR fields, then handed straight back to ProtectSecrets when
+                // something is stored. The stored halves stay empty on purpose: what a game holds
+                // is encrypted for this machine already, and copying one ciphertext into another
+                // file would be a second copy of a secret nobody asked us to keep.
+                AiApiKey = Secret(root, "ai_api_key"),
+                GoogleApiKey = Secret(root, "google_api_key"),
+                DeeplApiKey = Secret(root, "deepl_api_key"),
+                DeeplUseFree = Flag(root, null, "deepl_use_free"),
+                ModOnlineMode = Flag(root, null, "online_mode"),
+                AutoDownload = Flag(root, "sync", "auto_download"),
+                NotifyUpdates = Flag(root, "sync", "notify_updates"),
+                CheckModUpdates = Flag(root, "sync", "check_mod_updates"),
+                MergeStrategy = Text(root, "sync", "merge_strategy"),
+                NotificationsEnabled = Flag(root, "sync", "notifications_enabled"),
+                NotificationPosition = Text(root, "sync", "notification_position"),
+
+                // ⚠ The channel is not stored in a game; what IS stored is what the mod announces
+                // from inside it, which Intended derives from the channel. Read back the same way
+                // round, and absent stays absent: reading "no pre-release notices" as "stable"
+                // would invent an answer for every game written before this key existed.
+                Channel = Flag(root, "sync", "notify_prereleases") switch
+                {
+                    true => "beta",
+                    false => "stable",
+                    null => null,
+                },
+            };
+
+            // ⚠ The hotkey is carried BESIDE the settings, never among them — see
+            // GameConfigSnapshot.InGameHotkey. It is a measurement taken inside the game, not a
+            // value this tool may be told to write.
+            return new GameConfigSnapshot(
+                true,
+                Flag(root, null, "first_run_completed") == true,
+                Text(root, null, HotkeyKey),
+                values);
+        }
+        catch
+        {
+            return GameConfigSnapshot.Unknown;
+        }
+    }
+
+    /// <summary>A string under a key, or null when the game says nothing usable there.</summary>
+    private static string? Text(JsonObject root, string? parent, string key)
+    {
+        var node = At(root, parent, key);
+        if (node is null || node.GetValueKind() != JsonValueKind.String) return null;
+
+        var text = node.GetValue<string>();
+        return string.IsNullOrWhiteSpace(text) ? null : text;
+    }
+
+    /// <summary>A true/false under a key, or null when it is absent or is something else.</summary>
+    private static bool? Flag(JsonObject root, string? parent, string key) =>
+        At(root, parent, key)?.GetValueKind() switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            _ => null,
+        };
+
+    /// <summary>
+    /// A secret in clear, or null when there is none — or when it was sealed for another machine.
+    ///
+    /// That last case is deliberate and it is why this cannot simply carry the stored form across:
+    /// a key that cannot be read here must come back as "no key", not as ciphertext we would then
+    /// hand to a provider.
+    /// </summary>
+    private static string? Secret(JsonObject root, string key)
+    {
+        var stored = Text(root, null, key);
+        return stored is null ? null : Secrets.Unprotect(stored);
+    }
+
+    private static JsonNode? At(JsonObject root, string? parent, string key) =>
+        parent is null ? root[key] : (root[parent] as JsonObject)?[key];
+
+    /// <summary>
     /// One key this tool owns, and the value it would give it.
     ///
     /// <paramref name="Value"/> holds a bool, a string, or null to mean "remove this key".
@@ -152,16 +281,18 @@ public sealed class GameConfigWriter
     /// difference: we are not offering to change it, so listing it would be an offer we do not make.
     /// </param>
     /// <param name="AskedSeparately">
-    /// Once the game carries a value of its own, keep this key out of <see cref="Compare"/>
-    /// whatever <paramref name="OnlyIfAbsent"/> says, because a screen of its own asks about it.
+    /// This key carries its OWN answer, rendered on its own line — a checkbox beside the values,
+    /// rather than being accepted with the block.
     ///
-    /// ⚠ Not the same statement as OnlyIfAbsent, and the difference is the whole point. That one
-    /// means "we are not offering to change this"; this one means "we are, elsewhere". The list of
-    /// differences is a single block somebody accepts or refuses as a whole, so a setting carrying
-    /// its own question would be answered twice — and the two answers could disagree.
+    /// ⚠ **This used to mean "keep it out of <see cref="Compare"/> entirely", and that was wrong
+    /// twice over.** It hid the hotkey from the list whatever the box said — so a screen claiming
+    /// to list what differs never mentioned the one setting somebody was being asked to decide —
+    /// and it forced that screen to render the same fact in a shape of its own, which looked
+    /// nothing like the differences it sat next to. The line is now in the list like any other; it
+    /// simply carries its own answer, and says so through <see cref="ConfigDifference.Writes"/>.
     ///
-    /// ⚠ Only once the game has a value. With none, there is no separate question to ask: the key
-    /// is written outright, and leaving it out of the list would understate what applying does.
+    /// ⚠ Still not the same statement as OnlyIfAbsent. That one means "we are not offering to
+    /// change this"; this one means "the offer is attached to this very line".
     /// </param>
     private readonly record struct Intent(
         string? Parent,
@@ -249,13 +380,20 @@ public sealed class GameConfigWriter
         if (BindableKeys.IsUniversal(settings.SettingsHotkey)
             && BindableKeys.IsValid(settings.SettingsHotkey))
         {
+            // 🔴 **ReplaceHotkey, and nothing else, decides.** There is deliberately no per-game
+            // hotkey setting to consult here: the key inside a game was measured against the real
+            // keyboard, so the only question worth asking is "do I replace THAT one", asked on that
+            // game's card with both keys on screen. Anything else answering it — a field in a form,
+            // a global preference — decides for somebody out of sight of the thing being decided.
+            var replaces = perGame?.ReplaceHotkey ?? false;
+
             // ⚠ Unticked does NOT mean "never write it": a game that has no hotkey yet has nothing
             // to overwrite, and skipping it there would leave the mod on its own default while
             // first_run_completed claims the question was answered — AnswersTheWizard counts this
             // setting among the answers. So: always on a fresh config, only on demand afterwards.
             intents.Add(new Intent(null, HotkeyKey, settings.SettingsHotkey, "in-game hotkey",
                 Note: "set in the game itself — applying replaces the key you chose there",
-                OnlyIfAbsent: !(perGame?.ReplaceHotkey ?? false),
+                OnlyIfAbsent: !replaces,
                 AskedSeparately: true));
         }
 
@@ -432,6 +570,14 @@ public sealed class GameConfigWriter
         }
     }
 
+    /// <summary>
+    /// The key a difference is filed under, spelled as the file has it: "sync.merge_strategy" for
+    /// a nested one, the bare name otherwise. One composition, so a screen and this class cannot
+    /// disagree about how a nested key is written.
+    /// </summary>
+    private static string KeyOf(Intent intent) =>
+        intent.Parent is null ? intent.Key : $"{intent.Parent}.{intent.Key}";
+
     /// <summary>What the game holds for this key today, or null when it holds nothing.</summary>
     private static JsonNode? Existing(JsonObject root, Intent intent) =>
         intent.Parent is null
@@ -489,12 +635,13 @@ public sealed class GameConfigWriter
 
             // Nothing is being offered about this one while the game already answers it, so there
             // is nothing to report either.
-            if (intent.OnlyIfAbsent && node is not null) continue;
-
-            // Answered on its own screen instead — see Intent.AskedSeparately. Checked after the
-            // line above rather than merged with it: the two say different things, and a game
-            // with no value of its own is still reported by both.
-            if (intent.AskedSeparately && node is not null) continue;
+            //
+            // ⚠ Except when the line carries its own answer. Then the whole point is to show both
+            // values — "replace this game's key?" cannot be answered without them — so it is
+            // reported as a difference that does NOT write, rather than not reported at all. That
+            // silence is what left the hotkey rendered in a shape of its own, beside a list it
+            // belonged in.
+            if (intent.OnlyIfAbsent && node is not null && !intent.AskedSeparately) continue;
 
             // Absent in the game means the mod is on its default there. That IS a difference worth
             // offering — it is how "your game never learned your hotkey" shows up — but it is
@@ -504,7 +651,12 @@ public sealed class GameConfigWriter
 
             if (inGame is not null && string.Equals(inGame, ours, StringComparison.Ordinal)) continue;
 
-            differences.Add(new ConfigDifference(intent.Label, inGame ?? "not set", ours, intent.Note));
+            differences.Add(new ConfigDifference(
+                KeyOf(intent), intent.Label, inGame ?? "not set", ours, intent.Note,
+
+                // The one case where a difference is shown and deliberately left alone: this line
+                // asks its own question, and the answer today is no.
+                Writes: !(intent.OnlyIfAbsent && node is not null)));
         }
 
         return differences;

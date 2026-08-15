@@ -21,12 +21,62 @@ namespace UnityGameTranslator.Manager.Core.Settings;
 public sealed class GamePreference
 {
     /// <summary>
-    /// Whether our settings are written into this game's config.json.
+    /// Which generation of this record an entry was written by. Absent means the first, from before
+    /// <see cref="ApplyModDefaults"/> could say "nobody has decided" — see
+    /// <see cref="GamePreferences.AfterLoad"/>, which is the only thing that reads it.
     ///
-    /// Not nullable: it is a decision about this game and nothing else, and true is the answer
-    /// that matches what the tool is for.
+    /// 🔴 **It defaults to 1, not to <see cref="Current"/>, and that is the whole mechanism.** An
+    /// entry written before this field existed has no "schema" in the file, so deserialising it
+    /// leaves whatever the initialiser put there — set it to Current and every old entry would
+    /// announce itself as already migrated, which is exactly the silence the migration exists to
+    /// break. Saving is what stamps the current number.
     /// </summary>
-    [JsonPropertyName("apply_mod_defaults")] public bool ApplyModDefaults { get; set; } = true;
+    [JsonPropertyName("schema")] public int Schema { get; set; } = 1;
+
+    /// <summary>
+    /// The generation this code writes. Bumped when a stored value changes MEANING rather than
+    /// shape — a new field needs nothing, a field whose old default was a claim needs this.
+    /// </summary>
+    public const int Current = 2;
+
+    /// <summary>
+    /// Whether the DEFAULTS are what gets written into this game, or this game has answers of its
+    /// own (<see cref="Mod"/>).
+    ///
+    /// ⚠ **Nullable, and it was a plain bool defaulting to true.** That default was a claim about
+    /// every game nobody had decided about — including a game discovered with a configuration
+    /// somebody had already set up inside it, which the very first one-click therefore offered to
+    /// overwrite without anyone choosing that. Null means "nobody has decided", and the answer is
+    /// then read from the game itself; see <see cref="UsesModDefaults"/>.
+    ///
+    /// ⚠ It cannot be inferred from "this game has no entry in game-preferences.json": an entry is
+    /// created the moment anything else here is touched — a translation picked, a context written,
+    /// the box beside the one-click. Undecided has to be storable, hence the null.
+    /// </summary>
+    [JsonPropertyName("apply_mod_defaults")] public bool? ApplyModDefaults { get; set; }
+
+    /// <summary>
+    /// What this game answers for itself, where it answers anything. Null until it answers
+    /// something — see <see cref="GameModOverrides"/>, which never freezes a value merely shown.
+    /// </summary>
+    [JsonPropertyName("mod")] public GameModOverrides? Mod { get; set; }
+
+    /// <summary>
+    /// Whether the defaults are what this game gets, resolving "nobody decided" from the game.
+    ///
+    /// 🔴 The rule, in one line: **a game that is already configured keeps its own configuration.**
+    /// Somebody who set a game up from inside the mod has answered; discovering that game here must
+    /// not turn their answer into something the next click overwrites. A game that has never been
+    /// configured has nothing to lose and everything to gain from the defaults, so it follows them.
+    /// </summary>
+    /// <param name="snapshot">
+    /// What the game holds, or null when it could not be read. ⚠ Null resolves to "follow the
+    /// defaults", not to "leave it alone": with nothing readable there is nothing to protect, and
+    /// refusing to configure a game because we failed to read it would be a refusal nobody asked
+    /// for and nothing on screen could explain.
+    /// </param>
+    public bool UsesModDefaults(GameConfigSnapshot? snapshot) =>
+        ApplyModDefaults ?? !(snapshot?.IsConfigured ?? false);
 
     /// <summary>
     /// Whether the mod starts translating as soon as the game launches, or waits.
@@ -108,4 +158,40 @@ public sealed class GamePreferences : PerGameStore<GamePreference>
     /// </summary>
     public bool StartsTranslation(string gamePath, InstallerSettings defaults) =>
         Read(gamePath).StartTranslation ?? defaults.EnableAi;
+
+    /// <summary>
+    /// Encrypted on the way out, decrypted on the way in — the same two-property split, the same
+    /// scheme and the same one-way-to-disk rule the defaults follow in SettingsStore.
+    ///
+    /// ⚠ Here rather than in <see cref="PerGameStore{T}"/>: that class is shared with a store that
+    /// holds no secret at all, and giving it a notion of secrecy it does not need is how the rule
+    /// stops being read.
+    /// </summary>
+    protected override void BeforeSave(GamePreference value)
+    {
+        value.Mod?.ProtectSecrets();
+
+        // Whatever generation it was read as, it is written as this one — the migration below has
+        // already run, so re-running it on the next load would reopen a question now answered.
+        value.Schema = GamePreference.Current;
+    }
+
+    protected override void AfterLoad(GamePreference value)
+    {
+        value.Mod?.UnprotectSecrets();
+
+        // 🔴 **`true` in an old entry was never a decision.** ApplyModDefaults used to be a plain
+        // bool defaulting to true, and it was serialised on every write — so every game anybody had
+        // ever touched, for any reason at all (picking a translation, writing a description), came
+        // back claiming somebody had chosen to have the defaults written into it. Left alone, the
+        // rule that a game discovered already configured keeps its own configuration would never
+        // fire for a single existing game, which is the whole of what it is for.
+        //
+        // ⚠ Only `true` is undone. `false` was never a default: nobody gets it without unticking
+        // the box, so it IS a decision and it survives untouched. Undoing both would throw away the
+        // one answer in the file that was genuinely given.
+        if (value.Schema < 2 && value.ApplyModDefaults == true) value.ApplyModDefaults = null;
+
+        value.Schema = GamePreference.Current;
+    }
 }

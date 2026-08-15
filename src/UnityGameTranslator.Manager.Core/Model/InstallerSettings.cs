@@ -276,4 +276,20 @@ public sealed class InstallerSettings
         // with nothing on screen to explain it.
         && (TranslationBackend != "google" || !string.IsNullOrWhiteSpace(GoogleApiKey))
         && (TranslationBackend != "deepl" || !string.IsNullOrWhiteSpace(DeeplApiKey));
+
+    /// <summary>
+    /// An independent copy of every field, for building the settings ONE game is written with
+    /// (see ModSettingsResolver) without touching the ones that belong to everybody.
+    ///
+    /// 🔴 **A memberwise clone, deliberately, and never a field-by-field copy.** This class was
+    /// copied field by field once, on the defaults screen, and each Apply silently erased what the
+    /// copy had not thought to carry — the account token, the name behind it, the server that
+    /// issued it — signing people out from a window that has nothing to do with accounts. Every
+    /// field here is a string, a bool or an int, so a shallow clone IS a full copy, and it stays
+    /// one as fields are added. That last part is the whole reason.
+    ///
+    /// ⚠ Never use it to SAVE: SettingsStore.Save says why, and says it at length. This produces a
+    /// value to write into a game, which is a different act with a different lifetime.
+    /// </summary>
+    public InstallerSettings Copy() => (InstallerSettings)MemberwiseClone();
 }

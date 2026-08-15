@@ -88,7 +88,13 @@ public static class TranslationBadges
             // entry — never from the local file, which has none and would report zero as if it
             // were a result.
             votes: mine is not null && online is not null ? online.VoteCount : 0,
-            downloads: mine is not null && online is not null ? online.DownloadCount : 0));
+            downloads: mine is not null && online is not null ? online.DownloadCount : 0,
+
+            // ⚠ The author's own word, from the published entry — a local file carries no such
+            // declaration, and null shows nothing rather than inventing "still writing".
+            finished: online?.Status is { } status
+                ? string.Equals(status, "complete", StringComparison.OrdinalIgnoreCase)
+                : null));
     }
 
     /// <summary>A published translation, in the community list.</summary>
@@ -109,6 +115,12 @@ public static class TranslationBadges
             stage: counts.Stage,
             completeness: translation.Completeness ?? counts.Completeness,
             votes: translation.VoteCount,
-            downloads: translation.DownloadCount));
+            downloads: translation.DownloadCount,
+
+            // Its author's own word, which is as much part of "what this is" as the measurements
+            // beside it — and the one thing here that nobody can work out from the file.
+            finished: translation.Status is { } status
+                ? string.Equals(status, "complete", StringComparison.OrdinalIgnoreCase)
+                : null));
     }
 }

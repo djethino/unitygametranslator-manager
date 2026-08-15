@@ -20,7 +20,20 @@ public sealed class ConfirmationWindow : Window
 {
     private bool _confirmed;
 
-    private ConfirmationWindow(string title, string body, string confirm, bool question = true)
+    /// <summary>
+    /// A choice made ALONGSIDE the answer, when it belongs to the same act.
+    ///
+    /// ⚠ Not a second dialog and not a third button: "publish" and "say it is finished" are one
+    /// decision taken at one moment, and splitting them would ask twice about one intention. Null
+    /// when the question has no such choice, which is nearly always.
+    /// </summary>
+    private CheckBox? _option;
+
+    /// <summary>Whether the option was ticked. False when there was none.</summary>
+    private bool _optionChosen;
+
+    private ConfirmationWindow(string title, string body, string confirm, bool question = true,
+                               string? optionLabel = null, bool optionChecked = false)
     {
         Title = title;
         Width = 560;
@@ -49,6 +62,17 @@ public sealed class ConfirmationWindow : Window
             Foreground = this.FindResource("TextSecondary") as IBrush,
         });
 
+        if (optionLabel is not null)
+        {
+            _option = new CheckBox
+            {
+                Content = optionLabel,
+                IsChecked = optionChecked,
+                Foreground = this.FindResource("TextPrimary") as IBrush,
+            };
+            layout.Children.Add(_option);
+        }
+
         var buttons = new StackPanel
         {
             Orientation = Orientation.Horizontal,
@@ -75,7 +99,12 @@ public sealed class ConfirmationWindow : Window
             IsDefault = !question,
             IsCancel = !question,
         };
-        go.Click += (_, _) => { _confirmed = true; Close(); };
+        go.Click += (_, _) =>
+        {
+            _confirmed = true;
+            _optionChosen = _option?.IsChecked == true;
+            Close();
+        };
 
         buttons.Children.Add(go);
         layout.Children.Add(buttons);
@@ -89,6 +118,22 @@ public sealed class ConfirmationWindow : Window
         var window = new ConfirmationWindow(title, body, confirm);
         await window.ShowDialog(owner);
         return window._confirmed;
+    }
+
+    /// <summary>
+    /// The same question, carrying one choice that belongs to the same act.
+    ///
+    /// ⚠ The option's value is only meaningful when the answer is yes: reading it after a cancel
+    /// would act on a decision somebody backed out of.
+    /// </summary>
+    public static async Task<(bool Agreed, bool Option)> AskAsync(
+        Window owner, string title, string body, string confirm,
+        string optionLabel, bool optionChecked)
+    {
+        var window = new ConfirmationWindow(title, body, confirm,
+                                            optionLabel: optionLabel, optionChecked: optionChecked);
+        await window.ShowDialog(owner);
+        return (window._confirmed, window._confirmed && window._optionChosen);
     }
 
     /// <summary>

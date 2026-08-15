@@ -4077,19 +4077,49 @@ public partial class MainWindow : Window
             return;
         }
 
-        // Said before it happens, in the server's own terms.
-        var agreed = await ConfirmationWindow.AskAsync(this, "Publish this translation?",
-            lineage.Describe() + "\n\n"
-            + $"{languages.Source} → {languages.Target}, as \"{standing.SignedInAs}\".",
-            lineage.Outcome == PublishOutcome.ContributeToTheirs ? "Send as a contribution" : "Publish");
+        // 🔴 **Whether it is finished is the author's own word**, and it is asked here because it
+        // belongs to the same act. The site has offered it from the start and the mod now does;
+        // this window was the only one of the three that could not say it.
+        //
+        // ⚠ A contribution inherits its Main's, exactly as the server decides and as the other two
+        // products say — so nothing is offered for one, rather than a control that does nothing.
+        var contributing = lineage.Outcome == PublishOutcome.ContributeToTheirs;
+
+        // ⚠ Starts on what is PUBLISHED, never on a default. This window has always preserved the
+        // status by omitting the field; a box that opened unticked would start undoing it, which
+        // is exactly the bug the mod had.
+        var alreadyComplete = string.Equals(report.MatchingOnline?.Status, "complete",
+                                            StringComparison.OrdinalIgnoreCase);
+
+        var body = lineage.Describe() + "\n\n"
+                 + $"{languages.Source} → {languages.Target}, as \"{standing.SignedInAs}\".";
+        var confirm = contributing ? "Send as a contribution" : "Publish";
+
+        bool agreed;
+        var markComplete = alreadyComplete;
+
+        if (contributing)
+        {
+            agreed = await ConfirmationWindow.AskAsync(this, "Publish this translation?", body, confirm);
+        }
+        else
+        {
+            (agreed, markComplete) = await ConfirmationWindow.AskAsync(
+                this, "Publish this translation?", body, confirm,
+                "This translation is finished", alreadyComplete);
+        }
 
         if (!agreed) return;
 
         button.IsEnabled = false;
         ScopeMark.SetLabel(button, "Publishing…");
 
+        // ⚠ Null when contributing: the server makes a branch inherit its Main's, and sending a
+        // value would be this window deciding something it has no say in.
+        var status = contributing ? null : (markComplete ? "complete" : "in_progress");
+
         var id = await publisher.PublishAsync(content, token, report.Game.SteamAppId, report.Game.Name,
-                                              languages.Source, languages.Target);
+                                              languages.Source, languages.Target, status: status);
 
         button.IsEnabled = true;
         ScopeMark.SetLabel(button, "Publish…");

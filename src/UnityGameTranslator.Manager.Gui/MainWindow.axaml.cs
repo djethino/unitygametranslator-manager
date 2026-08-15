@@ -4301,7 +4301,7 @@ public partial class MainWindow : Window
         // translation and this machine carry the same thing. Server would mean "the published
         // version has the result and this machine does not", which cannot happen from a tool that
         // is sending the machine's own file.
-        var publish = ScopeMark.Marked(EditScope.SideAfter(onThisMachine: true, published: true),
+        var publish = ScopeMark.Marked(EditScope.SideAfter(onThisMachine: true, yourPublishedCopy: true),
                                        "Publish…",
                                        standing.CanAct && nothingToSend is null);
         publish.Click += async (_, _) => await PublishTranslationAsync(report, descriptor, publish);
@@ -4316,18 +4316,24 @@ public partial class MainWindow : Window
         {
             // 🔴 **One button, two acts, and they do NOT leave things on the same side.**
             //
-            // Downloading what changed online ends with this machine carrying the published
-            // version — the two in step, so Both. Merging ends with a reconciled file that exists
-            // HERE and nowhere else: the published version does not have those lines until
-            // somebody publishes, so it is Local.
+            // Merging ends with a reconciled file that exists HERE and nowhere else, so Local.
+            // Taking what changed online ends with this machine carrying the published version —
+            // which is Both ONLY if that published version is ours. On somebody else's, nothing
+            // published under our name moved, and the answer is Local again.
             //
             // ⚠ It was Both for both, on the reasoning "reads the published version, writes here,
-            // the pair is what makes it Both". That is the wrong question. The strip answers what
-            // is true AFTER, not which files were touched on the way.
+            // the pair is what makes it Both". Two mistakes in one: the strip answers what is true
+            // AFTER rather than which files were touched, and the side that counts is OURS. A Main
+            // owner taking a stranger's translation would have been told they were in step at the
+            // moment their own published copy stopped matching what they run.
             var merging = report.Sync == SyncDirection.Merge;
+            var oursOnline = !merging
+                             && standing.SignedInAs is { Length: > 0 } me
+                             && string.Equals(report.MatchingOnline.Author, me,
+                                              StringComparison.OrdinalIgnoreCase);
 
             var merge = ScopeMark.Marked(
-                EditScope.SideAfter(onThisMachine: true, published: !merging),
+                EditScope.SideAfter(onThisMachine: true, yourPublishedCopy: oursOnline),
                 merging ? "Merge with the published version…"
                         : "Download what changed online…",
                 standing.CanWriteLocally);

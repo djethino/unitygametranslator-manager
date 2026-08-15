@@ -615,8 +615,7 @@ public sealed class SettingsWindow : Window
         _testInto = new ComboBox { Width = 150 };
         _testFrom = new ComboBox { Width = 150 };
 
-        foreach (var (code, name) in Languages.All())
-            _testInto.Items.Add(new ComboBoxItem { Content = name, Tag = code });
+        LanguageMark.Fill(_testInto, Languages.All());
 
         _testInto.SelectionChanged += (_, _) => RefreshTestSources();
         _testFrom.SelectionChanged += (_, _) => _testOutput.Children.Clear();
@@ -1467,17 +1466,11 @@ public sealed class SettingsWindow : Window
         var into = Tag(_testInto) ?? _store.ResolveTargetLanguage();
         var wanted = ModelTestSuite.SourceFor(into).Code;
 
-        _testFrom.Items.Clear();
-
-        foreach (var set in Fixtures.All)
-        {
-            if (string.Equals(set.Code, into, StringComparison.OrdinalIgnoreCase)) continue;
-
-            _testFrom.Items.Add(new ComboBoxItem { Content = set.Language, Tag = set.Code });
-        }
+        LanguageMark.Fill(_testFrom, Fixtures.All
+            .Where(set => !string.Equals(set.Code, into, StringComparison.OrdinalIgnoreCase))
+            .Select(set => (set.Code, set.Language)));
 
         Select(_testFrom, wanted);
-        _testFrom.SelectedItem ??= _testFrom.Items.OfType<ComboBoxItem>().FirstOrDefault();
     }
 
     /// <summary>
@@ -2085,20 +2078,40 @@ public sealed class SettingsWindow : Window
     /// <summary>Through Palette, which will not let an unknown key pass unnoticed.</summary>
     private static IBrush? Brush(string key) => Palette.Of(key);
 
-    private static string? Tag(ComboBox box) =>
-        (box.SelectedItem as ComboBoxItem)?.Tag as string;
+    /// <summary>
+    /// What the selected entry stands for.
+    ///
+    /// ⚠ Two shapes, because the language pickers hold a LanguageChoice — a ComboBox draws the
+    /// selected entry a second time in its closed box, so a language picker must go through a
+    /// template rather than a Control per item. Everything else here is still a plain
+    /// ComboBoxItem, and both keep working.
+    /// </summary>
+    private static string? Tag(ComboBox box) => box.SelectedItem switch
+    {
+        ComboBoxItem item => item.Tag as string,
+        LanguageChoice choice => choice.Code,
+        _ => null,
+    };
 
     private static void Select(ComboBox box, string? value)
     {
-        foreach (var item in box.Items.OfType<ComboBoxItem>())
+        foreach (var item in box.Items)
         {
-            if (string.Equals(item.Tag as string, value, StringComparison.OrdinalIgnoreCase))
+            var code = item switch
+            {
+                ComboBoxItem entry => entry.Tag as string,
+                LanguageChoice choice => choice.Code,
+                _ => null,
+            };
+
+            if (string.Equals(code, value, StringComparison.OrdinalIgnoreCase))
             {
                 box.SelectedItem = item;
                 return;
             }
         }
-        box.SelectedItem ??= box.Items.OfType<ComboBoxItem>().FirstOrDefault();
+
+        box.SelectedItem ??= box.Items.Count > 0 ? box.Items[0] : null;
     }
 
     /// <summary>

@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -108,6 +109,35 @@ public static class LanguageMark
         });
 
         return row;
+    }
+
+    /// <summary>
+    /// Fill a ComboBox with languages, each shown with its flag.
+    ///
+    /// 🔴 **A template, never a Control per item.** A ComboBox renders the SELECTED entry a second
+    /// time in its closed box, and a control belongs to one place in the tree — hand the same
+    /// instance to both and whichever claims it first goes empty. Every language picker in this
+    /// product goes through here so none of them can be written the other way by mistake.
+    ///
+    /// ⚠ The box is CLEARED first: these lists are rebuilt when their context changes (the test's
+    /// source list depends on its target), and appending would stack the old one under the new.
+    /// </summary>
+    /// <param name="extra">
+    /// An entry that is not a language — "follow the system", "any language". Kept first, since it
+    /// is the answer most often wanted and the one the closed box then shows.
+    /// </param>
+    public static void Fill(ComboBox box, IEnumerable<(string Code, string Name)> languages,
+                            LanguageChoice? extra = null)
+    {
+        box.ItemTemplate = new FuncDataTemplate<LanguageChoice>(
+            (choice, _) => Named(choice?.Name, choice?.Label), supportsRecycling: false);
+
+        box.Items.Clear();
+
+        if (extra is not null) box.Items.Add(extra);
+
+        foreach (var (code, name) in languages)
+            box.Items.Add(new LanguageChoice(code, name, name));
     }
 
     /// <summary>

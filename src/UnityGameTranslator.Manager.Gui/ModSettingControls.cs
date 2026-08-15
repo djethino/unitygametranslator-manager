@@ -28,8 +28,20 @@ namespace UnityGameTranslator.Manager.Gui;
 /// </summary>
 public static class ModSettingControls
 {
-    /// <summary>The value behind the selected row, or null when nothing is selected.</summary>
-    public static string? Tag(ComboBox box) => (box.SelectedItem as ComboBoxItem)?.Tag as string;
+    /// <summary>
+    /// The value behind the selected row, or null when nothing is selected.
+    ///
+    /// ⚠ Two shapes. A language picker holds a LanguageChoice rather than a ComboBoxItem, because
+    /// a ComboBox draws its selected entry a SECOND time in its closed box — and a control belongs
+    /// to one place in the tree, so a flag handed to both would appear in one and vanish from the
+    /// other. Everything else here is still a plain item.
+    /// </summary>
+    public static string? Tag(ComboBox box) => box.SelectedItem switch
+    {
+        ComboBoxItem item => item.Tag as string,
+        LanguageChoice choice => choice.Code,
+        _ => null,
+    };
 
     /// <summary>
     /// Selects the row carrying this value, falling back to the first rather than to nothing.
@@ -39,16 +51,23 @@ public static class ModSettingControls
     /// </summary>
     public static void Select(ComboBox box, string? value)
     {
-        foreach (var item in box.Items.OfType<ComboBoxItem>())
+        foreach (var item in box.Items)
         {
-            if (string.Equals(item.Tag as string, value, StringComparison.OrdinalIgnoreCase))
+            var code = item switch
+            {
+                ComboBoxItem entry => entry.Tag as string,
+                LanguageChoice choice => choice.Code,
+                _ => null,
+            };
+
+            if (string.Equals(code, value, StringComparison.OrdinalIgnoreCase))
             {
                 box.SelectedItem = item;
                 return;
             }
         }
 
-        box.SelectedItem ??= box.Items.OfType<ComboBoxItem>().FirstOrDefault();
+        box.SelectedItem ??= box.Items.Count > 0 ? box.Items[0] : null;
     }
 
     /// <summary>
@@ -61,21 +80,19 @@ public static class ModSettingControls
     {
         var box = new ComboBox { Width = width };
 
+        LanguageChoice? follow = null;
         if (followSystem)
         {
             var detected = Languages.FromLocale(platform.SystemLanguage());
+            var name = detected is not null ? Languages.NameOf(detected) : null;
 
-            box.Items.Add(new ComboBoxItem
-            {
-                Content = detected is not null
-                    ? $"Follow the system ({Languages.NameOf(detected)})"
-                    : "Follow the system",
-                Tag = "auto",
-            });
+            follow = new LanguageChoice("auto", name,
+                name is not null ? $"Follow the system ({name})" : "Follow the system");
         }
 
-        foreach (var (code, name) in Languages.All())
-            box.Items.Add(new ComboBoxItem { Content = name, Tag = code });
+        // ⚠ Through LanguageMark so the flags come with it — and so no picker in this product is
+        // ever built with a Control per item, which a ComboBox cannot render twice.
+        LanguageMark.Fill(box, Languages.All(), follow);
 
         return box;
     }

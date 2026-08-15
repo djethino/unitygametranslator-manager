@@ -336,26 +336,46 @@ public sealed class TranslationsWindow : Window
         }
     }
 
+    /// <summary>
+    /// ⚠ These filters carry the language NAME as their value, not a code — they are built from
+    /// what this game actually has published, and the translations name their languages. Hence the
+    /// (name, name) pair below rather than a lookup: the code would be an extra thing to resolve
+    /// and to get wrong, for a picker whose value never leaves this window.
+    /// </summary>
     private static void Fill(ComboBox box, IEnumerable<string?> languages)
     {
-        box.Items.Clear();
-        box.Items.Add(new ComboBoxItem { Content = "Any language", Tag = null });
+        LanguageMark.Fill(box,
+            languages
+                .Where(l => !string.IsNullOrWhiteSpace(l))
+                .Select(l => l!)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(l => l, StringComparer.OrdinalIgnoreCase)
+                .Select(l => (l, l)),
+            new LanguageChoice("", null, "Any language"));
+    }
 
-        foreach (var language in languages
-                     .Where(l => !string.IsNullOrWhiteSpace(l))
-                     .Select(l => l!)
-                     .Distinct(StringComparer.OrdinalIgnoreCase)
-                     .OrderBy(l => l, StringComparer.OrdinalIgnoreCase))
-        {
-            box.Items.Add(new ComboBoxItem { Content = language, Tag = language });
-        }
+    /// <summary>The language a filter is on, or null for "any".</summary>
+    private static string? Chosen(ComboBox box)
+    {
+        var code = (box.SelectedItem as LanguageChoice)?.Code;
+        return string.IsNullOrEmpty(code) ? null : code;
     }
 
     private static void Select(ComboBox box, string? language)
     {
-        box.SelectedItem = box.Items.OfType<ComboBoxItem>().FirstOrDefault(item =>
-            string.Equals(item.Tag as string, language, StringComparison.OrdinalIgnoreCase))
-            ?? box.Items.OfType<ComboBoxItem>().First();
+        // "" is the "any language" entry; null asks for it.
+        var wanted = language ?? "";
+
+        foreach (var item in box.Items.OfType<LanguageChoice>())
+        {
+            if (string.Equals(item.Code, wanted, StringComparison.OrdinalIgnoreCase))
+            {
+                box.SelectedItem = item;
+                return;
+            }
+        }
+
+        box.SelectedItem = box.Items.Count > 0 ? box.Items[0] : null;
     }
 
     /// <summary>
@@ -367,8 +387,10 @@ public sealed class TranslationsWindow : Window
     /// </summary>
     private async Task SearchAsync()
     {
-        var target = (_target.SelectedItem as ComboBoxItem)?.Tag as string;
-        var source = (_source.SelectedItem as ComboBoxItem)?.Tag as string;
+        // ⚠ "" is the "any language" entry, and the API wants null for it — an empty string would
+        // be sent as a filter on a language nobody is called.
+        var target = Chosen(_target);
+        var source = Chosen(_source);
 
         _searching.IsVisible = true;
         _list.Children.Clear();

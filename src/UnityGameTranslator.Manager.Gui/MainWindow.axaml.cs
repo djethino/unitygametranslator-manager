@@ -1226,7 +1226,17 @@ public partial class MainWindow : Window
     /// not nothing, and a list that hitches while somebody plays would be a poor trade for a line
     /// count that could have waited a moment.
     /// </summary>
-    private async Task RereadAsync(GameInstall game)
+    /// <param name="redraw">
+    /// Rebuild the card even when the GAME says the same thing as before.
+    ///
+    /// 🔴 **Because two different things can change.** This method answers "did the game change?"
+    /// and skips the redraw when it did not — right for a file saved with nothing new in it. But a
+    /// browser session ending changes nothing about the game and everything about this WINDOW: the
+    /// button that said "Stop browser session" has no session to stop. The card then kept the old
+    /// label until somebody selected another game and came back, which is exactly what was
+    /// reported.
+    /// </param>
+    private async Task RereadAsync(GameInstall game, bool redraw = false)
     {
         var before = _situations.TryGetValue(game.Path, out var was) ? was : null;
         var (now, mine, account) = await Task.Run(() => ReadSituation(game));
@@ -1242,7 +1252,10 @@ public partial class MainWindow : Window
 
         // Nothing said differently means nothing to redraw. A game can save its file without any of
         // it reaching this window — a setting changed in the mod, say.
-        if (before is not null && before.Headline == now.Headline && before.Detail == now.Detail)
+        //
+        // ⚠ Unless the caller knows something the game does not say. See the parameter.
+        if (!redraw && before is not null && before.Headline == now.Headline
+            && before.Detail == now.Detail)
             return;
 
         if (_rows.TryGetValue(game.Path, out var row) && row.Item.Tag is GameInstall shown)
@@ -3705,8 +3718,11 @@ public partial class MainWindow : Window
                         _editSession = null;
                         _editSessionStop?.Dispose();
                         _editSessionStop = null;
-                        // The file on disk has changed under everything this card says about it.
-                        await RereadAsync(report.Game);
+
+                        // ⚠ redraw: the file on disk may have changed under everything this card
+                        // says — and the card also has to lose its "Stop browser session" button,
+                        // which no reading of the game would ever ask for.
+                        await RereadAsync(report.Game, redraw: true);
                     }
                 });
             }
@@ -4136,7 +4152,9 @@ public partial class MainWindow : Window
                 ? "Your contribution is waiting for the translation's owner to review it."
                 : "Your translation is published.");
 
-        await RereadAsync(report.Game);
+        // ⚠ redraw: publishing changes what the SITE holds — the badges, the votes, the author's
+        // "finished" — while the file on this machine says exactly what it said a second ago.
+        await RereadAsync(report.Game, redraw: true);
     }
 
     /// <summary>
@@ -4346,7 +4364,11 @@ public partial class MainWindow : Window
             // tick both come from the server's answer rather than from what we assumed it would be.
             published.VoteCount = outcome.Count;
             published.UserVote = outcome.Mine;
-            await RereadAsync(game);
+
+            // ⚠ redraw: a vote changes the SITE, not this game — so the reading below would find
+            // the situation word for word identical and skip the redraw the line above just
+            // prepared. Same trap as the button that would not come back after a session ended.
+            await RereadAsync(game, redraw: true);
         };
 
         return button;

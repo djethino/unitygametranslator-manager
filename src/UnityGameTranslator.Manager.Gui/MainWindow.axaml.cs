@@ -378,6 +378,7 @@ public partial class MainWindow : Window
     private async Task ScanAsync()
     {
         Busy(true, "Looking for the loader catalog...");
+        ShowScanning();
 
         _sweep?.Cancel();
 
@@ -1589,6 +1590,74 @@ public partial class MainWindow : Window
     // ---------------------------------------------------------------- detail
 
     /// <summary>
+    /// The gear on the scanning panel while it is the panel, and null the rest of the time.
+    ///
+    /// Held so the status bar can feed its middle line — see <see cref="Status"/>. Null is what
+    /// keeps that mirroring from reaching any other screen, which is why it is dropped by
+    /// <see cref="ClearDetail"/> rather than by whoever happens to replace the panel.
+    /// </summary>
+    private SpinningGear? _scanGear;
+
+    /// <summary>
+    /// Empties the right-hand panel, and forgets what was live inside it.
+    ///
+    /// 🔴 **Every replacement of that panel goes through here.** Four places replace it, and a live
+    /// control held by a field outlives three of them — the reference would still be there, still
+    /// being written to, attached to nothing. One door means the next place added cannot forget.
+    /// </summary>
+    private void ClearDetail()
+    {
+        DetailPanel.Children.Clear();
+        _scanGear = null;
+    }
+
+    /// <summary>
+    /// The turning gear, alone in the middle, while the drives are being read.
+    ///
+    /// 🔴 **It replaced an instruction — "Select a game on the left." — and that line was wrong
+    /// twice.** It asked for something nobody could do yet, since the list it points at is still
+    /// being built; and a static sentence on an empty panel makes a tool that is working look like
+    /// a tool that is waiting. The gear says the one thing that is true at that moment.
+    ///
+    /// ⚠ Its caption says what is being looked FOR, where the status bar says what is being read —
+    /// the catalog, then the drives. Two sentences that do not repeat each other: one names the
+    /// point of the wait, the other reports the step. The first is what somebody wants at the
+    /// middle of an empty panel.
+    ///
+    /// ⚠ Only when nothing is selected. A rescan started from a game's card must not blank the card
+    /// somebody is reading — the list refreshes underneath, and the card stays.
+    /// </summary>
+    private void ShowScanning()
+    {
+        if (_selected is not null) return;
+
+        ClearDetail();
+
+        // Centred like the overview that follows it, so the panel does not jump when one replaces
+        // the other. See ShowOverview: the panel IS the scroll viewer's content, so aligning it is
+        // enough — nothing needs wrapping.
+        DetailPanel.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center;
+        DetailPanel.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
+        DetailPanel.MaxWidth = SummaryWidth;
+
+        // The band belongs to a game, and there is none yet.
+        ActionBar.IsVisible = false;
+        ActionBar.Content = null;
+        OverviewTop.IsVisible = false;
+
+        // Large and stacked: this is the only thing on the panel, so it is the panel's subject
+        // rather than a note in a corner of it.
+        _scanGear = new SpinningGear("Looking for your games...", size: 72, stacked: true)
+        {
+            // What the status bar says right now, so the middle of the panel does not lag behind
+            // the bottom of the window between two phases.
+            Detail = StatusText.Text ?? "",
+        };
+
+        DetailPanel.Children.Add(_scanGear);
+    }
+
+    /// <summary>
     /// What fills the right-hand side before anything is chosen.
     ///
     /// It used to hold "Select a game on the left." on an otherwise empty panel, which says
@@ -1603,7 +1672,7 @@ public partial class MainWindow : Window
     {
         if (_selected is not null) return;
 
-        DetailPanel.Children.Clear();
+        ClearDetail();
 
         // Centred, and only here. The panel is the scroll viewer's own content, so aligning it is
         // enough — nothing needs to be wrapped. A dozen short lines pinned to the top left of a
@@ -2388,7 +2457,7 @@ public partial class MainWindow : Window
         if (GameList.SelectedItem is not ListBoxItem { Tag: GameInstall game }) return;
         _selected = game;
 
-        DetailPanel.Children.Clear();
+        ClearDetail();
         DetailPanel.Children.Add(new TextBlock { Text = game.Name, FontSize = 20, FontWeight = FontWeight.SemiBold });
         DetailPanel.Children.Add(new TextBlock { Text = "Reading...", Opacity = 0.6 });
 
@@ -2411,7 +2480,7 @@ public partial class MainWindow : Window
     private void RenderReport(GameReport report)
     {
         var game = report.Game;
-        DetailPanel.Children.Clear();
+        ClearDetail();
 
         // Back to filling the panel from the top: a report is a document, and a centred document
         // that grows past the viewport starts scrolled to its middle.
@@ -2773,13 +2842,39 @@ public partial class MainWindow : Window
 
         foreach (var owned in mine)
         {
-            body.Children.Add(new TextBlock
+            // The flags lead, then the same sentence in words. ⚠ Both, not one or the other: a
+            // flag is faster to scan and cannot always name the language on its own — ten Indian
+            // languages share one — so the words stay and the pictures are added in front.
+            var pair = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 6,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            if (LanguageMark.For(owned.SourceLanguage) is { } from) pair.Children.Add(from);
+            if (LanguageMark.For(owned.TargetLanguage) is { } to)
+            {
+                pair.Children.Add(new TextBlock
+                {
+                    Text = "→",
+                    FontSize = 11,
+                    Foreground = Brush("TextMuted"),
+                    VerticalAlignment = VerticalAlignment.Center,
+                });
+                pair.Children.Add(to);
+            }
+
+            pair.Children.Add(new TextBlock
             {
                 Text = $"{owned.SourceLanguage} → {owned.TargetLanguage} · {owned.LineCount} lines",
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("TextSecondary"),
+                VerticalAlignment = VerticalAlignment.Center,
             });
+
+            body.Children.Add(pair);
         }
 
         body.Children.Add(new TextBlock
@@ -7522,7 +7617,19 @@ public partial class MainWindow : Window
         Status(message);
     }
 
-    private void Status(string message) => StatusText.Text = message;
+    private void Status(string message)
+    {
+        StatusText.Text = message;
+
+        // ⚠ Mirrored into the scanning panel while it is up, rather than each phase of the scan
+        // setting the two separately. The status bar is at the far bottom of a wide window and the
+        // gear is in the middle of it: somebody watching the mark has no reason to be looking
+        // anywhere else, and a step reported only down there is a step they do not see.
+        //
+        // Wired here so a phase added later is carried without anybody remembering to. The field is
+        // null the rest of the time, which is what keeps this from reaching any other screen.
+        if (_scanGear is not null) _scanGear.Detail = message;
+    }
 
     private Task<bool> ConfirmAsync(string title, string body, string confirmLabel) =>
         ConfirmAsync(title, new TextBlock { Text = body, TextWrapping = TextWrapping.Wrap }, confirmLabel);

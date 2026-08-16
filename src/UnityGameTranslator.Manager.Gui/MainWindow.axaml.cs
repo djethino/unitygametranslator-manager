@@ -2776,7 +2776,30 @@ public partial class MainWindow : Window
                 buttons.Children.Add(anyLanguage);
             }
 
-            question.Children.Add(buttons);
+            // 🔴 **Applying sits in the SAME box as choosing, pushed to the right.**
+            //
+            // A choice made here that could only be carried out on the other tab left people
+            // unable to say what was applied and what was merely picked: the card went on
+            // describing the old translation, and the only control that mentioned the new one was
+            // a tick-box in the one-click, under Set up. Choose and apply are two halves of one
+            // gesture, so they share a line — the choice on the left where it is made, the
+            // consequence on the right where a reader looks for the verb.
+            var choiceRow = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
+
+            Grid.SetColumn(buttons, 0);
+            choiceRow.Children.Add(buttons);
+
+            if (PendingTranslationActions(report) is { } waiting)
+            {
+                Grid.SetColumn(waiting, 2);
+                choiceRow.Children.Add(waiting);
+            }
+
+            question.Children.Add(choiceRow);
+
+            // The sentence belongs under the whole line rather than beside the buttons: it can run
+            // to two lines, and a warning squeezed into a column reads as a label.
+            if (PendingTranslationNote(report) is { } note) question.Children.Add(note);
         }
         else
         {
@@ -2802,6 +2825,23 @@ public partial class MainWindow : Window
         // testing another one is ordinary — but nothing said the first still existed, so it looked
         // lost. AccountLineages knows every lineage the account holds; nobody was asking it.
         foreach (var control in MyOtherTranslations(report)) yield return control;
+
+        // ── Chosen, not yet in the game ───────────────────────────────────────────────────────
+        //
+        // 🔴 **A choice that leaves no trace is a choice nobody can trust.** Picking a translation
+        // in the list wrote a preference and said "the game's card is where you install it" — a
+        // sentence that names no card, no button and no next step. Coming back here, the card went
+        // on describing the OLD translation, with nothing pending, nothing to apply and nothing to
+        // undo. The only control that mentioned it was a tick-box in the one-click, and only on
+        // the other tab.
+        //
+        // ⚠ It reads Apply (1) because that is what every pending change in this program reads,
+        // and being told twice in two different shapes is how somebody ends up unsure which one
+        // counts. Undo sits beside it: a choice one cannot take back is not a choice, it is a
+        // commitment made by accident.
+        //
+        // Both live in the box above, beside the buttons that make the choice — see the grid in
+        // PendingTranslationActions.
 
         // ── The one thing to do next ──────────────────────────────────────────────────────────
         var next = new StackPanel { Spacing = 6 };
@@ -2991,6 +3031,116 @@ public partial class MainWindow : Window
         return report.OnlineTranslations.Any(t =>
             string.Equals(t.Uuid, uuid, StringComparison.OrdinalIgnoreCase)
             && string.Equals(t.Author, account, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// The translation chosen in the list but not yet in the game, or null when none is waiting.
+    ///
+    /// ⚠ **Deliberate choices only.** Without a stored TranslationId the tool is merely proposing
+    /// the best-ranked one in the reader's language, and calling that "pending" would invent a
+    /// decision nobody took. What is proposed is already said above, in the muted register.
+    ///
+    /// ⚠ Silent while the chosen one IS the one installed: a card claiming something is pending
+    /// when the game already runs it teaches people to ignore the notice.
+    /// </summary>
+    private OnlineTranslation? TranslationWaiting(GameReport report)
+    {
+        if (_preferences.Read(report.Game.Path).TranslationId is not { } chosenId) return null;
+
+        var picked = report.OnlineTranslations.FirstOrDefault(t => t.Id == chosenId)
+                     ?? (report.MatchingOnline is { } main && main.Id == chosenId ? main : null);
+
+        if (picked is null) return null;
+
+        return report.LocalTranslation is not null
+               && TranslationOffers.For(report, picked) == TranslationOffer.AlreadyInPlace
+            ? null
+            : picked;
+    }
+
+    /// <summary>
+    /// Apply and Undo, for the right-hand side of the line where translations are chosen.
+    ///
+    /// ⚠ It reads Apply (1) because that is what every pending change in this program reads. Two
+    /// shapes for the same idea is how somebody ends up unsure which one counts. And Undo sits
+    /// beside it: a choice one cannot take back is not a choice, it is a commitment by accident.
+    /// </summary>
+    private Control? PendingTranslationActions(GameReport report)
+    {
+        if (TranslationWaiting(report) is not { } picked) return null;
+
+        var row = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Margin = new Avalonia.Thickness(0, 6, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        var ready = report.InstalledPluginVersion is not null && !_running.IsRunning(report.Game);
+
+        var apply = new Button
+        {
+            Content = "Apply (1)",
+            FontSize = 12,
+            Classes = { "primary" },
+            IsEnabled = ready,
+        };
+
+        // No greyed control without words — the rule this program holds everywhere.
+        ToolTip.SetTip(apply, report.InstalledPluginVersion is null
+            ? "The mod is not installed in this game yet, so there is nowhere to put a translation."
+            : _running.IsRunning(report.Game)
+                ? "This game is open. The mod rewrites its translation file from memory while it "
+                  + "runs, so anything written now would be replaced without warning."
+                : $"Puts {picked.SourceLanguage} → {picked.TargetLanguage} by "
+                  + $"{picked.Author ?? "unknown"} into this game.");
+
+        var replacing = TranslationOffers.For(report, picked)
+            is TranslationOffer.ReplacesWork or TranslationOffer.ReplacesChoice;
+
+        apply.Click += async (_, _) => await TakeSelectedTranslationAsync(report, picked, replacing);
+        row.Children.Add(apply);
+
+        var undo = new Button { Content = "Undo", FontSize = 12 };
+        ToolTip.SetTip(undo, "Forgets this choice. The game keeps whatever it runs now.");
+
+        undo.Click += async (_, _) =>
+        {
+            var current = _preferences.Read(report.Game.Path);
+            current.TranslationId = null;
+            _preferences.Set(report.Game.Path, current);
+            await ShowSelectedAsync();
+        };
+
+        row.Children.Add(undo);
+        return row;
+    }
+
+    /// <summary>
+    /// What is waiting and what applying it would cost, under the line rather than beside it.
+    ///
+    /// A sentence can run to two lines; squeezed into a column next to a button it reads as a
+    /// label on that button rather than as a statement about the game.
+    /// </summary>
+    private Control? PendingTranslationNote(GameReport report)
+    {
+        if (TranslationWaiting(report) is not { } picked) return null;
+
+        var caution = TranslationOffers.Caution(TranslationOffers.For(report, picked));
+
+        var text = $"Chosen: {picked.SourceLanguage} → {picked.TargetLanguage} by "
+                 + $"{picked.Author ?? "unknown"} — not in the game yet."
+                 + (caution is null ? "" : $" Applying {caution}.");
+
+        return new TextBlock
+        {
+            Text = text,
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Avalonia.Thickness(0, 6, 0, 0),
+            Foreground = Brush(caution is null ? "StatusInfo" : "StatusWarning"),
+        };
     }
 
     /// <summary>Which half of a game's card is showing. Home first, always — see TabStrip.</summary>
@@ -6159,7 +6309,11 @@ public partial class MainWindow : Window
                 // The verb tells them which of the two acts this is, before they read anything
                 // else. "with a translation" on a game holding their own month of work was the
                 // same four words as on an empty one.
-                Content = replaces ? "and replace the translation here" : "with a translation",
+                // ⚠ "here" named nothing — the box, the card, the game? The rule is to name the
+                // thing: what gets replaced is the translation this game currently runs.
+                Content = replaces
+                    ? "and replace the one this game runs"
+                    : "with a translation",
                 IsChecked = _takeTranslation,
                 FontSize = 12,
                 VerticalAlignment = VerticalAlignment.Center,

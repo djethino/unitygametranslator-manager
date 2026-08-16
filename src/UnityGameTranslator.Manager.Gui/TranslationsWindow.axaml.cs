@@ -598,11 +598,11 @@ public sealed class TranslationsWindow : Window
         {
             Show(outcome, installed
                 ? "This is the one in the game."
-                : "Chosen. The game's card is where you install it.", "StatusSuccess");
+                : "Chosen. Apply it on this game's page, under \"This game\".", "StatusSuccess");
         }
 
         take.Click += (_, _) => Select(translation.Id, outcome,
-            "Selected. Setting this game up will bring it down.");
+            "Chosen. Apply it on this game's page, under \"This game\".");
 
         body.Children.Add(take);
 
@@ -622,7 +622,7 @@ public sealed class TranslationsWindow : Window
                 + "owner has kept; the two differ by whatever has not been merged yet.");
 
             takeMine.Click += (_, _) => Select(mine, outcome,
-                "Your contribution is selected. Setting this game up will bring it down.");
+                "Your contribution is chosen. Apply it on this game's page, under \"This game\".");
 
             body.Children.Add(takeMine);
         }

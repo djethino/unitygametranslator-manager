@@ -2580,7 +2580,41 @@ public partial class MainWindow : Window
         // The user may have clicked elsewhere while we were reading.
         if (!ReferenceEquals(_selected, game)) return;
 
+        // 🔴 **The row is re-read from the SAME report, here, for every caller.**
+        //
+        // Twenty-three places redraw the card after doing something — installing a loader,
+        // removing a translation, adopting a loader — and eight of them also refreshed the row.
+        // The other fifteen left it saying what was true before the click: update a loader from
+        // the card and the list went on offering the update. Fixing them one by one would have
+        // left the sixteenth to be found by somebody else.
+        //
+        // ⚠ It costs nothing: the report was just built, and SituationReader reads it rather than
+        // the disk. RereadAsync still exists for the other direction — a game that changed while
+        // nobody was looking, where there is no report to reuse.
+        RefreshRowFrom(report);
+
         RenderReport(report);
+    }
+
+    /// <summary>Puts what a freshly built report says onto this game's row in the list.</summary>
+    private void RefreshRowFrom(GameReport report)
+    {
+        var game = report.Game;
+
+        var waiting = _lineages.Known
+            ? _lineages.For(report.LocalTranslation?.Uuid)?.BranchesCount
+            : null;
+
+        _situations[game.Path] = SituationReader.Read(
+            report, _settings.ResolveTargetLanguage(),
+            onlineChecked: report.OnlineChecked || !_settings.Current.OnlineMode,
+            branchesWaiting: waiting);
+
+        if (_rows.TryGetValue(game.Path, out var row) && row.Item.Tag is GameInstall shown)
+        {
+            row.Item.Content = BuildRowContent(shown);
+            _rows[game.Path] = (Signature(game.Path), row.Item);
+        }
     }
 
     private void RenderReport(GameReport report)

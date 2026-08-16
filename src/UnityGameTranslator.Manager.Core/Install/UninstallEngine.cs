@@ -87,15 +87,63 @@ public sealed class UninstallEngine
     /// </summary>
     private string? FindUnrecordedPlugin(GameInstall game)
     {
+        // The installed loader first: it names the one folder our assembly belongs in.
         var detected = LoaderProbe.Detect(game.Path, _catalog);
-        if (detected is null) return null;
 
-        var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == detected.Id);
-        if (descriptor is null) return null;
+        var candidates = detected is not null
+            ? _catalog.Loaders.Where(l => l.Id == detected.Id)
+            // 🔴 **No loader does not mean no plugin of ours.** Removing a loader and leaving the
+            // assembly behind puts a game in exactly that state — and this method, which is the
+            // only way to clean it, used to give up at the first line because it had no loader to
+            // ask. The plugin was then unreachable from the tool that put it there: "no receipt,
+            // and no assembly to remove", about a folder holding UnityGameTranslator.dll.
+            //
+            // Every loader the catalog knows is asked instead. Still by NAME, still only at the
+            // documented locations — four folders looked at, never a sweep.
+            : _catalog.Loaders;
 
-        return LocalTranslationProbe.FindInstalledPlugin(game.Path, descriptor) is { } found
-            ? Path.Combine(found.Directory, LocalTranslationProbe.PluginAssemblyName)
-            : null;
+        foreach (var descriptor in candidates)
+        {
+            if (LocalTranslationProbe.FindInstalledPlugin(game.Path, descriptor) is { } found)
+                return Path.Combine(found.Directory, LocalTranslationProbe.PluginAssemblyName);
+        }
+
+        return null;
+    }
+
+    /// <summary>Which loader's layout this assembly was sitting in, judged by its folder.</summary>
+    private LoaderDescriptor? LoaderOwning(string pluginPath)
+    {
+        var normalised = pluginPath.Replace(Path.DirectorySeparatorChar, '/');
+
+        return _catalog.Loaders.FirstOrDefault(l =>
+        {
+            var dir = l.PluginDir.Replace(Path.DirectorySeparatorChar, '/').Trim('/');
+            return dir.Length > 0
+                   && normalised.Contains("/" + dir + "/", StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
+    /// <summary>Drops our backup folder once nothing is left in it. Safe to call at any time.</summary>
+    private static void SweepEmptyBackups(GameInstall game)
+    {
+        var root = Path.Combine(game.Path, FileOperations.BackupDirectory);
+        if (!Directory.Exists(root)) return;
+
+        try
+        {
+            foreach (var directory in Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories)
+                                               .OrderByDescending(d => d.Length))
+            {
+                FileOperations.TryRemoveEmptyDirectory(directory);
+            }
+
+            FileOperations.TryRemoveEmptyDirectory(root);
+        }
+        catch
+        {
+            // Tidying, never a reason to fail an uninstall.
+        }
     }
 
     public UninstallOutcome Apply(GameInstall game, UninstallChoice choice)
@@ -116,10 +164,21 @@ public sealed class UninstallEngine
 
                     var name = Path.GetRelativePath(game.Path, orphan).Replace('\\', '/');
 
+                    // ⚠ With no loader left in this game, the tree it ran from answers to nobody:
+                    // a cache, a log and a row of empty folders no program will ever open again.
+                    // This is the state a game lands in when the loader went first and the
+                    // assembly stayed — so it is where the leftovers have to be swept, and the
+                    // only pass that will ever come here.
+                    var swept = new List<string> { name };
+                    if (LoaderProbe.Detect(game.Path, _catalog) is null)
+                        RemoveLoaderLeftovers(game, LoaderOwning(orphan), swept);
+
+                    SweepEmptyBackups(game);
+
                     return new UninstallOutcome(true,
                         $"Removed {name}. It was not installed by UnityGameTranslator Manager, so "
                         + "nothing else was touched — your settings and translations are still there.",
-                        new[] { name }, Array.Empty<string>(), null);
+                        swept, Array.Empty<string>(), null);
                 }
                 catch (Exception ex)
                 {
@@ -158,10 +217,36 @@ public sealed class UninstallEngine
             backupPath = BackupUserData(game, receipt, choice, removed, kept);
         }
 
-        if (choice.RemovePlugin && receipt.Plugin is not null)
+        if (choice.RemovePlugin)
         {
-            RemoveRecorded(files, receipt.Plugin.Files, receipt.Plugin.DirsCreated, removed, kept);
-            receipt.Plugin = null;
+            if (receipt.Plugin is not null)
+            {
+                RemoveRecorded(files, receipt.Plugin.Files, receipt.Plugin.DirsCreated, removed, kept);
+                receipt.Plugin = null;
+            }
+
+            // 🔴 **A receipt that does not mention the plugin does not mean there is none.**
+            // Installing the loader alone writes a receipt with no Plugin section — that is a real
+            // plan, and the ordinary one on a game whose mod was already current. Uninstalling
+            // then walked straight past our own assembly and reported success: the folder still
+            // held UnityGameTranslator.dll, and nothing said so.
+            //
+            // Recognised by NAME at the documented locations, exactly as the no-receipt path does.
+            // Never a folder and never a sweep — those hold translations.
+            if (FindUnrecordedPlugin(game) is { } orphan)
+            {
+                try
+                {
+                    File.Delete(orphan);
+                    removed.Add(Path.GetRelativePath(game.Path, orphan)
+                                    .Replace(Path.DirectorySeparatorChar, '/'));
+                    FileOperations.TryRemoveEmptyDirectory(Path.GetDirectoryName(orphan)!);
+                }
+                catch (Exception ex)
+                {
+                    kept.Add($"{Path.GetFileName(orphan)} ({ex.GetType().Name})");
+                }
+            }
         }
 
         if (choice.RemoveLoader && receipt.Loader is { InstalledByUs: true } loader)
@@ -175,6 +260,11 @@ public sealed class UninstallEngine
             {
                 RemoveRecorded(files, loader.Files, loader.DirsCreated, removed, kept);
                 receipt.Loader = null;
+
+                // What the loader produced while it ran. Only now: with the loader gone and no
+                // other mod left, a cache and a log answer to nothing.
+                RemoveLoaderLeftovers(game, _catalog.Loaders.FirstOrDefault(l => l.Id == loader.Id),
+                                      removed);
             }
         }
 
@@ -286,6 +376,79 @@ public sealed class UninstallEngine
                 // Leaving a backup in place is safe; losing the original is not.
             }
         }
+
+        // ⚠ The folder itself, once it holds nothing. It is ours, it is hidden, and a game left
+        // with an empty .ugt-manager-backup after a full uninstall is a trace of a tool somebody
+        // has just removed. Only when empty: a backup we failed to restore stays, and stays
+        // findable.
+        try
+        {
+            foreach (var directory in Directory.EnumerateDirectories(backupRoot, "*", SearchOption.AllDirectories)
+                                               .OrderByDescending(d => d.Length))
+            {
+                FileOperations.TryRemoveEmptyDirectory(directory);
+            }
+
+            FileOperations.TryRemoveEmptyDirectory(backupRoot);
+        }
+        catch
+        {
+            // Tidying. Never a reason to report a failed uninstall.
+        }
+    }
+
+    /// <summary>
+    /// What the loader PRODUCED while it ran — caches and logs — once the loader itself is gone.
+    ///
+    /// 🔴 **Not "files we installed", and that is why nothing removed them.** The rule this class
+    /// rests on is that we only delete what we wrote; a cache written by BepInEx on its first
+    /// launch was never ours. But once the loader is removed and no other mod is left, those files
+    /// answer to nothing at all — an uninstall that reports success and leaves BepInEx/cache,
+    /// BepInEx/LogOutput.log and a tree of empty folders has not finished.
+    ///
+    /// ⚠ **config/ is deliberately kept.** It holds settings — BepInEx's own, and any other mod's
+    /// that ever ran here. Caches and logs regenerate in seconds; a configuration does not, and
+    /// somebody reinstalling later would notice its absence and not know why.
+    /// </summary>
+    private static void RemoveLoaderLeftovers(GameInstall game, LoaderDescriptor? descriptor,
+                                              List<string> removed)
+    {
+        if (descriptor is null) return;
+
+        // The loader's own tree: the parent of its plugin folder, unless that folder IS the tree
+        // (MelonLoader's Mods/ sits beside UserData/ rather than inside anything of ours).
+        var root = descriptor.PluginDirShared
+            ? null
+            : Path.GetDirectoryName(Path.Combine(game.Path, descriptor.PluginDir));
+
+        if (root is null || !Directory.Exists(root)) return;
+
+        foreach (var name in new[] { "cache", "LogOutput.log", "preloader.log" })
+        {
+            var path = Path.Combine(root, name);
+
+            try
+            {
+                if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
+                else if (File.Exists(path)) File.Delete(path);
+                else continue;
+
+                removed.Add(Path.GetRelativePath(game.Path, path)
+                                .Replace(Path.DirectorySeparatorChar, '/'));
+            }
+            catch
+            {
+                // A log still held open by a crashed game is not a failed uninstall.
+            }
+        }
+
+        foreach (var directory in Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories)
+                                           .OrderByDescending(d => d.Length))
+        {
+            FileOperations.TryRemoveEmptyDirectory(directory);
+        }
+
+        FileOperations.TryRemoveEmptyDirectory(root);
     }
 
     /// <summary>

@@ -4861,36 +4861,10 @@ public partial class MainWindow : Window
             _ => null,
         };
 
-        // ⚠ Both, not Server. What is sent is the file from this game, so afterwards the published
-        // translation and this machine carry the same thing. Server would mean "the published
-        // version has the result and this machine does not", which cannot happen from a tool that
-        // is sending the machine's own file.
-        var publish = ScopeMark.Marked(EditScope.SideAfter(onThisMachine: true, yourPublishedCopy: true),
-                                       "Publish…",
-                                       standing.CanAct && nothingYet is null && nothingToSend is null);
-        publish.Click += async (_, _) => await PublishTranslationAsync(report, descriptor, publish);
-        actions.Children.Add(publish);
-
-        // ── What is said about it ─────────────────────────────────────────────
-        //
-        // ⚠ Deliberately NOT guarded on nothingToSend. This is the one action that exists
-        // precisely for when there is nothing left to publish: a description written after the
-        // fact, a link that moved, a translation its author now calls finished.
-        //
-        // ⚠ Server, not Both: it changes what the site holds and writes nothing on this machine.
-        //
-        // ⚠ MatchingOnline cannot answer whether this is published — it is the lineage's PUBLIC
-        // translation, and a contributor's own row is not in it. **AccountLineages can**, and does:
-        // see noDetailsYet above. Offering to edit a description that does not exist sends the
-        // reader to find that out for themselves.
-        //
-        // ⚠ The cloud mark is right and stays: what this writes lands on the site and nothing of
-        // it on this machine. It looked wrong only because the button was offered where there was
-        // nothing published to write about — the mark was reporting the fault, not causing it.
-        var details = ScopeMark.Marked(EditScope.SideAfter(onThisMachine: false, yourPublishedCopy: true),
-                                       "Edit details…", standing.CanAct && noDetailsYet is null);
-        details.Click += async (_, _) => await EditTranslationDetailsAsync(report, details);
-        actions.Children.Add(details);
+        // ⚠ **Before Publish, and that is the reading order.** When both sides have moved, Publish
+        // is refused with "settle the difference first" — so the button that settles it cannot
+        // come after the refusal, two controls further along. The remedy goes in front of the
+        // thing it unblocks.
 
         // ── Settle the difference ─────────────────────────────────────────────
         //
@@ -4925,6 +4899,37 @@ public partial class MainWindow : Window
             merge.Click += async (_, _) => await MergeWithPublishedAsync(report, descriptor, merge);
             actions.Children.Add(merge);
         }
+
+        // ⚠ Both, not Server. What is sent is the file from this game, so afterwards the published
+        // translation and this machine carry the same thing. Server would mean "the published
+        // version has the result and this machine does not", which cannot happen from a tool that
+        // is sending the machine's own file.
+        var publish = ScopeMark.Marked(EditScope.SideAfter(onThisMachine: true, yourPublishedCopy: true),
+                                       "Publish…",
+                                       standing.CanAct && nothingYet is null && nothingToSend is null);
+        publish.Click += async (_, _) => await PublishTranslationAsync(report, descriptor, publish);
+        actions.Children.Add(publish);
+
+        // ── What is said about it ─────────────────────────────────────────────
+        //
+        // ⚠ Deliberately NOT guarded on nothingToSend. This is the one action that exists
+        // precisely for when there is nothing left to publish: a description written after the
+        // fact, a link that moved, a translation its author now calls finished.
+        //
+        // ⚠ Server, not Both: it changes what the site holds and writes nothing on this machine.
+        //
+        // ⚠ MatchingOnline cannot answer whether this is published — it is the lineage's PUBLIC
+        // translation, and a contributor's own row is not in it. **AccountLineages can**, and does:
+        // see noDetailsYet above. Offering to edit a description that does not exist sends the
+        // reader to find that out for themselves.
+        //
+        // ⚠ The cloud mark is right and stays: what this writes lands on the site and nothing of
+        // it on this machine. It looked wrong only because the button was offered where there was
+        // nothing published to write about — the mark was reporting the fault, not causing it.
+        var details = ScopeMark.Marked(EditScope.SideAfter(onThisMachine: false, yourPublishedCopy: true),
+                                       "Edit details…", standing.CanAct && noDetailsYet is null);
+        details.Click += async (_, _) => await EditTranslationDetailsAsync(report, details);
+        actions.Children.Add(details);
 
         // ── Clear the way for another one ─────────────────────────────────────
         //

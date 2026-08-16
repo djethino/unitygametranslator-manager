@@ -213,15 +213,27 @@ public static class SituationReader
     {
         var plugin = report.PluginStanding is { UpdateAvailable: true };
 
-        // LoaderUpdateOffered, not LoaderStanding — see Behind: a loader we may not touch is
-        // reported on the card as a fact, and never as something waiting to be done.
-        var loader = report.LoaderUpdateOffered;
+        // 🔴 **LoaderStanding, not LoaderUpdateOffered — the row INFORMS, it does not offer.**
+        //
+        // Hiding a newer loader until somebody had taken the loader over meant the one thing that
+        // would make them take it over was invisible: nothing said a newer version existed, so
+        // nothing sent them to Set up to allow it. A row is where you learn a game needs looking
+        // at; whether we may act is a question for the card.
+        //
+        // The wording carries the difference — "loader update available (not ours)" — so nobody
+        // presses one-click expecting it to be taken care of.
+        var loaderNewer = report.LoaderStanding is { UpdateAvailable: true };
+        var loaderOurs = report.LoaderUpdateOffered;
+
+        var loader = loaderNewer
+            ? (loaderOurs ? "loader" : "loader (not ours)")
+            : null;
 
         return (plugin, loader) switch
         {
-            (true, true) => "mod and loader",
-            (true, false) => "mod",
-            (false, true) => "loader",
+            (true, not null) => $"mod and {loader}",
+            (true, null) => "mod",
+            (false, not null) => loader,
             _ => null,
         };
     }

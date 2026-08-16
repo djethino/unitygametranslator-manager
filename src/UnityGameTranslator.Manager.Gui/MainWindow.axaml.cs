@@ -2882,18 +2882,41 @@ public partial class MainWindow : Window
         if (report.InstalledLoader is null) pending.Add("the loader");
         else if (report.LoaderUpdateOffered) pending.Add("a newer loader");
 
+        // ⚠ A newer loader we may NOT touch is still worth knowing about, and this tab said
+        // nothing at all: the row now announces it, and somebody arriving here found a card
+        // claiming everything was up to date. Said as a fact with the way out, not as a task —
+        // the permission is a per-game answer, and Set up is where it is given.
+        var loaderTheirs = !report.LoaderUpdateOffered
+                           && report.InstalledLoader is { InstalledByUs: false }
+                           && report.LoaderStanding is { UpdateAvailable: true };
+
         if (!installed) pending.Add("the mod");
         else if (report.PluginStanding is { UpdateAvailable: true }) pending.Add("a newer mod");
 
         next.Children.Add(new TextBlock
         {
             Text = pending.Count == 0
-                ? "The loader and the mod are installed and up to date."
+                ? (loaderTheirs
+                    ? "The mod is installed and up to date."
+                    : "The loader and the mod are installed and up to date.")
                 : $"Needs {string.Join(" and ", pending)}.",
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
-            Foreground = Brush(pending.Count == 0 ? "StatusSuccess" : "TextSecondary"),
+            Foreground = Brush(pending.Count == 0 && !loaderTheirs ? "StatusSuccess" : "TextSecondary"),
         });
+
+        if (loaderTheirs && report.LoaderStanding is { } theirs)
+        {
+            next.Children.Add(new TextBlock
+            {
+                Text = $"{report.InstalledLoader!.Display} {theirs.Installed} → {theirs.Available} "
+                     + "is out. It was not installed from here, so updating it has to be allowed "
+                     + "first — in Set up.",
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("StatusInfo"),
+            });
+        }
 
         var go = new Button
         {

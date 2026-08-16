@@ -526,7 +526,16 @@ public sealed class InstallEngine
             lines.Add($"  WINEDLLOVERRIDES=\"{plan.Loader.ProtonDllOverride}=n,b\" %command%");
         }
 
-        foreach (var warning in plan.Loader.Warnings) lines.Add($"Note: {warning}");
+        // 🔴 **.Text, and only the ones that apply.** This printed the OBJECT — every reader got
+        // "Note: UnityGameTranslator.Manager.Core.Model.LoaderWarning" and no way to tell whether
+        // the install had gone wrong. It also skipped AppliesTo, which exists precisely so a note
+        // about macOS never appears on Windows: a warning shown when it is not true teaches people
+        // to skip warnings, which is the one habit they must not have.
+        foreach (var warning in plan.Loader.Warnings)
+        {
+            if (!warning.AppliesTo(_platform.OsId, plan.Game.Runtime, plan.InstallLoader)) continue;
+            lines.Add($"Note: {warning.Text}");
+        }
 
         return string.Join(Environment.NewLine, lines);
     }

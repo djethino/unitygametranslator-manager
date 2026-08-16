@@ -4547,7 +4547,26 @@ public partial class MainWindow : Window
         // ⚠ Guarded on CanWriteLocally, not on CanAct. Editing writes the game's own translation
         // file and touches no server — which is why it was open to everybody, and why it must not
         // be: breaking the setup another user of this computer put in place needs no server at all.
-        var edit = ScopeMark.Marked(EditSide.Local, "Edit in browser", standing.CanWriteLocally);
+        // 🔴 **A file with no line in it has nothing to publish AND nothing to edit.**
+        // A game set up a minute ago holds none: the mod captures them while it is played. Offered
+        // there, Publish hands the server a translation that says nothing, and Edit opens a browser
+        // session on an empty page — two costs nobody ever collects. Which is why this refusal
+        // governs both buttons, and is stated in the words that say what to do instead.
+        //
+        // ⚠ An unreadable file falls under the same hand, for a different reason: we do not send
+        // what we could not read. EntryCount is negative there, never zero.
+        var lines = report.LocalTranslation?.EntryCount ?? 0;
+        var nothingYet = lines switch
+        {
+            < 0 => "This game's translation file cannot be read, so nothing can be sent from it "
+                 + "or edited in it.",
+            0 => "This game holds no translated line yet — play it so the mod captures some, then "
+               + "publish or edit them.",
+            _ => null,
+        };
+
+        var edit = ScopeMark.Marked(EditSide.Local, "Edit in browser",
+                                    standing.CanWriteLocally && nothingYet is null);
         edit.Click += async (_, _) => await OpenLocalEditorAsync(report, descriptor, edit);
         actions.Children.Add(edit);
 
@@ -4585,7 +4604,7 @@ public partial class MainWindow : Window
         // is sending the machine's own file.
         var publish = ScopeMark.Marked(EditScope.SideAfter(onThisMachine: true, yourPublishedCopy: true),
                                        "Publish…",
-                                       standing.CanAct && nothingToSend is null);
+                                       standing.CanAct && nothingYet is null && nothingToSend is null);
         publish.Click += async (_, _) => await PublishTranslationAsync(report, descriptor, publish);
         actions.Children.Add(publish);
 
@@ -4669,10 +4688,12 @@ public partial class MainWindow : Window
                 Foreground = Brush(standing.Kind == ServerStandingKind.SignedOut ? "TextMuted" : "StatusWarning"),
             };
         }
-        else if (nothingToSend is { } why)
+        else if ((nothingYet ?? nothingToSend) is { } why)
         {
             // Only when the account COULD have acted: two refusals stacked would leave somebody
-            // fixing the second while the first still stands.
+            // fixing the second while the first still stands. ⚠ And the empty file comes FIRST:
+            // it governs two buttons where the sync reason governs one, and a game with no line
+            // cannot be in any sync state worth explaining.
             yield return new TextBlock
             {
                 Text = why,

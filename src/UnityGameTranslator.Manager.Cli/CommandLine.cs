@@ -263,7 +263,14 @@ public static class CommandLine
         }
 
         var report = await inventory.BuildReportAsync(game, offline);
-        PrintReport(report);
+
+        // Read here rather than inside PrintReport: the catalog is what turns an installed loader
+        // id into the descriptor that knows where its config.json lives.
+        var installed = report.InstalledLoader is null
+            ? null
+            : catalog.Document.Loaders.FirstOrDefault(l => l.Id == report.InstalledLoader.Id);
+
+        PrintReport(report, GameConfigWriter.Read(report.Game.Path, installed));
         PrintSituation(platform, report, offline);
         PrintModSettings(platform, catalog.Document, report);
         return report.Blockers.Count > 0 ? 3 : 0;
@@ -397,7 +404,7 @@ public static class CommandLine
         _ => "no version information",
     };
 
-    private static void PrintReport(GameReport report)
+    private static void PrintReport(GameReport report, GameConfigSnapshot config)
     {
         var game = report.Game;
 
@@ -464,6 +471,12 @@ public static class CommandLine
         {
             Console.WriteLine("Local trans.: none");
         }
+
+        // What starting this game would produce, from the game's own configuration. The window
+        // prints the same answer on the Play button, from the same Core call — a screen and a
+        // command disagreeing about what a game does is the failure that rule exists to prevent.
+        var promise = PlayPromises.For(report, config);
+        Console.WriteLine($"Pressing Play: {PlayPromises.Label(promise)} — {PlayPromises.Explain(promise)}");
 
         // ⚠ The verdict a running game would reach, reached without one. Printed here because this
         // command is what somebody pastes into an issue about sync, and "the mod says X, the

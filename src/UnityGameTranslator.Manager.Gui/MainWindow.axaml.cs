@@ -1564,10 +1564,16 @@ public partial class MainWindow : Window
     /// wherever it appears — and grey is what the rest of this interface means by "cannot be
     /// pressed". A grey play mark on the card, next to green ones in the list, reads as disabled.
     /// </summary>
-    private Button? PlayButton(GameInstall game, bool small)
+    private Button? PlayButton(GameInstall game, bool small, GameReport? report = null)
     {
         if (_running.IsRunning(game)) return null;
         if (GameLaunch.RouteFor(game) is not { } route) return null;
+
+        // ⚠ Only the full-size button says it. The mark in the list is a glyph with no room for
+        // words, and giving it a tooltip nobody hovers would be a promise made to nobody.
+        var promise = report is null
+            ? PlayPromise.Plain
+            : PlayPromises.For(report, GameConfig(report));
 
         var button = small
             ? new Button
@@ -1578,14 +1584,16 @@ public partial class MainWindow : Window
                 BorderThickness = new Avalonia.Thickness(0),
                 Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
             }
-            : Glyphs.Button(Glyphs.Play("StatusSuccess"), "Play");
+            : Glyphs.Button(Glyphs.Play("StatusSuccess"), PlayPromises.Label(promise));
 
         // Tonal green, and only on the full-size one: the small mark in the list has no fill at
         // all, so there is nothing there to tint. See the Button.play block in App.axaml for why
         // this is the single control in the application allowed a colour of its own.
         if (!small) button.Classes.Add("play");
 
-        ToolTip.SetTip(button, $"Start {game.Name}. {route.Why}");
+        ToolTip.SetTip(button, small || report is null
+            ? $"Start {game.Name}. {route.Why}"
+            : $"Start {game.Name}. {PlayPromises.Explain(promise)} {route.Why}");
 
         button.Click += async (_, _) =>
         {
@@ -6028,7 +6036,7 @@ public partial class MainWindow : Window
             Grid.SetColumn(settled, 0);
             done.Children.Add(settled);
 
-            if (PlayButton(report.Game, small: false) is { } start)
+            if (PlayButton(report.Game, small: false, report) is { } start)
             {
                 start.Margin = new Avalonia.Thickness(16, 0, 0, 0);
                 start.VerticalAlignment = VerticalAlignment.Center;
@@ -6165,7 +6173,7 @@ public partial class MainWindow : Window
         // After the set-up button, not before it: the order on this bar is the order of the two
         // acts. Present even when there is nothing left to set up — a card whose every job is done
         // is exactly the one somebody opened in order to go and play.
-        if (PlayButton(report.Game, small: false) is { } play) right.Children.Add(play);
+        if (PlayButton(report.Game, small: false, report) is { } play) right.Children.Add(play);
 
         Grid.SetColumn(right, 1);
         row.Children.Add(right);

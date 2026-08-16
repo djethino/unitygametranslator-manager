@@ -218,14 +218,20 @@ public sealed class GameConfigWriter
                 },
             };
 
-            // ⚠ The hotkey is carried BESIDE the settings, never among them — see
-            // GameConfigSnapshot.InGameHotkey. It is a measurement taken inside the game, not a
-            // value this tool may be told to write.
+            // ⚠ The hotkey and enable_ai are carried BESIDE the settings, never among them — see
+            // GameConfigSnapshot.InGameHotkey. They are measurements taken inside the game, not
+            // values this tool may be told to write.
+            //
+            // ⚠ enable_ai is WRITTEN from GamePreference.StartTranslation and, until now, never
+            // read back. That is fine for writing and wrong for describing: somebody who switches
+            // translation off inside the mod leaves our stored preference saying it is on, and
+            // anything reporting from that preference states the opposite of what the game does.
             return new GameConfigSnapshot(
                 true,
                 Flag(root, null, "first_run_completed") == true,
                 Text(root, null, HotkeyKey),
-                values);
+                values,
+                Flag(root, null, "enable_ai"));
         }
         catch
         {

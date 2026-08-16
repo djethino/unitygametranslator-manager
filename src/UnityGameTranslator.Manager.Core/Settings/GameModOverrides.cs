@@ -198,8 +198,19 @@ public sealed class GameModOverrides
 /// made it settable, and made unticking the defaults box silently delete the question.
 /// </param>
 /// <param name="Values">Everything under a key this tool owns. Empty when the file answers none.</param>
+/// <param name="AutoTranslate">
+/// The mod's `enable_ai` as this game currently holds it — whether it translates while played.
+///
+/// 🔴 **An OBSERVATION, like the hotkey, and for the same reason.** It is written from
+/// <see cref="GamePreference.StartTranslation"/>, but somebody can turn it off inside the mod, and
+/// from that moment the stored preference says the opposite of what the game does. Anything that
+/// DESCRIBES a game — starting with the Play button, which promises what pressing it will do —
+/// reads this and never the preference.
+///
+/// Null means the game names no answer: written before the key existed, or never configured.
+/// </param>
 public sealed record GameConfigSnapshot(bool Exists, bool FirstRunCompleted, string? InGameHotkey,
-                                        GameModOverrides Values)
+                                        GameModOverrides Values, bool? AutoTranslate = null)
 {
     /// <summary>
     /// Whether somebody has configured this game — as opposed to the mod having dropped a file.

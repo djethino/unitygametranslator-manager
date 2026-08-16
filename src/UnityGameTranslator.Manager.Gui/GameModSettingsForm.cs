@@ -686,7 +686,13 @@ public sealed class GameModSettingsForm
 
     private Control ApplyBar()
     {
-        _apply = new Button { Content = "Apply", Classes = { "primary" }, FontSize = 12 };
+        // ⚠ Marked like every action that writes. This one puts settings into THIS game's
+        // config.json and sends nothing anywhere, so Local — and saying so on the button is worth
+        // more here than almost anywhere else, since the values come from Mod defaults and a
+        // reader could reasonably wonder whether applying pushes something back to them.
+        _apply = ScopeMark.Marked(EditSide.Local, "Apply", enabled: false);
+        _apply.Classes.Add("primary");
+        _apply.FontSize = 12;
 
         // ⚠ Posted, and it does NOT rebuild afterwards. Whoever listens stores the answers and
         // redraws the whole block from them — with a fresh form, so every origin is recomputed from
@@ -718,7 +724,9 @@ public sealed class GameModSettingsForm
 
         var count = _draft.Count;
 
-        _apply.Content = count > 0 ? $"Apply ({count})" : "Apply";
+        // ⚠ SetLabel, never Content: the button holds the scope marks beside its text, and
+        // assigning Content would throw them away on the first change.
+        ScopeMark.SetLabel(_apply, count > 0 ? $"Apply ({count})" : "Apply");
         _apply.IsEnabled = count > 0;
 
         ToolTip.SetTip(_apply, count > 0

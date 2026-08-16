@@ -3081,13 +3081,11 @@ public partial class MainWindow : Window
 
         var ready = report.InstalledPluginVersion is not null && !_running.IsRunning(report.Game);
 
-        var apply = new Button
-        {
-            Content = "Apply (1)",
-            FontSize = 12,
-            Classes = { "primary" },
-            IsEnabled = ready,
-        };
+        // ⚠ Marked like every other action that writes. Apply is not a lesser verb because it
+        // carries a count: it puts a file into a game, and where a write lands is the first thing
+        // this interface promises to say. Local — the site holds whatever it held before.
+        var apply = ScopeMark.Marked(EditSide.Local, "Apply (1)", ready);
+        apply.Classes.Add("primary");
 
         // No greyed control without words — the rule this program holds everywhere.
         ToolTip.SetTip(apply, report.InstalledPluginVersion is null
@@ -3174,11 +3172,36 @@ public partial class MainWindow : Window
             var unpublished = local.ChangedSinceAncestor
                               ?? (local.SourceHash is null ? null : local.LocalChanges);
 
-            return unpublished > 0
-                ? $"Applying removes the {local.EntryCount} lines in this game, including "
-                  + $"{unpublished} never uploaded. A copy is kept aside."
-                : $"Applying removes the {local.EntryCount} lines in this game. A copy is kept aside.";
+            // 🔴 **Says LOCAL first, because the sentence is frightening without it.** Somebody who
+            // leads a Main reads "applying removes 3231 lines" and has every reason to think their
+            // published translation is at stake. It is not: this writes one file in one game, and
+            // the site is untouched — which is exactly what makes switching safe once published.
+            var count = unpublished > 0
+                ? $"{local.EntryCount} lines, {unpublished} never uploaded"
+                : $"{local.EntryCount} lines";
+
+            var published = _lineages.For(local.Uuid) is not null
+                ? " Your published translation is untouched."
+                : "";
+
+            return $"Replaces this game's file only ({count}). A copy is kept aside.{published}";
         }
+    }
+
+    /// <summary>
+    /// How many lines this game holds that were never published, or null when nobody can say.
+    ///
+    /// ⚠ The measured figure first, the mod's counter only as a fallback — the same order the card
+    /// uses when it prints "N never uploaded". One screen must not carry two numbers for one fact.
+    /// </summary>
+    private static int? Unpublished(GameReport report)
+    {
+        if (report.LocalTranslation is not { } local) return null;
+
+        var count = local.ChangedSinceAncestor
+                    ?? (local.SourceHash is null ? null : local.LocalChanges);
+
+        return count > 0 ? count : null;
     }
 
     /// <summary>Which half of a game's card is showing. Home first, always — see TabStrip.</summary>
@@ -4714,14 +4737,27 @@ public partial class MainWindow : Window
         {
             yield return new TextBlock
             {
+                // ⚠ **With the number, where there is one.** "This game holds changes the published
+                // version does not" and "both have moved" are verdicts without a size: somebody
+                // deciding whether to settle a conflict now or later needs to know if it is four
+                // lines or four hundred, and the card measured it two blocks above.
+                //
+                // Only OUR side is counted, and the wording says so. How far the published version
+                // has moved cannot be known without fetching it, and inventing a figure for it
+                // would be worse than leaving the question open.
                 Text = sync switch
                 {
                     SyncDirection.InSync => "Up to date with the published version.",
                     SyncDirection.Download => "The published version has moved on. Nothing of yours "
-                                            + "is at risk — you have no unpublished changes here.",
-                    SyncDirection.Upload => "This game holds changes the published version does not.",
-                    _ => "Both this file and the published one have moved. Settling that is done "
-                       + "line by line.",
+                                            + "is at risk — this game holds no unpublished change.",
+                    SyncDirection.Upload => Unpublished(report) is { } up
+                        ? $"This game holds {up} line(s) the published version does not."
+                        : "This game holds changes the published version does not.",
+                    _ => Unpublished(report) is { } mine
+                        ? $"Both have moved: {mine} line(s) here are unpublished, and the published "
+                          + "version changed too. Settling that is done line by line."
+                        : "Both this file and the published one have moved. Settling that is done "
+                          + "line by line.",
                 },
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
@@ -7727,9 +7763,7 @@ public partial class MainWindow : Window
         // apply, and naming the act is then the clearest thing to do.
         var deliberate = preference.TranslationId == picked.Id;
 
-        var act = new Button
-        {
-            Content = offer switch
+        var actLabel = offer switch
             {
                 TranslationOffer.ReplacesWork or TranslationOffer.ReplacesChoice when deliberate
                     => "Apply (1)",
@@ -7738,13 +7772,14 @@ public partial class MainWindow : Window
                 _ when deliberate => "Apply (1)",
                 _ when report.LocalTranslation is not null => "Update the translation",
                 _ => "Download this translation",
-            },
-            FontSize = 12,
-            Classes = { "primary" },
-            IsEnabled = !_running.IsRunning(report.Game),
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Margin = new Avalonia.Thickness(0, 6, 0, 0),
-        };
+            };
+
+        // Same act as Apply (1) on the other tab, so it wears the same mark: a file written into
+        // this game, nothing sent anywhere.
+        var act = ScopeMark.Marked(EditSide.Local, actLabel, !_running.IsRunning(report.Game));
+        act.Classes.Add("primary");
+        act.HorizontalAlignment = HorizontalAlignment.Left;
+        act.Margin = new Avalonia.Thickness(0, 6, 0, 0);
 
         act.Click += async (_, _) => await TakeSelectedTranslationAsync(report, picked, replacing);
         yield return act;

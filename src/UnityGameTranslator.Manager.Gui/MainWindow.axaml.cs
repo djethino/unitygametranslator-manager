@@ -4865,7 +4865,10 @@ public partial class MainWindow : Window
         // That is the whole reason the philosophy is "publish, then switch freely".
         if ((report.LocalTranslation?.EntryCount ?? 0) != 0 || report.LocalTranslation is not null)
         {
-            var clear = ScopeMark.Marked(EditSide.Local, "Remove the translation…",
+            // ⚠ "Local" is said in words as well as by the mark. The mark tells a reader who has
+            // learnt this interface; the word tells everyone else, and on the one button that
+            // takes a translation out of a game, being clear twice costs nothing.
+            var clear = ScopeMark.Marked(EditSide.Local, "Remove local translation…",
                                          standing.CanWriteLocally);
             clear.Click += async (_, _) => await RemoveTranslationAsync(report, descriptor);
             actions.Children.Add(clear);
@@ -7677,11 +7680,24 @@ public partial class MainWindow : Window
             };
         }
 
+        // ⚠ **The same act wears the same word on both tabs.** Home says Apply (1) — the norm for
+        // every pending change in this program — so this one cannot say "Replace it with this
+        // one..." for the identical click: somebody who saw both would have no way to tell whether
+        // they are two steps or one.
+        //
+        // The other two labels stay: without a deliberate choice there is nothing "pending" to
+        // apply, and naming the act is then the clearest thing to do.
+        var deliberate = preference.TranslationId == picked.Id;
+
         var act = new Button
         {
             Content = offer switch
             {
-                TranslationOffer.ReplacesWork or TranslationOffer.ReplacesChoice => "Replace it with this one...",
+                TranslationOffer.ReplacesWork or TranslationOffer.ReplacesChoice when deliberate
+                    => "Apply (1)",
+                TranslationOffer.ReplacesWork or TranslationOffer.ReplacesChoice
+                    => "Replace it with this one...",
+                _ when deliberate => "Apply (1)",
                 _ when report.LocalTranslation is not null => "Update the translation",
                 _ => "Download this translation",
             },
@@ -8031,7 +8047,7 @@ public partial class MainWindow : Window
             ? $" {unpublished} line(s) differ from what was last synced."
             : "";
 
-        if (!await ConfirmAsync($"Remove the translation from {report.Game.Name}?",
+        if (!await ConfirmAsync($"Remove the local translation from {report.Game.Name}?",
                 $"{lines} line(s) will be moved out of the game.{changed} {stake}"
                 + Environment.NewLine + Environment.NewLine
                 + $"A copy is kept aside — the last {TranslationInstaller.BackupsKept} are, and "

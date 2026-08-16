@@ -3120,34 +3120,65 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// What is waiting and what applying it would cost, under the line rather than beside it.
+    /// What is waiting, and what applying it costs — two short lines, never one long one.
     ///
-    /// A sentence can run to two lines; squeezed into a column next to a button it reads as a
-    /// label on that button rather than as a statement about the game.
+    /// 🔴 **Concrete, and counted.** The first version read "Applying there is work here that has
+    /// never been uploaded": a clause written to sit inside another sentence, pasted after a verb,
+    /// producing something that is neither grammatical nor an answer. What somebody needs before
+    /// pressing Apply is a number and a fate — how many of their lines are involved, and what
+    /// happens to them.
+    ///
+    /// ⚠ Two TextBlocks rather than one: the identity of the translation and the cost of taking it
+    /// are two facts, and a reader scanning for the second should not have to find it at the end
+    /// of the first. It also stops the whole thing running as one unreadable line.
     /// </summary>
     private Control? PendingTranslationNote(GameReport report)
     {
         if (TranslationWaiting(report) is not { } picked) return null;
 
-        var caution = TranslationOffers.Caution(TranslationOffers.For(report, picked));
+        var lines = new StackPanel { Spacing = 2, Margin = new Avalonia.Thickness(0, 6, 0, 0) };
 
         // What identifies a translation to somebody about to install it: the pair of languages,
-        // who made it, and how big it is. The list they chose from showed all three — a card that
-        // then names only two makes them go back and check they picked the right one.
+        // who made it, and how big it is — the three the list they chose from showed.
         var size = picked.LineCount > 0 ? $", {picked.LineCount} lines" : "";
 
-        var text = $"Chosen: {picked.SourceLanguage} → {picked.TargetLanguage} by "
-                 + $"{picked.Author ?? "unknown"}{size} — not in the game yet."
-                 + (caution is null ? "" : $" Applying {caution}.");
-
-        return new TextBlock
+        lines.Children.Add(new TextBlock
         {
-            Text = text,
+            Text = $"Chosen: {picked.SourceLanguage} → {picked.TargetLanguage} by "
+                 + $"{picked.Author ?? "unknown"}{size}. Not in the game yet.",
             FontSize = 11,
             TextWrapping = TextWrapping.Wrap,
-            Margin = new Avalonia.Thickness(0, 6, 0, 0),
-            Foreground = Brush(caution is null ? "StatusInfo" : "StatusWarning"),
-        };
+            Foreground = Brush("StatusInfo"),
+        });
+
+        if (Cost(report) is { } cost)
+        {
+            lines.Children.Add(new TextBlock
+            {
+                Text = cost,
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("StatusWarning"),
+            });
+        }
+
+        return lines;
+
+        // ⚠ The same figure the card shows two blocks above — measured against the ancestor, or
+        // the mod's own counter when there is nothing to measure against. Two numbers for one
+        // thing on one screen is how somebody stops believing either.
+        string? Cost(GameReport r)
+        {
+            if (r.LocalTranslation is not { } local || local.EntryCount <= 0) return null;
+
+            var unpublished = local.ChangedSinceAncestor
+                              ?? (local.SourceHash is null ? null : local.LocalChanges);
+
+            return unpublished > 0
+                ? $"Applying removes the {local.EntryCount} lines in this game, including "
+                  + $"{unpublished} never uploaded. A copy is kept aside."
+                : $"Applying removes the {local.EntryCount} lines in this game. A copy is kept aside.";
+        }
     }
 
     /// <summary>Which half of a game's card is showing. Home first, always — see TabStrip.</summary>
@@ -4688,7 +4719,7 @@ public partial class MainWindow : Window
                     SyncDirection.InSync => "Up to date with the published version.",
                     SyncDirection.Download => "The published version has moved on. Nothing of yours "
                                             + "is at risk — you have no unpublished changes here.",
-                    SyncDirection.Upload => "You have changes here that the published version does not.",
+                    SyncDirection.Upload => "This game holds changes the published version does not.",
                     _ => "Both this file and the published one have moved. Settling that is done "
                        + "line by line.",
                 },
@@ -6284,7 +6315,7 @@ public partial class MainWindow : Window
             {
                 Text = steps.Count > 0
                     ? string.Join("  ·  ", steps.Select(step => step.Text))
-                    : "Everything is installed and up to date here.",
+                    : "This game is installed and up to date.",
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("TextSecondary"),

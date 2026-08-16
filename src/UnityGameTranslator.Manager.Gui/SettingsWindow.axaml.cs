@@ -352,8 +352,8 @@ public sealed class SettingsWindow : Window
         panel.Children.Add(_autoDownload);
         panel.Children.Add(Row("When both changed", _mergeStrategy));
         panel.Children.Add(Note(
-            "When a translation you use has been updated and you have edited it too. The mod does "
-            + "the merging - this only says whether it should stop and ask you first.", "TextMuted"));
+            "When a translation you use has changed and you have edited it too: merge quietly, "
+            + "or stop and ask.", "TextMuted"));
         panel.Children.Add(_notificationsEnabled);
         panel.Children.Add(Row("Notice position", _notificationPosition));
 
@@ -463,9 +463,8 @@ public sealed class SettingsWindow : Window
         _apiPanel.Children.Add(Row("API key", _providerKey));
         _apiPanel.Children.Add(_deeplFree);
         _apiPanel.Children.Add(Note(
-            "Both bill you directly on your own account, and both offer a free allowance worth "
-            + "reading up on before you start. We take no part in what it costs. The key is stored "
-            + "encrypted and tied to this machine.", "TextMuted"));
+            "Both bill your own account and both have a free allowance. The key is stored "
+            + "encrypted on this machine.", "TextMuted"));
 
         return Card("Google / DeepL", null, _apiPanel);
     }
@@ -700,9 +699,7 @@ public sealed class SettingsWindow : Window
         panel.Children.Add(Note(ModSettingControls.HotkeyAdvice, "TextMuted"));
         panel.Children.Add(_hotkeyProblem);
         panel.Children.Add(Note(
-            "A game that already has its own key keeps it. This is a preference, and a key set "
-            + "inside a game was measured against your real keyboard there - so it wins over this "
-            + "one. Replacing it is offered on that game's card, where both keys are shown.",
+            "A game that already has its own key keeps it. Its card offers to replace it.",
             "TextMuted"));
         panel.Children.Add(Row("Updates", _channel));
         panel.Children.Add(_modOnline);

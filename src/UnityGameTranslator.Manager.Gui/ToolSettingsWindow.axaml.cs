@@ -523,16 +523,18 @@ public sealed class ToolSettingsWindow : Window
 
         panel.Children.Add(Row("Prefer on Mono games", _preferMono));
         panel.Children.Add(Row("Prefer on IL2CPP games", _preferIl2cpp));
+        // ⚠ No note under these. "Reorders what each game offers; it never forces" explained how
+        // the field works — mechanics the reader did not ask about and cannot act on. What a
+        // preference does is what the word means; a loader that cannot host a game not being
+        // offered is not news to anybody.
+        // ⚠ Kept, and it is the reason this field exists: BepInEx 6 has no stable release, so
+        // neither option is the safe one and the reader has to be told.
         panel.Children.Add(Note(
-            "Reorders what each game offers; it never forces. A loader that cannot host a game, "
-            + "or has no build for this system, is still not proposed.", "TextMuted"));
-        panel.Children.Add(Note(
-            "BepInEx 6 has no stable release: its GitHub page stopped at a pre-release in 2024, "
-            + "while development continues in Bleeding Edge builds. UnityGameTranslator works "
-            + "with either.", "TextMuted"));
-        panel.Children.Add(Note(
-            "Applies to the next install or loader update, not to games already set up. "
-            + "BepInEx 5 and MelonLoader have one source each and are unaffected.", "TextMuted"));
+            "BepInEx 6 has no stable release. Its GitHub page stopped in 2024; Bleeding Edge is "
+            + "where development continues. UGT works with either.", "TextMuted"));
+        // The one fact worth a line: it is not retroactive. Which loaders it concerns is
+        // answered by the label on the field itself.
+        panel.Children.Add(Note("Games already set up are not changed.", "TextMuted"));
 
         // Filled in as the answers arrive, so the screen is readable before the network is.
         var dates = new TextBlock
@@ -664,8 +666,7 @@ public sealed class ToolSettingsWindow : Window
         };
         panel.Children.Add(_checkContentUpdates);
         panel.Children.Add(Note(
-            "Without it, a game's card cannot say which version it would install — it names the "
-            + "loader and no version at all.", "TextMuted"));
+            "Without it, cards cannot show which version they would install.", "TextMuted"));
 
         var check = new Button { Content = "Check now", FontSize = 12 };
         check.HorizontalAlignment = HorizontalAlignment.Left;

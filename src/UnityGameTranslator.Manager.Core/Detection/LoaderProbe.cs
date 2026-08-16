@@ -88,7 +88,17 @@ public static class LoaderProbe
             descriptor.Detect.VersionFile.Replace('/', Path.DirectorySeparatorChar));
         if (!File.Exists(path)) return null;
 
-        return PeFile.ReadFileVersion(path);
+        // 🔴 ProductVersion first, and it is not a preference — it is the only field that can tell
+        // two loader builds apart. BepInEx 6 stamps FileVersion 6.0.0.0 on every Bleeding Edge
+        // build there has ever been, so reading that made every one of them look identical and no
+        // update could ever be announced. ProductVersion carries "6.0.0-be.697".
+        //
+        // ⚠ It is better on the others too, not merely harmless: MelonLoader reads "0.7.3" instead
+        // of "0.7.3.0" — the string the catalogue itself uses — and BepInEx 5 reads the same
+        // "5.4.23.4" either way.
+        //
+        // FileVersion stays as the fallback for anything that ships without a ProductVersion.
+        return PeFile.ReadProductVersion(path) ?? PeFile.ReadFileVersion(path);
     }
 
     /// <summary>

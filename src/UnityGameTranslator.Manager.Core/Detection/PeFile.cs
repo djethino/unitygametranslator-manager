@@ -63,4 +63,43 @@ public static class PeFile
             return null;
         }
     }
+
+    /// <summary>
+    /// The version its author actually named, rather than the four numbers Windows requires.
+    ///
+    /// 🔴 **Why this exists at all.** Every BepInEx 6 Bleeding Edge build ever published carries
+    /// the FileVersion <c>6.0.0.0</c> — the field is a four-number tuple and cannot hold
+    /// <c>be.785</c>. Read from there, build 697 and build 785 are the same version, so no update
+    /// could ever be noticed. The real number IS in the binary, in ProductVersion:
+    /// <c>6.0.0-be.697+53625800…</c>.
+    ///
+    /// ⚠ The <c>+…</c> is build metadata — a commit hash. Semver says it takes no part in
+    /// comparison, and it is forty characters of noise on a card, so it is cut here rather than by
+    /// each reader.
+    ///
+    /// ⚠ Deliberately NOT folded into <see cref="ReadFileVersion"/>. That one also answers for the
+    /// Unity player and for our own plugin, where the four numbers are what every other part of
+    /// this tool already compares against. One caller needed a different question; it gets its own
+    /// method rather than a changed answer for everybody.
+    /// </summary>
+    public static string? ReadProductVersion(string path)
+    {
+        try
+        {
+            var info = System.Diagnostics.FileVersionInfo.GetVersionInfo(path);
+            var version = info.ProductVersion;
+            if (string.IsNullOrWhiteSpace(version)) return null;
+
+            version = version.Trim();
+
+            var plus = version.IndexOf('+');
+            if (plus > 0) version = version.Substring(0, plus);
+
+            return string.IsNullOrWhiteSpace(version) ? null : version;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }

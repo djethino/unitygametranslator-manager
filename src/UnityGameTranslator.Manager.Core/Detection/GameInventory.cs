@@ -1,4 +1,5 @@
 using UnityGameTranslator.Manager.Core.Api;
+using UnityGameTranslator.Manager.Core.Catalog;
 using UnityGameTranslator.Manager.Core.Install;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
@@ -71,6 +72,16 @@ public sealed class GameInventory
     /// the newest one would contradict the choice on the settings screen.
     /// </summary>
     public ReleaseChannel Channel { get; set; } = ReleaseChannel.Stable;
+
+    /// <summary>
+    /// Which BepInEx 6 stream the person asked for — "be" or "github".
+    ///
+    /// 🔴 Needed to answer "is there a newer loader?" at all. The catalogue's own `version` is a
+    /// PINNED fallback, months old by design; what the tool would actually install is whatever
+    /// <see cref="LoaderBuildResolver"/> resolved for this channel. Comparing against the pin told
+    /// somebody they were up to date while the picker beside it offered a newer build.
+    /// </summary>
+    public string? BepInEx6Channel { get; set; }
 
     /// <summary>
     /// Every Unity game we can find: Steam first because it is the richest source, then the
@@ -264,8 +275,19 @@ public sealed class GameInventory
         var known = _catalog.Loaders.FirstOrDefault(l => l.Id == installed.Id);
         if (known is null) return null;
 
-        return new VersionStanding(installed.Version, known.Version);
+        return new VersionStanding(installed.Version, AvailableVersion(known));
     }
+
+    /// <summary>
+    /// The version this loader would actually be installed at: the build resolved for the chosen
+    /// channel, and the catalogue's pin only when nothing has been resolved.
+    ///
+    /// ⚠ Cache-only (<see cref="LoaderBuildResolver.Known"/>): this runs while a list is drawn,
+    /// and a network call per game would make the window unusable. Null from the cache is not a
+    /// failure — it means nobody has warmed it yet, and the pin is then the honest answer.
+    /// </summary>
+    private string? AvailableVersion(LoaderDescriptor loader)
+        => LoaderBuildResolver.Known(loader, BepInEx6Channel)?.Version ?? loader.Version;
 
     /// <summary>
     /// The plugin here against the newest published build.

@@ -418,6 +418,10 @@ public partial class MainWindow : Window
             Channel = string.Equals(_settings.Current.Channel, "beta", StringComparison.OrdinalIgnoreCase)
                 ? ReleaseChannel.Beta
                 : ReleaseChannel.Stable,
+
+            // Which BepInEx 6 stream to measure "up to date" against. Read once here rather than
+            // per report: the settings window rebuilds the reports when it changes.
+            BepInEx6Channel = _settings.Current.BepInEx6Channel,
         };
 
         // There is a folder list to show from here on — see the note where it is switched off.
@@ -571,7 +575,14 @@ public partial class MainWindow : Window
 
         if (detected is not null && descriptor is not null)
         {
-            report.LoaderStanding = new VersionStanding(detected.Version, descriptor.Version);
+            // ⚠ The build resolved for the chosen channel, not the catalogue's pin. The pin is a
+            // fallback that ages on purpose; comparing against it said "up to date" beside a
+            // picker offering a newer build. Cache-only, so this stays a dictionary lookup on the
+            // drawing path.
+            report.LoaderStanding = new VersionStanding(
+                detected.Version,
+                LoaderBuildResolver.Known(descriptor, _settings.Current.BepInEx6Channel)?.Version
+                    ?? descriptor.Version);
 
             // Who installed it, which decides whether the row may say "update available" plainly
             // or has to add "(not ours)". Read from the receipt, exactly as BuildReportAsync does.
@@ -6511,6 +6522,21 @@ public partial class MainWindow : Window
         if (standing.UpToDate)
         {
             return new TextBlock { Text = "Up to date.", FontSize = 12, Opacity = 0.6 };
+        }
+
+        // Both numbers known, neither rankable — two publication lines of the same version. Said
+        // plainly instead of "Up to date", which is what it used to fall through to: reassurance
+        // is the worst thing to offer when the honest answer is that nobody can tell.
+        if (standing.NotComparable)
+        {
+            return new TextBlock
+            {
+                Text = $"{standing.Available} is published on the channel you chose. It is a "
+                     + $"different line from {standing.Installed}, so neither is newer.",
+                FontSize = 12,
+                TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                Foreground = Brush("TextMuted"),
+            };
         }
 
         if (!standing.IsInstalled && standing.Available is { } offered)

@@ -400,6 +400,13 @@ public static class CommandLine
         { CheckFailed: { } why } => $"could not check for a newer version ({why})",
         { UpdateAvailable: true } => $"{standing.Available} is available",
         { UpToDate: true } => "up to date",
+
+        // Two publication lines of the same version, which nobody can rank — see VersionStanding.
+        // Named rather than left to "no version information": both numbers ARE known, and the
+        // reader can decide for themselves once they are told what is on offer.
+        { NotComparable: true } =>
+            $"{standing.Available} is published on the channel you chose — a different line from "
+            + $"{standing.Installed}, so neither is newer than the other",
         { IsInstalled: false, Available: { } offered } => $"{offered} would be installed",
         _ => "no version information",
     };
@@ -1186,8 +1193,24 @@ public static class CommandLine
 
         var platform = PlatformFactory.Create();
         var catalog = new CatalogProvider(platform).Get(offline);
+
+        // ⚠ Which BepInEx 6 stream to measure against, and the answers to measure with. The
+        // resolver's cache lives in the process, so a command that starts fresh knows nothing
+        // until it asks — and without asking, every report would compare against the catalogue's
+        // pinned version and announce "up to date" beside a newer published build.
+        var bepinex6Channel = new SettingsStore(platform).Current.BepInEx6Channel;
+        if (!offline)
+        {
+            await new LoaderBuildResolver()
+                .WarmAsync(catalog.Document, bepinex6Channel)
+                .ConfigureAwait(false);
+        }
+
         var inventory = new GameInventory(platform, catalog.Document,
-                                          offline ? null : new CatalogApiClient());
+                                          offline ? null : new CatalogApiClient())
+        {
+            BepInEx6Channel = bepinex6Channel,
+        };
 
         // A path is looked up in the full scan FIRST, and only probed on its own when that finds
         // nothing.

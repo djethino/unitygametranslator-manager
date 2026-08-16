@@ -122,8 +122,16 @@ public sealed class AboutWindow : Window
             "no account, no identifier."));
 
         var links = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        links.Children.Add(LinkButton("Website", BuildInfo.WebsiteBaseUrl));
+        // ⚠ "UGT Website", not "Website": three programs, and one of them IS a website. The bare
+        // word left the reader to guess which site a button called Website would open — and the
+        // studio's own is right beside it.
+        links.Children.Add(LinkButton("UGT Website", BuildInfo.WebsiteBaseUrl));
         links.Children.Add(LinkButton("Source code", "https://github.com/djethino/unitygametranslator-manager"));
+
+        // The studio behind it. Its mark closes this window and its name was the only thing said
+        // about it — a logo with nowhere to go, on the one screen whose job is to say who made
+        // this and where to find them.
+        links.Children.Add(LinkButton("ASymptOmatik Games", "https://asymptomatikgames.com"));
 
         var close = new Button { Content = "Close", IsDefault = true };
         close.Click += (_, _) => Close();

@@ -26,6 +26,35 @@ public sealed class AboutWindow : Window
         string Url,
         string? SupportUrl = null);
 
+    /// <summary>
+    /// The parts of UGT itself.
+    ///
+    /// 🔴 **This window credited everybody except us.** It named BepInEx, MelonLoader, Ollama,
+    /// Avalonia — and said nothing about the three programs the reader is actually using, nor
+    /// where to find them. Somebody who installs the Manager has no way, from inside it, to learn
+    /// that a website holds the translations or that the mod has its own repository.
+    ///
+    /// ⚠ Each is named in full here. This is the one screen with room, and the one place where a
+    /// reader may be meeting the product for the first time — the short form is for rows in lists.
+    /// </summary>
+    private static readonly Credit[] Ecosystem =
+    {
+        new("UnityGameTranslator Mod", "Runs inside the game: captures its text, translates it, "
+            + "and shows the result.", "AGPL-3.0",
+            "https://github.com/djethino/unitygametranslator"),
+
+        new("UnityGameTranslator Manager", "This program. Finds Unity games, sets them up, and "
+            + "looks after their translations.", "AGPL-3.0",
+            "https://github.com/djethino/unitygametranslator-manager"),
+
+        new("UnityGameTranslator Website", "Where translations are published, compared and "
+            + "improved together.", "AGPL-3.0", BuildInfo.WebsiteBaseUrl),
+
+        new("UnityGameTranslator Catalogs", "The public data all three read: languages, mod "
+            + "loaders, AI models.", "CC0",
+            "https://github.com/djethino/unitygametranslator-catalogs"),
+    };
+
     private static readonly Credit[] Distributed =
     {
         new("BepInEx", "The mod loader that lets plugins run inside a Unity game.",
@@ -74,7 +103,12 @@ public sealed class AboutWindow : Window
         layout.Children.Add(Header());
         layout.Children.Add(Paragraph(
             "UnityGameTranslator translates Unity games as you play, and lets players share what " +
-            "they translate. This installer sets it up for you."));
+            "they translate. UGT Manager sets it up for you."));
+
+        layout.Children.Add(Section("The UGT Ecosystem",
+            "Three programs and the data they share. You are using at least two of them: the mod "
+            + "plays, the Manager sets up, and the website is where translations live.",
+            Ecosystem));
 
         layout.Children.Add(Section("What this installer downloads for you",
             "These projects are downloaded from their own official releases, verified, and never " +

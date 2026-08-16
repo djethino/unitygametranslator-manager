@@ -94,13 +94,26 @@ public static class TranslationOffers
     /// </summary>
     public static bool MayDefaultToYes(TranslationOffer offer) => offer == TranslationOffer.FreeToTake;
 
-    /// <summary>Why the box is not ticked for them, in one clause, or null when it is.</summary>
+    /// <summary>
+    /// What is at stake, as a SENTENCE that stands on its own, or null when nothing is.
+    ///
+    /// 🔴 **A clause, once, and it produced nonsense.** These read "there is work here that has
+    /// never been uploaded" — written to sit after "Not ticked on purpose:". A second caller
+    /// pasted it after a verb and shipped "Applying there is work here that has never been
+    /// uploaded" to every screen that offered to replace a translation.
+    ///
+    /// A fragment that only works glued to one particular opening is an invitation to glue it to
+    /// another. Whole sentences cannot be misassembled, and the callers lose nothing: a sentence
+    /// follows a colon perfectly well.
+    ///
+    /// ⚠ And no "here". Which here — the game, the box, the list? The game is named.
+    /// </summary>
     public static string? Caution(TranslationOffer offer) => offer switch
     {
         TranslationOffer.ReplacesWork =>
-            "there is work here that has never been uploaded",
+            "This game holds lines that were never uploaded.",
         TranslationOffer.ReplacesChoice =>
-            "this game is already using a different translation",
+            "This game is already using a different translation.",
         _ => null,
     };
 }

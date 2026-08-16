@@ -6576,8 +6576,8 @@ public partial class MainWindow : Window
             };
 
             ToolTip.SetTip(withTranslation, replaces
-                ? "Not ticked on purpose: " + TranslationOffers.Caution(offer)
-                  + ". Tick it to take the community one anyway — you will be asked again, with "
+                ? "Not ticked on purpose. " + TranslationOffers.Caution(offer)
+                  + " Tick it to take the community one anyway — you will be asked again, with "
                   + "what is at stake spelled out, and a copy is kept aside either way."
                 // ⚠ Says what unticking DOES — skip the download — not what it feels like. The
                 // previous wording, "untick to start from a blank sheet", promised a reset this

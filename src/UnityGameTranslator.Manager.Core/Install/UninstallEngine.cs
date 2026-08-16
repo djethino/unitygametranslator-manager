@@ -399,13 +399,24 @@ public sealed class UninstallEngine
     }
 
     /// <summary>Mods other than ours sharing the loader. Any of them blocks removing it.</summary>
-    private int CountForeignMods(GameInstall game, Receipt receipt)
-    {
-        var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == receipt.Loader?.Id);
-        if (descriptor is null) return 1; // unknown layout: stay on the safe side
+    private int CountForeignMods(GameInstall game, Receipt receipt) =>
+        ForeignMods(game, receipt).Count;
 
-        var detected = LoaderProbe.Detect(game.Path, _catalog);
-        return detected?.ForeignPluginCount ?? 0;
+    /// <summary>
+    /// The same neighbours, named — so a refusal can be shown rather than merely counted.
+    ///
+    /// ⚠ An unknown layout answers with one unnamed neighbour rather than none. Reporting "nothing
+    /// depends on this" about a folder we cannot read is the mistake that costs somebody else's
+    /// mods, and it is the one direction this must never fail in.
+    /// </summary>
+    public IReadOnlyList<string> ForeignMods(GameInstall game, Receipt? receipt = null)
+    {
+        receipt ??= ReceiptStore.Read(game.Path);
+
+        var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == receipt?.Loader?.Id);
+        if (descriptor is null) return new[] { "another mod (this loader's layout is unknown here)" };
+
+        return LoaderProbe.Detect(game.Path, _catalog)?.ForeignMods ?? Array.Empty<string>();
     }
 
     private static string SafeName(string name)

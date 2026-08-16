@@ -41,7 +41,7 @@ public static class LoaderProbe
             Display = best.Display,
             Version = ReadVersion(gamePath, best),
             PluginDir = best.PluginDir,
-            ForeignPluginCount = CountForeignPlugins(gamePath, best),
+            ForeignMods = FindForeignMods(gamePath, best),
         };
     }
 
@@ -92,45 +92,85 @@ public static class LoaderProbe
     }
 
     /// <summary>
-    /// How many other mods live alongside ours. Used to refuse removing a loader that someone
-    /// else's mods still depend on — the single most damaging thing an uninstaller can do.
+    /// Everything living alongside our mod that is not ours, named rather than counted.
+    ///
+    /// Used to refuse removing a loader that someone else's mods still depend on — the single
+    /// most damaging thing an uninstaller can do.
+    ///
+    /// ⚠ **Named, because a number cannot be checked.** "2 other mods still use it" leaves the
+    /// reader to guess which, and a refusal nobody can verify reads as the tool being difficult.
+    /// The dialogue lists them.
+    ///
+    /// ⚠ **Both roots, and how many there are depends on the loader.** BepInEx keeps plugins and
+    /// their data in one tree; MelonLoader separates Mods/ from UserData/, and looking only at
+    /// Mods/ missed every mod whose presence shows in its data folder. The two roots come from the
+    /// catalog — plugin_dir and userdata_dir — never from names written here.
+    ///
+    /// ⚠ **BepInEx/config/ is deliberately NOT consulted**, although it holds other mods'
+    /// settings. A removed mod leaves its .cfg behind for good, so counting those would refuse to
+    /// remove a loader because of a mod that left six months ago. A mod must be in plugins/ to
+    /// run, and running is what the question is about.
     /// </summary>
-    private static int CountForeignPlugins(string gamePath, LoaderDescriptor descriptor)
+    private static IReadOnlyList<string> FindForeignMods(string gamePath, LoaderDescriptor descriptor)
     {
-        var pluginRoot = descriptor.PluginDirShared
-            ? Path.Combine(gamePath, descriptor.PluginDir)
-            : Path.GetDirectoryName(Path.Combine(gamePath, descriptor.PluginDir));
+        var roots = new List<string>();
 
-        if (pluginRoot is null || !Directory.Exists(pluginRoot)) return 0;
+        Add(descriptor.PluginDir, descriptor.PluginDirShared);
 
-        try
+        // Only when it is somewhere else entirely: under BepInEx the two are the same folder, and
+        // scanning it twice would report every neighbour as two mods.
+        if (!string.IsNullOrWhiteSpace(descriptor.UserDataDir)
+            && !PathsAgree(descriptor.UserDataDir, descriptor.PluginDir))
         {
-            var count = 0;
+            Add(descriptor.UserDataDir, shared: false);
+        }
 
-            foreach (var file in Directory.EnumerateFiles(pluginRoot, "*.dll"))
-            {
-                if (IsOurs(Path.GetFileName(file))) continue;
-                count++;
-            }
+        var found = new List<string>();
 
-            if (!descriptor.PluginDirShared)
+        foreach (var root in roots)
+        {
+            try
             {
-                foreach (var dir in Directory.EnumerateDirectories(pluginRoot))
+                foreach (var file in Directory.EnumerateFiles(root, "*.dll"))
                 {
-                    if (IsOurs(Path.GetFileName(dir))) continue;
-                    count++;
+                    if (!IsOurs(Path.GetFileName(file))) found.Add(Relative(file));
+                }
+
+                foreach (var dir in Directory.EnumerateDirectories(root))
+                {
+                    if (!IsOurs(Path.GetFileName(dir))) found.Add(Relative(dir) + "/");
                 }
             }
+            catch
+            {
+                // Unreadable folder: reporting "nothing there" would be a lie in the dangerous
+                // direction, so report one unnamed neighbour and stay conservative.
+                found.Add(Relative(root) + "/ (could not be read)");
+            }
+        }
 
-            return count;
-        }
-        catch
+        return found;
+
+        void Add(string relative, bool shared)
         {
-            // Unreadable folder: report "unknown" as zero would be a lie in the dangerous
-            // direction, so report one to keep the uninstall conservative.
-            return 1;
+            // A folder of our own sits inside the shared root; a shared plugin_dir IS that root.
+            var full = shared
+                ? Path.Combine(gamePath, relative)
+                : Path.GetDirectoryName(Path.Combine(gamePath, relative));
+
+            if (full is not null && Directory.Exists(full) && !roots.Contains(full))
+                roots.Add(full);
         }
+
+        string Relative(string full) =>
+            Path.GetRelativePath(gamePath, full).Replace('\\', '/');
     }
+
+    /// <summary>Whether two catalog paths name the same place, whatever separators they use.</summary>
+    private static bool PathsAgree(string a, string b) =>
+        string.Equals(a.Replace('\\', '/').TrimEnd('/'),
+                      b.Replace('\\', '/').TrimEnd('/'),
+                      StringComparison.OrdinalIgnoreCase);
 
     private static bool IsOurs(string name) =>
         name.StartsWith("UnityGameTranslator", StringComparison.OrdinalIgnoreCase);

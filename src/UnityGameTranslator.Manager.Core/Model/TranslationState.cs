@@ -22,7 +22,15 @@ public sealed class DetectedLoader
     public bool InstalledByUs { get; set; }
 
     /// <summary>Other plugins/mods sitting next to ours. Blocks removing the loader.</summary>
-    public int ForeignPluginCount { get; set; }
+    /// <summary>
+    /// Other mods sharing this loader, named — see LoaderProbe.FindForeignMods.
+    ///
+    /// ⚠ Named rather than counted: any of them blocks removing the loader, and a refusal the
+    /// reader cannot check reads as the tool being awkward. The dialogue lists them.
+    /// </summary>
+    public IReadOnlyList<string> ForeignMods { get; set; } = Array.Empty<string>();
+
+    public int ForeignPluginCount => ForeignMods.Count;
 }
 
 /// <summary>The translation file already present in the game, if any.</summary>

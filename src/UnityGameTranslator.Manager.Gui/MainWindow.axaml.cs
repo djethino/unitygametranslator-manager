@@ -4584,22 +4584,24 @@ public partial class MainWindow : Window
             _ => null,
         };
 
-        // 🔴 **And nothing to DESCRIBE either, when nothing was ever sent.**
+        // 🔴 **And nothing to DESCRIBE when this account holds nothing in this lineage.**
         //
-        // Edit details writes a description of a PUBLISHED translation. The comment further down
-        // explains why that button is normally offered without knowing whether one exists — a
-        // contributor's own row never appears in MatchingOnline, so the card genuinely cannot
-        // tell. That reasoning stops here: SourceHash is written by the mod on every exchange
-        // with the site, download and upload alike. Absent, this file has never been near the
-        // server; with no line in it either, no page about it can exist to be edited.
+        // Edit details writes a description of a translation PUBLISHED UNDER THIS ACCOUNT. The
+        // comment further down says the card cannot know whether one exists, because a
+        // contributor's own row never appears in MatchingOnline. That was true when it was
+        // written and is not any more: AccountLineages reads /me/translations once and answers
+        // exactly this — Main, branch or fork, anything the account holds in that lineage.
         //
-        // ⚠ Both conditions, not just the empty file. Somebody who published five hundred lines
-        // and then deleted their local copy is at zero lines with a page that very much exists,
-        // and greying the button on the count alone would lock them out of their own description.
-        var neverSent = report.LocalTranslation?.SourceHash is null;
-        var noDetailsYet = nothingYet is not null && neverSent
-            ? "Nothing has ever been sent to the site for this game, so there is no published "
-              + "translation whose details could be edited."
+        // ⚠ Only once an answer has been READ. Before that, an account whose lineages are still
+        // being fetched looks identical to one that owns nothing, and greying on that basis states
+        // a guess as a fact — the very reason AccountLineages exposes Known separately.
+        //
+        // ⚠ This is what the earlier version got too narrowly. Guarding on an empty file caught a
+        // game set up a minute ago and missed the ordinary case: hundreds of lines translated for
+        // one's own use, in somebody else's lineage, never published. Nothing to edit there either.
+        var noDetailsYet = _lineages.Known && _lineages.For(report.LocalTranslation?.Uuid) is null
+            ? "Nothing has been published under this account for this game, so there are no "
+              + "details to edit. Publish first, and the description follows."
             : null;
 
         var edit = ScopeMark.Marked(EditSide.Local, "Edit in browser",
@@ -4653,13 +4655,14 @@ public partial class MainWindow : Window
         //
         // ⚠ Server, not Both: it changes what the site holds and writes nothing on this machine.
         //
-        // ⚠ Shown whether the translation is published or not, because whether it IS cannot be
-        // answered from this card — MatchingOnline is the lineage's PUBLIC translation, and a
-        // contributor's own row is not in it. Asked on click, and answered in words.
+        // ⚠ MatchingOnline cannot answer whether this is published — it is the lineage's PUBLIC
+        // translation, and a contributor's own row is not in it. **AccountLineages can**, and does:
+        // see noDetailsYet above. Offering to edit a description that does not exist sends the
+        // reader to find that out for themselves.
         //
-        // ⚠ **Except when the card CAN answer it**: see noDetailsYet above. An empty file that has
-        // never exchanged anything with the site cannot have a page, and offering to edit one
-        // sends the reader to find that out for themselves.
+        // ⚠ The cloud mark is right and stays: what this writes lands on the site and nothing of
+        // it on this machine. It looked wrong only because the button was offered where there was
+        // nothing published to write about — the mark was reporting the fault, not causing it.
         var details = ScopeMark.Marked(EditScope.SideAfter(onThisMachine: false, yourPublishedCopy: true),
                                        "Edit details…", standing.CanAct && noDetailsYet is null);
         details.Click += async (_, _) => await EditTranslationDetailsAsync(report, details);
@@ -5009,7 +5012,7 @@ public partial class MainWindow : Window
         {
             var remove = new Button { Content = "Uninstall...", IsEnabled = !running };
 
-            remove.Click += async (_, _) => await RunUninstallAsync(report);
+            remove.Click += async (_, _) => await RunUninstallAsync(report, fromLoaderSection: true);
             loaderButtons.Children.Add(remove);
         }
 
@@ -7793,38 +7796,133 @@ public partial class MainWindow : Window
         await ShowSelectedAsync();
     }
 
-    private async Task RunUninstallAsync(GameReport report)
+    /// <param name="fromLoaderSection">
+    /// Which button was pressed. The dialogue answers the gesture rather than describing the same
+    /// removal twice.
+    ///
+    /// 🔴 Pressing Uninstall under MOD LOADER and being asked "also remove the mod loader?" reads
+    /// as the tool not having noticed. What is implicit is what was clicked; what has to be asked
+    /// is everything else. So the two entry points swap which half is settled and which is offered.
+    ///
+    /// ⚠ From the loader, removing the mod is **not optional**: a plugin whose loader is gone is a
+    /// file no program will ever read again, and leaving it behind would report success over a
+    /// game left half undone. The box is shown ticked and disabled, so the fact is stated rather
+    /// than silently applied.
+    /// </param>
+    private async Task RunUninstallAsync(GameReport report, bool fromLoaderSection = false)
     {
         var engine = new UninstallEngine(_platform, _catalog);
         var available = engine.Available(report.Game);
+        var foreign = engine.ForeignMods(report.Game);
+
+        var loaderName = report.InstalledLoader?.Display ?? "the mod loader";
 
         var loaderBox = new CheckBox
         {
-            Content = "Also remove the mod loader",
-            IsEnabled = available.RemoveLoader,
-            IsChecked = false,
+            Content = fromLoaderSection
+                ? $"Remove {loaderName}"
+                : $"Also remove {loaderName}",
+            IsEnabled = available.RemoveLoader && !fromLoaderSection,
+            IsChecked = fromLoaderSection && available.RemoveLoader,
         };
 
-        if (!available.RemoveLoader)
+        var modBox = new CheckBox
         {
-            ToolTip.SetTip(loaderBox,
-                "It was already there before, or other mods still use it.");
-        }
+            Content = "Also remove the mod",
+            IsEnabled = false,
+            IsChecked = true,
+            IsVisible = fromLoaderSection,
+        };
+        ToolTip.SetTip(modBox,
+            $"Required: with {loaderName} gone, nothing would ever load the mod again.");
 
         // Off by default, and deliberately worded so nobody deletes months of work by reflex.
         var dataBox = new CheckBox
         {
-            Content = "Also remove my settings and translations (a copy is kept aside)",
+            Content = "Also remove settings and translations (a copy is kept aside)",
             IsChecked = false,
         };
 
         var content = new StackPanel { Spacing = 10 };
+
+        // ⚠ Says what goes, not what the tool is about to do to a "plugin". The previous wording —
+        // "The plugin will be removed. Files you changed since installing are left alone." —
+        // promised something the box below contradicts the moment it is ticked.
         content.Children.Add(new TextBlock
         {
-            Text = "The plugin will be removed. Files you changed since installing are left alone.",
+            Text = fromLoaderSection
+                ? $"{loaderName} and the mod will both be removed. Nothing else in this game is "
+                  + "touched, and files you changed since installing are left alone."
+                : "The mod will be removed. Nothing else in this game is touched, and files you "
+                  + "changed since installing are left alone.",
             TextWrapping = TextWrapping.Wrap,
         });
-        content.Children.Add(loaderBox);
+
+        // Order follows the gesture: what is settled first, what is offered after. Reversing it
+        // between the two entry points is what made the same screen read as two different ones.
+        if (fromLoaderSection)
+        {
+            content.Children.Add(loaderBox);
+            content.Children.Add(modBox);
+        }
+        else
+        {
+            content.Children.Add(loaderBox);
+        }
+
+        // ⑤ Ticking a box shows what it takes, the same way the data box opens its list. A count
+        // and a couple of names is enough here: these are the loader's own files, all written by
+        // us, and nobody is going to keep three of twenty-two.
+        var loaderFiles = ReceiptStore.Read(report.Game.Path)?.Loader?.Files ?? new();
+        if (loaderFiles.Count > 0)
+        {
+            var names = loaderFiles.Take(3).Select(f => f.Path.Replace('\\', '/'));
+            var loaderSummary = new TextBlock
+            {
+                Text = $"{loaderFiles.Count} file(s): {string.Join(", ", names)}"
+                     + (loaderFiles.Count > 3 ? $", and {loaderFiles.Count - 3} more" : ""),
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Opacity = 0.6,
+                Margin = new Avalonia.Thickness(24, -4, 0, 0),
+                IsVisible = loaderBox.IsChecked == true,
+            };
+
+            loaderBox.IsCheckedChanged += (_, _) => loaderSummary.IsVisible = loaderBox.IsChecked == true;
+            content.Children.Add(loaderSummary);
+        }
+
+        // ⚠ Named, right under the box they refuse. A greyed control with the reason in a tooltip
+        // is a reason nobody reads — and "other mods still use it" without saying WHICH reads as
+        // an excuse. This is also the answer to "what did it find?", asked by the person who is
+        // certain there is nothing else in that game.
+        if (foreign.Count > 0)
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = $"{loaderName} stays: {foreign.Count} other mod(s) need it — "
+                     + string.Join(", ", foreign.Take(6))
+                     + (foreign.Count > 6 ? $", and {foreign.Count - 6} more" : "")
+                     + ". They are never touched.",
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("StatusWarning"),
+                Margin = new Avalonia.Thickness(24, -4, 0, 0),
+            });
+        }
+        else if (!available.RemoveLoader)
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = $"{loaderName} stays: it was already in this game before "
+                     + "UnityGameTranslator Manager was used here, so it is not ours to remove.",
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextMuted"),
+                Margin = new Avalonia.Thickness(24, -4, 0, 0),
+            });
+        }
+
         content.Children.Add(dataBox);
 
         // The list appears once somebody asks for it, and everything in it starts ticked. Ticking
@@ -7839,7 +7937,13 @@ public partial class MainWindow : Window
             dataBox.IsCheckedChanged += (_, _) => picker.View.IsVisible = dataBox.IsChecked == true;
         }
 
-        if (!await ConfirmAsync($"Uninstall from {report.Game.Name}?", content, "Uninstall")) return;
+        // ② The title NAMES what goes. "Uninstall from All Will Fall?" left the reader to supply
+        // the object of the sentence, on the one screen where being wrong about it costs files.
+        var title = fromLoaderSection
+            ? $"Uninstall the mod loader from {report.Game.Name}"
+            : $"Uninstall the mod from {report.Game.Name}";
+
+        if (!await ConfirmAsync(title, content, "Uninstall")) return;
 
         var chosenData = dataBox.IsChecked == true ? picker?.Chosen() : null;
 

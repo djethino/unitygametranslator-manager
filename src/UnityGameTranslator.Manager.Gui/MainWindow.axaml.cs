@@ -409,7 +409,12 @@ public partial class MainWindow : Window
                                        _settings.Current.ApiToken)
         {
             Lineages = _lineages,
-            Releases = _settings.Current.OnlineMode ? _releases : null,
+            // ⚠ Same answer as the loader lookup: both are "what newer build exists for a game",
+            // asked before anybody clicked. Leaving one on while the other is off would make the
+            // setting mean half of what it says.
+            Releases = _settings.Current.OnlineMode && _settings.Current.CheckContentUpdates
+                ? _releases
+                : null,
             Channel = string.Equals(_settings.Current.Channel, "beta", StringComparison.OrdinalIgnoreCase)
                 ? ReleaseChannel.Beta
                 : ReleaseChannel.Stable,
@@ -3296,7 +3301,9 @@ public partial class MainWindow : Window
     /// </summary>
     private async Task WarmLoaderBuildsAsync()
     {
-        if (!_settings.Current.OnlineMode) return;
+        // Two promises, and both are kept here: online mode means no call at all, and this
+        // setting means no call made before anybody asked.
+        if (!_settings.Current.OnlineMode || !_settings.Current.CheckContentUpdates) return;
 
         try
         {

@@ -276,6 +276,21 @@ public sealed class InstallerSettings
     /// </summary>
     [JsonPropertyName("check_tool_updates")] public bool CheckToolUpdates { get; set; } = true;
 
+    /// <summary>
+    /// Whether newer mod and loader builds are looked up when the window opens.
+    ///
+    /// ⚠ **A different question from CheckToolUpdates, for the same reason the channels are two.**
+    /// That one is about replacing the program in front of you; this one is about what would go
+    /// into your games — and about two or three requests made before anybody asked for anything.
+    /// Somebody on a metered connection, or who simply wants the list to appear and nothing else
+    /// to happen, can reasonably want one and not the other.
+    ///
+    /// On by default: without it a card cannot say which version it would install, and every
+    /// screen falls back to naming no version at all. OnlineMode being off has the same effect,
+    /// since that setting means no call is made whatsoever.
+    /// </summary>
+    [JsonPropertyName("check_content_updates")] public bool CheckContentUpdates { get; set; } = true;
+
     /// <summary>The tool's channel as the release client wants it.</summary>
     [JsonIgnore]
     public ReleaseChannel ToolReleaseChannel =>

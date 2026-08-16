@@ -49,6 +49,7 @@ public sealed class ToolSettingsWindow : Window
     private CheckBox _checkToolUpdates = null!;
     private StackPanel _updatePanel = null!;
     private ComboBox _bepinex6Channel = null!;
+    private CheckBox _checkContentUpdates = null!;
     private ComboBox _preferMono = null!;
     private ComboBox _preferIl2cpp = null!;
 
@@ -92,6 +93,7 @@ public sealed class ToolSettingsWindow : Window
             OnlineMode = current.OnlineMode,
             ToolChannel = current.ToolChannel,
             CheckToolUpdates = current.CheckToolUpdates,
+            CheckContentUpdates = current.CheckContentUpdates,
             BepInEx6Channel = current.BepInEx6Channel,
         };
 
@@ -124,11 +126,16 @@ public sealed class ToolSettingsWindow : Window
             Foreground = Brush("TextSecondary"),
         });
 
+        // ⚠ **Ordered by subject, and the order is the argument.** Who you are · what gets
+        // updated and when · what gets installed into games · how the network is reached · where
+        // this program lives on the disk. A card dropped in wherever it was written — which is how
+        // Mod loaders first landed between Updates and Where this tool lives — makes the window a
+        // pile rather than a list of decisions.
         layout.Children.Add(AccountCard());
         layout.Children.Add(UpdatesCard());
         layout.Children.Add(LoadersCard());
-        layout.Children.Add(HomeCard());
         layout.Children.Add(NetworkCard());
+        layout.Children.Add(HomeCard());
         layout.Children.Add(FilesCard());
 
         var cancel = new Button { Content = "Cancel", IsCancel = true };
@@ -639,11 +646,26 @@ public sealed class ToolSettingsWindow : Window
 
         _checkToolUpdates = new CheckBox
         {
-            Content = "Look for a new version when the tool starts",
+            Content = "Look for a new version of UGT Manager when it starts",
             IsChecked = _draft.CheckToolUpdates,
             FontSize = 12,
         };
         panel.Children.Add(_checkToolUpdates);
+
+        // ⚠ Its own answer, beside the other, because it is a different cost and a different
+        // subject: this one is two or three requests about what would go INTO games, made before
+        // anybody asked for anything. Somebody on a metered connection can want one and not the
+        // other — the same reasoning that keeps the two update channels apart.
+        _checkContentUpdates = new CheckBox
+        {
+            Content = "Look for newer mod and loader builds when it starts",
+            IsChecked = _draft.CheckContentUpdates,
+            FontSize = 12,
+        };
+        panel.Children.Add(_checkContentUpdates);
+        panel.Children.Add(Note(
+            "Without it, a game's card cannot say which version it would install — it names the "
+            + "loader and no version at all.", "TextMuted"));
 
         var check = new Button { Content = "Check now", FontSize = 12 };
         check.HorizontalAlignment = HorizontalAlignment.Left;
@@ -657,7 +679,7 @@ public sealed class ToolSettingsWindow : Window
         // making someone press a button to be told what they were just told.
         if (_known is not null) ShowResult(_known);
 
-        return Card("Updating this tool", null, panel);
+        return Card("Updates", null, panel);
     }
 
     private void ShowResult(SelfUpdateCheck result)
@@ -948,6 +970,7 @@ public sealed class ToolSettingsWindow : Window
         _draft.OnlineMode = _online.IsChecked == true;
         _draft.ToolChannel = Tag(_toolChannel) ?? "stable";
         _draft.CheckToolUpdates = _checkToolUpdates.IsChecked == true;
+        _draft.CheckContentUpdates = _checkContentUpdates.IsChecked == true;
         _draft.BepInEx6Channel = Tag(_bepinex6Channel) ?? "be";
 
         // Empty means "let the catalog decide", and it is stored as null rather than as "": a
@@ -970,6 +993,7 @@ public sealed class ToolSettingsWindow : Window
         settings.OnlineMode = edited.OnlineMode;
         settings.ToolChannel = edited.ToolChannel;
         settings.CheckToolUpdates = edited.CheckToolUpdates;
+        settings.CheckContentUpdates = edited.CheckContentUpdates;
         settings.BepInEx6Channel = edited.BepInEx6Channel;
         settings.PreferredLoaderMono = edited.PreferredLoaderMono;
         settings.PreferredLoaderIl2cpp = edited.PreferredLoaderIl2cpp;
@@ -1009,7 +1033,9 @@ public sealed class ToolSettingsWindow : Window
         if ((_proxyInGames.IsChecked == true) != saved.ProxyInGames) changes.Add("proxy in games");
         if ((_online.IsChecked == true) != saved.OnlineMode) changes.Add("community catalog");
         if ((_checkToolUpdates.IsChecked == true) != saved.CheckToolUpdates)
-            changes.Add("look for updates to this tool");
+            changes.Add("look for updates to UGT Manager");
+        if ((_checkContentUpdates.IsChecked == true) != saved.CheckContentUpdates)
+            changes.Add("look for newer mod and loader builds");
 
         return changes;
     }
@@ -1044,6 +1070,7 @@ public sealed class ToolSettingsWindow : Window
         _online.IsCheckedChanged += (_, _) => RefreshApplyButton();
         _toolChannel.SelectionChanged += (_, _) => RefreshApplyButton();
         _checkToolUpdates.IsCheckedChanged += (_, _) => RefreshApplyButton();
+        _checkContentUpdates.IsCheckedChanged += (_, _) => RefreshApplyButton();
 
         // ⚠ Every control on this window belongs in this list, and one missing does not break
         // saving — Collect and Save read it either way — it breaks the PROMISE: nothing is applied

@@ -50,6 +50,7 @@ public static class UserDataInventory
         if (folder is null) return Array.Empty<UserDataGroup>();
 
         var translation = new List<UserDataItem>();
+        var setAside = new List<UserDataItem>();
         var configuration = new List<UserDataItem>();
         var fonts = new List<UserDataItem>();
         var images = new List<UserDataItem>();
@@ -73,6 +74,13 @@ public static class UserDataInventory
 
             if (top.StartsWith(LocalTranslationProbe.TranslationFileName, StringComparison.OrdinalIgnoreCase))
                 translation.Add(item);
+            // 🔴 Its own group, not "Other files". These are TRANSLATIONS — replaced earlier and
+            // kept so Restore local can bring one back. Filed as unrecognised, they sat under a
+            // label that says "judge them yourself" beside a consequence written for stray files,
+            // and somebody clearing what they thought was clutter would have thrown away the only
+            // copy of work they had replaced by mistake.
+            else if (string.Equals(top, TranslationInstaller.BackupFolderName, StringComparison.OrdinalIgnoreCase))
+                setAside.Add(item);
             else if (string.Equals(top, LocalTranslationProbe.ConfigFileName, StringComparison.OrdinalIgnoreCase))
                 configuration.Add(item);
             else if (string.Equals(top, "fonts", StringComparison.OrdinalIgnoreCase))
@@ -89,6 +97,11 @@ public static class UserDataInventory
         // nowhere else, so it is the one somebody must see before ticking anything.
         Add(groups, "Translation", translation,
             "Lines captured while playing may exist nowhere else. Anything never uploaded is gone.");
+
+        // Right after the translation in place, because it is the same thing at an earlier date.
+        Add(groups, "Set-aside translations", setAside,
+            "Earlier translations of this game, kept when something replaced them. Restore local "
+            + "brings one back; deleting them ends that.");
 
         Add(groups, "Settings", configuration,
             "Your language, translator and sign-in for this game. The mod asks again from scratch.");

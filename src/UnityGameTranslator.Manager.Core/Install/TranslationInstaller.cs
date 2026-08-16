@@ -13,6 +13,11 @@ public sealed record TranslationWriteResult(
     string? BackupPath,
     string? Failure);
 
+/// <summary>A translation that was set aside when something replaced it.</summary>
+/// <param name="Lines">How many translated entries it holds — the only size that means anything.</param>
+/// <param name="Uuid">Its lineage, so a screen can say whether this account leads or contributed to it.</param>
+public sealed record TranslationBackup(string Path, DateTime Replaced, int Lines, string? Uuid);
+
 /// <summary>
 /// Puts a downloaded translation into a game, and never loses what was there.
 ///
@@ -425,7 +430,173 @@ public sealed class TranslationInstaller
             backup = Path.Combine(folder, $"translations-{stamp}-{++attempt}.json");
 
         File.Move(target, backup);
+        Prune(folder);
         return backup;
+    }
+
+    /// <summary>
+    /// How many replaced translations are kept before the oldest is dropped.
+    ///
+    /// 🔴 **Bounded, because nothing ever emptied this folder.** Dating each copy is right — the
+    /// reason is written above MoveAside — but "keep them all, for ever" is not a decision anybody
+    /// took, it is what happens when nobody writes the other half. Ten trials of community
+    /// translations left ten files on a player's disk that no screen mentioned and no action could
+    /// reach.
+    ///
+    /// Three: enough to compare two takes and still step back from both, few enough that the
+    /// folder never becomes a thing to manage. ⚠ It also bounds what "Put one back" has to show —
+    /// a list of thirty dated files is not a choice, it is an archive.
+    /// </summary>
+    public const int BackupsKept = 3;
+
+    /// <summary>Drops the oldest copies past <see cref="BackupsKept"/>. Never throws.</summary>
+    private static void Prune(string folder)
+    {
+        try
+        {
+            var stale = Directory.EnumerateFiles(folder, "translations-*.json")
+                                 .OrderByDescending(File.GetLastWriteTimeUtc)
+                                 .Skip(BackupsKept);
+
+            foreach (var old in stale) File.Delete(old);
+        }
+        catch
+        {
+            // Housekeeping. Failing to tidy must never fail the write that was actually asked for.
+        }
+    }
+
+    /// <summary>
+    /// The replaced translations still on disk, newest first, each described by what it CONTAINS.
+    ///
+    /// ⚠ A dated file name identifies nothing to a reader. What tells one copy from another is how
+    /// many lines it holds and which lineage it belongs to — both are in the file, so they are read
+    /// from it rather than guessed from when it was written.
+    ///
+    /// ⚠ The pair of languages is deliberately NOT among them: it lives in config.json, not in the
+    /// translation, so a copy set aside carries no record of it. Showing the game's current
+    /// languages beside an old file would label it with something that may not be its own.
+    /// </summary>
+    public static IReadOnlyList<TranslationBackup> Backups(string gamePath, LoaderDescriptor descriptor)
+    {
+        var folder = BackupFolder(gamePath, descriptor);
+        if (folder is null || !Directory.Exists(folder)) return Array.Empty<TranslationBackup>();
+
+        var found = new List<TranslationBackup>();
+
+        foreach (var path in Directory.EnumerateFiles(folder, "translations-*.json"))
+        {
+            found.Add(new TranslationBackup(
+                path,
+                File.GetLastWriteTime(path),
+                LocalTranslationProbe.ReadLines(path)?.Count ?? 0,
+                UuidIn(path)));
+        }
+
+        return found.OrderByDescending(b => b.Replaced).ToList();
+    }
+
+    private static string? BackupFolder(string gamePath, LoaderDescriptor descriptor)
+    {
+        if (string.IsNullOrWhiteSpace(descriptor.UserDataDir)) return null;
+
+        return Path.Combine(gamePath,
+            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar), BackupFolderName);
+    }
+
+    private static string TargetPath(string gamePath, LoaderDescriptor descriptor) =>
+        Path.Combine(gamePath,
+            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar),
+            LocalTranslationProbe.TranslationFileName);
+
+    /// <summary>The lineage a set-aside file belongs to, so a screen can say whether it is ours.</summary>
+    private static string? UuidIn(string path)
+    {
+        try
+        {
+            using var stream = File.OpenRead(path);
+            using var document = System.Text.Json.JsonDocument.Parse(stream);
+
+            return document.RootElement.TryGetProperty("_uuid", out var uuid)
+                   && uuid.ValueKind == System.Text.Json.JsonValueKind.String
+                ? uuid.GetString()
+                : null;
+        }
+        catch
+        {
+            // A copy we cannot parse is still a copy somebody may want back.
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Moves this game's translation out of the way, so another can be started.
+    ///
+    /// ⚠ Set aside, never deleted — same folder, same bound, same "Put one back" as any other
+    /// replacement. Removing is only ever a special case of replacing here.
+    ///
+    /// ⚠ Refuses while the game is open, for the reason every write on this class refuses: the mod
+    /// rewrites the file from memory on its own timer, so a file removed now simply reappears.
+    /// </summary>
+    public TranslationWriteResult Remove(GameInstall game, LoaderDescriptor descriptor)
+    {
+        if (WhyNotNow(game) is { } refusal) return new TranslationWriteResult(false, null, refusal);
+
+        var target = TargetPath(game.Path, descriptor);
+        if (!File.Exists(target))
+            return new TranslationWriteResult(false, null, "This game holds no translation.");
+
+        try
+        {
+            var aside = MoveAside(target);
+
+            // ⚠ The ancestor goes too. It describes the file that just left, so keeping it would
+            // have the mod compare the NEXT translation against a snapshot of a different one —
+            // every line reading as "changed since sync" on a file nobody has touched.
+            var ancestor = Path.Combine(Path.GetDirectoryName(target)!,
+                                        LocalTranslationProbe.AncestorFileName);
+            if (File.Exists(ancestor)) File.Delete(ancestor);
+
+            return new TranslationWriteResult(true, aside, null);
+        }
+        catch (Exception ex)
+        {
+            return new TranslationWriteResult(false, null, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Puts a replaced translation back, setting aside whatever is in its place first.
+    ///
+    /// ⚠ The current file is moved aside rather than deleted, so a restore taken by mistake is
+    /// itself undoable. That is the whole reason this folder exists, and it would be strange for
+    /// the one action that reads it to be the one that destroys something.
+    /// </summary>
+    public static TranslationWriteResult Restore(string gamePath, LoaderDescriptor descriptor,
+                                                 string backupPath)
+    {
+        if (string.IsNullOrWhiteSpace(descriptor.UserDataDir))
+            return new TranslationWriteResult(false, null, "This game has no place for a translation.");
+
+        var target = TargetPath(gamePath, descriptor);
+
+        if (!File.Exists(backupPath))
+            return new TranslationWriteResult(false, null, "That copy is no longer on disk.");
+
+        try
+        {
+            string? aside = null;
+            if (File.Exists(target)) aside = MoveAside(target);
+
+            File.Copy(backupPath, target, overwrite: false);
+            File.Delete(backupPath);
+
+            return new TranslationWriteResult(true, aside, null);
+        }
+        catch (Exception ex)
+        {
+            return new TranslationWriteResult(false, null, ex.Message);
+        }
     }
 
     /// <summary>

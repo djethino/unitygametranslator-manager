@@ -4702,6 +4702,38 @@ public partial class MainWindow : Window
             actions.Children.Add(merge);
         }
 
+        // ── Clear the way for another one ─────────────────────────────────────
+        //
+        // 🔴 **Here, not in the uninstall dialogue.** Removing a translation to start a different
+        // one is not taking the mod out of a game; it was only reachable by opening a screen
+        // titled "Uninstall" and ticking one box out of three. The act belongs beside the
+        // translation it acts on, on the tab about this game rather than the one about its
+        // machinery.
+        //
+        // ⚠ Local: the published translation is untouched, which is precisely what makes this
+        // safe to offer. Somebody who published can take theirs back afterwards, with their role.
+        // That is the whole reason the philosophy is "publish, then switch freely".
+        if ((report.LocalTranslation?.EntryCount ?? 0) != 0 || report.LocalTranslation is not null)
+        {
+            var clear = ScopeMark.Marked(EditSide.Local, "Remove the translation…",
+                                         standing.CanWriteLocally);
+            clear.Click += async (_, _) => await RemoveTranslationAsync(report, descriptor);
+            actions.Children.Add(clear);
+        }
+
+        // The undo for the line above, and for every take that replaced something. Only shown when
+        // there is something to put back — a button that opens an empty list is a promise broken
+        // on the click.
+        if (descriptor is not null
+            && TranslationInstaller.Backups(report.Game.Path, descriptor) is { Count: > 0 } kept)
+        {
+            var back = ScopeMark.Marked(EditSide.Local,
+                kept.Count == 1 ? "Put the previous one back…" : "Put an earlier one back…",
+                standing.CanWriteLocally);
+            back.Click += async (_, _) => await RestoreTranslationAsync(report, descriptor, kept);
+            actions.Children.Add(back);
+        }
+
         yield return actions;
 
         // ⚠ The refusal is stated, never silent. A greyed button with no reason is how somebody
@@ -7814,6 +7846,114 @@ public partial class MainWindow : Window
     /// game left half undone. The box is shown ticked and disabled, so the fact is stated rather
     /// than silently applied.
     /// </param>
+    /// <summary>
+    /// Takes this game's translation out of the way so another can be started.
+    ///
+    /// ⚠ **Set aside, never deleted.** The folder it goes to is the one every replaced translation
+    /// already uses, and the button beside this one brings it back. A removal nobody can undo would
+    /// be a strange thing to offer for "I want to try something else".
+    ///
+    /// ⚠ What is at stake is stated as a FACT, not as "are you sure": lines that were never
+    /// published exist nowhere else, and the person deciding needs the number.
+    /// </summary>
+    private async Task RemoveTranslationAsync(GameReport report, LoaderDescriptor? descriptor)
+    {
+        if (descriptor is null) return;
+
+        var lines = report.LocalTranslation?.EntryCount ?? 0;
+        var mine = _lineages.For(report.LocalTranslation?.Uuid);
+
+        // Three situations, and the difference is what somebody stands to lose. Published work
+        // comes back with its role; unpublished work comes back only from the copy set aside.
+        var stake = mine is not null
+            ? $"It is published under your account, so you can take it back at any time — with your "
+              + (mine.IsMain ? "Main." : "contribution.")
+            : report.MatchingOnline is not null
+                ? "It came from the community and can be downloaded again."
+                : "🔴 It has never been published, so the copy set aside here is the only one left.";
+
+        var unpublished = report.LocalTranslation?.ChangedSinceAncestor;
+        var changed = unpublished is > 0
+            ? $" {unpublished} line(s) differ from what was last synced."
+            : "";
+
+        if (!await ConfirmAsync($"Remove the translation from {report.Game.Name}?",
+                $"{lines} line(s) will be moved out of the game.{changed} {stake}"
+                + Environment.NewLine + Environment.NewLine
+                + $"A copy is kept aside — the last {TranslationInstaller.BackupsKept} are, and "
+                + "\"Put an earlier one back\" brings them in.",
+                "Remove it")) return;
+
+        Busy(true, "Removing the translation...");
+        var done = new TranslationInstaller(_platform).Remove(report.Game, descriptor);
+        Busy(false, "Ready.");
+
+        if (!done.Written)
+        {
+            await MessageAsync("Nothing was removed", done.Failure ?? "The file could not be moved.");
+            return;
+        }
+
+        await ShowSelectedAsync();
+    }
+
+    /// <summary>Puts a set-aside translation back, choosing between them when there are several.</summary>
+    private async Task RestoreTranslationAsync(GameReport report, LoaderDescriptor descriptor,
+                                               IReadOnlyList<TranslationBackup> kept)
+    {
+        var chosen = kept[0];
+
+        if (kept.Count > 1)
+        {
+            // ⚠ Described by what each one HOLDS. A list of dated file names asks somebody to
+            // remember which evening they did what.
+            var picker = new ComboBox { Width = 380 };
+            foreach (var backup in kept)
+            {
+                var whose = _lineages.For(backup.Uuid) is { } line
+                    ? (line.IsMain ? " · yours (Main)" : " · your contribution")
+                    : "";
+
+                picker.Items.Add(new ComboBoxItem
+                {
+                    Content = $"{backup.Replaced:d MMM yyyy, HH:mm} — {backup.Lines} line(s){whose}",
+                    Tag = backup,
+                });
+            }
+            picker.SelectedIndex = 0;
+
+            var panel = new StackPanel { Spacing = 8 };
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Whatever is in the game now is set aside in its turn, so this can be undone.",
+                TextWrapping = TextWrapping.Wrap,
+            });
+            panel.Children.Add(picker);
+
+            if (!await ConfirmAsync($"Put a translation back into {report.Game.Name}?", panel,
+                                    "Put it back")) return;
+
+            chosen = (picker.SelectedItem as ComboBoxItem)?.Tag as TranslationBackup ?? kept[0];
+        }
+        else if (!await ConfirmAsync($"Put this translation back into {report.Game.Name}?",
+                     $"{chosen.Lines} line(s), set aside on {chosen.Replaced:d MMM yyyy} at "
+                     + $"{chosen.Replaced:HH:mm}. Whatever is in the game now is set aside in its "
+                     + "turn, so this can be undone.",
+                     "Put it back")) return;
+
+        Busy(true, "Putting it back...");
+        var done = TranslationInstaller.Restore(report.Game.Path, descriptor, chosen.Path);
+        Busy(false, "Ready.");
+
+        if (!done.Written)
+        {
+            await MessageAsync("Nothing was restored", done.Failure ?? "The copy could not be read.");
+            return;
+        }
+
+        await ShowSelectedAsync();
+    }
+
     private async Task RunUninstallAsync(GameReport report, bool fromLoaderSection = false)
     {
         var engine = new UninstallEngine(_platform, _catalog);

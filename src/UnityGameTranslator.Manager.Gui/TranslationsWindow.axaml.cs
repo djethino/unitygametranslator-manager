@@ -562,11 +562,24 @@ public sealed class TranslationsWindow : Window
         // One rule now: choosing is done where translations can be compared, acting is done on the
         // game's card next to everything else that acts. The card is also the only place that can
         // weigh a replacement against what the game already carries.
-        var chosen = _preferences.Read(_report.Game.Path).TranslationId == translation.Id;
+        var selectedId = _preferences.Read(_report.Game.Path).TranslationId;
+        var chosen = selectedId == translation.Id;
+
+        // 🔴 **Two things can be taken from a lineage you contribute to, and only one was offered.**
+        // The Main is what this card shows; your branch is your own work on it, published, never
+        // listed here because branches are not public. Without this the only way back to your own
+        // contribution was to publish over it or to fetch it from the website by hand.
+        var ownBranchId = contributesHere && lineage is { SiteId: > 0 } ? lineage.SiteId : (int?)null;
+        var branchChosen = ownBranchId is { } branch && selectedId == branch;
 
         var take = new Button
         {
-            Content = chosen ? "Selected" : "Select",
+            // Named only where there is something to tell it apart from. On every other card the
+            // plain verb is right — inventing "Select the Main" everywhere would raise a question
+            // about a distinction that does not exist there.
+            Content = chosen ? "Selected"
+                    : ownBranchId is not null ? "Select the Main"
+                    : "Select",
             FontSize = 12,
             Classes = { "primary" },
             IsEnabled = !chosen,
@@ -588,9 +601,32 @@ public sealed class TranslationsWindow : Window
                 : "Chosen. The game's card is where you install it.", "StatusSuccess");
         }
 
-        take.Click += (_, _) => Select(translation, outcome);
+        take.Click += (_, _) => Select(translation.Id, outcome,
+            "Selected. Setting this game up will bring it down.");
 
         body.Children.Add(take);
+
+        if (ownBranchId is { } mine)
+        {
+            var takeMine = new Button
+            {
+                Content = branchChosen ? "Your contribution is selected" : "Select your contribution",
+                FontSize = 12,
+                IsEnabled = !branchChosen,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(0, 6, 0, 0),
+            };
+
+            ToolTip.SetTip(takeMine,
+                "Your own work on this lineage, as you published it. The Main above is what its "
+                + "owner has kept; the two differ by whatever has not been merged yet.");
+
+            takeMine.Click += (_, _) => Select(mine, outcome,
+                "Your contribution is selected. Setting this game up will bring it down.");
+
+            body.Children.Add(takeMine);
+        }
+
         body.Children.Add(outcome);
 
         return new Border
@@ -660,16 +696,16 @@ public sealed class TranslationsWindow : Window
     /// undoes it. The moment something IS at stake — a file already in the game — is the moment
     /// the one-click asks, with the file in front of it to describe.
     /// </summary>
-    private void Select(OnlineTranslation translation, TextBlock outcome)
+    private void Select(int translationId, TextBlock outcome, string message)
     {
         var preference = _preferences.Read(_report.Game.Path);
-        preference.TranslationId = translation.Id;
+        preference.TranslationId = translationId;
         preference.InstallTranslation = true;
         _preferences.Set(_report.Game.Path, preference);
 
         Changed = true;
 
-        Show(outcome, "Selected. Setting this game up will bring it down.", "StatusSuccess");
+        Show(outcome, message, "StatusSuccess");
 
         // The other cards carry the old selection in their own buttons, so the list is redrawn
         // rather than left with two of them claiming to be the chosen one.

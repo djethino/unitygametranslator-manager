@@ -28,6 +28,18 @@ public sealed record UninstallOutcome(
     string? BackupPath);
 
 /// <summary>
+/// What putting a game back the way it was did.
+///
+/// A record of its own rather than an UninstallOutcome with a flag: this act removes nothing, and
+/// a screen reading "Removed" over a list of files that were WRITTEN is how the two came to be
+/// confused in the first place.
+/// </summary>
+public sealed record RestoreOutcome(
+    bool Success,
+    string Message,
+    IReadOnlyList<string> PutBack);
+
+/// <summary>
 /// Removes what we installed, and only that.
 ///
 /// It works from the receipt, never from a list of what a loader is supposed to contain. Three
@@ -268,11 +280,14 @@ public sealed class UninstallEngine
             }
         }
 
-        // 🔴 Kept apart from `removed`, because they are the opposite of it. Counted together,
-        // twenty-three files PUT BACK were announced as "removed" — and the person then found the
-        // mod loader still sitting there, with nothing on screen having admitted to putting it
-        // back. That reads as a failed uninstall, which is the one thing it was not.
-        var restored = RestoreBackups(game, files);
+        // 🔴 **No restore here.** Uninstalling removes what we put in. Putting back what the game
+        // had before is a different act and belongs to a different verb.
+        //
+        // It used to happen inside this one, silently: somebody asking to remove the mod loader
+        // had it removed and its predecessor written back in the same breath, ended up with a
+        // loader still detected, and read that as a failed uninstall. Two acts behind one button
+        // cannot be told apart by the person pressing it — so they are two buttons.
+        var waiting = BackedUpFiles(game).Count;
 
         // The receipt stays only while it still describes something WE installed. A record of a
         // loader that was already there is not an install of ours: keeping it would make the
@@ -293,28 +308,15 @@ public sealed class UninstallEngine
             : $"Removed {removed.Count} item(s).";
         if (kept.Count > 0) message += $" {kept.Count} left in place — see the details.";
 
-        if (restored.Count > 0)
+        // ⚠ Said, not done. These are files this game had before we replaced them: leaving them
+        // in a hidden folder without a word would be losing them by silence.
+        if (waiting > 0)
         {
-            // ⚠ Named as what it is and what it MEANS, in the same breath. "Restored 23 files"
-            // alone would leave somebody to work out for themselves why a loader they asked to
-            // remove is still detected.
-            var loaderBack = receipt.Loader?.Files is { } loaderFiles
-                             && loaderFiles.Any(f => restored.Contains(f.Path));
-
-            message += loaderBack
-                ? $" Put back {restored.Count} file(s) this game already had before "
-                  + "UnityGameTranslator Manager touched it, so its previous mod loader is there again."
-                : $" Put back {restored.Count} file(s) this game already had before "
-                  + "UnityGameTranslator Manager touched it.";
+            message += $" {waiting} file(s) this game had before are kept aside — "
+                     + "\"Put back what was here before\" restores them.";
         }
 
-        // The restores belong in the detail list too — as their own lines, so the reader can see
-        // which files came back rather than being handed a number.
-        var detail = restored.Count == 0
-            ? removed
-            : removed.Concat(restored.Select(r => $"put back {r}")).ToList();
-
-        return new UninstallOutcome(true, message, detail, kept, backupPath);
+        return new UninstallOutcome(true, message, removed, kept, backupPath);
     }
 
     /// <summary>
@@ -379,12 +381,54 @@ public sealed class UninstallEngine
     }
 
     /// <summary>
-    /// Puts back anything we overwrote at install time, and says which.
+    /// What this game had before we replaced it, still held aside — relative paths, game order.
     ///
-    /// ⚠ Returns the list rather than adding to the removed one: putting a file back is not
-    /// removing it, and a caller that cannot tell them apart cannot explain to somebody why the
-    /// loader they asked to remove is still detected afterwards.
+    /// Empty when we never overwrote anything, which is the ordinary case: a game with no loader
+    /// of its own gets one written into empty space and has nothing to put back.
     /// </summary>
+    public static IReadOnlyList<string> BackedUpFiles(GameInstall game)
+    {
+        var root = Path.Combine(game.Path, FileOperations.BackupDirectory);
+        if (!Directory.Exists(root)) return Array.Empty<string>();
+
+        try
+        {
+            return Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+                            .Select(f => Path.GetRelativePath(root, f)
+                                             .Replace(Path.DirectorySeparatorChar, '/'))
+                            .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
+                            .ToList();
+        }
+        catch
+        {
+            // A folder we cannot read is a folder we cannot offer to restore from.
+            return Array.Empty<string>();
+        }
+    }
+
+    /// <summary>
+    /// Puts back what this game had before UnityGameTranslator Manager replaced it.
+    ///
+    /// 🔴 **Its own act, on purpose, and never folded into an uninstall.** Removing our files and
+    /// writing somebody's previous loader back are opposite motions; performed together they leave
+    /// a person who asked for a clean game looking at a loader and concluding the tool failed.
+    ///
+    /// ⚠ Skips any path that exists again: something is using it, and overwriting that would be
+    /// this method doing the very thing it exists to undo.
+    /// </summary>
+    public RestoreOutcome PutBackWhatWasHere(GameInstall game)
+    {
+        var files = new FileOperations(game.Path);
+        var restored = RestoreBackups(game, files);
+
+        return new RestoreOutcome(
+            restored.Count > 0,
+            restored.Count == 0
+                ? "There is nothing to put back: this game had no file of its own where ours went."
+                : $"Put back {restored.Count} file(s) this game had before.",
+            restored);
+    }
+
     private List<string> RestoreBackups(GameInstall game, FileOperations files)
     {
         var restored = new List<string>();

@@ -37,7 +37,7 @@ public static class CommandLine
     private static readonly HashSet<string> Commands = new(StringComparer.OrdinalIgnoreCase)
     {
         "scan", "report", "catalog", "diagnose", "install", "update", "uninstall",
-        "forget", "ai", "urls", "self-update", "help", "-h", "--help",
+        "restore", "forget", "ai", "urls", "self-update", "help", "-h", "--help",
     };
 
     /// <summary>
@@ -69,6 +69,7 @@ public static class CommandLine
                 "diagnose" => await DiagnoseAsync(offline),
                 "install" or "update" => await InstallAsync(args),
                 "uninstall" => await UninstallAsync(args),
+                "restore" => await RestoreAsync(args),
                 "forget" => await ForgetAsync(args),
                 "ai" => await AiAsync(args),
                 "urls" => Urls(args),
@@ -94,6 +95,7 @@ public static class CommandLine
               install <path or name>       Set up the loader and the plugin
               update <path or name>        Same thing: reinstalls the current release
               uninstall <path or name>     Remove what was installed
+              restore <path or name>       Put back the files this game had before we replaced them
               forget <path or name>        Undo what you told us about a game
               ai [--test] [--model M]      Find a local AI server, optionally translate one line
               ai --compare a,b,c            Score several models on the job the mod asks of them
@@ -1128,6 +1130,53 @@ public static class CommandLine
 
     private static string Yes(bool? value) =>
         value switch { true => "yes", false => "NO", _ => "not checked" };
+
+    /// <summary>
+    /// Writes back what this game had before we replaced it — its own mod loader, most often.
+    ///
+    /// 🔴 A verb of its own, never a step of uninstall. Removing our files and writing somebody
+    /// else's back are opposite motions, and doing both under one word left a person who asked
+    /// for a clean game staring at a loader, reading it as a failure.
+    /// </summary>
+    private static async Task<int> RestoreAsync(string[] args)
+    {
+        if (await ResolveGameAsync(args, offline: true) is not var (platform, catalog, report, _)
+            || report is null)
+        {
+            return 3;
+        }
+
+        var aside = UninstallEngine.BackedUpFiles(report.Game);
+        if (aside.Count == 0)
+        {
+            Console.WriteLine($"{report.Game.Name} had no file of its own where ours went. "
+                              + "There is nothing to put back.");
+            return 0;
+        }
+
+        Console.WriteLine($"{report.Game.Name}");
+        Console.WriteLine($"{report.Game.Path}");
+        Console.WriteLine();
+        Console.WriteLine("These files were here before UnityGameTranslator Manager replaced them:");
+        foreach (var file in aside) Console.WriteLine($"  {file}");
+        Console.WriteLine();
+        Console.WriteLine("Putting them back restores the mod loader this game came with, so it "
+                          + "will be detected again. Anything sitting at one of those paths right "
+                          + "now is left alone.");
+        Console.WriteLine();
+
+        if (!Confirm(args, "Put them back?"))
+        {
+            Console.WriteLine("Cancelled. Nothing was written.");
+            return 0;
+        }
+
+        var outcome = new UninstallEngine(platform, catalog).PutBackWhatWasHere(report.Game);
+        Console.WriteLine(outcome.Message);
+        foreach (var file in outcome.PutBack) Console.WriteLine($"  {file}");
+
+        return outcome.Success ? 0 : 4;
+    }
 
     private static async Task<int> ForgetAsync(string[] args)
     {

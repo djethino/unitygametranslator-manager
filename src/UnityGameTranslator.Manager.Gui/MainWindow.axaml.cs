@@ -5743,6 +5743,28 @@ public partial class MainWindow : Window
             buttons.Children.Add(uninstall);
         }
 
+        // 🔴 **Beside the uninstall, never inside it.** This game had files of its own where ours
+        // went, and they are still held aside. Putting them back is the opposite motion to
+        // removing ours, and folding the two into one button produced the worst possible result:
+        // somebody asked for a clean game, got its previous loader written back in the same
+        // breath, saw a loader still detected and concluded the uninstall had failed.
+        //
+        // Shown only when there is something to put back, and it survives the uninstall — the
+        // backup folder is deliberately not swept while it still holds anything.
+        if (UninstallEngine.BackedUpFiles(report.Game) is { Count: > 0 } aside)
+        {
+            var putBack = new Button
+            {
+                Content = $"Put back what was here before ({aside.Count})",
+                IsEnabled = !running,
+            };
+            ToolTip.SetTip(putBack, "This game had files of its own where UnityGameTranslator "
+                                    + "Manager wrote its own — its previous mod loader, most "
+                                    + "often. They were copied aside and can be written back.");
+            putBack.Click += async (_, _) => await RunPutBackAsync(report);
+            buttons.Children.Add(putBack);
+        }
+
         // ⚠ Settings first, acts last — and it was the other way round. The buttons sat between
         // the version and a block of preferences, so "In this game" read as an afterthought
         // hanging off them rather than as what the next install would carry. The order now says
@@ -8736,6 +8758,49 @@ public partial class MainWindow : Window
                        "Your settings and translations were copied to:" + Environment.NewLine + outcome.BackupPath;
 
         await MessageAsync("Uninstalled", message);
+        await ShowSelectedAsync();
+    }
+
+    /// <summary>
+    /// Writes back the files this game had before we replaced them.
+    ///
+    /// ⚠ Named in the confirmation, not counted. "Put back 23 files?" answers nothing — what the
+    /// reader needs is what comes back and what it means, which is almost always a mod loader
+    /// reappearing where they may have just removed one.
+    /// </summary>
+    private async Task RunPutBackAsync(GameReport report)
+    {
+        var aside = UninstallEngine.BackedUpFiles(report.Game);
+        if (aside.Count == 0)
+        {
+            await MessageAsync("Nothing to put back",
+                "This game had no file of its own where UnityGameTranslator Manager wrote its own.");
+            return;
+        }
+
+        var shown = string.Join(Environment.NewLine, aside.Take(12).Select(f => "• " + f));
+        if (aside.Count > 12) shown += Environment.NewLine + $"• …and {aside.Count - 12} more";
+
+        var body = $"{report.Game.Name} had these files before UnityGameTranslator Manager "
+                 + "replaced them. Writing them back restores the mod loader this game came with, "
+                 + "so it will be detected again."
+                 + Environment.NewLine + Environment.NewLine + shown
+                 + Environment.NewLine + Environment.NewLine
+                 + "Anything sitting at one of those paths right now is left alone.";
+
+        if (!await ConfirmAsync($"Put back what {report.Game.Name} had before?", body, "Put them back"))
+            return;
+
+        Busy(true, "Putting back...");
+        var outcome = new UninstallEngine(_platform, _catalog).PutBackWhatWasHere(report.Game);
+        Busy(false, "Ready.");
+
+        var message = outcome.Message;
+        if (outcome.PutBack.Count > 0)
+            message += Environment.NewLine + Environment.NewLine +
+                       string.Join(Environment.NewLine, outcome.PutBack.Select(f => "• " + f));
+
+        await MessageAsync("Put back", message);
         await ShowSelectedAsync();
     }
 

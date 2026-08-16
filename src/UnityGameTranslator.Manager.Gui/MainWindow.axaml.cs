@@ -6260,6 +6260,10 @@ public partial class MainWindow : Window
 
         if (!await ConfirmAsync($"Set up {report.Game.Name}?", body, "Set it up")) return;
 
+        // ⚠ Read BEFORE anything is written: applying the settings makes this game "configured",
+        // and what we need to know afterwards is what it was beforehand.
+        var configBefore = GameConfig(report);
+
         Busy(true, "Starting...");
 
         var engine = new InstallEngine(_platform, _catalog);
@@ -6284,6 +6288,8 @@ public partial class MainWindow : Window
                 return;
             }
 
+            RememberDefaultsWereWritten(report, plan, configBefore);
+
             var message = outcome.Message;
 
             if (translation is not null)
@@ -6299,6 +6305,40 @@ public partial class MainWindow : Window
         }
 
         await ShowSelectedAsync();
+    }
+
+    /// <summary>
+    /// Records, once the settings have actually been written, that this game follows Mod defaults.
+    ///
+    /// 🔴 **Without this, a game set up from here stops following the defaults the instant it is
+    /// set up.** <see cref="GamePreference.UsesModDefaults"/> answers "nobody decided" by asking
+    /// the game — and a game we have just configured answers "I am configured", so both boxes on
+    /// the Set-up tab fall back to unticked with the defaults still sitting in the file. The guard
+    /// they implement protects a configuration made INSIDE the mod, against a first click that
+    /// would overwrite it. It was never meant to protect the values this tool has just written.
+    ///
+    /// ⚠ Only where all three hold, and each one is a real case:
+    /// the config was written at all (a loader-only install writes nothing and decides nothing);
+    /// nobody has answered the question yet (an explicit "no" must survive an install);
+    /// and it was the defaults that went in (a game keeping its own settings keeps its answer too).
+    ///
+    /// ⚠ The hotkey follows the same reasoning, and only when the game had none: the key now in
+    /// that file comes from Mod defaults, so the honest answer to "replace this game's key" is yes
+    /// — there was no key of its own to protect. Where a game did carry one, we left it alone and
+    /// the answer stays no.
+    /// </summary>
+    private void RememberDefaultsWereWritten(GameReport report, InstallPlan plan,
+                                             GameConfigSnapshot before)
+    {
+        if (plan.Settings is null || plan.TargetLanguage is null) return;
+
+        var preference = _preferences.Read(report.Game.Path);
+        if (preference.ApplyModDefaults is not null) return;
+        if (!preference.UsesModDefaults(before)) return;
+
+        preference.ApplyModDefaults = true;
+        if (before.InGameHotkey is null) preference.ReplaceHotkey = true;
+        _preferences.Set(report.Game.Path, preference);
     }
 
     /// <summary>
@@ -7562,6 +7602,10 @@ public partial class MainWindow : Window
         var body = string.Join(Environment.NewLine, lines);
         if (!await ConfirmAsync($"Install into {report.Game.Name}?", body, "Install")) return;
 
+        // Same reading as the one-click, for the same reason: the answer to "does this game follow
+        // Mod defaults" is about to become unreadable from the game itself.
+        var configBefore = GameConfig(report);
+
         Busy(true, "Starting...");
         engine.Status += OnEngineStatus;
 
@@ -7569,6 +7613,8 @@ public partial class MainWindow : Window
 
         engine.Status -= OnEngineStatus;
         Busy(false, outcome.Success ? "Done." : "Failed.");
+
+        if (outcome.Success) RememberDefaultsWereWritten(report, plan, configBefore);
 
         await MessageAsync(outcome.Success ? "Installed" : "Nothing was changed", outcome.Message);
         await ShowSelectedAsync();

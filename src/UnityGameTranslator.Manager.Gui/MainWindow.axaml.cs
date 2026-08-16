@@ -5405,8 +5405,14 @@ public partial class MainWindow : Window
             if (expander.IsExpanded) await LoadAsync();
         };
 
-        // Only what is CHOSEN here counts. Left folded, this returns null and the engine resolves
-        // nothing — the catalog's pinned archives are used, exactly as before this existed.
+        // Only what is CHOSEN here counts — null means "nobody picked one", NOT "use the pinned
+        // archive".
+        //
+        // 🔴 It used to mean the second, and that is how the tool installed something other than
+        // what it announced: the card names the resolved build (6.0.0-be.785) beside the loader,
+        // this expander is folded by default, so every ordinary install fell back to the pinned
+        // 6.0.0-pre.2. The receipt then said pre.2 and the binaries read be.697, while the screen
+        // had said 785. The caller now keeps the plan's own resolved build when nothing is picked.
         _chosenBuild = () => expander.IsExpanded
             ? (builds.SelectedItem as ComboBoxItem)?.Tag as LoaderBuild
             : null;
@@ -7307,7 +7313,11 @@ public partial class MainWindow : Window
         // installed is not the same question as which values get written.
         var resolved = SettingsFor(report, preference);
 
-        var plan = new InstallEngine(_platform, _catalog).Plan(
+        var plan = new InstallEngine(_platform, _catalog)
+        {
+            // The stream this window announces in the picker, so the plan installs what was shown.
+            BepInEx6Channel = _settings.Current.BepInEx6Channel,
+        }.Plan(
             report,
             resolved.Channel == "beta" ? ReleaseChannel.Beta : ReleaseChannel.Stable,
             _chosenLoader(),
@@ -7333,10 +7343,18 @@ public partial class MainWindow : Window
                                        || report.LoaderUpdateOffered),
             InstallPlugin = plugin,
 
-            // Which BUILD of that loader. Null when nothing was resolved — an offline run, a
-            // publisher that did not answer, a loader with no source — and the engine then uses
-            // the archives pinned in the catalog, exactly as it always has.
-            Build = _chosenBuild(),
+            // Which BUILD of that loader: the one somebody picked by hand, and otherwise the one
+            // Plan() resolved for the chosen channel — the very build this card names.
+            //
+            // ⚠ The `?? plan.Build` is the whole point. Written as `_chosenBuild()` alone, a folded
+            // "Use another build" expander — the state every ordinary install is in — erased the
+            // resolved build and fell back to the catalogue's pinned archive. The card announced
+            // one version and the installer wrote another.
+            //
+            // Still null when nothing was resolved at all (offline, publisher silent), and the
+            // engine then uses the pinned archives — which is also what the card announces then,
+            // so the two still agree.
+            Build = _chosenBuild() ?? plan.Build,
         };
     }
 

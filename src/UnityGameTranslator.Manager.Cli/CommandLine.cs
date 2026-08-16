@@ -237,7 +237,23 @@ public static class CommandLine
             // Wired here and not on the install path: there it would spend a request on the rate
             // limited API to print nothing.
             Releases = offline ? null : new PluginReleases(),
+
+            // 🔴 Which BepInEx 6 stream to measure "up to date" against, warmed just below. This
+            // command is the one somebody pastes into an issue; comparing against the catalogue's
+            // pinned version here while the window compares against the resolved build would put
+            // two different verdicts about one game into one conversation.
+            BepInEx6Channel = settings.BepInEx6Channel,
         };
+
+        // ⚠ The resolver's cache lives in the process, so a command that just started knows
+        // nothing until it asks. Without this the comparison silently used the catalogue's pin —
+        // which is exactly how "up to date" appeared beside a newer published build.
+        if (!offline)
+        {
+            await new LoaderBuildResolver()
+                .WarmAsync(catalog.Document, settings.BepInEx6Channel)
+                .ConfigureAwait(false);
+        }
 
         // A path is looked up in the full scan FIRST, and only probed on its own when that finds
         // nothing.
@@ -613,7 +629,11 @@ public static class CommandLine
             Console.WriteLine();
         }
 
-        var engine = new InstallEngine(platform, catalog, GitHubReleaseClient.ForMod());
+        var engine = new InstallEngine(platform, catalog, GitHubReleaseClient.ForMod())
+        {
+            // Same stream the report named, so what is installed is what was announced.
+            BepInEx6Channel = new SettingsStore(platform).Current.BepInEx6Channel,
+        };
         // Reviewed settings only: until someone has been through the settings screen, we have
         // nothing to say about their language or their backend, and writing defaults into their
         // game would look like we decided for them.

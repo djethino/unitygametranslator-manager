@@ -65,8 +65,12 @@ public sealed record InstallPlan(
     /// <summary>Human-readable summary shown before anything is written.</summary>
     public IEnumerable<string> Describe()
     {
+        // 🔴 The build that will actually be downloaded, not the catalogue's pin. This line is the
+        // last thing shown before anything is written, so it is the promise the install has to
+        // keep — and it printed Loader.Version, which is a months-old fallback. Somebody
+        // confirming "Install BepInEx 6 (Mono) 6.0.0-pre.2" got 6.0.0-be.785, or the reverse.
         yield return InstallLoader
-            ? $"Install {Loader.Display} {Loader.Version} into {Game.Name}"
+            ? $"Install {Loader.Display} {Build?.Version ?? Loader.Version} into {Game.Name}"
             : $"Use the {Loader.Display} already installed in {Game.Name}";
 
         // Said either way. "The mod is left as it is" is the sentence that stops somebody
@@ -122,6 +126,17 @@ public sealed class InstallEngine
     public event Action<string>? Status;
 
     /// <summary>
+    /// Which BepInEx 6 stream to install from — "be" or "github".
+    ///
+    /// 🔴 **Without it, the plan installs whatever the catalogue pins, whatever the screen said.**
+    /// Every piece downstream already honoured a resolved build — the download, the receipt, the
+    /// progress line — and nothing ever filled it in, so a picker announcing 6.0.0-be.785 quietly
+    /// installed the pinned 6.0.0-pre.2 and wrote pre.2 in the receipt. Announcing one thing and
+    /// doing another is the one fault an installer must not have.
+    /// </summary>
+    public string? BepInEx6Channel { get; set; }
+
+    /// <summary>
     /// Turns a report into a plan, or explains why there is none. Never partially applies:
     /// planning and doing are separate so the user can see the whole thing first.
     /// </summary>
@@ -165,6 +180,15 @@ public sealed class InstallEngine
             StrayPluginDirectories = stray,
             Settings = settings,
             Preference = preference,
+
+            // 🔴 The build the screens announced, read from the SAME place they read it — the
+            // resolver's cache. Filled here rather than by each caller so that no path can be
+            // added later that quietly reverts to the pinned archive.
+            //
+            // Null when nothing was resolved (offline, publisher silent, cache never warmed), and
+            // the pinned archive is then what BOTH the announcement and the download fall back to.
+            // What matters is not which of the two is used, it is that they agree.
+            Build = Catalog.LoaderBuildResolver.Known(loader, BepInEx6Channel),
 
             // Decided here because here is where the report is: what is published for this game
             // is what fixes its languages, and nothing further down the chain can see it.

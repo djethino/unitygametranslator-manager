@@ -45,6 +45,13 @@ public sealed class SettingsStore
                     // Decrypted into memory, and the stored form left alone: a file written on
                     // another machine cannot be read here, and must come back as "no key"
                     // rather than as a crash or as garbage sent to a provider.
+                    // ⚠ A blank here is not a choice, it is a field written before there was
+                    // anything to write. Left blank, the channel is decided by whichever source
+                    // happens to sit first in the catalogue — so reordering a JSON array would
+                    // silently move everybody to another stream. The declared default answers it.
+                    if (string.IsNullOrWhiteSpace(loaded.BepInEx6Channel))
+                        loaded.BepInEx6Channel = new InstallerSettings().BepInEx6Channel;
+
                     loaded.AiApiKey = Secrets.Unprotect(loaded.AiApiKeyStored);
                     loaded.ProxyPassword = Secrets.Unprotect(loaded.ProxyPasswordStored);
                     loaded.GoogleApiKey = Secrets.Unprotect(loaded.GoogleApiKeyStored);

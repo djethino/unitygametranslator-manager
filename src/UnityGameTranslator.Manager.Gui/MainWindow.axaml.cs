@@ -547,6 +547,29 @@ public partial class MainWindow : Window
         var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == detected?.Id);
         string? account = null;
 
+        // 🔴 **The row builds its OWN report, so anything it wants must be filled in here.** That
+        // is why a newer loader appeared on the game's page and nowhere in the list: BuildReportAsync
+        // works this out, and this method deliberately does not call it — one file read per game
+        // instead of a network round trip.
+        //
+        // ⚠ Comparing versions costs nothing: the catalog is already in memory, and the loader's
+        // version was just read off the disk by the probe above. The promise this method makes is
+        // "no network", not "no thinking".
+        report.InstalledLoader = detected;
+
+        if (detected is not null && descriptor is not null)
+        {
+            report.LoaderStanding = new VersionStanding(detected.Version, descriptor.Version);
+
+            // Who installed it, which decides whether the row may say "update available" plainly
+            // or has to add "(not ours)". Read from the receipt, exactly as BuildReportAsync does.
+            var receipt = ReceiptStore.Read(game.Path);
+            detected.InstalledByUs = receipt?.Loader is { InstalledByUs: true } ours
+                                     && string.Equals(ours.Id, detected.Id, StringComparison.OrdinalIgnoreCase);
+
+            report.LoaderAdopted = _preferences.Read(game.Path).AdoptLoader;
+        }
+
         if (descriptor is not null)
         {
             report.InstalledPluginVersion =
@@ -5046,9 +5069,16 @@ public partial class MainWindow : Window
         if (descriptor is not null
             && TranslationInstaller.Backups(report.Game.Path, descriptor) is { Count: > 0 } kept)
         {
-            var back = ScopeMark.Marked(EditSide.Local,
-                kept.Count == 1 ? "Put the previous one back…" : "Put an earlier one back…",
-                standing.CanWriteLocally);
+            // ⚠ "Restore local", not "Put an earlier one back". Six words of English prose where
+            // one international word does the job — the word every program has used for thirty
+            // years, which is what somebody reading their fourth language recognises. And "local"
+            // is spelt out beside the scope mark, exactly as on Remove local translation: this is
+            // the pair of buttons that move a file in and out of a game, and being clear twice
+            // costs nothing there.
+            var back = ScopeMark.Marked(EditSide.Local, "Restore local…", standing.CanWriteLocally);
+            ToolTip.SetTip(back, kept.Count == 1
+                ? "Puts back the translation replaced last."
+                : $"Puts back one of the {kept.Count} translations set aside.");
             back.Click += async (_, _) => await RestoreTranslationAsync(report, descriptor, kept);
             actions.Children.Add(back);
         }
@@ -8274,7 +8304,7 @@ public partial class MainWindow : Window
                 $"{lines} line(s) will be moved out of the game.{changed} {stake}"
                 + Environment.NewLine + Environment.NewLine
                 + $"A copy is kept aside — the last {TranslationInstaller.BackupsKept} are, and "
-                + "\"Put an earlier one back\" brings them in.",
+                + "Restore local brings them back.",
                 "Remove it")) return;
 
         Busy(true, "Removing the translation...");
@@ -8323,16 +8353,16 @@ public partial class MainWindow : Window
             });
             panel.Children.Add(picker);
 
-            if (!await ConfirmAsync($"Put a translation back into {report.Game.Name}?", panel,
-                                    "Put it back")) return;
+            if (!await ConfirmAsync($"Restore a translation into {report.Game.Name}?", panel,
+                                    "Restore")) return;
 
             chosen = (picker.SelectedItem as ComboBoxItem)?.Tag as TranslationBackup ?? kept[0];
         }
-        else if (!await ConfirmAsync($"Put this translation back into {report.Game.Name}?",
+        else if (!await ConfirmAsync($"Restore this translation into {report.Game.Name}?",
                      $"{chosen.Lines} line(s), set aside on {chosen.Replaced:d MMM yyyy} at "
                      + $"{chosen.Replaced:HH:mm}. Whatever is in the game now is set aside in its "
                      + "turn, so this can be undone.",
-                     "Put it back")) return;
+                     "Restore")) return;
 
         Busy(true, "Putting it back...");
         var done = TranslationInstaller.Restore(report.Game.Path, descriptor, chosen.Path);

@@ -121,8 +121,25 @@ foreach ($doc in $documents) {
     if (-not (Test-Path $doc)) { throw "Missing $doc — it must ship with the binary." }
 }
 
-if (Test-Path $releasesDir) { Remove-Item -Recurse -Force $releasesDir }
-New-Item -ItemType Directory -Path $releasesDir | Out-Null
+# 🔴 **The archives, not the folder.** Deleting releases/ wholesale took anything else living
+# there with it — including the unpacked copy a developer had open and was testing against, which
+# a build for a completely different runtime identifier would silently destroy. The symptom was a
+# Linux-only pass failing on "Access to the path …\win-x64\UnityGameTranslatorManager.exe is
+# denied", naming a file that had nothing to do with the command that was run.
+#
+# ⚠ Every version, not only this one: a stale archive left behind would appear in the "ready to
+# attach" list below and get published beside the real one.
+#
+# Staging folders are removed by the loop that creates them; anything else here belongs to
+# whoever put it there.
+if (Test-Path $releasesDir) {
+    Get-ChildItem $releasesDir -File |
+        Where-Object { $_.Name -like 'UnityGameTranslatorManager-*' } |
+        Remove-Item -Force
+}
+else {
+    New-Item -ItemType Directory -Path $releasesDir | Out-Null
+}
 
 foreach ($target in $targets) {
     $rid = $target.Rid

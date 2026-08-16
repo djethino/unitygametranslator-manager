@@ -247,6 +247,7 @@ public sealed class TranslationPublisher
                                          string sourceLanguage, string targetLanguage,
                                          string? notes = null, string? status = null,
                                          string? resourcesUrl = null,
+                                         bool? acceptsBranches = null,
                                          CancellationToken ct = default)
     {
         LastError = null;
@@ -302,6 +303,11 @@ public sealed class TranslationPublisher
                 // never undid a "complete" the way the mod did. A caller that has no opinion must
                 // send nothing at all.
                 if (!string.IsNullOrWhiteSpace(status)) writer.WriteString("status", status);
+
+                // Same rule as status: omitted when the caller has no opinion, so the server keeps
+                // what it holds. Null is what a branch sends — the decision is its Main's.
+                if (acceptsBranches is bool takes) writer.WriteBoolean("accepts_branches", takes);
+
                 writer.WriteEndObject();
             }
 

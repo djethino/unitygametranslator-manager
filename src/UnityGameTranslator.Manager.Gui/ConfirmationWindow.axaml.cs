@@ -32,8 +32,22 @@ public sealed class ConfirmationWindow : Window
     /// <summary>Whether the option was ticked. False when there was none.</summary>
     private bool _optionChosen;
 
+    /// <summary>
+    /// A second choice of the same nature, when publishing carries two declarations rather than
+    /// one: whether the work is finished, and whether it takes contributions.
+    ///
+    /// ⚠ Two and no more. A confirmation that grows a list of settings has stopped being a
+    /// confirmation — anything further belongs on the screen that publishes, not in the box that
+    /// asks whether to.
+    /// </summary>
+    private CheckBox? _second;
+
+    private bool _secondChosen;
+
     private ConfirmationWindow(string title, string body, string confirm, bool question = true,
-                               string? optionLabel = null, bool optionChecked = false)
+                               string? optionLabel = null, bool optionChecked = false,
+                               string? secondLabel = null, bool secondChecked = false,
+                               string? secondHint = null)
     {
         Title = title;
         Width = 560;
@@ -73,6 +87,31 @@ public sealed class ConfirmationWindow : Window
             layout.Children.Add(_option);
         }
 
+        if (secondLabel is not null)
+        {
+            _second = new CheckBox
+            {
+                Content = secondLabel,
+                IsChecked = secondChecked,
+                Foreground = this.FindResource("TextPrimary") as IBrush,
+            };
+            layout.Children.Add(_second);
+
+            // One line saying what the word means, because "contribution" is the only term here a
+            // reader can meet for the first time — and this box is where they meet it.
+            if (secondHint is not null)
+            {
+                layout.Children.Add(new TextBlock
+                {
+                    Text = secondHint,
+                    FontSize = 11,
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(24, -8, 0, 0),
+                    Foreground = this.FindResource("TextMuted") as IBrush,
+                });
+            }
+        }
+
         var buttons = new StackPanel
         {
             Orientation = Orientation.Horizontal,
@@ -103,6 +142,7 @@ public sealed class ConfirmationWindow : Window
         {
             _confirmed = true;
             _optionChosen = _option?.IsChecked == true;
+            _secondChosen = _second?.IsChecked == true;
             Close();
         };
 
@@ -134,6 +174,30 @@ public sealed class ConfirmationWindow : Window
                                             optionLabel: optionLabel, optionChecked: optionChecked);
         await window.ShowDialog(owner);
         return (window._confirmed, window._confirmed && window._optionChosen);
+    }
+
+    /// <summary>
+    /// The same question with the TWO declarations publishing carries: whether the work is
+    /// finished, and whether it takes contributions.
+    ///
+    /// 🔴 Asked here rather than only on the details screen. A first publication is the one moment
+    /// somebody is thinking about what they are putting out, and a decision they can only find
+    /// afterwards is a decision taken for them — which is exactly how every translation published
+    /// from this window would have ended up refusing its first contributor.
+    /// </summary>
+    public static async Task<(bool Agreed, bool Option, bool Second)> AskAsync(
+        Window owner, string title, string body, string confirm,
+        string optionLabel, bool optionChecked,
+        string secondLabel, bool secondChecked, string? secondHint = null)
+    {
+        var window = new ConfirmationWindow(title, body, confirm,
+                                            optionLabel: optionLabel, optionChecked: optionChecked,
+                                            secondLabel: secondLabel, secondChecked: secondChecked,
+                                            secondHint: secondHint);
+        await window.ShowDialog(owner);
+        return (window._confirmed,
+                window._confirmed && window._optionChosen,
+                window._confirmed && window._secondChosen);
     }
 
     /// <summary>

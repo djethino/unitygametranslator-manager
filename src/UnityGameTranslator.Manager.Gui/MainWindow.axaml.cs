@@ -4522,8 +4522,14 @@ public partial class MainWindow : Window
                  + $"{languages.Source} → {languages.Target}, as \"{standing.SignedInAs}\".";
         var confirm = contributing ? "Send as a contribution" : "Publish";
 
+        // ⚠ Same source as "finished" right above, and the same reason: this account's own row.
+        // Null — an older site, or nothing published yet — starts closed, which is the default
+        // anybody publishing for the first time gets.
+        var alreadyOpen = lineage.AcceptsBranches == true;
+
         bool agreed;
         var markComplete = alreadyComplete;
+        var takeContributions = alreadyOpen;
 
         if (branchWork)
         {
@@ -4531,9 +4537,12 @@ public partial class MainWindow : Window
         }
         else
         {
-            (agreed, markComplete) = await ConfirmationWindow.AskAsync(
+            (agreed, markComplete, takeContributions) = await ConfirmationWindow.AskAsync(
                 this, "Publish this translation?", body, confirm,
-                "This translation is finished", alreadyComplete);
+                "This translation is finished", alreadyComplete,
+                "Accept contributions", alreadyOpen,
+                "A contribution is a copy of this work with somebody else's changes, sent to you "
+                + "to accept or not. Left off, others can still publish their own version.");
         }
 
         if (!agreed) return;
@@ -4552,7 +4561,10 @@ public partial class MainWindow : Window
         var id = await publisher.PublishAsync(content, token, report.Game.SteamAppId, report.Game.Name,
                                               languages.Source, languages.Target,
                                               notes: lineage.Notes ?? "", status: status,
-                                              resourcesUrl: lineage.ResourcesUrl ?? "");
+                                              resourcesUrl: lineage.ResourcesUrl ?? "",
+                                              // ⚠ Null on branch work, exactly like status: a
+                                              // contribution does not decide this for the Main.
+                                              acceptsBranches: branchWork ? null : takeContributions);
 
         button.IsEnabled = true;
         ScopeMark.SetLabel(button, "Publish…");

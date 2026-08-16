@@ -2784,6 +2784,11 @@ public partial class MainWindow : Window
             // a tick-box in the one-click, under Set up. Choose and apply are two halves of one
             // gesture, so they share a line — the choice on the left where it is made, the
             // consequence on the right where a reader looks for the verb.
+            // ⚠ **Above the buttons, not under them.** What is waiting has to be readable BEFORE
+            // the verb that acts on it: a reader whose eye lands on "Apply (1)" and has to look
+            // below to learn what it applies has already been asked to press something unnamed.
+            if (PendingTranslationNote(report) is { } waitingNote) question.Children.Add(waitingNote);
+
             var choiceRow = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
 
             Grid.SetColumn(buttons, 0);
@@ -2797,9 +2802,6 @@ public partial class MainWindow : Window
 
             question.Children.Add(choiceRow);
 
-            // The sentence belongs under the whole line rather than beside the buttons: it can run
-            // to two lines, and a warning squeezed into a column reads as a label.
-            if (PendingTranslationNote(report) is { } note) question.Children.Add(note);
         }
         else
         {
@@ -3129,8 +3131,13 @@ public partial class MainWindow : Window
 
         var caution = TranslationOffers.Caution(TranslationOffers.For(report, picked));
 
+        // What identifies a translation to somebody about to install it: the pair of languages,
+        // who made it, and how big it is. The list they chose from showed all three — a card that
+        // then names only two makes them go back and check they picked the right one.
+        var size = picked.LineCount > 0 ? $", {picked.LineCount} lines" : "";
+
         var text = $"Chosen: {picked.SourceLanguage} → {picked.TargetLanguage} by "
-                 + $"{picked.Author ?? "unknown"} — not in the game yet."
+                 + $"{picked.Author ?? "unknown"}{size} — not in the game yet."
                  + (caution is null ? "" : $" Applying {caution}.");
 
         return new TextBlock

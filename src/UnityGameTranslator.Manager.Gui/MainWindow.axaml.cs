@@ -4576,6 +4576,24 @@ public partial class MainWindow : Window
             _ => null,
         };
 
+        // 🔴 **And nothing to DESCRIBE either, when nothing was ever sent.**
+        //
+        // Edit details writes a description of a PUBLISHED translation. The comment further down
+        // explains why that button is normally offered without knowing whether one exists — a
+        // contributor's own row never appears in MatchingOnline, so the card genuinely cannot
+        // tell. That reasoning stops here: SourceHash is written by the mod on every exchange
+        // with the site, download and upload alike. Absent, this file has never been near the
+        // server; with no line in it either, no page about it can exist to be edited.
+        //
+        // ⚠ Both conditions, not just the empty file. Somebody who published five hundred lines
+        // and then deleted their local copy is at zero lines with a page that very much exists,
+        // and greying the button on the count alone would lock them out of their own description.
+        var neverSent = report.LocalTranslation?.SourceHash is null;
+        var noDetailsYet = nothingYet is not null && neverSent
+            ? "Nothing has ever been sent to the site for this game, so there is no published "
+              + "translation whose details could be edited."
+            : null;
+
         var edit = ScopeMark.Marked(EditSide.Local, "Edit in browser",
                                     standing.CanWriteLocally && nothingYet is null);
         edit.Click += async (_, _) => await OpenLocalEditorAsync(report, descriptor, edit);
@@ -4630,8 +4648,12 @@ public partial class MainWindow : Window
         // ⚠ Shown whether the translation is published or not, because whether it IS cannot be
         // answered from this card — MatchingOnline is the lineage's PUBLIC translation, and a
         // contributor's own row is not in it. Asked on click, and answered in words.
+        //
+        // ⚠ **Except when the card CAN answer it**: see noDetailsYet above. An empty file that has
+        // never exchanged anything with the site cannot have a page, and offering to edit one
+        // sends the reader to find that out for themselves.
         var details = ScopeMark.Marked(EditScope.SideAfter(onThisMachine: false, yourPublishedCopy: true),
-                                       "Edit details…", standing.CanAct);
+                                       "Edit details…", standing.CanAct && noDetailsYet is null);
         details.Click += async (_, _) => await EditTranslationDetailsAsync(report, details);
         actions.Children.Add(details);
 

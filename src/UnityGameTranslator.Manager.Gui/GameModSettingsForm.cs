@@ -295,6 +295,19 @@ public sealed class GameModSettingsForm
     {
         _language = ModSettingControls.LanguagePicker(_platform, 220);
 
+        // 🔴 **Disabled, not merely explained, when this game's language is settled.**
+        //
+        // A translation's pair of languages never changes once it exists: the server ignores the
+        // languages sent with an update and keeps the ones the translation was published with, and
+        // TargetFor does the same here — a game holding a French translation stays on French
+        // whatever this picker says. Leaving it usable offered a choice that was read, accepted
+        // and then discarded, with a sentence underneath explaining why nothing happened.
+        //
+        // The way to change it is to take a translation in another language, which is what the
+        // note beside this says. Same rule as everywhere else on these screens: a control whose
+        // verb cannot act must not invite the act.
+        if (_languagePinnedTo is not null) _language.IsEnabled = false;
+
         // ⚠ The game stores a language NAME, the picker works in codes. Matched by the shared table
         // rather than by string equality: "French" and "fr" are the same answer, and comparing them
         // as text would show every configured game as having no language set.

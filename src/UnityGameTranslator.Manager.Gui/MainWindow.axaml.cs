@@ -6138,8 +6138,13 @@ public partial class MainWindow : Window
                 ? "Not ticked on purpose: " + TranslationOffers.Caution(offer)
                   + ". Tick it to take the community one anyway — you will be asked again, with "
                   + "what is at stake spelled out, and a copy is kept aside either way."
-                : "Takes the best-ranked translation published in your language. Untick to start "
-                  + "from a blank sheet and build your own as you play.");
+                // ⚠ Says what unticking DOES — skip the download — not what it feels like. The
+                // previous wording, "untick to start from a blank sheet", promised a reset this
+                // box has never performed: it decides whether a translation comes down with the
+                // install, and on a game that already holds one, unticking leaves it exactly
+                // where it is.
+                : "Takes the best-ranked translation published in your language. Untick to install "
+                  + "without one and build your own as you play.");
 
             withTranslation.IsCheckedChanged += (_, _) =>
             {

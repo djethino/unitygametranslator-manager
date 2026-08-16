@@ -5376,9 +5376,17 @@ public partial class MainWindow : Window
                 // and being honest would then mean building one per case, Mono against IL2CPP,
                 // x86 against x64, on top of the BepInEx 6 channel. The line above the control
                 // already says "we would use"; the suffix was redundant and opened that door.
+                // ⚠ **No version where the version depends on a channel we have not resolved.**
+                // loader.Version is what the catalog PINS — 6.0.0-pre.2 for BepInEx 6 — and
+                // printing it beside a game set to Bleeding Edge stated the opposite of what
+                // installing would do. Resolving here would ask two publishers on every card
+                // drawn; naming the loader and letting "Use another build" answer costs nothing
+                // and cannot be wrong.
+                var channelled = loader.Sources.Count > 1;
+
                 loaderPicker.Items.Add(new ComboBoxItem
                 {
-                    Content = $"{loader.Display} {loader.Version}",
+                    Content = channelled ? loader.Display : $"{loader.Display} {loader.Version}",
                     Tag = loader,
                 });
             }

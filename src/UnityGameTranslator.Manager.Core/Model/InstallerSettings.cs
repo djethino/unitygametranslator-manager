@@ -246,6 +246,27 @@ public sealed class InstallerSettings
     [JsonPropertyName("bepinex6_channel")] public string BepInEx6Channel { get; set; } = "be";
 
     /// <summary>
+    /// Which loader to offer first on a Mono game — a loader id, or null to follow the catalog.
+    ///
+    /// 🔴 **The catalog's order is ours, not theirs.** `preference` is an integer we set, and it
+    /// decides what every game proposes: BepInEx 5 on Mono, BepInEx 6 on IL2CPP. That is a sound
+    /// default and it was the ONLY answer — somebody who has settled on MelonLoader, or who wants
+    /// BepInEx 6 everywhere, had to change it on each game, one card at a time, for ever.
+    ///
+    /// ⚠ It reorders what is OFFERED; it never forces. A loader that cannot host the game's
+    /// runtime, or has no build for this system, is still not proposed — a preference is not a
+    /// claim about what works.
+    /// </summary>
+    [JsonPropertyName("preferred_loader_mono")] public string? PreferredLoaderMono { get; set; }
+
+    /// <summary>Same, for IL2CPP games. Kept apart: the two have different candidates.</summary>
+    [JsonPropertyName("preferred_loader_il2cpp")] public string? PreferredLoaderIl2cpp { get; set; }
+
+    /// <summary>The preferred loader id for a runtime, or null when the catalog decides.</summary>
+    public string? PreferredLoaderFor(UnityRuntime runtime) =>
+        runtime == UnityRuntime.Il2Cpp ? PreferredLoaderIl2cpp : PreferredLoaderMono;
+
+    /// <summary>
     /// Whether this tool looks for its own updates.
     ///
     /// On by default, like any other program that talks to the internet — and never applied

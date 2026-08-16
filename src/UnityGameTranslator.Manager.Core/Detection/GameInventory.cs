@@ -304,10 +304,15 @@ public sealed class GameInventory
             return null;
         }
 
+        // ⚠ The person's answer first, the catalog's order after. Filtering comes before both:
+        // a preference reorders what fits, it never makes something fit.
+        var preferred = new Settings.SettingsStore(_platform).Current.PreferredLoaderFor(game.Runtime);
+
         var candidates = _catalog.Loaders
             .Where(l => l.SupportsRuntime(game.Runtime))
             .Where(l => FindAsset(l, game) is not null)
-            .OrderByDescending(l => l.Preference)
+            .OrderByDescending(l => string.Equals(l.Id, preferred, StringComparison.OrdinalIgnoreCase))
+            .ThenByDescending(l => l.Preference)
             .ToList();
 
 

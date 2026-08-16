@@ -49,6 +49,8 @@ public sealed class ToolSettingsWindow : Window
     private CheckBox _checkToolUpdates = null!;
     private StackPanel _updatePanel = null!;
     private ComboBox _bepinex6Channel = null!;
+    private ComboBox _preferMono = null!;
+    private ComboBox _preferIl2cpp = null!;
 
     /// <summary>
     /// The loader catalog, so this screen can say what each BepInEx 6 channel currently offers.
@@ -499,6 +501,24 @@ public sealed class ToolSettingsWindow : Window
         Select(_bepinex6Channel, _draft.BepInEx6Channel);
 
         panel.Children.Add(Row("BepInEx 6 builds", _bepinex6Channel));
+
+        // 🔴 **Which loader is offered first, and it had no answer at all.** The order comes from
+        // an integer in the catalog — BepInEx 5 on Mono, BepInEx 6 on IL2CPP — which is a sound
+        // default and was the ONLY one: somebody who has settled on MelonLoader had to say so on
+        // every game, one card at a time, for ever.
+        //
+        // ⚠ Two lists because the two runtimes have different candidates, and a single "preferred
+        // loader" would offer MelonLoader for IL2CPP and BepInEx 5 for it as if they were
+        // interchangeable. Empty means the catalog decides — the honest default, and the one that
+        // keeps following our judgement as it changes.
+        _preferMono = LoaderChoice("mono");
+        _preferIl2cpp = LoaderChoice("il2cpp");
+
+        panel.Children.Add(Row("Prefer on Mono games", _preferMono));
+        panel.Children.Add(Row("Prefer on IL2CPP games", _preferIl2cpp));
+        panel.Children.Add(Note(
+            "Reorders what each game offers; it never forces. A loader that cannot host a game, "
+            + "or has no build for this system, is still not proposed.", "TextMuted"));
         panel.Children.Add(Note(
             "BepInEx 6 has no stable release: its GitHub page stopped at a pre-release in 2024, "
             + "while development continues in Bleeding Edge builds. UnityGameTranslator works "
@@ -520,6 +540,30 @@ public sealed class ToolSettingsWindow : Window
         _ = ShowChannelDatesAsync(dates);
 
         return Card("Mod loaders", null, panel);
+    }
+
+    /// <summary>
+    /// The loaders that can host one runtime, plus "let the catalog decide".
+    ///
+    /// ⚠ Built from the catalog, never from a list written here: a loader added tomorrow appears
+    /// on its own, and one withdrawn stops being offered. The empty entry comes first because it
+    /// is the default and the answer most people should keep.
+    /// </summary>
+    private ComboBox LoaderChoice(string runtime)
+    {
+        var box = new ComboBox { Width = 320 };
+        box.Items.Add(new ComboBoxItem { Content = "Let the catalog decide", Tag = "" });
+
+        foreach (var loader in _catalog?.Loaders ?? new List<LoaderDescriptor>())
+        {
+            if (!loader.Runtimes.Contains(runtime, StringComparer.OrdinalIgnoreCase)) continue;
+            box.Items.Add(new ComboBoxItem { Content = loader.Display, Tag = loader.Id });
+        }
+
+        Select(box, runtime == "il2cpp" ? _draft.PreferredLoaderIl2cpp : _draft.PreferredLoaderMono);
+        if (box.SelectedIndex < 0) box.SelectedIndex = 0;
+
+        return box;
     }
 
     /// <summary>
@@ -905,6 +949,11 @@ public sealed class ToolSettingsWindow : Window
         _draft.ToolChannel = Tag(_toolChannel) ?? "stable";
         _draft.CheckToolUpdates = _checkToolUpdates.IsChecked == true;
         _draft.BepInEx6Channel = Tag(_bepinex6Channel) ?? "be";
+
+        // Empty means "let the catalog decide", and it is stored as null rather than as "": a
+        // blank string would read as an answer nobody gave.
+        _draft.PreferredLoaderMono = Blank(Tag(_preferMono));
+        _draft.PreferredLoaderIl2cpp = Blank(Tag(_preferIl2cpp));
         return _draft;
     }
 
@@ -922,6 +971,8 @@ public sealed class ToolSettingsWindow : Window
         settings.ToolChannel = edited.ToolChannel;
         settings.CheckToolUpdates = edited.CheckToolUpdates;
         settings.BepInEx6Channel = edited.BepInEx6Channel;
+        settings.PreferredLoaderMono = edited.PreferredLoaderMono;
+        settings.PreferredLoaderIl2cpp = edited.PreferredLoaderIl2cpp;
 
         var count = CountPendingChanges();
 
@@ -952,6 +1003,8 @@ public sealed class ToolSettingsWindow : Window
 
         Compare("this tool's update channel", Tag(_toolChannel), saved.ToolChannel);
         Compare("BepInEx 6 builds", Tag(_bepinex6Channel), saved.BepInEx6Channel);
+        Compare("preferred loader on Mono", Blank(Tag(_preferMono)), saved.PreferredLoaderMono);
+        Compare("preferred loader on IL2CPP", Blank(Tag(_preferIl2cpp)), saved.PreferredLoaderIl2cpp);
 
         if ((_proxyInGames.IsChecked == true) != saved.ProxyInGames) changes.Add("proxy in games");
         if ((_online.IsChecked == true) != saved.OnlineMode) changes.Add("community catalog");
@@ -977,6 +1030,9 @@ public sealed class ToolSettingsWindow : Window
             : "Nothing to save.");
     }
 
+    private static string? Blank(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value;
+
     private void WatchForChanges()
     {
         _proxyMode.SelectionChanged += (_, _) => RefreshApplyButton();
@@ -988,6 +1044,14 @@ public sealed class ToolSettingsWindow : Window
         _online.IsCheckedChanged += (_, _) => RefreshApplyButton();
         _toolChannel.SelectionChanged += (_, _) => RefreshApplyButton();
         _checkToolUpdates.IsCheckedChanged += (_, _) => RefreshApplyButton();
+
+        // ⚠ Every control on this window belongs in this list, and one missing does not break
+        // saving — Collect and Save read it either way — it breaks the PROMISE: nothing is applied
+        // without pressing Apply, and Apply says how much is waiting. A control whose change is
+        // never counted looks either already saved or ignored, and both readings are wrong.
+        _bepinex6Channel.SelectionChanged += (_, _) => RefreshApplyButton();
+        _preferMono.SelectionChanged += (_, _) => RefreshApplyButton();
+        _preferIl2cpp.SelectionChanged += (_, _) => RefreshApplyButton();
 
         ShowProxyFields();
     }

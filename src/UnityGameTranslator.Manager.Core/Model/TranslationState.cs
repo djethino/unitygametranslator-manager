@@ -358,8 +358,19 @@ public sealed class GameReport
     /// Every path that ACTS or offers to act reads this one. Every path that merely informs reads
     /// LoaderStanding.
     /// </summary>
+    /// <remarks>
+    /// ⚠ <see cref="LoaderAdopted"/> is the one way a loader we did not install becomes ours to
+    /// offer: an explicit per-game answer, never a default and never inferred.
+    /// </remarks>
     public bool LoaderUpdateOffered =>
-        InstalledLoader is { InstalledByUs: true } && LoaderStanding is { UpdateAvailable: true };
+        (InstalledLoader is { InstalledByUs: true } || LoaderAdopted)
+        && LoaderStanding is { UpdateAvailable: true };
+
+    /// <summary>
+    /// Set from GamePreference.AdoptLoader: this game's loader is ours to manage although we did
+    /// not put it there. Read by everything that offers to act, so the answer lives in one place.
+    /// </summary>
+    public bool LoaderAdopted { get; set; }
 
     /// <summary>
     /// The community entry that is the same lineage as the local file, matched on uuid.

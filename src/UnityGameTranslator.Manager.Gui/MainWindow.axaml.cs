@@ -5252,6 +5252,62 @@ public partial class MainWindow : Window
                 : $"{installed.Display} {installed.Version} was not installed by "
                 + "UnityGameTranslator Manager. Other mods may need this exact version, so it is "
                 + "never updated or removed from here."));
+
+            // 🔴 **The way to take it over, asked once and never assumed.**
+            //
+            // Refusing to touch somebody else's loader is right as a default and wrong as a wall:
+            // a version months behind was reported and then left, with no way to say "this one is
+            // mine to manage". This is that way — per game, unticked every time until somebody
+            // ticks it, and stored as a preference rather than read as a modifier on a button.
+            //
+            // ⚠ It changes WHO MAY ACT, never what is done. Updating writes the loader's own files
+            // over themselves; other mods' assemblies, configs and data are not ours and are not
+            // touched, exactly as on a loader we installed.
+            //
+            // ⚠ And it is what makes the update visible at all: LoaderUpdateOffered reads it, so
+            // until it is ticked the row and the card stay quiet about a newer version being out.
+            if (!installed.InstalledByUs)
+            {
+                var preference = _preferences.Read(report.Game.Path);
+
+                var adopt = new CheckBox
+                {
+                    Content = $"Let UnityGameTranslator Manager update {installed.Display} in this game",
+                    IsChecked = preference.AdoptLoader,
+                    FontSize = 12,
+                    Margin = new Avalonia.Thickness(0, 4, 0, 0),
+                };
+
+                ToolTip.SetTip(adopt,
+                    "Installs and updates this loader from here, in this game only. Other mods "
+                    + "keep their files — only the loader's own are replaced.");
+
+                adopt.IsCheckedChanged += async (_, _) =>
+                {
+                    var current = _preferences.Read(report.Game.Path);
+                    current.AdoptLoader = adopt.IsChecked == true;
+                    _preferences.Set(report.Game.Path, current);
+
+                    // Redrawn rather than left: ticking it changes the verb on the button beside
+                    // it and what the row says about this game, and a card that keeps showing the
+                    // refusal it has just lifted is a card contradicting itself.
+                    await ShowSelectedAsync();
+                };
+
+                panel.Children.Add(adopt);
+
+                if (preference.AdoptLoader && report.LoaderStanding is { UpdateAvailable: true } newer)
+                {
+                    panel.Children.Add(new TextBlock
+                    {
+                        Text = $"{newer.Installed} → {newer.Available} available.",
+                        FontSize = 11,
+                        TextWrapping = TextWrapping.Wrap,
+                        Margin = new Avalonia.Thickness(24, 0, 0, 0),
+                        Foreground = Brush("StatusInfo"),
+                    });
+                }
+            }
         }
         else if (report.EligibleLoaders.Count > 0)
         {
@@ -7976,7 +8032,9 @@ public partial class MainWindow : Window
     {
         if (report.InstalledLoader is { } installed)
         {
-            if (!installed.InstalledByUs) return null;
+            // ⚠ Adopted counts as ours here — that IS the permission, and refusing to act on it
+            // afterwards would make the tick a decoration. See GamePreference.AdoptLoader.
+            if (!installed.InstalledByUs && !report.LoaderAdopted) return null;
 
             // Same three verbs as the mod's section, in the same order, for the same reasons.
             // "Reinstall" is what puts back a loader whose files were damaged — reachable only by

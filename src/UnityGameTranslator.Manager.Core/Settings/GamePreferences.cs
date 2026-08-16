@@ -131,6 +131,20 @@ public sealed class GamePreference
     /// </summary>
     [JsonPropertyName("install_translation")] public bool InstallTranslation { get; set; } = true;
 
+    /// <summary>
+    /// Whether UnityGameTranslator Manager may update a loader it did not install, in THIS game.
+    ///
+    /// 🔴 **False unless somebody says otherwise, and never remembered across games.** A loader
+    /// somebody else put there very likely belongs to another mod that needs that exact version,
+    /// so replacing it is not ours to propose — that refusal is the rule the whole loader card
+    /// rests on, and it stays the default.
+    ///
+    /// What this adds is a way to say "this one is mine to manage now", per game, deliberately.
+    /// ⚠ It changes who may act, never what is done: an update writes the loader's own files over
+    /// themselves and touches no other mod, exactly as it does on a loader we installed.
+    /// </summary>
+    [JsonPropertyName("adopt_loader")] public bool AdoptLoader { get; set; }
+
 }
 
 /// <summary>

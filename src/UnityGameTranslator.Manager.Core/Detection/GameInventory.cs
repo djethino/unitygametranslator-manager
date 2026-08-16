@@ -125,6 +125,12 @@ public sealed class GameInventory
 
         report.InstalledLoader = LoaderProbe.Detect(game.Path, _catalog);
 
+        // ⚠ Read HERE rather than by each caller. Four places build a report, and a per-game
+        // permission that one of them forgot to attach would be a game where the loader silently
+        // goes back to being untouchable — the kind of gap nobody notices because the safe answer
+        // is the one that stays.
+        report.LoaderAdopted = new Settings.GamePreferences(_platform).Read(game.Path).AdoptLoader;
+
         // ⚠ The probe looks at files; only the receipt knows who put them there. Nothing was
         // filling this in, so DetectedLoader.InstalledByUs was false for EVERY game — including
         // the ones this tool had just set up. Two consequences, both reported as bugs: the card

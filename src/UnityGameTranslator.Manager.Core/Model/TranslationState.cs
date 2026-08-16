@@ -111,6 +111,14 @@ public sealed class OnlineTranslation
     [JsonPropertyName("uploader")] public string? Author { get; set; }
 
     [JsonPropertyName("line_count")] public int LineCount { get; set; }
+
+    /// <summary>
+    /// Whether this lineage takes contributions — its Main's own decision.
+    ///
+    /// Null on a server that predates the field, and null is not "no": showing "Solo work"
+    /// because a server said nothing would turn a missing value into somebody's decision.
+    /// </summary>
+    [JsonPropertyName("accepts_branches")] public bool? AcceptsBranches { get; set; }
     [JsonPropertyName("download_count")] public int DownloadCount { get; set; }
     [JsonPropertyName("vote_count")] public int VoteCount { get; set; }
 
@@ -217,6 +225,19 @@ public sealed class LineagePosition
     /// </summary>
     public bool? MainMissing { get; init; }
 
+    /// <summary>
+    /// Whether this lineage takes contributions: this account's own answer on a Main, its Main's
+    /// answer on a branch. Null on a site that predates the question — and null is not "no".
+    /// </summary>
+    public bool? AcceptsBranches { get; init; }
+
+    /// <summary>
+    /// A branch whose Main has closed to contributions since. Nothing on this side changes when it
+    /// happens — the file still opens and still saves — so it has to be said, or it is found out
+    /// at the moment of publishing, after the work.
+    /// </summary>
+    public bool? BranchFrozen { get; init; }
+
     public int SiteId { get; init; }
     public string? SourceLanguage { get; init; }
     public string? TargetLanguage { get; init; }
@@ -235,6 +256,18 @@ public sealed class LineagePosition
     {
         if (!IsMain)
         {
+            // 🔴 Said first, because it changes what the rest of the sentence promises: "reviewed
+            // by its owner" is no longer true once they have closed, and leaving it there would
+            // keep somebody working towards a review that will never come.
+            if (BranchFrozen == true)
+            {
+                return mainOwner is null
+                    ? "This is your branch, and the Main no longer takes contributions: it can no "
+                      + "longer be sent. Turn it into your own translation to carry on."
+                    : $"This is your branch, and {mainOwner} no longer takes contributions: it can "
+                      + "no longer be sent. Turn it into your own translation to carry on.";
+            }
+
             return mainOwner is null
                 ? "This is your branch: your changes are reviewed by the Main's owner."
                 : $"This is your branch: your changes are reviewed by {mainOwner}.";

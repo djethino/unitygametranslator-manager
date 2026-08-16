@@ -11,7 +11,7 @@ namespace UnityGameTranslator.Manager.Gui;
 /// <param name="ResourcesUrl">The link, empty to clear it. Never null once saved.</param>
 /// <param name="Finished">The author's declaration. Meaningless on a branch — see the window.</param>
 public readonly record struct TranslationDetails(bool Saved, string Notes, string ResourcesUrl,
-                                                 bool Finished);
+                                                 bool Finished, bool AcceptsContributions);
 
 /// <summary>
 /// The things said ABOUT a translation rather than in it: what it is, where to find the fonts or
@@ -39,13 +39,16 @@ public sealed class TranslationDetailsWindow : Window
     private readonly TextBox _notes;
     private readonly TextBox _url;
     private readonly CheckBox? _finished;
+
+    /// <summary>The Main's decision on contributions. Null on a branch, which may not take it.</summary>
+    private readonly CheckBox? _contributions;
     private readonly TextBlock _complaint;
     private readonly Button _save;
 
     private bool _saved;
 
     private TranslationDetailsWindow(string heading, string notes, string url,
-                                     bool finished, bool onABranch)
+                                     bool finished, bool onABranch, bool acceptsContributions)
     {
         Title = "Translation details";
         Width = 560;
@@ -118,6 +121,29 @@ public sealed class TranslationDetailsWindow : Window
                 Foreground = this.FindResource("TextPrimary") as IBrush,
             };
             layout.Children.Add(_finished);
+
+            // The Main's other declaration, beside the first because they are the same kind of
+            // thing: only a Main takes them, and both describe the lineage rather than the file.
+            _contributions = new CheckBox
+            {
+                Content = "Let others contribute to this translation",
+                IsChecked = acceptsContributions,
+                Foreground = this.FindResource("TextPrimary") as IBrush,
+            };
+            layout.Children.Add(_contributions);
+
+            // ⚠ What a contribution IS, in one line. The word means nothing to somebody who has
+            // published once, and a box whose subject is unknown gets left alone — which is the
+            // safe answer here, but arrived at for the wrong reason.
+            layout.Children.Add(new TextBlock
+            {
+                Text = "A contribution is a copy of your work with someone else's changes, sent "
+                     + "to you to accept or not. Left off, others can still publish their own "
+                     + "version.",
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = this.FindResource("TextMuted") as IBrush,
+            });
         }
 
         // Said above the buttons rather than after a refusal: a URL the site will reject is worth
@@ -197,16 +223,17 @@ public sealed class TranslationDetailsWindow : Window
     /// </summary>
     public static async Task<TranslationDetails> EditAsync(
         Window owner, string heading, string? notes, string? resourcesUrl,
-        bool finished, bool onABranch)
+        bool finished, bool onABranch, bool acceptsContributions = false)
     {
         var window = new TranslationDetailsWindow(heading, notes ?? "", resourcesUrl ?? "",
-                                                  finished, onABranch);
+                                                  finished, onABranch, acceptsContributions);
         await window.ShowDialog(owner);
 
         return new TranslationDetails(
             window._saved,
             window._notes.Text?.Trim() ?? "",
             window._url.Text?.Trim() ?? "",
-            window._finished?.IsChecked == true);
+            window._finished?.IsChecked == true,
+            window._contributions?.IsChecked == true);
     }
 }

@@ -48,17 +48,35 @@ public enum PublishOutcome
 /// </param>
 /// <param name="Status">"complete" or "in_progress", as published. Never guessed here.</param>
 /// <param name="RowId">This account's own row, the one anything written goes to.</param>
+/// <param name="AcceptsBranches">
+/// Whether this lineage takes contributions — the Main's own decision.
+///
+/// ⚠ Null on a server that predates the field, and null is NOT "no": announcing that somebody
+/// works alone because a server said nothing would put words in their mouth.
+/// </param>
+/// <param name="BranchFrozen">
+/// A branch on a Main that has since closed. Nothing can be done with it as a branch any more —
+/// not publishing, not even describing it — and the way on is to publish it as its own translation.
+/// </param>
 public sealed record LineageStanding(PublishOutcome Outcome, string? MainOwner,
                                      int? BranchesCount, string? ServerFileHash,
                                      bool OnABranch = false, string? Notes = null,
                                      string? ResourcesUrl = null, string? Status = null,
-                                     int? RowId = null)
+                                     int? RowId = null, bool? AcceptsBranches = null,
+                                     bool BranchFrozen = false)
 {
     /// <summary>Whether this account has a row here at all — the thing details can be edited on.</summary>
     public bool HasARowOfItsOwn => Outcome == PublishOutcome.UpdateMine;
 
     /// <summary>Whether the author's "finished" declaration is theirs to make on this row.</summary>
     public bool MayDeclareFinished => HasARowOfItsOwn && !OnABranch;
+
+    /// <summary>
+    /// Whether the contributions decision is theirs to make. Same test as the one above, and for
+    /// the same reason: both belong to the Main, and a branch shown either would be answering for
+    /// somebody else's translation.
+    /// </summary>
+    public bool MayDecideContributions => MayDeclareFinished;
 
     /// <summary>
     /// What will happen, said before it happens.
@@ -174,12 +192,16 @@ public sealed class TranslationPublisher
                     Status: has ? Text(mine, "status") : null,
                     RowId: has && mine.TryGetProperty("id", out var rowId) && rowId.TryGetInt32(out var row)
                         ? row
-                        : null);
+                        : null,
+                    AcceptsBranches: Flag(root, "accepts_branches"),
+                    BranchFrozen: Flag(root, "branch_frozen") == true);
             }
 
-            // Somebody else's lineage: we would be contributing to it.
+            // Somebody else's lineage: we would be contributing to it — if they take contributions.
             if (exists && root.TryGetProperty("main", out var main) && main.ValueKind == JsonValueKind.Object)
-                return new LineageStanding(PublishOutcome.ContributeToTheirs, Text(main, "uploader"), null, null);
+                return new LineageStanding(PublishOutcome.ContributeToTheirs, Text(main, "uploader"),
+                                           null, null,
+                                           AcceptsBranches: Flag(root, "accepts_branches"));
 
             // Exists without either shape: unknown to us, and inventing a reading would be worse
             // than saying so.
@@ -334,9 +356,14 @@ public sealed class TranslationPublisher
     /// is right: the alternative is a client believing it set something.
     /// </summary>
     /// <returns>True when the change was stored.</returns>
+    /// <param name="acceptsBranches">
+    /// The Main's decision on contributions, or null when the caller has none to give — a branch,
+    /// which may not answer for the lineage it contributes to.
+    /// </param>
     public async Task<bool> UpdateDetailsAsync(int translationId, string apiToken,
                                                string? notes = null, string? resourcesUrl = null,
                                                string? status = null,
+                                               bool? acceptsBranches = null,
                                                CancellationToken ct = default)
     {
         LastError = null;
@@ -361,6 +388,11 @@ public sealed class TranslationPublisher
                 }
 
                 if (!string.IsNullOrWhiteSpace(status)) writer.WriteString("status", status);
+
+                // ⚠ Sent only when there is an answer. Null means "not this caller's to decide" —
+                // a branch — and writing false there would close a Main that never asked.
+                if (acceptsBranches is bool open) writer.WriteBoolean("accepts_branches", open);
+
                 writer.WriteEndObject();
             }
 
@@ -441,5 +473,19 @@ public sealed class TranslationPublisher
     private static string? Text(JsonElement root, string name) =>
         root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()
+            : null;
+
+    /// <summary>
+    /// A boolean the server may not have sent. Null is the answer for absent, never false — a
+    /// missing field is a server that predates it, not somebody's decision.
+    /// </summary>
+    private static bool? Flag(JsonElement root, string name) =>
+        root.TryGetProperty(name, out var value)
+            ? value.ValueKind switch
+            {
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                _ => (bool?) null,
+            }
             : null;
 }

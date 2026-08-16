@@ -94,7 +94,12 @@ public static class TranslationBadges
             // declaration, and null shows nothing rather than inventing "still writing".
             finished: online?.Status is { } status
                 ? string.Equals(status, "complete", StringComparison.OrdinalIgnoreCase)
-                : null));
+                : null,
+
+            // The Main's other declaration. A local file carries no such thing, so it is read from
+            // the site — this account's own row first, which is the lineage's own answer even when
+            // the community search brought nothing back.
+            acceptsContributions: mine?.AcceptsBranches ?? online?.AcceptsBranches));
     }
 
     /// <summary>A published translation, in the community list.</summary>
@@ -121,6 +126,10 @@ public static class TranslationBadges
             // beside it — and the one thing here that nobody can work out from the file.
             finished: translation.Status is { } status
                 ? string.Equals(status, "complete", StringComparison.OrdinalIgnoreCase)
-                : null));
+                : null,
+
+            // Part of what a translation IS, and the one thing a would-be contributor has to know
+            // before writing a line into it.
+            acceptsContributions: translation.AcceptsBranches));
     }
 }

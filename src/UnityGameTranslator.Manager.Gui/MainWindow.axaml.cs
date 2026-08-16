@@ -4487,6 +4487,32 @@ public partial class MainWindow : Window
         var contributing = lineage.Outcome == PublishOutcome.ContributeToTheirs;
         var branchWork = contributing || lineage.OnABranch;
 
+        // 🔴 **Refused before the work is sent, not after.** Sending would make this a
+        // contribution, and that lineage takes none — the server would answer 403 and the person
+        // would have watched an upload run to be told no. Said as the fact plus the way on: the
+        // fork is theirs to take and nobody can close it.
+        //
+        // ⚠ Only on a stated refusal. AcceptsBranches is null on a server that predates the
+        // field, and null means "not asked" — behaving as a no there would invent a decision.
+        if (contributing && lineage.AcceptsBranches == false)
+        {
+            await ConfirmationWindow.TellAsync(this, "This translation is solo work",
+                $"@{lineage.MainOwner ?? "its author"} works alone on this one and does not take "
+                + "contributions.\n\nYour lines are safe. Publish your own version of it instead "
+                + "— open it on the UGT Website and choose to publish yours.");
+            return;
+        }
+
+        // A branch whose Main has closed since: the same wall, reached from the other side.
+        if (lineage.BranchFrozen)
+        {
+            await ConfirmationWindow.TellAsync(this, "This contribution is frozen",
+                "The translation you contribute to no longer accepts contributions, so this can "
+                + "no longer be sent or described.\n\nYour lines are safe. Turn it into your own "
+                + "version on the UGT Website to carry on.");
+            return;
+        }
+
         // ⚠ Starts on what the SERVER holds for our own row — not on MatchingOnline, which is the
         // lineage's public translation and belongs to somebody else whenever we are a branch.
         var alreadyComplete = string.Equals(lineage.Status, "complete",
@@ -4602,6 +4628,17 @@ public partial class MainWindow : Window
             return;
         }
 
+        // A frozen contribution can no longer be described either — the server refuses the write,
+        // so offering the form would only produce an error once it is filled in.
+        if (lineage.BranchFrozen)
+        {
+            await ConfirmationWindow.TellAsync(this, "This contribution is frozen",
+                "The translation you contribute to no longer accepts contributions, so this can "
+                + "no longer be sent or described.\n\nYour lines are safe. Turn it into your own "
+                + "version on the UGT Website to carry on.");
+            return;
+        }
+
         var heading = lineage.OnABranch
             ? "What your contribution says about itself"
             : "What your translation says about itself";
@@ -4609,7 +4646,8 @@ public partial class MainWindow : Window
         var edited = await TranslationDetailsWindow.EditAsync(
             this, heading, lineage.Notes, lineage.ResourcesUrl,
             string.Equals(lineage.Status, "complete", StringComparison.OrdinalIgnoreCase),
-            lineage.OnABranch);
+            lineage.OnABranch,
+            lineage.AcceptsBranches == true);
 
         if (!edited.Saved) return;
 
@@ -4622,8 +4660,12 @@ public partial class MainWindow : Window
             ? (edited.Finished ? "complete" : "in_progress")
             : null;
 
+        // ⚠ Null on a branch, exactly like the status above: the decision belongs to the Main of
+        // the lineage, and a contributor sending it would answer for somebody else's translation.
+        var contributions = lineage.MayDecideContributions ? edited.AcceptsContributions : (bool?) null;
+
         var saved = await publisher.UpdateDetailsAsync(rowId, token, edited.Notes,
-                                                       edited.ResourcesUrl, status);
+                                                       edited.ResourcesUrl, status, contributions);
 
         button.IsEnabled = true;
         ScopeMark.SetLabel(button, "Edit details…");

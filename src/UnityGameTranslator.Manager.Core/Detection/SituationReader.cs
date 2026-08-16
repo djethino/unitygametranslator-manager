@@ -201,6 +201,12 @@ public static class SituationReader
     {
         var parts = new List<string>();
 
+        // 🔴 Before anything else, and before any update: this one says the road is closed. An
+        // update is something to get round to; a frozen contribution is work that cannot be sent
+        // at all, and nothing on this machine shows it — the file still opens and still saves.
+        if (report.MyPosition is { BranchFrozen: true })
+            parts.Add("contribution frozen — the Main is closed");
+
         if (branchesWaiting is > 0 and var waiting)
             parts.Add(waiting == 1 ? "1 contribution waiting" : $"{waiting} contributions waiting");
 

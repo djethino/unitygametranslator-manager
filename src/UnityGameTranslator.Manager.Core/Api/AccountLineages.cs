@@ -167,6 +167,8 @@ public sealed class AccountLineages
                     IsMain = string.Equals(role, "main", StringComparison.OrdinalIgnoreCase),
                     BranchesCount = Number(entry, "branches_count"),
                     MainMissing = Flag(entry, "main_missing"),
+                    AcceptsBranches = Flag(entry, "accepts_branches"),
+                    BranchFrozen = Flag(entry, "branch_frozen"),
                     SiteId = Number(entry, "id") ?? 0,
                     TargetLanguage = Text(entry, "target_language"),
                     SourceLanguage = Text(entry, "source_language"),

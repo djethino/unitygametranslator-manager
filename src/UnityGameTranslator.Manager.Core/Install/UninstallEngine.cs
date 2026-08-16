@@ -268,7 +268,11 @@ public sealed class UninstallEngine
             }
         }
 
-        RestoreBackups(game, files, removed);
+        // 🔴 Kept apart from `removed`, because they are the opposite of it. Counted together,
+        // twenty-three files PUT BACK were announced as "removed" — and the person then found the
+        // mod loader still sitting there, with nothing on screen having admitted to putting it
+        // back. That reads as a failed uninstall, which is the one thing it was not.
+        var restored = RestoreBackups(game, files);
 
         // The receipt stays only while it still describes something WE installed. A record of a
         // loader that was already there is not an install of ours: keeping it would make the
@@ -289,7 +293,28 @@ public sealed class UninstallEngine
             : $"Removed {removed.Count} item(s).";
         if (kept.Count > 0) message += $" {kept.Count} left in place — see the details.";
 
-        return new UninstallOutcome(true, message, removed, kept, backupPath);
+        if (restored.Count > 0)
+        {
+            // ⚠ Named as what it is and what it MEANS, in the same breath. "Restored 23 files"
+            // alone would leave somebody to work out for themselves why a loader they asked to
+            // remove is still detected.
+            var loaderBack = receipt.Loader?.Files is { } loaderFiles
+                             && loaderFiles.Any(f => restored.Contains(f.Path));
+
+            message += loaderBack
+                ? $" Put back {restored.Count} file(s) this game already had before "
+                  + "UnityGameTranslator Manager touched it, so its previous mod loader is there again."
+                : $" Put back {restored.Count} file(s) this game already had before "
+                  + "UnityGameTranslator Manager touched it.";
+        }
+
+        // The restores belong in the detail list too — as their own lines, so the reader can see
+        // which files came back rather than being handed a number.
+        var detail = restored.Count == 0
+            ? removed
+            : removed.Concat(restored.Select(r => $"put back {r}")).ToList();
+
+        return new UninstallOutcome(true, message, detail, kept, backupPath);
     }
 
     /// <summary>
@@ -353,11 +378,19 @@ public sealed class UninstallEngine
         }
     }
 
-    /// <summary>Puts back anything we overwrote at install time.</summary>
-    private void RestoreBackups(GameInstall game, FileOperations files, List<string> removed)
+    /// <summary>
+    /// Puts back anything we overwrote at install time, and says which.
+    ///
+    /// ⚠ Returns the list rather than adding to the removed one: putting a file back is not
+    /// removing it, and a caller that cannot tell them apart cannot explain to somebody why the
+    /// loader they asked to remove is still detected afterwards.
+    /// </summary>
+    private List<string> RestoreBackups(GameInstall game, FileOperations files)
     {
+        var restored = new List<string>();
+
         var backupRoot = Path.Combine(game.Path, FileOperations.BackupDirectory);
-        if (!Directory.Exists(backupRoot)) return;
+        if (!Directory.Exists(backupRoot)) return restored;
 
         foreach (var backup in Directory.EnumerateFiles(backupRoot, "*", SearchOption.AllDirectories))
         {
@@ -369,7 +402,7 @@ public sealed class UninstallEngine
 
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                 File.Move(backup, target);
-                removed.Add($"restored {relative}");
+                restored.Add(relative);
             }
             catch
             {
@@ -395,6 +428,8 @@ public sealed class UninstallEngine
         {
             // Tidying. Never a reason to report a failed uninstall.
         }
+
+        return restored;
     }
 
     /// <summary>

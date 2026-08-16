@@ -42,7 +42,14 @@ public sealed class FileOperations
             backupRelative = $"{BackupDirectory}/{relativeTarget}";
             var backupPath = ResolveInsideGame(backupRelative);
             EnsureDirectory(Path.GetDirectoryName(backupPath)!);
-            File.Copy(target, backupPath, overwrite: true);
+
+            // 🔴 **The FIRST copy wins, and never gets overwritten.** What this folder promises is
+            // "the state of this game before UnityGameTranslator Manager ever touched it". Copying
+            // over it on every install broke that after exactly one update: the second install
+            // backed up OUR files, so uninstalling put back our previous version instead of the
+            // one that was there before us — and the promise, being about a state nobody can see,
+            // would have failed silently for as long as it took somebody to notice.
+            if (!File.Exists(backupPath)) File.Copy(target, backupPath);
         }
 
         File.Copy(sourcePath, target, overwrite: true);

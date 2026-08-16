@@ -4900,6 +4900,43 @@ public partial class MainWindow : Window
             actions.Children.Add(merge);
         }
 
+        // ── Give up on the local changes ──────────────────────────────────────
+        //
+        // 🔴 **Merging is not the only answer to "the two differ".** Sometimes the local changes
+        // are not worth keeping — a test, a line typed by mistake, an afternoon of AI output
+        // somebody would rather drop — and the wanted outcome is simply the published version as
+        // it stands. Without this the only route was: remove the translation, find it again in the
+        // list, select it, apply. Four steps to say "forget mine".
+        //
+        // ⚠ Offered whichever way the two have drifted, including when only THIS side moved: that
+        // is precisely the case where somebody wants their changes gone and nothing else to
+        // happen. Merge, above, keeps both sides; this one does not pretend to.
+        if (report.MatchingOnline is { } onServer
+            && report.Sync is SyncDirection.Upload or SyncDirection.Merge
+            && report.LocalTranslation is not null)
+        {
+            // Ours online? Then afterwards both carry the same thing. Somebody else's, and only
+            // this machine changed — nothing published under our name moved. Same reading as the
+            // merge button right above, and for the same reason.
+            var oursPublished = standing.SignedInAs is { Length: > 0 } who
+                                && string.Equals(onServer.Author, who, StringComparison.OrdinalIgnoreCase);
+
+            var takeTheirs = ScopeMark.Marked(
+                EditScope.SideAfter(onThisMachine: true, yourPublishedCopy: oursPublished),
+                "Take the published version…",
+                standing.CanWriteLocally);
+
+            ToolTip.SetTip(takeTheirs, Unpublished(report) is { } dropped
+                ? $"Replaces this game's file with the published one. The {dropped} line(s) not "
+                  + "published are set aside, not merged."
+                : "Replaces this game's file with the published one, as it stands.");
+
+            takeTheirs.Click += async (_, _) =>
+                await TakeSelectedTranslationAsync(report, onServer, replacing: true);
+
+            actions.Children.Add(takeTheirs);
+        }
+
         // ⚠ Both, not Server. What is sent is the file from this game, so afterwards the published
         // translation and this machine carry the same thing. Server would mean "the published
         // version has the result and this machine does not", which cannot happen from a tool that

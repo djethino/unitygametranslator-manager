@@ -83,8 +83,17 @@ public sealed record LoaderBuild(
 /// </summary>
 public sealed class LoaderBuildResolver
 {
-    private static readonly Dictionary<string, IReadOnlyList<LoaderBuild>> Cache = new();
+    private static readonly Dictionary<string, (DateTimeOffset At, IReadOnlyList<LoaderBuild> Builds)> Cache = new();
     private static readonly SemaphoreSlim Gate = new(1, 1);
+
+    /// <summary>
+    /// How long an answer is trusted before being asked again.
+    ///
+    /// ⚠ Kept for the life of the process was right for a tool opened and closed; it is wrong for
+    /// one left running for days on a machine somebody plays on. Six hours: far longer than any
+    /// session where the answer could change under the reader, far shorter than a working day.
+    /// </summary>
+    public static readonly TimeSpan Freshness = TimeSpan.FromHours(6);
 
     private readonly HttpClient _http;
     private readonly string _apiBase;
@@ -101,6 +110,61 @@ public sealed class LoaderBuildResolver
         lock (Cache) Cache.Clear();
     }
 
+    /// <summary>The cached answer while it is still young enough to be believed.</summary>
+    private static IReadOnlyList<LoaderBuild>? Fresh(string key)
+    {
+        lock (Cache)
+        {
+            if (!Cache.TryGetValue(key, out var hit)) return null;
+            if (DateTimeOffset.UtcNow - hit.At > Freshness) { Cache.Remove(key); return null; }
+            return hit.Builds;
+        }
+    }
+
+    /// <summary>
+    /// What is already known about this loader on this channel, WITHOUT asking anybody.
+    ///
+    /// 🔴 **The whole point of warming up.** A screen drawn fifty times a minute cannot resolve;
+    /// but once the answer is in, showing it costs a dictionary lookup. Null means "not asked yet
+    /// or gone stale", and a caller getting null says nothing rather than guessing — printing the
+    /// pinned version beside a channel that would install something else is the fault this exists
+    /// to end.
+    /// </summary>
+    public static LoaderBuild? Known(LoaderDescriptor loader, string? channel, int count = 5)
+    {
+        if (Pick(loader, channel) is not { } source) return null;
+
+        return Fresh($"{loader.Id}|{source.Channel}|{count}") is { Count: > 0 } builds
+            ? builds[0]
+            : null;
+    }
+
+    /// <summary>
+    /// Resolves every loader in the catalog, quietly, so screens can read the answers later.
+    ///
+    /// ⚠ One pass over four entries — two or three requests in all, against an unauthenticated
+    /// GitHub budget of sixty an hour. Called when the window opens and again when what it holds
+    /// has gone stale; never on the drawing path, where it would cost a request per card.
+    ///
+    /// Never throws: a publisher that does not answer leaves the cache without that entry, and the
+    /// screens fall back to saying nothing about a version, which is what they do today.
+    /// </summary>
+    public async Task WarmAsync(LoaderCatalogDocument catalog, string bepinex6Channel,
+                                CancellationToken ct = default)
+    {
+        foreach (var loader in catalog.Loaders)
+        {
+            if (loader.Sources.Count == 0) continue;
+            if (ct.IsCancellationRequested) return;
+
+            var channel = loader.Id.StartsWith("bepinex6", StringComparison.OrdinalIgnoreCase)
+                ? bepinex6Channel
+                : null;
+
+            await ResolveAsync(loader, channel, count: 5, ct).ConfigureAwait(false);
+        }
+    }
+
     /// <summary>
     /// The most recent builds this loader offers on the given channel, newest first.
     ///
@@ -114,18 +178,12 @@ public sealed class LoaderBuildResolver
         if (source is null) return new[] { Pinned(loader) };
 
         var key = $"{loader.Id}|{source.Channel}|{count}";
-        lock (Cache)
-        {
-            if (Cache.TryGetValue(key, out var hit)) return hit;
-        }
+        if (Fresh(key) is { } cached) return cached;
 
         await Gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            lock (Cache)
-            {
-                if (Cache.TryGetValue(key, out var hit)) return hit;
-            }
+            if (Fresh(key) is { } second) return second;
 
             IReadOnlyList<LoaderBuild> builds;
             try
@@ -146,7 +204,7 @@ public sealed class LoaderBuildResolver
 
             if (builds.Count == 0) builds = new[] { Pinned(loader) };
 
-            lock (Cache) Cache[key] = builds;
+            lock (Cache) Cache[key] = (DateTimeOffset.UtcNow, builds);
             return builds;
         }
         finally

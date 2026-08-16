@@ -451,6 +451,13 @@ public partial class MainWindow : Window
         ShowOverview();
         Busy(false, "Ready.");
 
+        // ⚠ **After the window is up, and it redraws when the answer lands.** Asking two
+        // publishers what they currently offer takes a second or two, and nothing on screen needs
+        // it to be usable — so it must not hold the list back. But a card drawn before the answer
+        // arrives shows a loader without its version and would keep showing it until something
+        // else caused a redraw: an interface that is only right if you happen to click twice.
+        _ = WarmLoaderBuildsAsync();
+
         StartOnlineSweep();
     }
 
@@ -3277,6 +3284,36 @@ public partial class MainWindow : Window
         return count > 0 ? count : null;
     }
 
+    /// <summary>
+    /// Asks each publisher what it currently offers, in the background, and redraws what changed.
+    ///
+    /// ⚠ Silent on failure: not knowing a version is the state every screen already handles, and a
+    /// notice about a background lookup nobody asked for would be noise on the one screen somebody
+    /// opened to look at their games.
+    ///
+    /// ⚠ Skipped entirely when online mode is off — that setting is a promise that no call is
+    /// made, not a preference about speed.
+    /// </summary>
+    private async Task WarmLoaderBuildsAsync()
+    {
+        if (!_settings.Current.OnlineMode) return;
+
+        try
+        {
+            await new LoaderBuildResolver()
+                .WarmAsync(_catalog, _settings.Current.BepInEx6Channel)
+                .ConfigureAwait(true);
+        }
+        catch
+        {
+            return;
+        }
+
+        // Redrawn because the answer changes what a card says. Only the card: the list rows carry
+        // no build version, so refreshing them would be work nobody sees.
+        if (_selected is not null) await ShowSelectedAsync();
+    }
+
     /// <summary>Which half of a game's card is showing. Home first, always — see TabStrip.</summary>
     private enum GameTab { Home, Setup }
 
@@ -5382,11 +5419,18 @@ public partial class MainWindow : Window
                 // installing would do. Resolving here would ask two publishers on every card
                 // drawn; naming the loader and letting "Use another build" answer costs nothing
                 // and cannot be wrong.
-                var channelled = loader.Sources.Count > 1;
+                // The resolved version when the background pass has brought it in, the pinned one
+                // when the loader has no channel to be wrong about, and the bare name in between.
+                var channel = loader.Id.StartsWith("bepinex6", StringComparison.OrdinalIgnoreCase)
+                    ? _settings.Current.BepInEx6Channel
+                    : null;
+
+                var version = LoaderBuildResolver.Known(loader, channel)?.Version
+                              ?? (loader.Sources.Count > 1 ? null : loader.Version);
 
                 loaderPicker.Items.Add(new ComboBoxItem
                 {
-                    Content = channelled ? loader.Display : $"{loader.Display} {loader.Version}",
+                    Content = version is null ? loader.Display : $"{loader.Display} {version}",
                     Tag = loader,
                 });
             }

@@ -792,7 +792,7 @@ public partial class MainWindow : Window
             Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
         };
 
-        ToolTip.SetTip(button, "Open your account on the website");
+        ToolTip.SetTip(button, "Open your account on the UGT Website");
         button.Click += (_, _) => OpenUrl($"{BuildInfo.WebsiteBaseUrl}/profile");
 
         AccountSlot.Content = button;
@@ -3035,7 +3035,7 @@ public partial class MainWindow : Window
         body.Children.Add(new TextBlock
         {
             Text = installedUuid is null
-                ? "It is not the one installed here — this game has no translation file yet."
+                ? "This game has no translation file yet."
                 : "The file in this game is a different one. Yours is still on the site, untouched.",
             FontSize = 11,
             TextWrapping = TextWrapping.Wrap,
@@ -3044,7 +3044,7 @@ public partial class MainWindow : Window
 
         var take = new Button
         {
-            Content = mine.Count == 1 ? "Put mine back in this game" : "Choose which one to install",
+            Content = mine.Count == 1 ? "Restore my published translation" : "Choose which one to install",
             FontSize = 12,
             HorizontalAlignment = HorizontalAlignment.Left,
             IsEnabled = !_running.IsRunning(report.Game),
@@ -4284,7 +4284,7 @@ public partial class MainWindow : Window
         if (settled is null)
         {
             await ConfirmationWindow.TellAsync(this, "Nothing came back",
-                "The comparison was not settled, or the page was closed. Nothing here was changed, "
+                "The comparison was not settled, or the page was closed. This game was not changed, "
                 + "and you can start it again whenever you like.");
             return;
         }
@@ -5243,7 +5243,7 @@ public partial class MainWindow : Window
             note.Text = found[0].IsPinnedFallback
                 ? $"Could not reach the place {loader.Display} is published, so only the build "
                   + "recorded in the catalog is available. It may be far behind."
-                : $"From {found[0].SourceLabel}. The newest is used unless another is picked here.";
+                : $"From {found[0].SourceLabel}. The newest is used unless another is picked in this list.";
 
             loaded = true;
         }
@@ -6466,7 +6466,7 @@ public partial class MainWindow : Window
 
             var settled = new TextBlock
             {
-                Text = "Everything is set up here. Nothing left for one click to do.",
+                Text = "This game is fully set up. Nothing left for one click to do.",
                 FontSize = 12,
                 Opacity = 0.6,
                 TextWrapping = TextWrapping.Wrap,

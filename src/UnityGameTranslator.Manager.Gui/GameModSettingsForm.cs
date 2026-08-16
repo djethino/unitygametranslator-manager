@@ -731,7 +731,7 @@ public sealed class GameModSettingsForm
 
         ToolTip.SetTip(_apply, count > 0
             ? $"Writes these {count} setting(s) into the game, and keeps them for a later install."
-            : "Nothing has been changed here.");
+            : "No setting has been changed for this game.");
     }
 
     // ---------------------------------------------------------------- layout

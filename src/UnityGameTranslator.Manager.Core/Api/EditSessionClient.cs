@@ -89,7 +89,7 @@ public sealed class EditSessionClient
         }
         catch (Exception ex)
         {
-            LastError = $"The translation file here is not valid JSON, so it cannot be edited: {ex.Message}";
+            LastError = $"This game's translation file is not valid JSON, so it cannot be edited: {ex.Message}";
             return null;
         }
 
@@ -97,7 +97,7 @@ public sealed class EditSessionClient
         {
             if (content.RootElement.ValueKind != JsonValueKind.Object)
             {
-                LastError = "The translation file here is not a JSON object. Nothing was sent.";
+                LastError = "This game's translation file is not a JSON object. Nothing was sent.";
                 return null;
             }
 

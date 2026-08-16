@@ -225,15 +225,29 @@ public static class SituationReader
         var loaderNewer = report.LoaderStanding is { UpdateAvailable: true };
         var loaderOurs = report.LoaderUpdateOffered;
 
+        // ⚠ Not "(not ours)". Ours is nobody: a program owns nothing, and this machine carries
+        // games belonging to several people. What is named instead is the thing that does or does
+        // not look after this loader.
+        //
+        // ⚠ **UGT here, UnityGameTranslator elsewhere.** Both names are ours and both are correct;
+        // the short one is for the places where space decides — a row in a list, beside a game
+        // name that may be forty characters of Chinese. The long one everywhere it fits, and
+        // wherever the reader may be meeting the product for the first time.
         var loader = loaderNewer
-            ? (loaderOurs ? "loader" : "loader (not ours)")
+            ? (loaderOurs ? "loader" : "loader update available — not managed by UGT")
             : null;
 
-        return (plugin, loader) switch
+        // ⚠ The un-owned case does not fold into "mod and loader": it carries its own instruction,
+        // and gluing it onto a list would produce "mod and loader update — allow it in Set up",
+        // which reads as if the mod needed allowing too.
+        if (loaderNewer && !loaderOurs)
+            return plugin ? $"mod update available · {loader}" : loader;
+
+        return (plugin, loaderNewer) switch
         {
-            (true, not null) => $"mod and {loader}",
-            (true, null) => "mod",
-            (false, not null) => loader,
+            (true, true) => "mod and loader",
+            (true, false) => "mod",
+            (false, true) => "loader",
             _ => null,
         };
     }

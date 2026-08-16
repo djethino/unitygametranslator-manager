@@ -116,7 +116,7 @@ public sealed class EditSessionRunner
         }
         catch (Exception ex)
         {
-            LastError = $"The translation file here could not be read: {ex.Message}";
+            LastError = $"This game's translation file could not be read: {ex.Message}";
             return null;
         }
 

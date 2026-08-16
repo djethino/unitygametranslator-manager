@@ -51,7 +51,7 @@ public sealed class MergePreviewClient
         }
         catch (Exception ex)
         {
-            LastError = $"The translation file here is not valid JSON: {ex.Message}";
+            LastError = $"This game's translation file is not valid JSON: {ex.Message}";
             return null;
         }
 
@@ -59,7 +59,7 @@ public sealed class MergePreviewClient
         {
             if (local.RootElement.ValueKind != JsonValueKind.Object)
             {
-                LastError = "The translation file here is not a JSON object. Nothing was sent.";
+                LastError = "This game's translation file is not a JSON object. Nothing was sent.";
                 return null;
             }
 

@@ -49,14 +49,19 @@ public enum Situation
 
 /// <summary>The situation of one game, with the words to say it.</summary>
 /// <param name="Pending">
-/// What is out of date in this game, whatever else its headline says — "mod", "loader", or both.
+/// Everything else worth knowing about this game, on ONE line: what is out of date, and what is
+/// waiting for an answer.
 ///
 /// 🔴 **Separate from the headline because they are not in competition.** A row can only carry one
 /// situation, and the translation states rightly win it: unpublished work can be lost, a stale
 /// plugin cannot. But that ranking meant a game reading "Unpublished changes" hid the fact that
 /// its mod was four versions behind, and the only way to find out was to open it.
 ///
-/// Null when everything installed is current, so a row that says nothing is saying something.
+/// ⚠ **One line, joined, however many there are.** A row already carries a name, a headline and a
+/// measurement; giving each signal a line of its own would make four games fill the list and every
+/// line would be read less carefully than the one before it.
+///
+/// Null when there is nothing, so a row that says nothing is saying something.
 /// </param>
 public sealed record GameSituationInfo(
     Situation Situation,

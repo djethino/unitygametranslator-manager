@@ -574,7 +574,14 @@ public partial class MainWindow : Window
 
         var checkedOnline = online is not null || !_settings.Current.OnlineMode;
 
-        return (SituationReader.Read(report, language, checkedOnline), mine, account);
+        // ⚠ Only when the account's lineages have actually been read. Unknown and none look
+        // identical from here, and announcing "nobody is waiting" on that basis would be a guess
+        // dressed as a fact — the reason AccountLineages exposes Known at all.
+        var waiting = _lineages.Known
+            ? _lineages.For(report.LocalTranslation?.Uuid)?.BranchesCount
+            : null;
+
+        return (SituationReader.Read(report, language, checkedOnline, waiting), mine, account);
     }
 
     /// <summary>
@@ -1445,18 +1452,19 @@ public partial class MainWindow : Window
                 });
             }
 
-            // ⚠ Its own line, under the headline it does not compete with. A game whose
-            // translation needs attention still deserves to say that its mod is behind — the row
-            // used to rank the two and drop the loser, so a plugin four versions old was invisible
-            // on every game that had anything else to report.
+            // ⚠ ONE line for every secondary signal, joined by the Core — "2 contributions
+            // waiting · mod update available". A game whose translation needs attention still
+            // deserves to say that contributors are waiting on it; the row used to rank the two
+            // and drop the loser. But giving each its own line would put four under some names,
+            // and each would be read less carefully than the one above it.
             //
-            // Coloured as something available rather than something wrong: nothing is at risk, and
-            // an update that shouts would train people to ignore the ones that matter.
+            // Coloured as something available rather than something wrong: nothing here is at
+            // risk, and a notice that shouts trains people to ignore the ones that matter.
             if (situation.Pending is { Length: > 0 } behind)
             {
                 body.Children.Add(new TextBlock
                 {
-                    Text = $"↑ {behind} update available",
+                    Text = behind,
                     FontSize = 10,
                     TextWrapping = TextWrapping.Wrap,
                     Foreground = Brush("StatusInfo"),

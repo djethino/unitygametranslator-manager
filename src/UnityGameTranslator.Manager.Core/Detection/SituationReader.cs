@@ -13,7 +13,13 @@ namespace UnityGameTranslator.Manager.Core.Detection;
 /// </summary>
 public static class SituationReader
 {
-    public static GameSituationInfo Read(GameReport report, string targetLanguage, bool onlineChecked)
+    /// <param name="branchesWaiting">
+    /// Contributions sitting on a Main this account leads, from AccountLineages — null when the
+    /// answer is not known, which is not the same as none. Passed in rather than read here: this
+    /// class is given a game, and that figure is about a PERSON across their whole library.
+    /// </param>
+    public static GameSituationInfo Read(GameReport report, string targetLanguage, bool onlineChecked,
+                                         int? branchesWaiting = null)
     {
         var game = report.Game;
 
@@ -31,7 +37,7 @@ public static class SituationReader
         // ⚠ Worked out once and attached to every answer below, instead of being one situation
         // among others. See GameSituationInfo.Pending: the headline is a competition the
         // translation states deserve to win, and "your mod is old" losing it silently was the bug.
-        var pending = OutOfDate(report);
+        var pending = Signals(report, branchesWaiting);
 
         // A translation file is proof the mod ran here, whatever we did or did not find on disk.
         // Deciding on the assembly alone made a game with a live translation read as "not set up
@@ -184,6 +190,25 @@ public static class SituationReader
     /// "mod 0.11.0 → 0.12.1" there would compete with the sentence that says what the game is FOR.
     /// The versions are on the game's own card, where there is room to act on them.
     /// </summary>
+    /// <summary>
+    /// The secondary line: what is behind, and what is waiting — joined, or null when neither.
+    ///
+    /// ⚠ Contributions come first. An update is available whenever somebody gets round to it;
+    /// a contributor is waiting on a person, and that is the one thing on this row where the delay
+    /// is felt by somebody else.
+    /// </summary>
+    public static string? Signals(GameReport report, int? branchesWaiting)
+    {
+        var parts = new List<string>();
+
+        if (branchesWaiting is > 0 and var waiting)
+            parts.Add(waiting == 1 ? "1 contribution waiting" : $"{waiting} contributions waiting");
+
+        if (OutOfDate(report) is { } behind) parts.Add($"{behind} update available");
+
+        return parts.Count > 0 ? string.Join(" · ", parts) : null;
+    }
+
     public static string? OutOfDate(GameReport report)
     {
         var plugin = report.PluginStanding is { UpdateAvailable: true };

@@ -34,8 +34,27 @@ public sealed class LoaderDescriptor
     /// </summary>
     [JsonPropertyName("github")] public GitHubRelease? GitHub { get; set; }
 
-    /// <summary>Downloadable archives, one per OS/architecture combination.</summary>
+    /// <summary>
+    /// Downloadable archives, one per OS/architecture combination.
+    ///
+    /// ⚠ **The pinned fallback since schema 5, and it must never be removed.** It is what an
+    /// offline install uses, what every Manager built before <see cref="Sources"/> existed uses
+    /// all the time, and where resolution lands when a publisher cannot be reached. Nothing
+    /// verifies the catalog's schema number — no code reads it — so an older binary handed a file
+    /// it does not understand would ignore the new fields in silence and install nothing.
+    /// </summary>
     [JsonPropertyName("assets")] public List<LoaderAsset> Assets { get; set; } = new();
+
+    /// <summary>
+    /// Where to ask what this loader currently offers, instead of carrying a version by hand.
+    ///
+    /// Empty for a loader that has none: <see cref="Assets"/> then answers, as before. BepInEx 6
+    /// carries two, because it has no stable release at all — its GitHub page stopped at a
+    /// pre-release in August 2024 while development continued in Bleeding Edge builds. Which one
+    /// is used is a Manager setting, never a per-game choice.
+    /// </summary>
+    [JsonPropertyName("sources")]
+    public List<Catalog.LoaderSource> Sources { get; set; } = new();
 
     [JsonPropertyName("detect")] public LoaderDetect Detect { get; set; } = new();
 

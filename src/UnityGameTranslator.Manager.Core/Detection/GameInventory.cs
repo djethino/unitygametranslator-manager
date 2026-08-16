@@ -332,7 +332,10 @@ public sealed class GameInventory
 
         var alternatives = candidates.Skip(1).Select(l => l.Display).ToList();
         report.RecommendationReason = alternatives.Count > 0
-            ? $"This game is {Describe(game.Runtime)} — {best.Display} recommended (also possible: {string.Join(", ", alternatives)})."
+            // 🔴 Not "recommended". The order comes from an integer in the catalog whose only
+            // documentation is "higher wins" — calling that a recommendation claims a judgement
+            // nobody has made. What is true is that this one is used if nothing is changed.
+            ? $"This game is {Describe(game.Runtime)}. {best.Display} unless you choose otherwise — {string.Join(" and ", alternatives)} also fit."
             : $"This game is {Describe(game.Runtime)} — {best.Display} is the only option.";
 
         return best;
@@ -342,7 +345,18 @@ public sealed class GameInventory
     /// The archive matching this OS and architecture. Under Proton we deliberately pick the
     /// Windows build: the game is a Windows binary, so the loader must be one too.
     /// </summary>
-    public LoaderAsset? FindAsset(LoaderDescriptor descriptor, GameInstall game)
+    public LoaderAsset? FindAsset(LoaderDescriptor descriptor, GameInstall game) =>
+        FindAsset(descriptor.Assets, game);
+
+    /// <summary>
+    /// The same rule, applied to any list of archives.
+    ///
+    /// ⚠ Split out so a build resolved from the publisher and the one pinned in the catalog are
+    /// picked identically. Two copies of "which file fits this machine" would be two chances to
+    /// disagree, and the disagreement would be an x86 game handed an x64 loader — the exact
+    /// failure the refusal below was written to stop.
+    /// </summary>
+    public LoaderAsset? FindAsset(IReadOnlyList<LoaderAsset> assets, GameInstall game)
     {
         var os = game.RunsUnderProton ? "windows" : _platform.OsId;
 
@@ -359,12 +373,12 @@ public sealed class GameInventory
 
         if (wanted is null)
         {
-            return descriptor.Assets.FirstOrDefault(a => a.Os == os && a.Arch == "universal");
+            return assets.FirstOrDefault(a => a.Os == os && a.Arch == "universal");
         }
 
-        return descriptor.Assets.FirstOrDefault(a =>
+        return assets.FirstOrDefault(a =>
                    a.Os == os && (a.Arch == wanted || a.Arch == "universal"))
-               ?? descriptor.Assets.FirstOrDefault(a => a.Os == os && a.Arch == "universal");
+               ?? assets.FirstOrDefault(a => a.Os == os && a.Arch == "universal");
     }
 
     private string? ResolvePluginBuild(LoaderDescriptor descriptor, UnityRuntime runtime)

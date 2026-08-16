@@ -4,6 +4,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using UnityGameTranslator.Manager.Core.Api;
+using UnityGameTranslator.Manager.Core.Catalog;
 using UnityGameTranslator.Manager.Core.Install;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
@@ -47,6 +48,14 @@ public sealed class ToolSettingsWindow : Window
     private ComboBox _toolChannel = null!;
     private CheckBox _checkToolUpdates = null!;
     private StackPanel _updatePanel = null!;
+    private ComboBox _bepinex6Channel = null!;
+
+    /// <summary>
+    /// The loader catalog, so this screen can say what each BepInEx 6 channel currently offers.
+    /// Null when the window is opened without one — the card then explains that instead of
+    /// showing an empty line.
+    /// </summary>
+    private readonly LoaderCatalogDocument? _catalog;
 
     /// <summary>
     /// What the main window already found out at startup, so opening this from its notice does not
@@ -61,11 +70,13 @@ public sealed class ToolSettingsWindow : Window
     public bool Saved { get; private set; }
 
     public ToolSettingsWindow(IPlatform platform, SettingsStore store,
-                              SelfUpdateCheck? known = null)
+                              SelfUpdateCheck? known = null,
+                              LoaderCatalogDocument? catalog = null)
     {
         _store = store;
         _platform = platform;
         _known = known;
+        _catalog = catalog;
 
         var current = store.Current;
         _draft = new InstallerSettings
@@ -79,6 +90,7 @@ public sealed class ToolSettingsWindow : Window
             OnlineMode = current.OnlineMode,
             ToolChannel = current.ToolChannel,
             CheckToolUpdates = current.CheckToolUpdates,
+            BepInEx6Channel = current.BepInEx6Channel,
         };
 
         Title = "Settings — this tool";
@@ -112,6 +124,7 @@ public sealed class ToolSettingsWindow : Window
 
         layout.Children.Add(AccountCard());
         layout.Children.Add(UpdatesCard());
+        layout.Children.Add(LoadersCard());
         layout.Children.Add(HomeCard());
         layout.Children.Add(NetworkCard());
         layout.Children.Add(FilesCard());
@@ -456,6 +469,93 @@ public sealed class ToolSettingsWindow : Window
     /// certificate, a program that rewrites itself unannounced is indistinguishable — to a person
     /// and to their antivirus — from something they would want stopped.
     /// </summary>
+    /// <summary>
+    /// Which BepInEx 6 builds go into games. The third channel on this screen, and a third risk.
+    ///
+    /// 🔴 **Neither option is called "stable", because BepInEx 6 has none.** Its GitHub page
+    /// stopped at a pre-release in August 2024 while development continued in Bleeding Edge
+    /// builds. Writing "stable" on a two-year-old pre-release would promise a guarantee nobody is
+    /// offering — the choice here is between old-and-published and recent-and-untested, and the
+    /// words say exactly that.
+    ///
+    /// ⚠ The dates are READ from each publisher, not written here. A hardcoded "August 2024" is
+    /// a fact that rots; and the whole point of this change is that versions stop being typed by
+    /// hand. Fetched once when the screen opens — two requests, and only for somebody who came
+    /// looking at loader settings.
+    /// </summary>
+    private Control LoadersCard()
+    {
+        var panel = new StackPanel { Spacing = 10 };
+
+        _bepinex6Channel = new ComboBox
+        {
+            Width = 320,
+            ItemsSource = new[]
+            {
+                new ComboBoxItem { Content = "Bleeding Edge", Tag = "be" },
+                new ComboBoxItem { Content = "GitHub release", Tag = "github" },
+            },
+        };
+        Select(_bepinex6Channel, _draft.BepInEx6Channel);
+
+        panel.Children.Add(Row("BepInEx 6 builds", _bepinex6Channel));
+        panel.Children.Add(Note(
+            "BepInEx 6 has no stable release: its GitHub page stopped at a pre-release in 2024, "
+            + "while development continues in Bleeding Edge builds. UnityGameTranslator works "
+            + "with either.", "TextMuted"));
+        panel.Children.Add(Note(
+            "Applies to the next install or loader update, not to games already set up. "
+            + "BepInEx 5 and MelonLoader have one source each and are unaffected.", "TextMuted"));
+
+        // Filled in as the answers arrive, so the screen is readable before the network is.
+        var dates = new TextBlock
+        {
+            FontSize = 11,
+            Opacity = 0.6,
+            TextWrapping = TextWrapping.Wrap,
+            Text = "Asking BepInEx what each channel currently offers...",
+        };
+        panel.Children.Add(dates);
+
+        _ = ShowChannelDatesAsync(dates);
+
+        return Card("Mod loaders", null, panel);
+    }
+
+    /// <summary>
+    /// What each BepInEx 6 channel offers right now, side by side, so the gap between them is a
+    /// fact on screen rather than something to go and check.
+    /// </summary>
+    private async Task ShowChannelDatesAsync(TextBlock target)
+    {
+        var loader = _catalog?.Loaders.FirstOrDefault(
+            l => l.Id.StartsWith("bepinex6", StringComparison.OrdinalIgnoreCase));
+
+        if (loader is null)
+        {
+            target.Text = "The catalog holds no BepInEx 6 entry, so nothing can be offered here.";
+            return;
+        }
+
+        var resolver = new LoaderBuildResolver();
+        var lines = new List<string>();
+
+        foreach (var channel in new[] { "be", "github" })
+        {
+            var found = await resolver.ResolveAsync(loader, channel, count: 1).ConfigureAwait(true);
+            var build = found[0];
+
+            lines.Add(build.IsPinnedFallback
+                ? $"{Label(channel)}: could not be reached"
+                : $"{Label(channel)}: {build.Describe()}");
+        }
+
+        target.Text = string.Join("   ·   ", lines);
+
+        static string Label(string channel) =>
+            channel == "be" ? "Bleeding Edge" : "GitHub release";
+    }
+
     private Control UpdatesCard()
     {
         var panel = new StackPanel { Spacing = 10 };
@@ -804,6 +904,7 @@ public sealed class ToolSettingsWindow : Window
         _draft.OnlineMode = _online.IsChecked == true;
         _draft.ToolChannel = Tag(_toolChannel) ?? "stable";
         _draft.CheckToolUpdates = _checkToolUpdates.IsChecked == true;
+        _draft.BepInEx6Channel = Tag(_bepinex6Channel) ?? "be";
         return _draft;
     }
 
@@ -820,6 +921,7 @@ public sealed class ToolSettingsWindow : Window
         settings.OnlineMode = edited.OnlineMode;
         settings.ToolChannel = edited.ToolChannel;
         settings.CheckToolUpdates = edited.CheckToolUpdates;
+        settings.BepInEx6Channel = edited.BepInEx6Channel;
 
         var count = CountPendingChanges();
 
@@ -849,6 +951,7 @@ public sealed class ToolSettingsWindow : Window
         Compare("proxy password", _proxyPassword.Text, saved.ProxyPassword);
 
         Compare("this tool's update channel", Tag(_toolChannel), saved.ToolChannel);
+        Compare("BepInEx 6 builds", Tag(_bepinex6Channel), saved.BepInEx6Channel);
 
         if ((_proxyInGames.IsChecked == true) != saved.ProxyInGames) changes.Add("proxy in games");
         if ((_online.IsChecked == true) != saved.OnlineMode) changes.Add("community catalog");

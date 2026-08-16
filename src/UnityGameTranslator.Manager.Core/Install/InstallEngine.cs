@@ -24,6 +24,16 @@ public sealed record InstallPlan(
     public bool InstallPlugin { get; init; } = true;
 
     /// <summary>
+    /// Which build of the loader to install, when it was resolved from the publisher rather than
+    /// read from the catalog's pinned entry.
+    ///
+    /// Null means "use what the catalog pins" — an offline install, a source that did not answer,
+    /// or a loader that declares no source at all. It is never a silent condition: the caller
+    /// resolving it knows through <see cref="Catalog.LoaderBuild.IsPinnedFallback"/> and says so.
+    /// </summary>
+    public Catalog.LoaderBuild? Build { get; init; }
+
+    /// <summary>
     /// A plugin copy sitting outside the documented location, relative to the game. Reported so
     /// the user can remove it: we never delete files we did not install, and two copies of the
     /// assembly in one game leave the loader free to pick either.
@@ -198,7 +208,8 @@ public sealed class InstallEngine
 
             if (plan.InstallLoader)
             {
-                Status?.Invoke($"Downloading {plan.Loader.Display} {plan.Loader.Version}...");
+                Status?.Invoke(
+                    $"Downloading {plan.Loader.Display} {plan.Build?.Version ?? plan.Loader.Version}...");
                 await InstallLoaderAsync(plan, files, receipt, staging, existing, ct).ConfigureAwait(false);
             }
             else
@@ -273,11 +284,16 @@ public sealed class InstallEngine
                                           string staging, Receipt? existing, CancellationToken ct)
     {
         var inventory = new GameInventory(_platform, _catalog);
-        var asset = inventory.FindAsset(plan.Loader, plan.Game)
+
+        // The resolved build when there is one, the catalog's pinned archives otherwise — picked
+        // by the same rule either way, so a 32-bit game cannot be handed a 64-bit loader through
+        // whichever path happens to be taken.
+        var archives = plan.Build?.Assets ?? plan.Loader.Assets;
+        var asset = inventory.FindAsset(archives, plan.Game)
             ?? throw new InvalidOperationException(
                 $"No {plan.Loader.Display} build for this system and architecture.");
 
-        var download = await ResolveAsync(plan.Loader, asset, ct).ConfigureAwait(false);
+        var download = await ResolveAsync(plan.Loader, asset, plan.Build, ct).ConfigureAwait(false);
         Status?.Invoke($"Verifying: {download.Describe()}");
 
         var fetcher = new ArchiveFetcher(staging);
@@ -306,7 +322,9 @@ public sealed class InstallEngine
         receipt.Loader = new ReceiptLoader
         {
             Id = plan.Loader.Id,
-            Version = plan.Loader.Version,
+            // What was actually installed, not what the catalog pins. A receipt naming the wrong
+            // version is worse than one naming none: uninstall and update both read it back.
+            Version = plan.Build?.Version ?? plan.Loader.Version,
             InstalledByUs = true,
             Files = written.Concat(carried).ToList(),
             DirsCreated = files.CreatedDirectories.Skip(dirsBefore)
@@ -401,6 +419,7 @@ public sealed class InstallEngine
     /// user installs by hand, unverified, with no record.
     /// </summary>
     public async Task<ResolvedDownload> ResolveAsync(LoaderDescriptor loader, LoaderAsset asset,
+                                                     Catalog.LoaderBuild? build = null,
                                                      CancellationToken ct = default)
     {
         var url = !string.IsNullOrWhiteSpace(asset.Url)
@@ -409,6 +428,18 @@ public sealed class InstallEngine
                 ? GitHubAssets.BuildUrl(release.Repo, release.Tag, asset.Name)
                 : throw new InvalidOperationException(
                     $"The catalog entry for {loader.Display} has no download for this system.");
+
+        // A build read from the publisher already carries whatever digest that publisher offers,
+        // and calling it "pinned in the catalog" would credit us with a guarantee we did not make.
+        // ⚠ No lookup by tag here either: the pinned tag names a different release entirely, so it
+        // would answer with the digest of a file we are not downloading.
+        if (build is { IsPinnedFallback: false })
+        {
+            return string.IsNullOrWhiteSpace(asset.Sha256)
+                ? new ResolvedDownload(url, null, IntegrityLevel.None)
+                : new ResolvedDownload(url, asset.Sha256.Trim().ToLowerInvariant(),
+                                       IntegrityLevel.Published);
+        }
 
         if (!string.IsNullOrWhiteSpace(asset.Sha256))
             return new ResolvedDownload(url, asset.Sha256.Trim().ToLowerInvariant(), IntegrityLevel.Pinned);

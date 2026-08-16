@@ -65,6 +65,17 @@ public partial class MainWindow : Window
     private Func<LoaderDescriptor?> _chosenLoader = () => null;
 
     /// <summary>
+    /// Which build of that loader to install, read the same way and at the same moment.
+    ///
+    /// Null means "whatever the catalog pins" and is the ordinary case: resolution only happens
+    /// once somebody opens "Use another build", because asking two publishers what they currently
+    /// offer, on every card that gets drawn, would burn an unauthenticated GitHub's sixty requests
+    /// an hour on a machine with a large library — to answer a question that changes a few times
+    /// a year.
+    /// </summary>
+    private Func<LoaderBuild?> _chosenBuild = () => null;
+
+    /// <summary>
     /// Whether the one-click should also bring a translation down, for the card being shown.
     ///
     /// ⚠ Held here rather than read from the preferences on every draw, and the difference matters.
@@ -816,7 +827,7 @@ public partial class MainWindow : Window
 
     private async Task OpenToolSettingsAsync(SelfUpdateCheck? found = null)
     {
-        var window = new ToolSettingsWindow(_platform, _settings, found);
+        var window = new ToolSettingsWindow(_platform, _settings, found, _catalog);
         await window.ShowDialog(this);
 
         // Redrawn whatever was saved: signing in and out both happen in that window, and the
@@ -4753,6 +4764,99 @@ public partial class MainWindow : Window
     //    "not installed by us" line ended up looking less important than the version above it.
     // ─────────────────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// "Use another build" — the five most recent builds the publisher currently offers.
+    ///
+    /// ⚠ **Folded away, and that is the design.** Taking an older build is a repair, done when a
+    /// game refuses the current one; showing five versions beside three loaders would put fifteen
+    /// lines on a card that answers "what do I install here" for everybody else.
+    ///
+    /// ⚠ **Nothing is fetched until it is opened.** Resolution costs two publishers a request, and
+    /// unauthenticated GitHub allows sixty an hour per address.
+    ///
+    /// ⚠ A source that does not answer falls back to the pinned entry AND SAYS SO. Quietly
+    /// installing a two-year-old build because a page timed out is precisely the failure this
+    /// whole change exists to end.
+    /// </summary>
+    private Control BuildChooser(GameReport report, ComboBox loaderPicker)
+    {
+        var builds = new ComboBox { Width = 300, IsEnabled = false };
+        var note = new TextBlock
+        {
+            FontSize = 11,
+            Opacity = 0.6,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Avalonia.Thickness(0, 4, 0, 0),
+        };
+
+        var body = new StackPanel { Spacing = 4 };
+        body.Children.Add(builds);
+        body.Children.Add(note);
+
+        var expander = new Expander
+        {
+            Header = "Use another build",
+            FontSize = 12,
+            Content = body,
+            Margin = new Avalonia.Thickness(0, 2, 0, 0),
+        };
+
+        var loaded = false;
+
+        async Task LoadAsync()
+        {
+            if (_chosenLoader() is not { } loader) return;
+
+            builds.IsEnabled = false;
+            builds.Items.Clear();
+            note.Text = $"Asking what {loader.Display} currently offers...";
+
+            var channel = loader.Id.StartsWith("bepinex6", StringComparison.OrdinalIgnoreCase)
+                ? _settings.Current.BepInEx6Channel
+                : null;
+
+            var found = await new LoaderBuildResolver()
+                .ResolveAsync(loader, channel, count: 5).ConfigureAwait(true);
+
+            foreach (var build in found)
+            {
+                builds.Items.Add(new ComboBoxItem { Content = build.Describe(), Tag = build });
+            }
+
+            builds.SelectedIndex = 0;
+            builds.IsEnabled = found.Count > 1;
+
+            note.Text = found[0].IsPinnedFallback
+                ? $"Could not reach the place {loader.Display} is published, so only the build "
+                  + "recorded in the catalog is available. It may be far behind."
+                : $"From {found[0].SourceLabel}. The newest is used unless another is picked here.";
+
+            loaded = true;
+        }
+
+        expander.Expanding += async (_, _) =>
+        {
+            if (!loaded) await LoadAsync();
+        };
+
+        // Changing the loader invalidates the list: these are BepInEx's builds, not MelonLoader's.
+        // Reloaded in place rather than on the next open, so what is on screen is never about a
+        // loader the reader has already moved away from.
+        loaderPicker.SelectionChanged += async (_, _) =>
+        {
+            loaded = false;
+            if (expander.IsExpanded) await LoadAsync();
+        };
+
+        // Only what is CHOSEN here counts. Left folded, this returns null and the engine resolves
+        // nothing — the catalog's pinned archives are used, exactly as before this existed.
+        _chosenBuild = () => expander.IsExpanded
+            ? (builds.SelectedItem as ComboBoxItem)?.Tag as LoaderBuild
+            : null;
+
+        return expander;
+    }
+
     private Control LoaderSection(GameReport report)
     {
         var panel = new StackPanel { Spacing = 8 };
@@ -4761,9 +4865,14 @@ public partial class MainWindow : Window
         var running = _running.IsRunning(report.Game);
         var standing = report.LoaderStanding;
 
-        // The recommendation is a default, not a decision made for the user: some games work
-        // with one loader and not another for reasons no probe can see.
+        // Which loader is offered first is an ordering, not a decision made for the user: some
+        // games work with one and not another for reasons no probe can see.
         ComboBox? loaderPicker = null;
+
+        // ⚠ Cleared before anything can set it, and BuildChooser reinstates it below. A build
+        // picked on the previous game's card must not follow the reader here: the loaders differ,
+        // and installing "the build chosen for another game" is a fault nobody thinks to look for.
+        _chosenBuild = () => null;
 
         if (report.InstalledLoader is { } installed)
         {
@@ -4788,11 +4897,18 @@ public partial class MainWindow : Window
             loaderPicker = new ComboBox { Width = 260 };
             foreach (var loader in report.EligibleLoaders)
             {
+                // 🔴 No "(recommended)", and no word in its place. We recommend nothing: the order
+                // comes from an integer in the catalog whose only documentation is "higher wins",
+                // and calling that a recommendation claims a judgement nobody made.
+                //
+                // ⚠ "(default)" was considered and is worse, for a reason that does not show: the
+                // word promises a SETTING, so the reader goes looking for where it is configured —
+                // and being honest would then mean building one per case, Mono against IL2CPP,
+                // x86 against x64, on top of the BepInEx 6 channel. The line above the control
+                // already says "we would use"; the suffix was redundant and opened that door.
                 loaderPicker.Items.Add(new ComboBoxItem
                 {
-                    Content = loader == report.RecommendedLoader
-                        ? $"{loader.Display} {loader.Version}  (recommended)"
-                        : $"{loader.Display} {loader.Version}",
+                    Content = $"{loader.Display} {loader.Version}",
                     Tag = loader,
                 });
             }
@@ -4809,6 +4925,7 @@ public partial class MainWindow : Window
             });
             row.Children.Add(loaderPicker);
             panel.Children.Add(row);
+            panel.Children.Add(BuildChooser(report, loaderPicker));
         }
         else
         {
@@ -6563,6 +6680,11 @@ public partial class MainWindow : Window
                                        // not install is reported and never written.
                                        || report.LoaderUpdateOffered),
             InstallPlugin = plugin,
+
+            // Which BUILD of that loader. Null when nothing was resolved — an offline run, a
+            // publisher that did not answer, a loader with no source — and the engine then uses
+            // the archives pinned in the catalog, exactly as it always has.
+            Build = _chosenBuild(),
         };
     }
 

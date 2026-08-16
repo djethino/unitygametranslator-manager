@@ -65,7 +65,7 @@ public static class CommandLine
             {
                 "scan" => await ScanAsync(args, offline),
                 "report" => await ReportAsync(args, offline),
-                "catalog" => Catalog(offline),
+                "catalog" => await CatalogAsync(offline),
                 "diagnose" => await DiagnoseAsync(offline),
                 "install" or "update" => await InstallAsync(args),
                 "uninstall" => await UninstallAsync(args),
@@ -634,7 +634,9 @@ public static class CommandLine
         if (report.InstalledLoader is null && report.EligibleLoaders.Count > 1 && chosen is null)
         {
             var others = report.EligibleLoaders.Where(l => l != plan.Loader).Select(l => l.Id);
-            Console.WriteLine($"Using {plan.Loader.Display} (recommended). " +
+            // 🔴 Not "recommended" — see GameInventory.ResolveDescriptor. Saying which one is
+            // being used, and how to say otherwise, is the whole of what we know.
+            Console.WriteLine($"Using {plan.Loader.Display}. " +
                               $"Other options: --loader {string.Join(" / --loader ", others)}");
             Console.WriteLine();
         }
@@ -1338,7 +1340,7 @@ public static class CommandLine
                || answer?.Trim().StartsWith('Y') == true;
     }
 
-    private static int Catalog(bool offline)
+    private static async Task<int> CatalogAsync(bool offline)
     {
         var platform = PlatformFactory.Create();
         var result = new CatalogProvider(platform).Get(offline);
@@ -1348,16 +1350,41 @@ public static class CommandLine
         Console.WriteLine($"Built : {result.Document.GeneratedAt ?? "unknown"}");
         Console.WriteLine();
 
+        var resolver = offline ? null : new LoaderBuildResolver();
+
         foreach (var loader in result.Document.Loaders)
         {
-            Console.WriteLine($"  {loader.Id,-18} {loader.Display,-20} v{loader.Version,-14} "
+            Console.WriteLine($"  {loader.Id,-18} {loader.Display,-20} pinned v{loader.Version,-14} "
                               + $"runtimes: {string.Join('+', loader.Runtimes)}");
             Console.WriteLine($"    plugin   -> {loader.PluginDir}{(loader.PluginDirShared ? "   (shared with other mods)" : "")}");
             Console.WriteLine($"    userdata -> {loader.UserDataDir}");
 
             var unverified = loader.Assets.Count(a => string.IsNullOrEmpty(a.Sha256));
             if (unverified > 0)
-                Console.WriteLine($"    {unverified}/{loader.Assets.Count} asset(s) without a checksum — install refused until filled.");
+                Console.WriteLine($"    {unverified}/{loader.Assets.Count} pinned asset(s) without a checksum.");
+
+            // What each source offers RIGHT NOW, beside what the catalog pins. This is the whole
+            // point of schema 5, and printing it is also how the resolvers get exercised against
+            // the real publishers without a game folder in sight.
+            if (resolver is null || loader.Sources.Count == 0) continue;
+
+            foreach (var source in loader.Sources)
+            {
+                var builds = await resolver.ResolveAsync(loader, source.Channel, count: 3);
+
+                if (builds[0].IsPinnedFallback)
+                {
+                    Console.WriteLine($"    {source.Channel,-8} -> unreachable, would install the pinned v{loader.Version}");
+                    continue;
+                }
+
+                Console.WriteLine($"    {source.Channel,-8} -> {builds[0].Describe()}  ({source.Label}, "
+                                  + $"{builds[0].Assets.Count} archive(s), "
+                                  + $"{builds[0].Assets.Count(a => !string.IsNullOrEmpty(a.Sha256))} with a checksum)");
+
+                foreach (var older in builds.Skip(1))
+                    Console.WriteLine($"                 also {older.Describe()}");
+            }
         }
 
         return 0;

@@ -229,6 +229,23 @@ public sealed class InstallerSettings
     [JsonPropertyName("tool_channel")] public string ToolChannel { get; set; } = "stable";
 
     /// <summary>
+    /// "be" or "github" — which BepInEx 6 builds are installed. A third channel, and a third risk.
+    ///
+    /// 🔴 **Neither of them is "stable", because BepInEx 6 has none.** Its GitHub page stopped at
+    /// a pre-release in August 2024 while development moved to the Bleeding Edge builds, which
+    /// ship several times a month. So the honest choice is between a two-year-old pre-release and
+    /// an untested recent build — not between safe and adventurous — and the words on screen say
+    /// exactly that. Calling the first one stable would promise something nobody is offering.
+    ///
+    /// Bleeding Edge by default: the plugin works with either, and pre.2 predates every Unity
+    /// version released since. ⚠ Neither channel publishes a checksum.
+    ///
+    /// Applies to bepinex6-mono and bepinex6-il2cpp together — one project, one build server.
+    /// BepInEx 5 and MelonLoader have a single source and ignore this.
+    /// </summary>
+    [JsonPropertyName("bepinex6_channel")] public string BepInEx6Channel { get; set; } = "be";
+
+    /// <summary>
     /// Whether this tool looks for its own updates.
     ///
     /// On by default, like any other program that talks to the internet — and never applied

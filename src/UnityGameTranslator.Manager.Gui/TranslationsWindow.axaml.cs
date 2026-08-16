@@ -493,8 +493,9 @@ public sealed class TranslationsWindow : Window
         var contributesHere = !isYours && lineage is { IsMain: false };
 
         // Badges work by being rare, and each says something written nowhere else on the card.
-        var by = $"by {translation.Author ?? "unknown"}";
-        if (isYours) by += "  ·  yours";
+        // ⚠ "(you)" comes from the shared rule and is part of the name itself, so the separate
+        // "· yours" chip that used to follow would now say it twice.
+        var by = $"by {People.MentionOf(translation.Author, _settings.Current.ApiUser)}";
         if (contributesHere) by += "  ·  you have a branch of this";
         if (IsNew(translation)) by += "  ·  new";
         if (IsFurthest(translation, all)) by += "  ·  goes furthest";

@@ -18,8 +18,13 @@ public static class SituationReader
     /// answer is not known, which is not the same as none. Passed in rather than read here: this
     /// class is given a game, and that figure is about a PERSON across their whole library.
     /// </param>
+    /// <param name="signedInAs">
+    /// The account this tool is using, so a name can be marked as the reader's own. Null when
+    /// nobody is signed in — nothing is then marked, which is right: an anonymous reader is not
+    /// "not the author", they simply have no name here.
+    /// </param>
     public static GameSituationInfo Read(GameReport report, string targetLanguage, bool onlineChecked,
-                                         int? branchesWaiting = null)
+                                         int? branchesWaiting = null, string? signedInAs = null)
     {
         var game = report.Game;
 
@@ -76,7 +81,7 @@ public static class SituationReader
                 };
 
                 if (headline.Length > 0)
-                    return new GameSituationInfo(situation, headline, Standing(report, local), verb, pending);
+                    return new GameSituationInfo(situation, headline, Standing(report, local, signedInAs), verb, pending);
             }
 
             // Nothing published to compare against — see GameReport.Sync, whose null covers exactly
@@ -86,7 +91,7 @@ public static class SituationReader
             {
                 return new GameSituationInfo(
                     Situation.UnpublishedWork, "Unpublished changes",
-                    Standing(report, local), "Manage", pending);
+                    Standing(report, local, signedInAs), "Manage", pending);
             }
 
             // What we put there ourselves being out of date, which nothing used to notice: this
@@ -98,7 +103,7 @@ public static class SituationReader
             if (Behind(report) is { } behind) return behind;
 
             return new GameSituationInfo(Situation.Ready, "Ready to play",
-                                         Standing(report, local), "Manage", pending);
+                                         Standing(report, local, signedInAs), "Manage", pending);
         }
 
         if (!onlineChecked)
@@ -160,10 +165,24 @@ public static class SituationReader
     /// account has no part in. Those three are not distinguished on purpose: telling them apart
     /// would let a row make a claim it cannot support.
     /// </summary>
-    private static string? Standing(GameReport report, LocalTranslation? local)
+    private static string? Standing(GameReport report, LocalTranslation? local,
+                                    string? signedInAs)
     {
         var parts = new List<string>();
 
+        // 🔴 **Whose work this is, ALWAYS — and it used to be said only when it was yours.** Two
+        // rows running two different people's translations were told apart by an ABSENCE: one
+        // said "your Main", the other said nothing at all. An absence is not something a reader
+        // notices, so the two read as the same row.
+        //
+        // ⚠ Named from the published entry, not from the local file: a file on disk carries no
+        // author. Silent when nothing of this lineage is published — then there is genuinely
+        // nobody to name, and inventing "unknown" would be noise on every private translation.
+        if (report.MatchingOnline?.Author is { Length: > 0 } author)
+            parts.Add(People.MentionOf(author, signedInAs));
+
+        // The role in the lineage, which the name does NOT give: leading a translation and
+        // contributing to one are different powers over the same file.
         if (report.MyPosition is { } position)
             parts.Add(position.IsMain ? "your Main" : "your branch (contributor)");
 

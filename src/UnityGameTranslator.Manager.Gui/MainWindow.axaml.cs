@@ -627,7 +627,8 @@ public partial class MainWindow : Window
             ? _lineages.For(report.LocalTranslation?.Uuid)?.BranchesCount
             : null;
 
-        return (SituationReader.Read(report, language, checkedOnline, waiting), mine, account);
+        return (SituationReader.Read(report, language, checkedOnline, waiting,
+                                     _settings.Current.ApiUser), mine, account);
     }
 
     /// <summary>
@@ -1594,18 +1595,35 @@ public partial class MainWindow : Window
 
         if (account is not null)
         {
+            // 🔴 **Green said "you" on somebody else's account.** This mark was StatusSuccess
+            // whoever the account was, and green is what the rest of this window uses for "good,
+            // ready, go ahead" — so a game signed in as @somebody-else read exactly like one
+            // signed in as the person at the keyboard. On that game the manager is READ-ONLY
+            // (ServerIdentity): it will not publish, will not edit in the browser, will not merge.
+            // The loudest, most encouraging colour sat on the one state where every act is
+            // refused.
+            //
+            // ⚠ Not red either: nothing is wrong. Somebody else's game on a shared computer is
+            // ordinary. Amber, because it changes what the buttons will do.
+            var yours = People.IsYou(account, _settings.Current.ApiUser);
+
             var mark = new TextBlock
             {
-                Text = "@" + account,
+                // ⚠ The word "(you)", not the colour, carries the answer — see People.Mention.
+                Text = People.Mention(account, yours),
                 FontSize = 10,
-                Foreground = Brush("StatusSuccess"),
+                Foreground = Brush(yours ? "StatusSuccess" : "StatusWarning"),
                 HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
-                MaxWidth = 110,
+                MaxWidth = 130,
                 TextTrimming = TextTrimming.CharacterEllipsis,
             };
 
-            ToolTip.SetTip(mark, $"This game is signed in to the site as {account}, so it can publish "
-                               + "and contribute from inside the game.");
+            ToolTip.SetTip(mark, yours
+                ? $"This game is signed in to the site as {People.Mention(account, true)} — the "
+                  + "account this tool is using. It can publish and contribute from inside the game."
+                : $"This game is signed in to the site as {People.Mention(account)}, not as the "
+                  + "account this tool is using. Nothing here will write to it: play it and look "
+                  + "at it, and sign in inside the game to change that.");
 
             corner.Children.Add(mark);
         }
@@ -2619,7 +2637,8 @@ public partial class MainWindow : Window
         _situations[game.Path] = SituationReader.Read(
             report, _settings.ResolveTargetLanguage(),
             onlineChecked: report.OnlineChecked || !_settings.Current.OnlineMode,
-            branchesWaiting: waiting);
+            branchesWaiting: waiting,
+            signedInAs: _settings.Current.ApiUser);
 
         if (_rows.TryGetValue(game.Path, out var row) && row.Item.Tag is GameInstall shown)
         {
@@ -3224,7 +3243,7 @@ public partial class MainWindow : Window
                 ? "This game is open. The mod rewrites its translation file from memory while it "
                   + "runs, so anything written now would be replaced without warning."
                 : $"Puts {picked.SourceLanguage} → {picked.TargetLanguage} by "
-                  + $"{picked.Author ?? "unknown"} into this game.");
+                  + $"{People.MentionOf(picked.Author, _settings.Current.ApiUser)} into this game.");
 
         var replacing = TranslationOffers.For(report, picked)
             is TranslationOffer.ReplacesWork or TranslationOffer.ReplacesChoice;
@@ -3273,7 +3292,8 @@ public partial class MainWindow : Window
         lines.Children.Add(new TextBlock
         {
             Text = $"Chosen: {picked.SourceLanguage} → {picked.TargetLanguage} by "
-                 + $"{picked.Author ?? "unknown"}{size}. Not in the game yet.",
+                 + $"{People.MentionOf(picked.Author, _settings.Current.ApiUser)}{size}. "
+                 + "Not in the game yet.",
             FontSize = 11,
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("StatusInfo"),
@@ -3794,9 +3814,9 @@ public partial class MainWindow : Window
             panel.Children.Add(new TextBlock
             {
                 Text = deliberate
-                    ? $"Chosen for this game: {picked.SourceLanguage} → {picked.TargetLanguage} by {picked.Author ?? "unknown"}."
+                    ? $"Chosen for this game: {picked.SourceLanguage} → {picked.TargetLanguage} by {People.MentionOf(picked.Author, _settings.Current.ApiUser)}."
                     : $"Setting this game up would take: {picked.SourceLanguage} → {picked.TargetLanguage} "
-                      + $"by {picked.Author ?? "unknown"} — the best ranked in your language.",
+                      + $"by {People.MentionOf(picked.Author, _settings.Current.ApiUser)} — the best ranked in your language.",
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush(deliberate ? "StatusSuccess" : "TextSecondary"),
@@ -4508,7 +4528,7 @@ public partial class MainWindow : Window
         if (contributing && lineage.AcceptsBranches == false)
         {
             await ConfirmationWindow.TellAsync(this, "This translation is solo work",
-                $"@{lineage.MainOwner ?? "its author"} works alone on this one and does not take "
+                $"{People.MentionOf(lineage.MainOwner, standing.SignedInAs)} works alone on this one and does not take "
                 + "contributions.\n\nYour lines are safe. Publish your own version of it instead "
                 + "— open it on the UGT Website and choose to publish yours.");
             return;
@@ -4530,7 +4550,7 @@ public partial class MainWindow : Window
                                             StringComparison.OrdinalIgnoreCase);
 
         var body = lineage.Describe() + "\n\n"
-                 + $"{languages.Source} → {languages.Target}, as \"{standing.SignedInAs}\".";
+                 + $"{languages.Source} → {languages.Target}, as {People.Mention(standing.SignedInAs, true)}.";
         var confirm = contributing ? "Send as a contribution" : "Publish";
 
         // ⚠ Same source as "finished" right above, and the same reason: this account's own row.
@@ -4781,7 +4801,10 @@ public partial class MainWindow : Window
         // The name itself louder than the label around it: it is the part worth reading.
         row.Children.Add(new TextBlock
         {
-            Text = published.Author,
+            // One form everywhere, and the "(you)" is a word rather than a colour — see
+            // People.Mention. Reading your own name in a list of other people's was, until this,
+            // something you had to already know.
+            Text = People.MentionOf(published.Author, _settings.Current.ApiUser),
             FontSize = 13,
             FontWeight = FontWeight.SemiBold,
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
@@ -6908,7 +6931,7 @@ public partial class MainWindow : Window
                 new(OneClickAct.UpdateTranslation, "update the translation"),
             _ => new(OneClickAct.TakeTranslation,
                 $"take the {chosen.TargetLanguage ?? Languages.NameOf(_settings.ResolveTargetLanguage())} "
-                + $"translation by {chosen.Author ?? "its author"}"),
+                + $"translation by {People.MentionOf(chosen.Author, _settings.Current.ApiUser)}"),
         };
     }
 
@@ -8078,7 +8101,7 @@ public partial class MainWindow : Window
 
         var preference = _preferences.Read(report.Game.Path);
         var offer = TranslationOffers.For(report, picked);
-        var author = picked.Author ?? "its author";
+        var author = People.MentionOf(picked.Author, _settings.Current.ApiUser);
 
         // ⚠ Said whenever nobody chose it. A pick made for somebody, presented as theirs, is how
         // they end up with a translation they never agreed to — and the rule that made it (best

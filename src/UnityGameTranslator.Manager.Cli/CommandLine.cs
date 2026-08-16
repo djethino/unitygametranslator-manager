@@ -304,8 +304,10 @@ public static class CommandLine
     /// </summary>
     private static void PrintSituation(IPlatform platform, GameReport report, bool offline)
     {
+        var settings = new SettingsStore(platform).Current;
         var language = new SettingsStore(platform).ResolveTargetLanguage();
-        var situation = SituationReader.Read(report, language, onlineChecked: !offline);
+        var situation = SituationReader.Read(report, language, onlineChecked: !offline,
+                                             signedInAs: settings.ApiUser);
 
         Console.WriteLine();
         Console.WriteLine($"In the list : {situation.Headline}");

@@ -28,6 +28,11 @@ public static class SituationReader
 
         var local = report.LocalTranslation;
 
+        // ⚠ Worked out once and attached to every answer below, instead of being one situation
+        // among others. See GameSituationInfo.Pending: the headline is a competition the
+        // translation states deserve to win, and "your mod is old" losing it silently was the bug.
+        var pending = OutOfDate(report);
+
         // A translation file is proof the mod ran here, whatever we did or did not find on disk.
         // Deciding on the assembly alone made a game with a live translation read as "not set up
         // yet" and offer to install a mod that was already working — the row contradicted the
@@ -65,7 +70,7 @@ public static class SituationReader
                 };
 
                 if (headline.Length > 0)
-                    return new GameSituationInfo(situation, headline, Standing(report, local), verb);
+                    return new GameSituationInfo(situation, headline, Standing(report, local), verb, pending);
             }
 
             // Nothing published to compare against — see GameReport.Sync, whose null covers exactly
@@ -75,7 +80,7 @@ public static class SituationReader
             {
                 return new GameSituationInfo(
                     Situation.UnpublishedWork, "Unpublished changes",
-                    Standing(report, local), "Manage");
+                    Standing(report, local), "Manage", pending);
             }
 
             // What we put there ourselves being out of date, which nothing used to notice: this
@@ -87,7 +92,7 @@ public static class SituationReader
             if (Behind(report) is { } behind) return behind;
 
             return new GameSituationInfo(Situation.Ready, "Ready to play",
-                                         Standing(report, local), "Manage");
+                                         Standing(report, local), "Manage", pending);
         }
 
         if (!onlineChecked)
@@ -172,6 +177,30 @@ public static class SituationReader
     /// somebody update, look again, and be told there is another update — twice, for something
     /// that was known in one go.
     /// </summary>
+    /// <summary>
+    /// "mod", "loader" or "mod and loader" when something installed is behind, else null.
+    ///
+    /// ⚠ Two words, not a version pair: this rides on a list row beside a headline, and
+    /// "mod 0.11.0 → 0.12.1" there would compete with the sentence that says what the game is FOR.
+    /// The versions are on the game's own card, where there is room to act on them.
+    /// </summary>
+    public static string? OutOfDate(GameReport report)
+    {
+        var plugin = report.PluginStanding is { UpdateAvailable: true };
+
+        // LoaderUpdateOffered, not LoaderStanding — see Behind: a loader we may not touch is
+        // reported on the card as a fact, and never as something waiting to be done.
+        var loader = report.LoaderUpdateOffered;
+
+        return (plugin, loader) switch
+        {
+            (true, true) => "mod and loader",
+            (true, false) => "mod",
+            (false, true) => "loader",
+            _ => null,
+        };
+    }
+
     private static GameSituationInfo? Behind(GameReport report)
     {
         var plugin = report.PluginStanding is { UpdateAvailable: true } p ? p : null;

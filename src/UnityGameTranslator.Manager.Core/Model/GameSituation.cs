@@ -48,11 +48,22 @@ public enum Situation
 }
 
 /// <summary>The situation of one game, with the words to say it.</summary>
+/// <param name="Pending">
+/// What is out of date in this game, whatever else its headline says — "mod", "loader", or both.
+///
+/// 🔴 **Separate from the headline because they are not in competition.** A row can only carry one
+/// situation, and the translation states rightly win it: unpublished work can be lost, a stale
+/// plugin cannot. But that ranking meant a game reading "Unpublished changes" hid the fact that
+/// its mod was four versions behind, and the only way to find out was to open it.
+///
+/// Null when everything installed is current, so a row that says nothing is saying something.
+/// </param>
 public sealed record GameSituationInfo(
     Situation Situation,
     string Headline,
     string? Detail,
-    string PrimaryAction)
+    string PrimaryAction,
+    string? Pending = null)
 {
     /// <summary>Which status colour the row should carry, if any.</summary>
     public string? StatusKey => Situation switch

@@ -1266,6 +1266,7 @@ public partial class MainWindow : Window
         //
         // ⚠ Unless the caller knows something the game does not say. See the parameter.
         if (!redraw && before is not null && before.Headline == now.Headline
+            && before.Pending == now.Pending
             && before.Detail == now.Detail)
             return;
 
@@ -1441,6 +1442,24 @@ public partial class MainWindow : Window
                     FontSize = 10,
                     TextWrapping = TextWrapping.Wrap,
                     Foreground = Brush("TextMuted"),
+                });
+            }
+
+            // ⚠ Its own line, under the headline it does not compete with. A game whose
+            // translation needs attention still deserves to say that its mod is behind — the row
+            // used to rank the two and drop the loser, so a plugin four versions old was invisible
+            // on every game that had anything else to report.
+            //
+            // Coloured as something available rather than something wrong: nothing is at risk, and
+            // an update that shouts would train people to ignore the ones that matter.
+            if (situation.Pending is { Length: > 0 } behind)
+            {
+                body.Children.Add(new TextBlock
+                {
+                    Text = $"↑ {behind} update available",
+                    FontSize = 10,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = Brush("StatusInfo"),
                 });
             }
         }

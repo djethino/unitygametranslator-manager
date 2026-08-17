@@ -93,6 +93,19 @@ public sealed class GameModSettingsForm
     /// <summary>Raised once the answers have been stored, so the card can redraw what depends on them.</summary>
     public event Action? Applied;
 
+    /// <summary>
+    /// Raised when an answer changes on a game with nothing installed: store it, do not redraw.
+    ///
+    /// ⚠ Storing only, and that distinction is the whole design. <see cref="Applied"/> means "write
+    /// it into the game and rebuild me from what is now on disk"; this one means "remember it", and
+    /// rebuilding on it would destroy the control the person is still typing in.
+    ///
+    /// ⚠ Not raised per keystroke: a text field answers when focus leaves it, a list or a tick when
+    /// it changes. The store writes its file on every call, and one write per character typed into
+    /// a game description is not a thing to do to somebody's disk.
+    /// </summary>
+    public event Action? Recorded;
+
     /// <summary>Asked to open the defaults window — the place a translator is actually set up.</summary>
     public event Action? OpenDefaults;
 
@@ -115,10 +128,28 @@ public sealed class GameModSettingsForm
     /// </summary>
     private readonly bool _languagePinnedPublished;
 
+    /// <summary>
+    /// Whether this game has a configuration to write into.
+    ///
+    /// 🔴 **It decides whether there is an Apply at all**, and there is no third option. Apply means
+    /// "write this into the game"; before the mod is installed there is no file, the verb has no
+    /// object, and pressing it did nothing visible while quietly being the ONLY thing that recorded
+    /// the answers. Somebody who set a language here and pressed the one-click instead lost both:
+    /// the answers were never stored, and the install wrote nothing.
+    ///
+    /// So the block changes nature rather than greying a button. With no file it is a form of
+    /// INTENTIONS — answered as they are typed, exactly like the box beside the one-click and the
+    /// translation choice, which the one-click already reads. With a file it is a form of settings,
+    /// and settings are written by Apply. That is the rule this project holds; what it never meant
+    /// was an Apply pointing at nothing.
+    /// </summary>
+    private readonly bool _installed;
+
     public GameModSettingsForm(IPlatform platform, InstallerSettings defaults,
                                GameConfigSnapshot snapshot, GameModOverrides? stored,
                                string? languagePinnedTo = null,
-                               bool languagePinnedPublished = false)
+                               bool languagePinnedPublished = false,
+                               bool installed = true)
     {
         _platform = platform;
         _defaults = defaults;
@@ -127,6 +158,7 @@ public sealed class GameModSettingsForm
         _draft = stored?.Copy() ?? new GameModOverrides();
         _languagePinnedTo = languagePinnedTo;
         _languagePinnedPublished = languagePinnedPublished;
+        _installed = installed;
     }
 
     /// <summary>What the person has answered for this game, ready to be stored.</summary>
@@ -205,12 +237,20 @@ public sealed class GameModSettingsForm
     /// typing the original back would otherwise leave an override behind — one that looks identical
     /// today and silently stops following the defaults for ever after.
     /// </summary>
-    private void Answer(Action<string?> set, string? value, string? wouldBeAnyway)
+    /// <param name="record">
+    /// False on a field wired to every keystroke — the three text boxes. They record when focus
+    /// leaves them instead, which is both what forms have always done and what keeps this from
+    /// writing a file per character.
+    /// </param>
+    private void Answer(Action<string?> set, string? value, string? wouldBeAnyway,
+                        bool record = true)
     {
         if (_populating) return;
 
         set(string.Equals(value, wouldBeAnyway, StringComparison.Ordinal) ? null : value);
         RefreshApply();
+
+        if (record) Record();
     }
 
     private void Answer(Action<bool?> set, bool value, bool wouldBeAnyway)
@@ -219,6 +259,21 @@ public sealed class GameModSettingsForm
 
         set(value == wouldBeAnyway ? null : value);
         RefreshApply();
+        Record();
+    }
+
+    /// <summary>
+    /// Hands the answers up to be stored — and only where nothing else ever would.
+    ///
+    /// ⚠ Silent on an installed game, deliberately: there the answers are stored by Apply, together
+    /// with the write into the game, because that is one decision taken at one moment. Storing them
+    /// as they are typed as well would half-apply a form somebody has not finished filling in.
+    /// </summary>
+    private void Record()
+    {
+        if (_populating || _installed) return;
+
+        Recorded?.Invoke();
     }
 
     // ---------------------------------------------------------------- building
@@ -292,6 +347,20 @@ public sealed class GameModSettingsForm
         foreach (var control in UpdatesBlock()) _host.Children.Add(control);
 
         _host.Children.Add(ApplyBar());
+
+        // ⚠ Nothing at all, rather than a greyed Apply — the one place this program departs from
+        // "no greyed control without words", and only because the control would be pointing at a
+        // file that does not exist. What replaces it is the line above, which says where these
+        // answers go instead.
+        if (!_installed) _host.Children.Add(new TextBlock
+        {
+            Text = "Written into the game when the mod is installed.",
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Avalonia.Thickness(0, 6, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Foreground = Palette.Of("TextMuted"),
+        });
 
         ShowBackendBlocks();
 
@@ -396,7 +465,12 @@ public sealed class GameModSettingsForm
 
         _aiUrl.TextChanged += (_, _) => Answer(
             v => _draft.AiUrl = string.IsNullOrWhiteSpace(v) ? null : v,
-            _aiUrl.Text?.Trim(), _inGame.AiUrl ?? _defaults.AiUrl);
+            _aiUrl.Text?.Trim(), _inGame.AiUrl ?? _defaults.AiUrl, record: false);
+
+        // ⚠ The counter follows every keystroke; the store follows the focus. Pressing any
+        // button - the one-click included - takes focus away from here first, so what was typed is
+        // recorded before the act that reads it runs.
+        _aiUrl.LostFocus += (_, _) => Record();
 
         panel.Children.Add(Row("AI server", _aiUrl,
                                Origin(_draft.AiUrl, _inGame.AiUrl, () => _draft.AiUrl = null)));
@@ -431,7 +505,9 @@ public sealed class GameModSettingsForm
 
         _aiKey.TextChanged += (_, _) => Answer(
             v => _draft.AiApiKey = string.IsNullOrWhiteSpace(v) ? null : v,
-            _aiKey.Text?.Trim(), _inGame.AiApiKey ?? _defaults.AiApiKey);
+            _aiKey.Text?.Trim(), _inGame.AiApiKey ?? _defaults.AiApiKey, record: false);
+
+        _aiKey.LostFocus += (_, _) => Record();
 
         panel.Children.Add(Row("API key", _aiKey,
                                Origin(_draft.AiApiKey, _inGame.AiApiKey, () => _draft.AiApiKey = null)));
@@ -555,10 +631,14 @@ public sealed class GameModSettingsForm
             var typed = string.IsNullOrWhiteSpace(_providerKey.Text) ? null : _providerKey.Text.Trim();
 
             if (ModSettingControls.Tag(_provider) == "deepl")
-                Answer(v => _draft.DeeplApiKey = v, typed, _inGame.DeeplApiKey ?? _defaults.DeeplApiKey);
+                Answer(v => _draft.DeeplApiKey = v, typed,
+                       _inGame.DeeplApiKey ?? _defaults.DeeplApiKey, record: false);
             else
-                Answer(v => _draft.GoogleApiKey = v, typed, _inGame.GoogleApiKey ?? _defaults.GoogleApiKey);
+                Answer(v => _draft.GoogleApiKey = v, typed,
+                       _inGame.GoogleApiKey ?? _defaults.GoogleApiKey, record: false);
         };
+
+        _providerKey.LostFocus += (_, _) => Record();
 
         _deeplFree.IsCheckedChanged += (_, _) => Answer(
             v => _draft.DeeplUseFree = v, _deeplFree.IsChecked == true,
@@ -701,6 +781,11 @@ public sealed class GameModSettingsForm
 
     private Control ApplyBar()
     {
+        // 🔴 **No Apply where there is nothing to apply to.** See the note on _installed: the verb
+        // has no object before the mod is installed, and the button's real effect there — recording
+        // the answers — is now what typing them does.
+        if (!_installed) return new Panel();
+
         // ⚠ Marked like every action that writes. This one puts settings into THIS game's
         // config.json and sends nothing anywhere, so Local — and saying so on the button is worth
         // more here than almost anywhere else, since the values come from Mod defaults and a
@@ -735,7 +820,7 @@ public sealed class GameModSettingsForm
     /// </summary>
     private void RefreshApply()
     {
-        if (_populating || _apply is null) return;
+        if (_populating || !_installed || _apply is null) return;
 
         var count = _draft.Count;
 

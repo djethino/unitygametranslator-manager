@@ -5997,7 +5997,22 @@ public partial class MainWindow : Window
 
         var pinned = LanguagePinnedTo(report, preference);
         var form = new GameModSettingsForm(_platform, _settings.Current, snapshot, preference.Mod,
-                                           pinned.Language, pinned.Published);
+                                           pinned.Language, pinned.Published,
+                                           installed: snapshot.IsConfigured);
+
+        // 🔴 **Stored as they are typed, and only where nothing else would store them.** Before the
+        // mod is installed there is no Apply — see the note on the form's `installed` — so this is
+        // what keeps the answers. Without it they lived in a form object that the next redraw of
+        // this card threw away without a word, which is how somebody sets a language, presses the
+        // one-click, and gets a game in a language they never chose.
+        //
+        // ⚠ No refresh() here. The person is still in the form; rebuilding the card would destroy
+        // the control under their cursor mid-edit.
+        form.Recorded += () =>
+        {
+            preference.Mod = form.Draft.IsEmpty ? null : form.Draft.Copy();
+            _preferences.Set(report.Game.Path, preference);
+        };
 
         form.Applied += async () =>
         {
@@ -7018,9 +7033,16 @@ public partial class MainWindow : Window
         // rewrite a config.json with the values already in it.
         //
         // ⚠ Conditional on the box, because the one-click applies the preference and decides
-        // nothing of its own. Unticked, this game's configuration is left alone — its own settings
+        // nothing of its own. Unticked, an already-configured game is left alone — its own settings
         // are written by their own button, which is what every other brick on this card does too.
-        if (preference.UsesModDefaults(GameConfig(report)) && _settings.Current.Reviewed
+        //
+        // ⚠ **Except on a game with no configuration at all**, where the box protects a file that
+        // does not exist and its own settings have no button either: theirs is silent with nowhere
+        // to write. Left as it was, the one path a first-time player takes wrote nothing anywhere.
+        // Same condition as BuildPlan, and it has to stay the same one — this list is the promise
+        // and that method is the act.
+        if (_settings.Current.Reviewed
+            && (!GameConfig(report).IsConfigured || preference.UsesModDefaults(GameConfig(report)))
             && SettingsWouldChangeAnything(report, preference))
         {
             yield return new(OneClickAct.ApplySettings, SettingsStepText(report, preference));
@@ -7455,13 +7477,26 @@ public partial class MainWindow : Window
     private InstallPlan? BuildPlan(GameReport report, GamePreference preference, bool loader, bool plugin,
                                    bool settings = true, bool force = false)
     {
-        // 🔴 **The box, and nothing else.** An install and the one-click apply the PREFERENCE — they
-        // invent nothing. Ticked, this game is set up from Mod defaults; unticked, its own
-        // configuration is left exactly as it is, and the settings it holds are applied by their own
-        // button. That is what the box has always meant, and taking it out of this line was me
-        // letting the one-click decide.
-        var writeSettings = settings && preference.UsesModDefaults(GameConfig(report))
-                            && _settings.Current.Reviewed;
+        // 🔴 **The box, on a game that HAS a configuration — and nothing at all on a game that has
+        // none.** An install and the one-click apply the PREFERENCE and invent nothing; ticked, this
+        // game is set up from Mod defaults; unticked, its own configuration is left exactly as it is.
+        //
+        // ⚠ What that line got wrong is the third case. The box's own rule is "a game that is
+        // already configured keeps its own configuration" — it exists to protect a FILE. On a first
+        // install there is no file, so unticking protected nothing and merely meant "write nothing":
+        // the game came up with no config.json at all, the mod fell back to the system language, and
+        // the answers typed into this game's own settings were never laid down by anybody. The
+        // comment on ApplyOwnSettingsAsync promised the next install would lay them down; the next
+        // install skipped settings entirely, and the two comments had been contradicting each other
+        // in two files.
+        //
+        // ⚠ And writing then contradicts nothing: the resolver reads own answers, THEN what the game
+        // holds, THEN the defaults — so the form already shows a complete set of values on an
+        // unconfigured game, and writing less than the screen shows is the lie, not the reverse.
+        var configured = GameConfig(report).IsConfigured;
+        var usesDefaults = preference.UsesModDefaults(GameConfig(report));
+
+        var writeSettings = settings && _settings.Current.Reviewed && (!configured || usesDefaults);
 
         // ⚠ Per game, because that is where the risk is taken: putting a pre-release plugin in one
         // game to test a fix is a different decision from putting it in all of them. Read from the
@@ -7477,7 +7512,17 @@ public partial class MainWindow : Window
             report,
             resolved.Channel == "beta" ? ReleaseChannel.Beta : ReleaseChannel.Stable,
             _chosenLoader(),
-            writeSettings ? _settings.Current : null,
+            // 🔴 **Which set of values, and it is not always the defaults.** `Intended` reads
+            // `settings.TranslationBackend`, `settings.AiModel` and the rest straight off whatever
+            // it is handed — only the hotkey, the context and "start translating" ever consult the
+            // per-game answers. So handing it Mod defaults on a game that answered for itself wrote
+            // Mod defaults, silently, no matter what the form showed.
+            //
+            // Ticked, the defaults ARE the answer and the resolver must not be used: it would fall
+            // back to what the game already holds, and ticking the box means overwriting that.
+            // Unticked — reachable here only on a game with no configuration at all — the resolver
+            // gives own answers over defaults, which is exactly what the form displays.
+            writeSettings ? (usesDefaults ? _settings.Current : resolved) : null,
             writeSettings ? preference : null);
 
         if (plan is null) return null;
@@ -8011,6 +8056,11 @@ public partial class MainWindow : Window
             applyBar.Refresh();
         };
 
+        // ⚠ On focus rather than on every keystroke: Record writes a file, and a game
+        // description is a paragraph. Pressing any button - the one-click included - takes focus
+        // away from here first, so what was typed is stored before the act that reads it runs.
+        context.LostFocus += (_, _) => applyBar.Record();
+
         yield return context;
 
         yield return new TextBlock
@@ -8068,6 +8118,7 @@ public partial class MainWindow : Window
         {
             draft.StartTranslation = start.IsChecked == true;
             applyBar.Refresh();
+            applyBar.Record();
         };
 
         yield return start;
@@ -8140,7 +8191,18 @@ public partial class MainWindow : Window
     private sealed class PlanApply
     {
         public required Control View { get; init; }
+
+        /// <summary>Keeps the counter honest. Called on every answer, including every keystroke.</summary>
         public required Action Refresh { get; init; }
+
+        /// <summary>
+        /// Stores the answers where no Apply will ever store them — before the mod is installed.
+        ///
+        /// ⚠ Separate from <see cref="Refresh"/> precisely because Refresh runs per keystroke and
+        /// this one writes a file. A text field calls it when focus leaves; a tick, immediately.
+        /// Does nothing once there is a config, where Apply is what stores them.
+        /// </summary>
+        public required Action Record { get; init; }
     }
 
     private PlanApply PlanApplyBar(GameReport report, GamePreference preference,
@@ -8148,6 +8210,38 @@ public partial class MainWindow : Window
     {
         // Local: this writes into THIS game's config.json and sends nothing anywhere — the same
         // mark the settings form carries, for the same reason.
+        // 🔴 **No Apply before the mod is installed, and the answers are kept as they are given.**
+        // Same reasoning as the settings form beside it: Apply means "write this into the game",
+        // and there is no file yet. Pressing it did nothing visible while quietly being the only
+        // thing that stored these two answers, so somebody who set them and pressed the one-click
+        // instead lost them — and the one-click then installed without them.
+        if (!GameConfig(report).IsConfigured)
+        {
+            void Keep()
+            {
+                preference.StartTranslation = draft.Start;
+                preference.GameContext = draft.Context;
+                _preferences.Set(report.Game.Path, preference);
+            }
+
+            return new PlanApply
+            {
+                View = new TextBlock
+                {
+                    Text = "Written into the game when the mod is installed.",
+                    FontSize = 11,
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Avalonia.Thickness(0, 6, 0, 0),
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Foreground = Brush("TextMuted"),
+                },
+
+                // Nothing to redraw: there is no counter and no button to light.
+                Refresh = () => { },
+                Record = Keep,
+            };
+        }
+
         var apply = ScopeMark.Marked(EditSide.Local, "Apply", enabled: false);
         apply.Classes.Add("primary");
         apply.FontSize = 12;
@@ -8187,6 +8281,10 @@ public partial class MainWindow : Window
                 Children = { apply },
             },
             Refresh = Redraw,
+
+            // Apply stores these, together with the write into the game, because that is one
+            // decision taken at one moment.
+            Record = () => { },
         };
     }
 

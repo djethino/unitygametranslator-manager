@@ -6278,18 +6278,17 @@ public partial class MainWindow : Window
     {
         if (preference.ApplyModDefaults == true && reviewed) return SetupWay.ModDefaults;
 
+        // 🔴 **`false` is a decision and is taken at its word.** It is never a default — nobody
+        // reaches it without choosing it, which is exactly why the schema-2 migration undoes a
+        // stored `true` and leaves `false` alone.
+        //
+        // ⚠ I second-guessed it here for one commit, on the theory that an old `false` should not
+        // greet somebody with an empty form. The theory cost the form: choosing "Set it up here"
+        // writes false/false, this read it back as stale, and the selection sprang back to the
+        // wizard — so the one way to open the settings of a game could never be taken. A stored
+        // answer that the reader can change with one click needs no rescuing.
         if (preference.ApplyModDefaults == false)
-        {
-            if (preference.LetWizardAsk && firstTime) return SetupWay.Wizard;
-
-            // ⚠ **A stored "not the defaults" is not a request to fill in twenty-five fields.** On
-            // a game with no configuration and no answers of its own — somebody who unticked a box
-            // once and moved on — reading it as Custom greets them with an empty form and no way
-            // through. It means Custom once there is something of its own to mean it with.
-            if (snapshot.IsConfigured || preference.Mod is { IsEmpty: false }) return SetupWay.Custom;
-
-            return firstTime ? SetupWay.Wizard : SetupWay.Custom;
-        }
+            return preference.LetWizardAsk && firstTime ? SetupWay.Wizard : SetupWay.Custom;
 
         // Nobody has decided for this game.
         if (snapshot.IsConfigured) return SetupWay.Custom;

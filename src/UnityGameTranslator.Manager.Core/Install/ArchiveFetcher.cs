@@ -19,10 +19,12 @@ public sealed class ArchiveFetcher
 {
     private readonly HttpClient _http;
     private readonly string _stagingRoot;
+    private readonly ArchiveCache? _cache;
 
-    public ArchiveFetcher(string stagingRoot, HttpClient? http = null)
+    public ArchiveFetcher(string stagingRoot, HttpClient? http = null, ArchiveCache? cache = null)
     {
         _stagingRoot = stagingRoot;
+        _cache = cache;
         _http = http ?? Http.Create(TimeSpan.FromMinutes(10));
 
         if (!_http.DefaultRequestHeaders.UserAgent.Any())
@@ -43,23 +45,50 @@ public sealed class ArchiveFetcher
     /// publish hashes. A mismatch is always fatal; an absent checksum is reported, not fatal.
     /// The hash actually observed is returned either way and recorded in the receipt.
     /// </summary>
-    public async Task<FetchedArchive> FetchAsync(string url, string? expectedSha256,
-                                                 string label, CancellationToken ct = default)
+    public async Task<FetchedArchive> FetchAsync(string url, string? expectedSha256, string label,
+                                                 ArchiveCacheKey? cacheKey = null,
+                                                 CancellationToken ct = default)
     {
         Directory.CreateDirectory(_stagingRoot);
-        var archivePath = Path.Combine(_stagingRoot, SafeFileName(label) + ExtensionOf(url));
 
-        await DownloadAsync(url, archivePath, ct).ConfigureAwait(false);
+        var extension = ExtensionOf(url);
+        var archivePath = Path.Combine(_stagingRoot, SafeFileName(label) + extension);
 
-        var actual = FileOperations.HashFile(archivePath);
+        // Already downloaded once, for this exact version, and still the bytes it was stored as —
+        // ArchiveCache re-hashes before answering. A second game therefore costs no network at all.
+        var cached = cacheKey is null ? null : _cache?.TryPath(cacheKey, expectedSha256, extension);
+        var fromCache = cached is not null;
 
-        if (!string.IsNullOrWhiteSpace(expectedSha256)
-            && !string.Equals(actual, expectedSha256.Trim(), StringComparison.OrdinalIgnoreCase))
+        string actual;
+
+        if (fromCache)
         {
-            TryDelete(archivePath);
-            throw new InvalidOperationException(
-                $"Checksum mismatch for {label}. Expected {expectedSha256}, got {actual}. " +
-                "The download was discarded.");
+            archivePath = cached!;
+            actual = FileOperations.HashFile(archivePath);
+
+            // Said, so a progress bar does not sit at zero through an install that is simply not
+            // downloading anything.
+            var size = new FileInfo(archivePath).Length;
+            Progress?.Invoke(size, size);
+        }
+        else
+        {
+            await DownloadAsync(url, archivePath, ct).ConfigureAwait(false);
+
+            actual = FileOperations.HashFile(archivePath);
+
+            if (!string.IsNullOrWhiteSpace(expectedSha256)
+                && !string.Equals(actual, expectedSha256.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                TryDelete(archivePath);
+                throw new InvalidOperationException(
+                    $"Checksum mismatch for {label}. Expected {expectedSha256}, got {actual}. " +
+                    "The download was discarded.");
+            }
+
+            // ⚠ After the checksum, never before: a cache is only worth having if what goes into it
+            // has already been held to the same standard as what goes into a game.
+            if (cacheKey is not null) _cache?.Store(cacheKey, archivePath, actual, extension);
         }
 
         var extractPath = Path.Combine(_stagingRoot, SafeFileName(label));
@@ -67,7 +96,10 @@ public sealed class ArchiveFetcher
         Directory.CreateDirectory(extractPath);
 
         ExtractSafely(archivePath, extractPath);
-        TryDelete(archivePath);
+
+        // ⚠ Only the staging copy. Deleting the cached file would empty the cache on every use,
+        // which is a cache that costs a copy and saves nothing.
+        if (!fromCache) TryDelete(archivePath);
 
         return new FetchedArchive(extractPath, actual);
     }

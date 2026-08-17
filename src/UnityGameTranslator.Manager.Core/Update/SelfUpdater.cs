@@ -292,8 +292,12 @@ public sealed class SelfUpdater
         var fetcher = new ArchiveFetcher(staging);
         fetcher.Progress += (done, total) => Progress?.Invoke(done, total);
 
+        // ⚠ No cache key, deliberately. A loader archive is fetched once per game and the same file
+        // serves all of them; this one is fetched once and then never again — the tool it updates
+        // is the one running. Keeping it would be storing a binary that is already on disk, under
+        // its new name.
         var fetched = await fetcher
-            .FetchAsync(offer.Url, offer.Sha256, $"installer-{offer.NewVersion}", ct)
+            .FetchAsync(offer.Url, offer.Sha256, $"installer-{offer.NewVersion}", cacheKey: null, ct)
             .ConfigureAwait(false);
 
         var incoming = Path.Combine(fetched.ExtractedPath, _platform.ExecutableFileName);

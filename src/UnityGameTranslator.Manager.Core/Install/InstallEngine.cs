@@ -352,9 +352,16 @@ public sealed class InstallEngine
         var download = await ResolveAsync(plan.Loader, asset, plan.Build, ct).ConfigureAwait(false);
         Status?.Invoke($"Verifying: {download.Describe()}");
 
-        var fetcher = new ArchiveFetcher(staging);
+        // ⚠ The version being installed, not the one the catalog pins — those differ as soon as a
+        // build was resolved, and a cache keyed on the wrong one would serve the wrong archive.
+        var version = plan.Build?.Version ?? plan.Loader.Version;
+
+        var fetcher = new ArchiveFetcher(staging, cache: ArchivesCache());
         var archive = await fetcher
-            .FetchAsync(download.Url, download.Sha256, plan.Loader.Id, ct)
+            .FetchAsync(download.Url, download.Sha256, plan.Loader.Id,
+                        // Per OS and architecture: a machine that installs the 64-bit build has no
+                        // use for the 32-bit one, and keeping both would be keeping one too many.
+                        new ArchiveCacheKey($"{plan.Loader.Id}-{asset.Os}-{asset.Arch}", version), ct)
             .ConfigureAwait(false);
 
         Status?.Invoke($"Installing {plan.Loader.Display}...");
@@ -401,9 +408,12 @@ public sealed class InstallEngine
             ?? throw new InvalidOperationException(
                 $"Release {release.TagName} has no build for {plan.Loader.Display}.");
 
-        var fetcher = new ArchiveFetcher(staging);
+        // One entry per loader build: the plugin ships a different assembly for each, and this is
+        // the archive fetched most often — the same release, into every game on the machine.
+        var fetcher = new ArchiveFetcher(staging, cache: ArchivesCache());
         var archive = await fetcher
-            .FetchAsync(resolved.Url, resolved.Sha256, "plugin", ct)
+            .FetchAsync(resolved.Url, resolved.Sha256, "plugin",
+                        new ArchiveCacheKey($"plugin-{plan.Loader.Id}", release.Version), ct)
             .ConfigureAwait(false);
 
         Status?.Invoke($"Installing the plugin {release.Version}...");
@@ -526,6 +536,15 @@ public sealed class InstallEngine
 
         return new ResolvedDownload(url, null, IntegrityLevel.None);
     }
+
+    /// <summary>
+    /// Where downloaded archives are kept between installs.
+    ///
+    /// ⚠ Beside the tool's other state, not in the game: what is cached is the same file for every
+    /// game on this machine, and a copy per game would be the opposite of the point.
+    /// </summary>
+    public ArchiveCache ArchivesCache() =>
+        new(Path.Combine(_platform.UserDataDirectory, "cache", "archives"));
 
     /// <summary>Copies an extracted archive into the game, preserving its internal layout.</summary>
     private static void CopyTree(string sourceRoot, string targetPrefix, FileOperations files)

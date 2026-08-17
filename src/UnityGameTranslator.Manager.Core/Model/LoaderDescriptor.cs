@@ -141,10 +141,14 @@ public sealed class LoaderWarning
 
 public sealed class GitHubRelease
 {
-    /// <summary>"owner/name", e.g. "BepInEx/BepInEx".</summary>
-    [JsonPropertyName("repo")] public string Repo { get; set; } = "";
-
-    /// <summary>Release tag, e.g. "v5.4.23.5".</summary>
+    /// <summary>
+    /// Release tag, e.g. "v5.4.23.5". A version, and only a version.
+    ///
+    /// ⚠ **The repository is deliberately NOT here** — it lives in
+    /// <see cref="Catalog.LoaderOrigins"/>, compiled in. A field absent from this model cannot be
+    /// honoured even by a catalog that still carries it, which is a stronger guarantee than
+    /// remembering not to read it.
+    /// </summary>
     [JsonPropertyName("tag")] public string Tag { get; set; } = "";
 }
 
@@ -159,8 +163,20 @@ public sealed class LoaderAsset
     /// <summary>Asset file name inside the GitHub release. Preferred over a raw URL.</summary>
     [JsonPropertyName("name")] public string Name { get; set; } = "";
 
-    /// <summary>Direct URL, for anything not hosted as a GitHub release asset.</summary>
-    [JsonPropertyName("url")] public string Url { get; set; } = "";
+    /// <summary>
+    /// Where this exact file is, as the PUBLISHER stated it — GitHub's `browser_download_url`, or
+    /// an href off the Bleeding Edge page.
+    ///
+    /// 🔴 **`[JsonIgnore]`, so the catalog cannot supply one.** The field has to stay, because a
+    /// resolved build fills it and it is how the download is found; but it is filled in memory,
+    /// from an answer the publisher gave, never from the fetched catalog. Read from there it was
+    /// an address that reached every installation at the next launch, with no release in between.
+    ///
+    /// ⚠ Not the whole answer on its own: an answer from a publisher is only as good as the
+    /// publisher being the right one. <see cref="Catalog.LoaderOrigins.IsAllowedDownload"/> checks
+    /// the address itself before anything is fetched.
+    /// </summary>
+    [JsonIgnore] public string Url { get; set; } = "";
 
     /// <summary>
     /// Optional pinned SHA-256. Takes precedence over the digest GitHub publishes, for the case

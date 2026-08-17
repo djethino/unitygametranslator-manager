@@ -478,12 +478,29 @@ public sealed class InstallEngine
                                                      Catalog.LoaderBuild? build = null,
                                                      CancellationToken ct = default)
     {
+        var repo = Catalog.LoaderOrigins.GitHubRepoFor(loader.Id);
+
         var url = !string.IsNullOrWhiteSpace(asset.Url)
             ? asset.Url
-            : loader.GitHub is { } release && !string.IsNullOrWhiteSpace(asset.Name)
-                ? GitHubAssets.BuildUrl(release.Repo, release.Tag, asset.Name)
+            : repo is not null && loader.GitHub is { } release && !string.IsNullOrWhiteSpace(asset.Name)
+                ? GitHubAssets.BuildUrl(repo, release.Tag, asset.Name)
                 : throw new InvalidOperationException(
                     $"The catalog entry for {loader.Display} has no download for this system.");
+
+        // 🔴 **The last word on the address, whoever produced it.** Two paths reach this line: a
+        // URL the publisher stated (GitHub's API, a Bleeding Edge href) and one we assembled from
+        // the pinned repository. Checking the address rather than its provenance is what makes the
+        // rule impossible to walk around — a field added later, a redirect written into an API
+        // answer, a catalog still carrying a stale `url`: all of them end up here.
+        //
+        // ⚠ It refuses rather than falling back. Downloading something else instead would be a
+        // decision made on the user's behalf about which code enters their game.
+        if (!Catalog.LoaderOrigins.IsAllowedDownload(url))
+        {
+            throw new InvalidOperationException(
+                $"Refusing to download {loader.Display} from {url}: that address is not one of "
+                + "this loader's publishers. Nothing was fetched.");
+        }
 
         // A build read from the publisher already carries whatever digest that publisher offers,
         // and calling it "pinned in the catalog" would credit us with a guarantee we did not make.
@@ -500,9 +517,9 @@ public sealed class InstallEngine
         if (!string.IsNullOrWhiteSpace(asset.Sha256))
             return new ResolvedDownload(url, asset.Sha256.Trim().ToLowerInvariant(), IntegrityLevel.Pinned);
 
-        if (loader.GitHub is { } source && !string.IsNullOrWhiteSpace(asset.Name))
+        if (repo is not null && loader.GitHub is { } source && !string.IsNullOrWhiteSpace(asset.Name))
         {
-            var digests = await _assets.GetDigestsAsync(source.Repo, source.Tag, ct).ConfigureAwait(false);
+            var digests = await _assets.GetDigestsAsync(repo, source.Tag, ct).ConfigureAwait(false);
             if (digests.TryGetValue(asset.Name, out var digest))
                 return new ResolvedDownload(url, digest, IntegrityLevel.Published);
         }

@@ -27,11 +27,12 @@ public sealed class LoaderSource
     /// <summary>What to call it on screen. ⚠ Never "stable" for BepInEx 6 — there is none.</summary>
     [JsonPropertyName("label")] public string Label { get; set; } = "";
 
-    /// <summary>"owner/name", for kind = github-release.</summary>
-    [JsonPropertyName("repo")] public string? Repo { get; set; }
-
-    /// <summary>Page to read, for kind = bepinex-be.</summary>
-    [JsonPropertyName("url")] public string? Url { get; set; }
+    // 🔴 **No `repo`, no `url` here, and their absence is the point.** A source says WHICH channel
+    // this is and how to recognise its files; WHERE that channel lives is in LoaderOrigins,
+    // compiled in. The catalog is fetched at every launch, so an address read from it reaches every
+    // installation at the next one, with no release in between — and what it points at is unpacked
+    // into a game folder. Removing the fields from the model means a catalog still carrying them
+    // cannot be obeyed, rather than merely not being read today.
 
     /// <summary>
     /// Skip pre-releases. True for BepInEx 5 and MelonLoader; false for BepInEx 6, whose only
@@ -188,10 +189,15 @@ public sealed class LoaderBuildResolver
             IReadOnlyList<LoaderBuild> builds;
             try
             {
+                // ⚠ The loader's id, not an address off the source: where each publisher lives is
+                // compiled in (LoaderOrigins). An id that file does not know resolves to nothing,
+                // and the pinned fallback below answers — never an address the catalog supplied.
                 builds = source.Kind switch
                 {
-                    "github-release" => await FromGitHubAsync(source, count, ct).ConfigureAwait(false),
-                    "bepinex-be" => await FromBleedingEdgeAsync(source, count, ct).ConfigureAwait(false),
+                    "github-release" => await FromGitHubAsync(loader.Id, source, count, ct)
+                        .ConfigureAwait(false),
+                    "bepinex-be" => await FromBleedingEdgeAsync(loader.Id, source, count, ct)
+                        .ConfigureAwait(false),
                     _ => Array.Empty<LoaderBuild>(),
                 };
             }
@@ -240,9 +246,12 @@ public sealed class LoaderBuildResolver
         IsPinnedFallback: true);
 
     private async Task<IReadOnlyList<LoaderBuild>> FromGitHubAsync(
-        LoaderSource source, int count, CancellationToken ct)
+        string loaderId, LoaderSource source, int count, CancellationToken ct)
     {
-        var url = $"{_apiBase}/repos/{source.Repo}/releases?per_page=30";
+        var repo = LoaderOrigins.GitHubRepoFor(loaderId);
+        if (repo is null) return Array.Empty<LoaderBuild>();
+
+        var url = $"{_apiBase}/repos/{repo}/releases?per_page=30";
         var json = await _http.GetStringAsync(url, ct).ConfigureAwait(false);
 
         using var document = JsonDocument.Parse(json);
@@ -309,10 +318,13 @@ public sealed class LoaderBuildResolver
         @"artifact-link""[^>]*href=""(?<href>[^""]+)""", RegexOptions.Compiled);
 
     private async Task<IReadOnlyList<LoaderBuild>> FromBleedingEdgeAsync(
-        LoaderSource source, int count, CancellationToken ct)
+        string loaderId, LoaderSource source, int count, CancellationToken ct)
     {
-        var page = await _http.GetStringAsync(source.Url, ct).ConfigureAwait(false);
-        var origin = new Uri(source.Url!);
+        var pageUrl = LoaderOrigins.BuildsPageFor(loaderId);
+        if (pageUrl is null) return Array.Empty<LoaderBuild>();
+
+        var page = await _http.GetStringAsync(pageUrl, ct).ConfigureAwait(false);
+        var origin = new Uri(pageUrl);
 
         var builds = new List<LoaderBuild>();
         var starts = BuildNumber.Matches(page);

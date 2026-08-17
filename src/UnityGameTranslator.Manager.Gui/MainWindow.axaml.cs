@@ -2717,7 +2717,12 @@ public partial class MainWindow : Window
         //
         // ⚠ Above the tabs rather than inside one, because it is true of both halves and of every
         // game — reading goes top to bottom, and this is the first thing there is to say.
-        if (!_settings.Current.Reviewed)
+        //
+        // ⚠ And only while it blocks THIS game. Unticking the box answers the question for this
+        // game, so the banner would be telling somebody to go and decide something they have just
+        // decided — above a OneClick that is lit and ready. On the overview it stays unconditional:
+        // there it is a fact about the tool, not a refusal about one game.
+        if (!_settings.Current.Reviewed && NeedsModDefaults(report))
             DetailPanel.Children.Add(WhatGoesIntoGames()!);
 
         // ⚠ Directly under the name. Placed after the technical card, the tabs sat below a screenful
@@ -6048,6 +6053,37 @@ public partial class MainWindow : Window
 
         yield return applyDefaults;
 
+        // 🔴 **Whether the mod still asks its own questions in this game.** Writing a complete set
+        // of settings also writes first_run_completed, so the wizard never appeared — a latch this
+        // tool closed on somebody's behalf with no way to say otherwise. Ticking this writes the
+        // values all the same; they become what the wizard opens on rather than what replaces it.
+        //
+        // ⚠ Beside the box above and not inside the differences: those list what applying would
+        // CHANGE. This decides how the game finishes being set up, which is a different question.
+        var letWizard = new CheckBox
+        {
+            Content = "Let the mod ask on first launch",
+            IsChecked = preference.LetWizardAsk || !_settings.Current.Reviewed,
+            IsEnabled = _settings.Current.Reviewed,
+            FontSize = 12,
+        };
+
+        ToolTip.SetTip(letWizard, _settings.Current.Reviewed
+            ? "The mod opens its own setup the first time this game runs. What is written here is "
+              + "what it starts from."
+            : "Mod defaults has not been filled in, so what would be written is guesswork. The mod "
+              + "asks in the game whatever this says.");
+
+        letWizard.IsCheckedChanged += (_, _) =>
+        {
+            if (!_settings.Current.Reviewed) return;
+
+            preference.LetWizardAsk = letWizard.IsChecked == true;
+            _preferences.Set(report.Game.Path, preference);
+        };
+
+        yield return letWizard;
+
         // Directly under the box that governs it: the list of differences is what ticking that box
         // would change, so it belongs to it. Further down it read as an unrelated warning about
         // the game, and the connection between the two had to be guessed.
@@ -6177,7 +6213,8 @@ public partial class MainWindow : Window
 
         var result = new GameConfigWriter().Apply(
             report.Game.Path, descriptor, settings,
-            TargetFor(report, descriptor, settings), perGame: preference);
+            TargetFor(report, descriptor, settings),
+            skipWizard: !LetsWizardAsk(report, preference), perGame: preference);
 
         Busy(false, "Ready.");
 
@@ -6842,6 +6879,28 @@ public partial class MainWindow : Window
     /// way to learn what stands between them and it. Every branch here produces words, and the
     /// ones a person can act on produce a button too.
     /// </summary>
+    /// <summary>
+    /// Whether setting THIS game up would draw on Mod defaults at all.
+    ///
+    /// ⚠ The box, resolved the way the box resolves — untouched on an unconfigured game means yes,
+    /// which is why a fresh library is still told to fill the defaults in. Unticked means no, and
+    /// no is an answer: it is not a game waiting for something, it is a game that said it does not
+    /// want it.
+    /// </summary>
+    private bool NeedsModDefaults(GameReport report) =>
+        _preferences.Read(report.Game.Path).UsesModDefaults(GameConfig(report));
+
+    /// <summary>
+    /// Whether the mod still asks its own questions in this game after we write to it.
+    ///
+    /// ⚠ Two ways to reach it, and the second is not a preference: somebody may ask for it on this
+    /// game, and a machine whose Mod defaults have never been filled in gets it regardless — what
+    /// would be written then is the program's own guesses, and the wizard is the only thing that
+    /// will ever correct them. Same rule as InstallEngine.Plan, which cannot call this.
+    /// </summary>
+    private bool LetsWizardAsk(GameReport report, GamePreference preference) =>
+        preference.LetWizardAsk || !_settings.Current.Reviewed;
+
     private string? WhyNotReady(GameReport report)
     {
         if (!report.Game.IsModdable)
@@ -6866,7 +6925,14 @@ public partial class MainWindow : Window
         // this one leaves somebody in front of a greyed button with no way forward.
         //
         // The reason lives in the banner at the top of the card, which has the room for it.
-        if (!_settings.Current.Reviewed)
+        //
+        // 🔴 **Only where the defaults would actually be used.** This refused unconditionally, so
+        // unticking "Use Mod defaults in this game" — saying in as many words that this game does
+        // not want them — left the OneClick greyed for a prerequisite the game had just opted out
+        // of. Nothing was missing at that point: the loader and the mod go in, no setting is
+        // written, and the mod's own first-run wizard asks inside the game, which is the fallback
+        // this whole guard exists to protect.
+        if (!_settings.Current.Reviewed && NeedsModDefaults(report))
             return "Mod defaults comes first.";
 
         return null;
@@ -7724,7 +7790,18 @@ public partial class MainWindow : Window
         var configured = GameConfig(report).IsConfigured;
         var usesDefaults = preference.UsesModDefaults(GameConfig(report));
 
-        var writeSettings = settings && _settings.Current.Reviewed && (!configured || usesDefaults);
+        // 🔴 **Answers of its own are written even with Mod defaults untouched.** The Reviewed
+        // guard is about not deciding FOR somebody — writing the program's guesses into their game
+        // before they have said anything. It has nothing to say about a game they answered
+        // themselves, and it was refusing those too: untick the box, set a language and a model,
+        // press OneClick, and the game came up with neither.
+        //
+        // ⚠ The wizard stays open in that case, decided in the plan: the unanswered fields are
+        // still guesses, and the wizard is the only thing that will ever correct them.
+        var hasOwn = preference.Mod is { IsEmpty: false };
+
+        var writeSettings = settings
+                            && (hasOwn || (_settings.Current.Reviewed && (!configured || usesDefaults)));
 
         // ⚠ Per game, because that is where the risk is taken: putting a pre-release plugin in one
         // game to test a fix is a different decision from putting it in all of them. Read from the
@@ -8851,7 +8928,8 @@ public partial class MainWindow : Window
         var target = TargetFor(report, descriptor, settings);
 
         var result = new GameConfigWriter()
-            .Apply(report.Game.Path, descriptor, settings, target, perGame: preference);
+            .Apply(report.Game.Path, descriptor, settings, target,
+                   skipWizard: !LetsWizardAsk(report, preference), perGame: preference);
 
         Busy(false, "Ready.");
 

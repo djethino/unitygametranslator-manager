@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using UnityGameTranslator.Manager.Core.Ai;
 using UnityGameTranslator.Manager.Core.Api;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
@@ -84,6 +85,16 @@ public sealed class GameModSettingsForm
     private Control _apiCard = null!;
     private Button _apply = null!;
     private TextBlock _modelStatus = null!;
+
+    /// <summary>
+    /// Turning while the server in the field is being asked what it holds.
+    ///
+    /// 🔴 **A sentence is not an indicator.** "Asking http://localhost:11434..." sits in the same
+    /// grey, in the same place, as everything else this line says — so a screen waiting on a server
+    /// is indistinguishable from one that has answered. Same gear as the game scan, not a second
+    /// kind of waiting mark.
+    /// </summary>
+    private SpinningGear _modelGear = null!;
 
     /// <summary>
     /// True while the form fills itself in, so what it does to itself is not counted as an edit.
@@ -544,9 +555,24 @@ public sealed class GameModSettingsForm
             TextWrapping = TextWrapping.Wrap,
             IsVisible = false,
             Foreground = Palette.Of("TextMuted"),
+            VerticalAlignment = VerticalAlignment.Center,
         };
 
-        panel.Children.Add(_modelStatus);
+        // ⚠ Left and tight against the line it belongs to. The gear centres itself and keeps its
+        // own air, which is right in an empty panel and wrong beside a sentence.
+        _modelGear = new SpinningGear(string.Empty, size: 16)
+        {
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Avalonia.Thickness(0),
+            IsVisible = false,
+        };
+
+        panel.Children.Add(new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Children = { _modelGear, _modelStatus },
+        });
         panel.Children.Add(DefaultsLink(
             "Finding a local server and testing a model is done once, in Mod defaults."));
 
@@ -569,7 +595,19 @@ public sealed class GameModSettingsForm
 
         Say($"Asking {url}...", "TextMuted");
 
-        var models = await _probe.ListModelsAsync(url, _aiKey.Text?.Trim());
+        // ⚠ Stopped in a finally: an indicator left spinning after a failure says the program is
+        // still working when it has given up, which is worse than never having shown one.
+        _modelGear.IsVisible = true;
+
+        IReadOnlyList<string>? models;
+        try
+        {
+            models = await _probe.ListModelsAsync(url, _aiKey.Text?.Trim());
+        }
+        finally
+        {
+            _modelGear.IsVisible = false;
+        }
 
         if (models is null)
         {
@@ -653,10 +691,70 @@ public sealed class GameModSettingsForm
         panel.Children.Add(Row("Provider", _provider));
         panel.Children.Add(Row("API key", _providerKey));
         panel.Children.Add(_deeplFree);
+
+        // 🔴 **A way to find out, here too.** A key was typed, encrypted, written into the game, and
+        // the first thing that ever tested it was the mod failing to translate mid-game with no
+        // screen saying why. The same probe as Mod defaults, so both screens answer alike.
+        var test = new Button { Content = "Test key", FontSize = 11 };
+
+        var keyStatus = new TextBlock
+        {
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            IsVisible = false,
+        };
+
+        var keyGear = new SpinningGear(string.Empty, size: 16)
+        {
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Avalonia.Thickness(0),
+            IsVisible = false,
+        };
+
+        test.Click += async (_, _) =>
+        {
+            var deepl = ModSettingControls.Tag(_provider) == "deepl";
+            var key = _providerKey.Text?.Trim();
+
+            test.IsEnabled = false;
+            keyGear.IsVisible = true;
+            keyStatus.IsVisible = true;
+            keyStatus.Text = "Asking " + (deepl ? "DeepL" : "Google") + "...";
+            keyStatus.Foreground = Palette.Of("TextMuted");
+
+            try
+            {
+                var probe = new TranslatorKeyProbe();
+                var result = deepl
+                    ? await probe.CheckDeeplAsync(key, _deeplFree.IsChecked == true)
+                    : await probe.CheckGoogleAsync(key);
+
+                keyStatus.Text = result.Message;
+                keyStatus.Foreground = Palette.Of(result.Works ? "StatusSuccess" : "StatusWarning");
+            }
+            finally
+            {
+                keyGear.IsVisible = false;
+                test.IsEnabled = true;
+            }
+        };
+
+        panel.Children.Add(test);
+        panel.Children.Add(new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Children = { keyGear, keyStatus },
+        });
+
+        // 🔴 A key of your own comes first, and the allowance second. "Both bill you on your own
+        // account" said the bill and not the requirement — and beside a tickbox reading "Free
+        // tier", it left the impression that anybody could use these without a key. Nobody can.
         panel.Children.Add(new TextBlock
         {
-            Text = "Both bill you on your own account. The key is stored encrypted, tied to this "
-                 + "machine.",
+            Text = "Both need an account and a key of your own. Each account comes with a free "
+                 + "monthly allowance, and anything past it is billed to you. The key is stored "
+                 + "encrypted, tied to this machine.",
             FontSize = 11,
             TextWrapping = TextWrapping.Wrap,
             Foreground = Palette.Of("TextMuted"),

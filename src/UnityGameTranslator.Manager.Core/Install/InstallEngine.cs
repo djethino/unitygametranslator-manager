@@ -24,6 +24,18 @@ public sealed record InstallPlan(
     public bool InstallPlugin { get; init; } = true;
 
     /// <summary>
+    /// Whether the mod still runs its first-run wizard after this install.
+    ///
+    /// 🔴 **first_run_completed is a latch, and only this tool ever closed it.** A complete set
+    /// of settings also claimed the wizard was answered, so the mod never asked — right when the
+    /// settings really do answer it, wrong the moment somebody wants to finish the job inside the
+    /// game, and wrong on a machine whose Mod defaults have never been filled in.
+    ///
+    /// ⚠ It does not stop the values being written. They become what the wizard opens on.
+    /// </summary>
+    public bool LetWizardAsk { get; init; }
+
+    /// <summary>
     /// Which build of the loader to install, when it was resolved from the publisher rather than
     /// read from the catalog's pinned entry.
     ///
@@ -190,6 +202,13 @@ public sealed class InstallEngine
             // What matters is not which of the two is used, it is that they agree.
             Build = Catalog.LoaderBuildResolver.Known(loader, BepInEx6Channel),
 
+            // ⚠ Two ways to reach it, and the second is not a preference. Somebody may ask for the
+            // wizard on this game; and a machine whose Mod defaults have never been filled in must
+            // get it whatever anybody ticked, because the values being written are then the
+            // program's own guesses and the wizard is the only thing that will ever correct them.
+            LetWizardAsk = (preference?.LetWizardAsk ?? false)
+                           || (settings is not null && !settings.Reviewed),
+
             // Decided here because here is where the report is: what is published for this game
             // is what fixes its languages, and nothing further down the chain can see it.
             TargetLanguage = settings is null
@@ -279,7 +298,7 @@ public sealed class InstallEngine
                 Status?.Invoke("Applying your settings...");
                 configured = new GameConfigWriter()
                     .Apply(plan.Game.Path, plan.Loader, plan.Settings, plan.TargetLanguage,
-                           perGame: plan.Preference);
+                           skipWizard: !plan.LetWizardAsk, perGame: plan.Preference);
             }
 
             // 🔴 **The copies were for the rollback, and the rollback is over.** They existed so a

@@ -82,6 +82,21 @@ public sealed class SettingsWindow : Window
     private CheckBox _deeplFree = null!;
     private StackPanel _testOutput = null!;
     private TextBlock _aiStatus = null!;
+
+    /// <summary>What the provider said about the key. Its own line, beside its own button.</summary>
+    private TextBlock _apiStatus = null!;
+
+    /// <summary>
+    /// Turning while a local server is being looked for.
+    ///
+    /// 🔴 **A sentence is not an indicator.** The search says "Looking for a local AI server..."
+    /// in the same grey, in the same place, as every other thing it says — so a screen that is
+    /// sweeping six ports is indistinguishable from one that has finished and found nothing. The
+    /// wait is seconds long and there was no way to tell the two apart.
+    ///
+    /// ⚠ The gear this project already uses for its game scan, not a second kind of waiting mark.
+    /// </summary>
+    private SpinningGear _aiGear = null!;
     private Button _testButton = null!;
     private Button _applyButton = null!;
     private TextBlock _saved = null!;
@@ -383,6 +398,14 @@ public sealed class SettingsWindow : Window
         _aiStatus.Foreground = Brush(colour);
     }
 
+    /// <summary>The same, for the other card. Two translators, two conversations, two lines.</summary>
+    private void SayAboutKey(string text, string colour)
+    {
+        _apiStatus.Text = text;
+        _apiStatus.Foreground = Brush(colour);
+        _apiStatus.IsVisible = true;
+    }
+
     /// <summary>Only the card for the chosen backend is on screen; the other is gone entirely.</summary>
     private void ShowBackendCards()
     {
@@ -458,13 +481,51 @@ public sealed class SettingsWindow : Window
 
         ShowProvider();
 
+        // 🔴 **A way to find out, before a game is set up with it.** There was none: a key was
+        // typed, encrypted, stored and written into a config.json, and the first thing that ever
+        // tested it was the mod failing to translate mid-game with no screen saying why. The local
+        // AI server has had a Refresh and a test bench since the beginning.
+        var test = new Button { Content = "Test key", FontSize = 12 };
+
+        _apiStatus = new TextBlock
+        {
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            IsVisible = false,
+        };
+
+        test.Click += async (_, _) =>
+        {
+            var key = _providerKey.Text;
+            var deepl = Tag(_provider) == "deepl";
+
+            test.IsEnabled = false;
+            SayAboutKey("Asking " + (deepl ? "DeepL" : "Google") + "...", "TextMuted");
+
+            var probe = new TranslatorKeyProbe();
+            var result = deepl
+                ? await probe.CheckDeeplAsync(key, _deeplFree.IsChecked == true)
+                : await probe.CheckGoogleAsync(key);
+
+            SayAboutKey(result.Message, result.Works ? "StatusSuccess" : "StatusWarning");
+            test.IsEnabled = true;
+        };
+
         _apiPanel = new StackPanel { Spacing = 10 };
         _apiPanel.Children.Add(Row("Provider", _provider));
         _apiPanel.Children.Add(Row("API key", _providerKey));
         _apiPanel.Children.Add(_deeplFree);
+        _apiPanel.Children.Add(test);
+        _apiPanel.Children.Add(_apiStatus);
+
+        // 🔴 **A key of your own comes first, and the allowance second.** This led with "both have
+        // a free allowance", which is the half that lands — and read beside a tickbox saying "Free
+        // tier", it said plainly that anybody could use these without a key. Nobody can: both
+        // require an account of your own, and the free allowance is a property of that account.
         _apiPanel.Children.Add(Note(
-            "Both bill your own account and both have a free allowance. The key is stored "
-            + "encrypted on this machine.", "TextMuted"));
+            "Both need an account and a key of your own. Each account comes with a free monthly "
+            + "allowance, and anything past it is billed to you. The key is stored encrypted on "
+            + "this machine.", "TextMuted"));
 
         return Card("Google / DeepL", null, _apiPanel);
     }
@@ -509,6 +570,16 @@ public sealed class SettingsWindow : Window
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("TextMuted"),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        // ⚠ Left and tight against the line it belongs to. The gear centres itself and keeps its
+        // own air, which is right in an empty panel and wrong beside a sentence.
+        _aiGear = new SpinningGear(string.Empty, size: 18)
+        {
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(0),
+            IsVisible = false,
         };
 
         var refresh = new Button { Content = "Look for a local AI", FontSize = 12 };
@@ -555,7 +626,12 @@ public sealed class SettingsWindow : Window
         };
 
         _aiPanel = new StackPanel { Spacing = 10 };
-        _aiPanel.Children.Add(_aiStatus);
+        _aiPanel.Children.Add(new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Children = { _aiGear, _aiStatus },
+        });
         _aiPanel.Children.Add(Row("Server", _aiUrl, refresh));
         _aiPanel.Children.Add(Row("API key", _apiKey, _connectButton));
         // ⚠ What is said depends on WHERE the address points, and it used to be said to everyone.
@@ -771,15 +847,27 @@ public sealed class SettingsWindow : Window
         _aiModel.Items.Clear();
         _testButton.IsEnabled = false;
 
-        // Fetched alongside the search, never blocking it: a note is a nicety, a server list is
-        // the screen's reason to exist. Offline settings mean no note and nothing else missing.
-        _modelNotes ??= await new ModelNotesProvider(_platform)
-            .GetAsync(offline: !_draft.OnlineMode);
+        // ⚠ Turning for the whole search, and stopped in a finally: an indicator left spinning
+        // after a failure says the program is still working when it has given up, which is worse
+        // than never having shown one.
+        _aiGear.IsVisible = true;
 
-        var servers = await _probe.DiscoverAsync();
-        _aiServers.Remember(servers);
+        try
+        {
+            // Fetched alongside the search, never blocking it: a note is a nicety, a server list is
+            // the screen's reason to exist. Offline settings mean no note and nothing else missing.
+            _modelNotes ??= await new ModelNotesProvider(_platform)
+                .GetAsync(offline: !_draft.OnlineMode);
 
-        ShowServers(servers, asked);
+            var servers = await _probe.DiscoverAsync();
+            _aiServers.Remember(servers);
+
+            ShowServers(servers, asked);
+        }
+        finally
+        {
+            _aiGear.IsVisible = false;
+        }
     }
 
     /// <summary>

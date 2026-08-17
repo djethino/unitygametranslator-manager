@@ -146,6 +146,21 @@ public sealed class GamePreference
     [JsonPropertyName("adopt_loader")] public bool AdoptLoader { get; set; }
 
     /// <summary>
+    /// Whether the mod still runs its own first-run wizard in this game.
+    ///
+    /// 🔴 **A latch, and until now only this tool ever closed it.** Writing a complete set of
+    /// settings also writes first_run_completed — the mod then never asks anything, which is right
+    /// when the settings really do answer its questions and wrong the moment somebody wants to
+    /// finish setting the game up from inside it. There was no way to say so.
+    ///
+    /// ⚠ Ticked, the values are still written: they become what the wizard opens on, rather than
+    /// what replaces it. The two are not alternatives.
+    ///
+    /// ⚠ Per game, because it is about how ONE game is finished, not about this machine.
+    /// </summary>
+    [JsonPropertyName("let_wizard_ask")] public bool LetWizardAsk { get; set; }
+
+    /// <summary>
     /// A detached copy, for asking a question about answers that are not decided yet.
     ///
     /// ⚠ Exists because <see cref="GamePreferences.Read"/> hands back the STORED object: a
@@ -164,6 +179,7 @@ public sealed class GamePreference
         TranslationId = TranslationId,
         InstallTranslation = InstallTranslation,
         AdoptLoader = AdoptLoader,
+        LetWizardAsk = LetWizardAsk,
     };
 }
 

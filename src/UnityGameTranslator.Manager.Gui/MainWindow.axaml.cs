@@ -7971,9 +7971,11 @@ public partial class MainWindow : Window
         // and what we need to know afterwards is what it was beforehand.
         var configBefore = GameConfig(report);
 
-        // The question above was answered, so what it named is now decided. Before the plan, which
-        // reads the preference.
-        ValidatePending(report, preference);
+        // ⚠ Laid over the preference so the plan is built from what was just confirmed — but on a
+        // copy, and not written: an install that fails has validated nothing. The disk is written
+        // where the outcome is known, below.
+        preference = preference.Copy();
+        ValidateInto(report, preference, save: false);
 
         Busy(true, "Starting...");
 
@@ -7999,6 +8001,8 @@ public partial class MainWindow : Window
                 return;
             }
 
+            // The answers reached a game, so they stop being pending.
+            ValidatePending(report, _preferences.Read(report.Game.Path));
             RememberDefaultsWereWritten(report, plan, configBefore);
 
             var message = outcome.Message;
@@ -8851,11 +8855,15 @@ public partial class MainWindow : Window
     /// <summary>Installs or replaces the plugin, and leaves the loader alone.</summary>
     private async Task RunModInstallAsync(GameReport report)
     {
-        var preference = _preferences.Read(report.Game.Path);
-
-        // Pressing this button IS the validation of whatever was answered on a game that had no
-        // Apply to offer. Before the plan, because the plan reads the preference.
-        ValidatePending(report, preference);
+        // 🔴 **The plan sees the pending answers; the disk only sees them if it worked.** They were
+        // promoted before the plan, on the reasoning that the plan reads the preference — true, and
+        // it made a FAILED install keep them anyway. An install that put nothing in a game has
+        // validated nothing, and coming back to find the answers filed away is the same fault this
+        // whole mechanism exists to prevent, one step further along.
+        //
+        // ⚠ On a copy, so nothing unrelated can persist them: Read hands back the stored object.
+        var preference = _preferences.Read(report.Game.Path).Copy();
+        ValidateInto(report, preference, save: false);
 
         // The loader still comes along when there is none — a plugin without one loads in no game,
         // and refusing here would mean the mod's own button could not work on a fresh game.
@@ -9685,7 +9693,12 @@ public partial class MainWindow : Window
         engine.Status -= OnEngineStatus;
         Busy(false, outcome.Success ? "Done." : "Failed.");
 
-        if (outcome.Success) RememberDefaultsWereWritten(report, plan, configBefore);
+        if (outcome.Success)
+        {
+            // Now, and only now: the answers reached a game.
+            ValidatePending(report, _preferences.Read(report.Game.Path));
+            RememberDefaultsWereWritten(report, plan, configBefore);
+        }
 
         await MessageAsync(outcome.Success ? "Installed" : "Nothing was changed", outcome.Message);
         await ShowSelectedAsync();

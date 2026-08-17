@@ -461,15 +461,22 @@ public partial class MainWindow : Window
             ? $"{_games.Count} Unity games found"
             : $"{_games.Count} Unity games found, {blocked} that cannot be modded";
 
-        // Read before the situations, not on the first click: "My translations" has to be able to
-        // answer as soon as the window is up, and this is one call for the whole library.
-        await _lineages.EnsureAsync(_settings.Current.ApiToken);
-
         BuildFilterBar();
         RecomputeSituations();
         RefreshList();
         ShowOverview();
         Busy(false, "Ready.");
+
+        // 🔴 **Block on the disk, never on the network.** This was awaited HERE, between the scan
+        // and the first paint — one request, ten seconds of patience, holding back a list that had
+        // already been read off the disk and had nothing to learn from it. What the window IS comes
+        // from the machine; what somebody else has to say about it sharpens the rows afterwards,
+        // which is exactly what the two lines below already do.
+        //
+        // ⚠ Nothing lies in the meantime. AccountLineages.Known says whether the answer has
+        // arrived, and every reader already distinguishes "nobody is waiting" from "we have not
+        // asked yet" on it — the reason that property exists at all.
+        _ = FillLineagesAsync();
 
         // ⚠ **After the window is up, and it redraws when the answer lands.** Asking two
         // publishers what they currently offer takes a second or two, and nothing on screen needs
@@ -479,6 +486,26 @@ public partial class MainWindow : Window
         _ = WarmLoaderBuildsAsync();
 
         StartOnlineSweep();
+    }
+
+    /// <summary>
+    /// Asks the site which lineages belong to this account, and sharpens the rows when it answers.
+    ///
+    /// ⚠ One call for the whole library, so it is worth making early — just not worth waiting for.
+    /// The filter "My translations" and the count of contributions waiting both read it, and both
+    /// already know how to say "not asked yet" rather than "none".
+    /// </summary>
+    private async Task FillLineagesAsync()
+    {
+        await _lineages.EnsureAsync(_settings.Current.ApiToken);
+
+        // Redrawn because the answer changes what a row says — the same reason the loader builds
+        // redraw, and the same shape.
+        BuildFilterBar();
+        RecomputeSituations();
+        RefreshList();
+
+        if (_selected is not null) await ShowSelectedAsync();
     }
 
     /// <summary>

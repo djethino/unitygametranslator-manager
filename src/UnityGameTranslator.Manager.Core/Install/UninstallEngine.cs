@@ -145,6 +145,117 @@ public sealed class UninstallEngine
         });
     }
 
+    /// <summary>The loader this game's install was built on, read from the receipt.</summary>
+    private LoaderDescriptor? DescriptorFor(Receipt receipt) =>
+        _catalog.Loaders.FirstOrDefault(l => l.Id == receipt.Loader?.Id)
+        ?? _catalog.Loaders.FirstOrDefault(l => l.Id == receipt.Plugin?.Build);
+
+    private static string Normalise(string path) => path.Replace('\\', '/').Trim('/');
+
+    /// <summary>True when <paramref name="candidate"/> is <paramref name="root"/> or sits inside it.</summary>
+    private static bool IsWithin(string candidate, string root) =>
+        root.Length > 0
+        && (candidate.Equals(root, StringComparison.OrdinalIgnoreCase)
+            || candidate.StartsWith(root + "/", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Whether a directory is OURS to remove — the only question that may decide it.
+    ///
+    /// 🔴 **Not "did we create it".** That was the rule, and it is a different question with a
+    /// different answer: `FileOperations.EnsureDirectory` records every level it brings into
+    /// existence, so installing into a game whose loader had never run made us the creator of the
+    /// LOADER's folder — `Mods/` for MelonLoader, `BepInEx/plugins/` for the others, neither of
+    /// which ships inside its own archive. Uninstalling then took them away, and whether it did
+    /// depended on nothing but whether the game had been launched once before: same product, same
+    /// version, opposite outcome.
+    ///
+    /// So the answer is read from the catalog, which is where the layout is declared:
+    ///   • `userdata_dir` and anything under it — ours, always;
+    ///   • `plugin_dir` when it is NOT shared — ours (under BepInEx it is the same folder as
+    ///     `userdata_dir`, which is why both are checked and neither is enough alone);
+    ///   • our backup folder — ours;
+    ///   • everything else, including every parent of those, belongs to the loader or the game.
+    ///
+    /// ⚠ An unknown loader answers "not ours" for everything but the backup folder. Refusing to
+    /// remove a folder we cannot place is a leftover; removing one wrongly is somebody's install.
+    /// </summary>
+    private static bool OursToRemove(LoaderDescriptor? descriptor, string relativeDir)
+    {
+        var dir = Normalise(relativeDir);
+
+        // The game folder itself is never a candidate, whatever a path with ".." might produce.
+        if (dir.Length == 0 || dir.StartsWith("..", StringComparison.Ordinal)) return false;
+
+        if (IsWithin(dir, Normalise(FileOperations.BackupDirectory))) return true;
+        if (descriptor is null) return false;
+
+        if (IsWithin(dir, Normalise(descriptor.UserDataDir))) return true;
+
+        return !descriptor.PluginDirShared && IsWithin(dir, Normalise(descriptor.PluginDir));
+    }
+
+    /// <summary>The recorded directories we may act on, in the recorded order.</summary>
+    private static List<string> DirsOursToRemove(List<string> dirsCreated,
+                                                 LoaderDescriptor? descriptor) =>
+        dirsCreated.Where(d => OursToRemove(descriptor, d)).ToList();
+
+    /// <summary>Removes an empty directory, but only one this uninstall owns.</summary>
+    private static void TryRemoveEmptyDirectoryIfOurs(string gameRoot, LoaderDescriptor? descriptor,
+                                                      string absoluteDirectory)
+    {
+        var relative = Path.GetRelativePath(gameRoot, absoluteDirectory);
+        if (!OursToRemove(descriptor, relative)) return;
+
+        FileOperations.TryRemoveEmptyDirectory(absoluteDirectory);
+    }
+
+    /// <summary>The folders this mod keeps its own things in, deepest concern first.</summary>
+    private static IEnumerable<string> OurFolders(LoaderDescriptor descriptor)
+    {
+        var data = Normalise(descriptor.UserDataDir);
+        if (data.Length > 0) yield return data;
+
+        var plugin = Normalise(descriptor.PluginDir);
+        if (!descriptor.PluginDirShared
+            && plugin.Length > 0
+            && !plugin.Equals(data, StringComparison.OrdinalIgnoreCase))
+        {
+            yield return plugin;
+        }
+    }
+
+    /// <summary>
+    /// Drops our own folders once they hold nothing — regardless of who created them.
+    ///
+    /// ⚠ Only while empty, so a file we failed to remove keeps its folder, and keeps it findable.
+    /// </summary>
+    private static void SweepOurEmptyFolders(GameInstall game, LoaderDescriptor? descriptor,
+                                             List<string> removed)
+    {
+        if (descriptor is null) return;
+
+        foreach (var relative in OurFolders(descriptor))
+        {
+            var root = Path.Combine(game.Path, relative.Replace('/', Path.DirectorySeparatorChar));
+            if (!Directory.Exists(root)) continue;
+
+            try
+            {
+                foreach (var directory in Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories)
+                                                   .OrderByDescending(d => d.Length))
+                {
+                    FileOperations.TryRemoveEmptyDirectory(directory);
+                }
+
+                if (FileOperations.TryRemoveEmptyDirectory(root)) removed.Add(relative + "/");
+            }
+            catch
+            {
+                // Tidying, never a reason to fail an uninstall.
+            }
+        }
+    }
+
     /// <summary>Drops our backup folder once nothing is left in it. Safe to call at any time.</summary>
     private static void SweepEmptyBackups(GameInstall game)
     {
@@ -181,7 +292,12 @@ public sealed class UninstallEngine
                 try
                 {
                     File.Delete(orphan);
-                    FileOperations.TryRemoveEmptyDirectory(Path.GetDirectoryName(orphan)!);
+
+                    // The folder only if it is ours. With no receipt we judge it from the loader
+                    // whose layout the assembly was sitting in — and when that cannot be told,
+                    // nothing is removed. See OursToRemove.
+                    var owner = LoaderOwning(orphan);
+                    TryRemoveEmptyDirectoryIfOurs(game.Path, owner, Path.GetDirectoryName(orphan)!);
 
                     var name = Path.GetRelativePath(game.Path, orphan).Replace('\\', '/');
 
@@ -192,7 +308,7 @@ public sealed class UninstallEngine
                     // only pass that will ever come here.
                     var swept = new List<string> { name };
                     if (LoaderProbe.Detect(game.Path, _catalog) is null)
-                        RemoveLoaderLeftovers(game, LoaderOwning(orphan), swept);
+                        RemoveLoaderLeftovers(game, owner, swept);
 
                     SweepEmptyBackups(game);
 
@@ -225,6 +341,10 @@ public sealed class UninstallEngine
         var lastBackupTaken = false;
         var files = new FileOperations(game.Path);
 
+        // ⚠ Read NOW, while the receipt still describes the install. `receipt.Plugin` is set to null
+        // a few lines below, and the sweep that needs this runs after that point.
+        var descriptor = DescriptorFor(receipt);
+
         // User data first: it is the only irreplaceable thing here, so its last backup is taken
         // before anything else is touched, even if the rest fails afterwards.
         if (choice.RemoveUserData)
@@ -242,7 +362,14 @@ public sealed class UninstallEngine
         {
             if (receipt.Plugin is not null)
             {
-                RemoveRecorded(files, receipt.Plugin.Files, receipt.Plugin.DirsCreated, removed, kept);
+                // 🔴 **Filtered, because `DirsCreated` answers the wrong question.** It records what
+                // we MATERIALISED, which is not what we OWN: install a mod into a game whose loader
+                // has never run and we are the ones who bring `Mods/` — MelonLoader's own folder —
+                // into existence. Removing it later took away a folder the loader owns and the user
+                // drops mods into, and whether that happened depended on nothing more than whether
+                // the game had been launched once before. See OursToRemove.
+                RemoveRecorded(files, receipt.Plugin.Files,
+                               DirsOursToRemove(receipt.Plugin.DirsCreated, descriptor), removed, kept);
                 receipt.Plugin = null;
             }
 
@@ -261,7 +388,8 @@ public sealed class UninstallEngine
                     File.Delete(orphan);
                     removed.Add(Path.GetRelativePath(game.Path, orphan)
                                     .Replace(Path.DirectorySeparatorChar, '/'));
-                    FileOperations.TryRemoveEmptyDirectory(Path.GetDirectoryName(orphan)!);
+                    TryRemoveEmptyDirectoryIfOurs(game.Path, descriptor,
+                                                  Path.GetDirectoryName(orphan)!);
                 }
                 catch (Exception ex)
                 {
@@ -288,6 +416,18 @@ public sealed class UninstallEngine
                                       removed);
             }
         }
+
+        // 🔴 **Our own folders, once nothing of ours is left in them — whoever created them.**
+        //
+        // Deliberately NOT driven by `DirsCreated`, and deliberately here rather than inside the
+        // steps above. Two reasons, and each one produced a real leftover:
+        //   • a folder that already existed when we first wrote into it is absent from that list,
+        //     so an emptied `UserData/UnityGameTranslator/` stayed behind as a shell bearing our
+        //     name after an uninstall that had removed everything in it;
+        //   • under BepInEx the plugin and the data share ONE folder, so it only becomes empty
+        //     once the data pass AND the assembly have both gone — neither step can see that on
+        //     its own.
+        SweepOurEmptyFolders(game, descriptor, removed);
 
         // 🔴 **No restore here.** Uninstalling removes what we put in. Putting back what the game
         // had before is a different act and belongs to a different verb.
@@ -535,6 +675,20 @@ public sealed class UninstallEngine
     {
         if (descriptor is null) return;
 
+        // ⚠ The shared plugin folder — MelonLoader's Mods/ — is the LOADER's, which is why every
+        // plugin uninstall now leaves it alone. Once the loader itself is gone it answers to
+        // nobody either, so this is the one pass entitled to drop it, and only while empty:
+        // anything still in there belongs to another mod, and CountForeignMods refused the removal
+        // before we ever got here.
+        if (descriptor.PluginDirShared && !string.IsNullOrWhiteSpace(descriptor.PluginDir))
+        {
+            var shared = Path.Combine(game.Path,
+                descriptor.PluginDir.Replace('/', Path.DirectorySeparatorChar));
+
+            if (FileOperations.TryRemoveEmptyDirectory(shared))
+                removed.Add(Normalise(descriptor.PluginDir) + "/");
+        }
+
         // The loader's own tree: the parent of its plugin folder, unless that folder IS the tree
         // (MelonLoader's Mods/ sits beside UserData/ rather than inside anything of ours).
         var root = descriptor.PluginDirShared
@@ -705,17 +859,11 @@ public sealed class UninstallEngine
             }
         }
 
-        // Folders the mod made for its own files — fonts/, images/ — go once they are empty, and
-        // only then: one left behind by a file we could not remove still holds that file.
-        //
-        // ⚠ `backups/` survives this when its files were not ticked, which is the whole point: it
-        // is not empty, so nothing here reaches it.
-        foreach (var directory in Directory.EnumerateDirectories(userData, "*", SearchOption.AllDirectories)
-                                           .OrderByDescending(d => d.Length))
-        {
-            FileOperations.TryRemoveEmptyDirectory(directory);
-        }
-
+        // ⚠ The empty folders are NOT swept here any more — see SweepOurEmptyFolders, called once
+        // at the end of Apply. Under BepInEx this folder also holds the assembly, so sweeping from
+        // here could only ever reach the sub-folders: the root stays occupied until the plugin step
+        // has run, and that step is the next one. Doing it in one place afterwards is the only
+        // position from which the whole answer is visible.
         return lastBackupTaken;
     }
 

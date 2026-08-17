@@ -294,9 +294,24 @@ public sealed class BackupsWindow : Window
         if (entry.ByHand > 0) facts += $" · {entry.ByHand} by hand";
         if (entry.WithAssets) facts += " · with fonts and images";
 
-        var text = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center };
+        // ⚠ **Trimmed, and clipped to its column.** A Grid does not clip its children, and a
+        // TextBlock with neither wrapping nor trimming simply paints past the edge — so a long
+        // line ran underneath the buttons beside it. It showed on the saved list first, which
+        // carries three verbs instead of two and therefore has the least room.
+        var text = new StackPanel
+        {
+            Spacing = 1,
+            VerticalAlignment = VerticalAlignment.Center,
+            ClipToBounds = true,
+            Margin = new Avalonia.Thickness(0, 0, 10, 0),
+        };
 
-        text.Children.Add(new TextBlock { Text = facts, Foreground = Brush("TextPrimary") });
+        text.Children.Add(new TextBlock
+        {
+            Text = facts,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Foreground = Brush("TextPrimary"),
+        });
 
         // 🔴 The one restore nothing can undo, said where the counts are and not in small print:
         // this copy is a different translation, not an earlier version of the one in place.
@@ -306,6 +321,7 @@ public sealed class BackupsWindow : Window
             {
                 Text = Backups.AnotherLineageNote,
                 FontSize = 11,
+                TextTrimming = TextTrimming.CharacterEllipsis,
                 Foreground = Brush("StatusWarning"),
             });
         }

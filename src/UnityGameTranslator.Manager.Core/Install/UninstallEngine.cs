@@ -229,14 +229,16 @@ public sealed class UninstallEngine
     ///
     /// ⚠ Only while empty, so a file we failed to remove keeps its folder, and keeps it findable.
     /// </summary>
-    private static void SweepOurEmptyFolders(GameInstall game, LoaderDescriptor? descriptor,
-                                             List<string> removed)
+    private static void SweepOurEmptyFolders(GameInstall game, FileOperations files,
+                                             LoaderDescriptor? descriptor, List<string> removed)
     {
         if (descriptor is null) return;
 
         foreach (var relative in OurFolders(descriptor))
         {
-            var root = Path.Combine(game.Path, relative.Replace('/', Path.DirectorySeparatorChar));
+            // ⚠ Through the guard, never Path.Combine: these names come from the fetched catalog,
+            // and this method deletes. See FileOperations.TryResolveInsideGame.
+            if (!files.TryResolveInsideGame(relative, out var root)) continue;
             if (!Directory.Exists(root)) continue;
 
             try
@@ -427,7 +429,7 @@ public sealed class UninstallEngine
         //   • under BepInEx the plugin and the data share ONE folder, so it only becomes empty
         //     once the data pass AND the assembly have both gone — neither step can see that on
         //     its own.
-        SweepOurEmptyFolders(game, descriptor, removed);
+        SweepOurEmptyFolders(game, files, descriptor, removed);
 
         // 🔴 **No restore here.** Uninstalling removes what we put in. Putting back what the game
         // had before is a different act and belongs to a different verb.
@@ -680,22 +682,34 @@ public sealed class UninstallEngine
         // nobody either, so this is the one pass entitled to drop it, and only while empty:
         // anything still in there belongs to another mod, and CountForeignMods refused the removal
         // before we ever got here.
+        // ⚠ Every path below is built from the fetched catalog, and every one of them is deleted
+        // from — so they all go through the guard. See FileOperations.TryResolveInsideGame.
+        var files = new FileOperations(game.Path);
+
         if (descriptor.PluginDirShared && !string.IsNullOrWhiteSpace(descriptor.PluginDir))
         {
-            var shared = Path.Combine(game.Path,
-                descriptor.PluginDir.Replace('/', Path.DirectorySeparatorChar));
-
-            if (FileOperations.TryRemoveEmptyDirectory(shared))
+            if (files.TryResolveInsideGame(descriptor.PluginDir, out var shared)
+                && FileOperations.TryRemoveEmptyDirectory(shared))
+            {
                 removed.Add(Normalise(descriptor.PluginDir) + "/");
+            }
         }
 
         // The loader's own tree: the parent of its plugin folder, unless that folder IS the tree
         // (MelonLoader's Mods/ sits beside UserData/ rather than inside anything of ours).
-        var root = descriptor.PluginDirShared
-            ? null
-            : Path.GetDirectoryName(Path.Combine(game.Path, descriptor.PluginDir));
+        if (descriptor.PluginDirShared) return;
+        if (!files.TryResolveInsideGame(descriptor.PluginDir, out var pluginDir)) return;
 
-        if (root is null || !Directory.Exists(root)) return;
+        var root = Path.GetDirectoryName(pluginDir);
+
+        // ⚠ The PARENT, so the guard is applied again: a plugin_dir sitting at the game root would
+        // otherwise hand us the folder above it — the one holding every other game.
+        if (root is null
+            || !files.TryResolveInsideGame(Path.GetRelativePath(game.Path, root), out _)
+            || !Directory.Exists(root))
+        {
+            return;
+        }
 
         foreach (var name in new[] { "cache", "LogOutput.log", "preloader.log" })
         {

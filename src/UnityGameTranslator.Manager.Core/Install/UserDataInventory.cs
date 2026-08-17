@@ -35,11 +35,27 @@ public sealed record UserDataGroup(string Label, string Consequence, IReadOnlyLi
 /// </summary>
 public static class UserDataInventory
 {
-    /// <summary>Where the mod keeps its own files for this game, or null when there is none.</summary>
+    /// <summary>
+    /// Where the mod keeps its own files for this game, or null when there is none.
+    ///
+    /// 🔴 **Resolved through the guard, and this is the choke point for it.** `userdata_dir` comes
+    /// from the FETCHED catalog — GitHub, then the site mirror, then a cache — so it is a remote
+    /// string, and `Path.Combine(gamePath, "../somewhere")` resolves happily outside the game the
+    /// user chose. Everything that reads or DELETES the mod's data comes through here: this method,
+    /// <see cref="Scan"/>, the backups store and the uninstall. One check here covers them all.
+    ///
+    /// ⚠ It used to combine without checking, and the per-file guard downstream only verified that
+    /// a file sat inside this folder — which says nothing when the folder itself is elsewhere.
+    /// Demonstrated: with a catalog naming "../ESCAPED", an uninstall deleted the config and the
+    /// fonts from a folder outside the game.
+    ///
+    /// ⚠ An empty `userdata_dir` is refused too, deliberately. It would resolve to the game root,
+    /// and then "the mod's data" would be the whole game.
+    /// </summary>
     public static string? FolderFor(string gamePath, LoaderDescriptor descriptor)
     {
-        var folder = Path.Combine(gamePath,
-            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar));
+        if (!new FileOperations(gamePath).TryResolveInsideGame(descriptor.UserDataDir, out var folder))
+            return null;
 
         return Directory.Exists(folder) ? folder : null;
     }

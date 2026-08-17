@@ -99,20 +99,38 @@ public sealed class FileOperations
     /// </summary>
     public string ResolveInsideGame(string relativePath)
     {
-        var combined = Path.GetFullPath(
-            Path.Combine(_gameRoot, relativePath.Replace('/', Path.DirectorySeparatorChar)));
-
-        var root = _gameRoot.EndsWith(Path.DirectorySeparatorChar)
-            ? _gameRoot
-            : _gameRoot + Path.DirectorySeparatorChar;
-
-        if (!combined.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+        if (!TryResolveInsideGame(relativePath, out var combined))
         {
             throw new InvalidOperationException(
                 $"Refusing to write outside the game folder: '{relativePath}'");
         }
 
         return combined;
+    }
+
+    /// <summary>
+    /// The same rule, for callers that must SKIP an escaping path rather than fail on it.
+    ///
+    /// 🔴 **Every path built from the catalog goes through one of these two, without exception.**
+    /// The catalog is fetched — GitHub, then the site mirror, then a cache — so `userdata_dir` and
+    /// `plugin_dir` are remote strings, and `Path.Combine(gameRoot, "../..")` resolves happily
+    /// outside the game the user chose. Deleting is where that bites hardest: the folders removed
+    /// on uninstall are named by exactly those two fields.
+    ///
+    /// ⚠ A separate method rather than a try/catch at each call site: an escaping path is not an
+    /// exceptional condition to survive, it is an input to reject, and rejecting it is the answer
+    /// in both cases — write nothing, remove nothing.
+    /// </summary>
+    public bool TryResolveInsideGame(string relativePath, out string absolute)
+    {
+        absolute = Path.GetFullPath(
+            Path.Combine(_gameRoot, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+
+        var root = _gameRoot.EndsWith(Path.DirectorySeparatorChar)
+            ? _gameRoot
+            : _gameRoot + Path.DirectorySeparatorChar;
+
+        return absolute.StartsWith(root, StringComparison.OrdinalIgnoreCase);
     }
 
     public static string HashFile(string path)

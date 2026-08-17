@@ -1,0 +1,472 @@
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Layout;
+using Avalonia.Media;
+using UnityGameTranslator.Common;
+using UnityGameTranslator.Manager.Core.Detection;
+using UnityGameTranslator.Manager.Core.Install;
+using UnityGameTranslator.Manager.Core.Model;
+
+namespace UnityGameTranslator.Manager.Gui;
+
+/// <summary>
+/// This game's translation as it stood at earlier moments.
+///
+/// 🔴 **Built like Settings and Mod defaults, deliberately.** The first attempt was a window of its
+/// own invention — a bare dialog with hand-made headings — and it read as a different program:
+/// same product, another designer. This one uses the shape those two established, because a person
+/// who has opened one of them has already learnt this one:
+///
+///   · a sentence at the top saying what the window is about;
+///   · cards on <c>SurfaceCard</c>, each a subject, each titled and introduced;
+///   · a docked bar at the bottom, on <c>SurfaceBar</c>, buttons to the right;
+///   · the verb of a block UNDER the block it acts on, never above it.
+///
+/// 🔴 **Two cards, because there are two lists**, and they do not live equally long: an automatic
+/// copy ages out on its own, a saved one stays until somebody removes it. Rows that look alike but
+/// do not survive alike is how people lose what they thought was kept.
+///
+/// ⚠ Everything a row SAYS comes from <see cref="Backups"/> — the same words the mod's own panel
+/// uses over the same folder. Only the drawing belongs here.
+/// </summary>
+public sealed class BackupsWindow : Window
+{
+    private readonly GameInstall _game;
+    private readonly LoaderDescriptor _descriptor;
+    private readonly bool _running;
+
+    private readonly StackPanel _cards = new() { Spacing = 16 };
+    private readonly TextBlock _now = new();
+
+    /// <summary>Whether anything was written, so the caller knows to refresh the card behind.</summary>
+    public bool Touched { get; private set; }
+
+    public BackupsWindow(GameInstall game, LoaderDescriptor descriptor, bool running)
+    {
+        _game = game;
+        _descriptor = descriptor;
+        _running = running;
+
+        Title = $"Backups — {game.Name}";
+        Width = 720;
+        MinWidth = 640;
+
+        // ⚠ Sized to its content rather than to a fixed height, and capped by the cards inside:
+        // an empty history is a short window, a full one never becomes a tall one. Settings can
+        // afford a fixed 780 because it always holds the same six cards; this holds nought to
+        // fifteen rows.
+        SizeToContent = SizeToContent.Height;
+        MaxHeight = 820;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        Background = this.FindResource("SurfaceBase") as IBrush;
+
+        Content = Build();
+        Redraw();
+    }
+
+    private static IBrush? Brush(string key) =>
+        Avalonia.Application.Current?.FindResource(key) as IBrush;
+
+    private Control Build()
+    {
+        var layout = new StackPanel { Spacing = 16, Margin = new Avalonia.Thickness(24) };
+
+        layout.Children.Add(new TextBlock
+        {
+            Text = Backups.PrivacyNote + " They are what you come back to when something replaces "
+                 + "your work, or when you want to try an idea and be able to walk out of it.",
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("TextSecondary"),
+        });
+
+        // 🔴 The current state, above both lists. Without it no row can be read: a line count is
+        // neither more nor less until somebody knows where they stand today.
+        _now.FontWeight = FontWeight.SemiBold;
+        _now.Foreground = Brush("TextPrimary");
+        layout.Children.Add(_now);
+
+        layout.Children.Add(_cards);
+
+        var close = new Button { Content = "Close", IsDefault = true, IsCancel = true,
+                                 Classes = { "primary" } };
+        close.Click += (_, _) => Close();
+
+        // The same docked bar as Settings and Mod defaults: one place the eye already knows to
+        // look for the way out.
+        var bar = new Border
+        {
+            Background = Brush("SurfaceBar"),
+            BorderBrush = Brush("BorderSubtle"),
+            BorderThickness = new Avalonia.Thickness(0, 1, 0, 0),
+            Padding = new Avalonia.Thickness(24, 12),
+            Child = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 12,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Children = { close },
+            },
+        };
+
+        var root = new DockPanel();
+        DockPanel.SetDock(bar, Dock.Bottom);
+        root.Children.Add(bar);
+        root.Children.Add(new ScrollViewer { Content = layout });
+
+        return root;
+    }
+
+    /// <summary>
+    /// Rebuilds both cards from disk.
+    ///
+    /// 🔴 **In place, never by reopening.** The window used to close and come back after every
+    /// act, which showed as a flash and lost the reader's place — a window that blinks each time a
+    /// button is pressed reads as something going wrong.
+    ///
+    /// ⚠ Read from disk each time rather than from what we believe we just did: a restore changes
+    /// the line count, and a header describing the state before the act lies for as long as the
+    /// window stays open.
+    /// </summary>
+    private void Redraw()
+    {
+        var kept = TranslationBackupStore.List(_game.Path, _descriptor);
+        var local = LocalTranslationProbe.Read(_game.Path, _descriptor);
+
+        _now.Text = local is null
+            ? "This game holds no translation yet."
+            : $"Now: {local.EntryCount} lines";
+
+        _cards.Children.Clear();
+
+        _cards.Children.Add(SavedCard(kept, local is not null));
+        _cards.Children.Add(AutomaticCard(kept));
+    }
+
+    private Control SavedCard(IReadOnlyList<BackupEntry> kept, bool hasTranslation)
+    {
+        var saved = Backups.SavedCount(kept);
+        var why = Backups.WhyCannotSave(kept);
+
+        var body = new StackPanel { Spacing = 10 };
+        body.Children.Add(Rows(kept, wantSaved: true, height: 230,
+            empty: "Nothing kept yet. Keep one before you try something, and you can walk back out "
+                 + "of whatever you try."));
+
+        // 🔴 **Under the list it fills, not above it.** Every verb in this product sits below the
+        // zone it acts on and to the right — the Apply of a settings block, the Apply of a hotkey.
+        // Above, it read as a heading for the list rather than an act upon it.
+        var save = ScopeMark.Marked(EditSide.Local, "Save a copy",
+                                    enabled: why is null && !_running && hasTranslation);
+        save.Classes.Add("primary");
+
+        // ⚠ Never a control that cannot be pressed without words saying which reason applies.
+        ToolTip.SetTip(save, _running
+            ? $"{_game.Name} is running, so its files are locked."
+            : why
+              ?? (!hasTranslation
+                  ? "There is no translation here to copy yet."
+                  : "Keeps the translation as it stands, with the fonts and images it uses."));
+
+        save.Click += (_, _) =>
+        {
+            TranslationBackupStore.SaveCopy(_game.Path, _descriptor);
+            Touched = true;
+            Redraw();
+        };
+
+        body.Children.Add(new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Children = { save },
+        });
+
+        return Card(Backups.SavedHeading, $"{saved} of {Backups.SavedKept} kept. "
+                    + "These stay until you remove one — nothing here ages out.", body);
+    }
+
+    private Control AutomaticCard(IReadOnlyList<BackupEntry> kept)
+    {
+        var body = new StackPanel { Spacing = 10 };
+        body.Children.Add(Rows(kept, wantSaved: false, height: 190,
+            empty: "Nothing yet. One is kept whenever something replaces this game's translation."));
+
+        return Card(Backups.AutomaticHeading,
+                    $"The last {Backups.AutomaticKept}, taken on their own before something "
+                    + "replaced your translation. The oldest goes as a new one arrives — Keep one "
+                    + "to hold on to it.", body);
+    }
+
+    /// <summary>
+    /// The rows of one list, in their own capped scroll area.
+    ///
+    /// 🔴 Capped and scrolling on its own: ten rows in a shared scroller push the second card below
+    /// the fold, and scrolling to reach it loses the first — which is the list this window exists
+    /// to compare against.
+    /// </summary>
+    private Control Rows(IReadOnlyList<BackupEntry> kept, bool wantSaved, double height,
+                         string empty)
+    {
+        var rows = new StackPanel { Spacing = 6 };
+        var any = false;
+
+        foreach (var entry in kept)
+        {
+            if (entry.IsSaved != wantSaved) continue;
+            any = true;
+            rows.Children.Add(Row(entry, kept));
+        }
+
+        if (!any)
+        {
+            rows.Children.Add(new TextBlock
+            {
+                Text = empty,
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextMuted"),
+            });
+
+            return rows;
+        }
+
+        return new ScrollViewer
+        {
+            Content = rows,
+            MaxHeight = height,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
+    }
+
+    /// <summary>One copy: what it is, why it exists, and what may be done with it.</summary>
+    private Control Row(BackupEntry entry, IReadOnlyList<BackupEntry> all)
+    {
+        var box = new StackPanel { Spacing = 3 };
+
+        var facts = $"{entry.At:dd MMM HH:mm}   {entry.Lines} lines";
+        if (entry.ByHand > 0) facts += $" · {entry.ByHand} by hand";
+        if (entry.WithAssets) facts += " · with fonts and images";
+
+        box.Children.Add(new TextBlock { Text = facts, Foreground = Brush("TextPrimary") });
+
+        // 🔴 The one restore nothing can undo, said where the counts are and not in small print:
+        // this copy is a different translation, not an earlier version of the one in place.
+        if (Backups.IsAnotherLineage(entry.Uuid, LocalUuid()))
+        {
+            box.Children.Add(new TextBlock
+            {
+                Text = Backups.AnotherLineageNote,
+                FontSize = 11,
+                Foreground = Brush("StatusWarning"),
+            });
+        }
+
+        // 🔴 **Nothing when there is nothing to add.** An unnamed saved copy printed "Saved by
+        // you" — the title of the very card it sits in — on every row: a whole line, repeated. The
+        // act earns a line where it differs from row to row; a name earns one when somebody wrote
+        // it. Otherwise the date and the counts are the row.
+        var subtitle = !string.IsNullOrEmpty(entry.Label) ? "\"" + entry.Label + "\""
+                     : entry.IsSaved ? null
+                     : Backups.Describe(entry.Reason, entry.By);
+
+        if (subtitle is not null)
+        {
+            box.Children.Add(new TextBlock
+            {
+                Text = subtitle,
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextSecondary"),
+            });
+        }
+
+        // ⚠ **Only Restore carries a scope mark, and that is not an omission.** The mark answers
+        // "where does the result land": Restore lands in the game, so it is Local. Rename, Delete
+        // and Keep touch nothing but the backup folder, and marking them would announce a change
+        // to a game that is not happening.
+        var verbs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+
+        var restore = ScopeMark.Marked(EditSide.Local, "Restore", enabled: !_running);
+        ToolTip.SetTip(restore, _running
+            ? $"{_game.Name} is running, so its files are locked."
+            : "Puts this one back. What is here now is kept first, so this can be walked back.");
+
+        restore.Click += (_, _) => Act(() =>
+            TranslationBackupStore.Restore(_game.Path, _descriptor, entry.Id));
+
+        verbs.Children.Add(restore);
+
+        if (entry.IsSaved)
+        {
+            var rename = new Button { Content = "Rename", FontSize = 12 };
+            ToolTip.SetTip(rename, "Ten dated rows are not a choice. A name makes one findable.");
+            rename.Click += async (_, _) =>
+            {
+                if (await AskNameAsync(entry)) Touched = true;
+                Redraw();
+            };
+            verbs.Children.Add(rename);
+
+            var delete = new Button { Content = "Delete", FontSize = 12 };
+            ToolTip.SetTip(delete, "Removes this copy and frees a slot. Nothing else is touched.");
+            delete.Click += (_, _) => Act(() =>
+                TranslationBackupStore.Delete(_game.Path, _descriptor, entry.Id));
+            verbs.Children.Add(delete);
+        }
+        else
+        {
+            // ⚠ The gesture that closes the loop between the two cards: recognise the one worth
+            // having before it ages out, and it stops ageing.
+            var keep = new Button
+            {
+                Content = "Keep",
+                FontSize = 12,
+                IsEnabled = Backups.CanSaveAnother(all),
+            };
+
+            ToolTip.SetTip(keep, Backups.WhyCannotSave(all)
+                                 ?? "Moves it in with the ones you kept, so it stops ageing out.");
+
+            keep.Click += (_, _) => Act(() =>
+                TranslationBackupStore.Keep(_game.Path, _descriptor, entry.Id));
+
+            verbs.Children.Add(keep);
+        }
+
+        box.Children.Add(verbs);
+
+        return new Border
+        {
+            Background = Brush("SurfaceInput"),
+            BorderBrush = Brush("BorderSubtle"),
+            BorderThickness = new Avalonia.Thickness(1),
+            CornerRadius = new Avalonia.CornerRadius(4),
+            Padding = new Avalonia.Thickness(10, 8),
+            Child = box,
+        };
+    }
+
+    private void Act(Action write)
+    {
+        write();
+        Touched = true;
+        Redraw();
+    }
+
+    private string? LocalUuid() => LocalTranslationProbe.Read(_game.Path, _descriptor)?.Uuid;
+
+    /// <summary>
+    /// Asks what to call a copy. True when something was written.
+    ///
+    /// ⚠ Owned by this window rather than by the main one: a dialog whose owner sits behind
+    /// another modal opens behind it on some window managers, which reads as a frozen program.
+    /// </summary>
+    private async Task<bool> AskNameAsync(BackupEntry entry)
+    {
+        var field = new TextBox
+        {
+            Text = entry.Label ?? "",
+            Watermark = "What is this one?",
+            MinWidth = 320,
+        };
+
+        var save = new Button { Content = "Save", Classes = { "primary" } };
+        var cancel = new Button { Content = "Cancel", IsCancel = true, IsDefault = true };
+
+        var layout = new StackPanel { Spacing = 14, Margin = new Avalonia.Thickness(24) };
+
+        layout.Children.Add(new TextBlock
+        {
+            Text = "Name this copy",
+            FontSize = 15,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = Brush("TextPrimary"),
+        });
+
+        layout.Children.Add(new TextBlock
+        {
+            Text = $"The copy from {entry.At:dd MMM HH:mm}, {entry.Lines} lines.",
+            FontSize = 12,
+            Foreground = Brush("TextSecondary"),
+        });
+
+        layout.Children.Add(field);
+        layout.Children.Add(new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Children = { cancel, save },
+        });
+
+        var dialog = new Window
+        {
+            Title = "Name this copy",
+            Width = 460,
+            SizeToContent = SizeToContent.Height,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = Brush("SurfaceBase"),
+            Content = layout,
+        };
+
+        var written = false;
+
+        save.Click += (_, _) =>
+        {
+            TranslationBackupStore.Rename(_game.Path, _descriptor, entry.Id, field.Text);
+            written = true;
+            dialog.Close();
+        };
+
+        cancel.Click += (_, _) => dialog.Close();
+
+        await dialog.ShowDialog(this);
+        return written;
+    }
+
+    /// <summary>
+    /// The card Settings and Mod defaults use, to the pixel.
+    ///
+    /// ⚠ Copied rather than shared because those two keep private copies of it as well — a third
+    /// is the point at which it should become one control, and that refactor belongs to all three
+    /// at once rather than to whichever window is being written today.
+    /// </summary>
+    private static Control Card(string title, string? intro, Control content)
+    {
+        var body = new StackPanel { Spacing = 10 };
+
+        body.Children.Add(new TextBlock
+        {
+            Text = title,
+            FontWeight = FontWeight.SemiBold,
+            FontSize = 14,
+            Foreground = Brush("TextPrimary"),
+        });
+
+        if (intro is not null)
+        {
+            body.Children.Add(new TextBlock
+            {
+                Text = intro,
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextMuted"),
+            });
+        }
+
+        body.Children.Add(content);
+
+        return new Border
+        {
+            Background = Brush("SurfaceCard"),
+            BorderBrush = Brush("BorderSubtle"),
+            BorderThickness = new Avalonia.Thickness(1),
+            CornerRadius = new Avalonia.CornerRadius(8),
+            Padding = new Avalonia.Thickness(16),
+            Child = body,
+        };
+    }
+}

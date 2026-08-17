@@ -369,8 +369,30 @@ public sealed class BackupsWindow : Window
             ? $"{_game.Name} is running, so its files are locked."
             : "Puts this one back. What is here now is kept first, so this can be walked back.");
 
-        restore.Click += (_, _) => Act(() =>
-            TranslationBackupStore.Restore(_game.Path, _descriptor, entry.Id));
+        // 🔴 **Asked, exactly as the mod asks it.** This window and the mod's panel look at the same
+        // folder; one of them removed a copy on the click while the other asked first. Two screens
+        // onto one folder disagreeing about whether losing work deserves a question is not a
+        // difference of style — and the one that did not ask was the one where the pointer is
+        // already moving between rows.
+        //
+        // ⚠ The words come from `Backups`, not from here. Written twice they drift, and the drift
+        // is invisible: nobody has both dialogs open at once to notice.
+        restore.Click += async (_, _) =>
+        {
+            var nowLines = LocalTranslationProbe.Read(_game.Path, _descriptor)?.EntryCount ?? 0;
+
+            if (!await ConfirmationWindow.AskAsync(
+                    this, Backups.ConfirmRestoreTitle,
+                    Backups.ConfirmRestoreBody(entry.Lines, nowLines,
+                                               entry.At.ToString("dd MMM HH:mm"),
+                                               Backups.IsAnotherLineage(entry.Uuid, LocalUuid())),
+                    Backups.ConfirmRestoreVerb))
+            {
+                return;
+            }
+
+            Act(() => TranslationBackupStore.Restore(_game.Path, _descriptor, entry.Id));
+        };
 
         verbs.Children.Add(restore);
 
@@ -387,8 +409,19 @@ public sealed class BackupsWindow : Window
 
             var delete = new Button { Content = "Delete", FontSize = 12 };
             ToolTip.SetTip(delete, "Removes this copy and frees a slot. Nothing else is touched.");
-            delete.Click += (_, _) => Act(() =>
-                TranslationBackupStore.Delete(_game.Path, _descriptor, entry.Id));
+            // ⚠ The one act on this window nothing puts back — the others all leave a way out.
+            delete.Click += async (_, _) =>
+            {
+                if (!await ConfirmationWindow.AskAsync(
+                        this, Backups.ConfirmDeleteTitle,
+                        Backups.ConfirmDeleteBody(NameFor(entry), entry.Lines),
+                        Backups.ConfirmDeleteVerb))
+                {
+                    return;
+                }
+
+                Act(() => TranslationBackupStore.Delete(_game.Path, _descriptor, entry.Id));
+            };
             verbs.Children.Add(delete);
         }
         else
@@ -437,6 +470,18 @@ public sealed class BackupsWindow : Window
     }
 
     private string? LocalUuid() => LocalTranslationProbe.Read(_game.Path, _descriptor)?.Uuid;
+
+    /// <summary>
+    /// How a copy is referred to in a question about it.
+    ///
+    /// ⚠ Its name when it has one, its date otherwise — never "this backup". Somebody holding ten
+    /// of them has to recognise WHICH one is about to go, and the dialog is the last place that can
+    /// still be told apart from the row underneath the pointer.
+    /// </summary>
+    private static string NameFor(BackupEntry entry) =>
+        string.IsNullOrEmpty(entry.Label)
+            ? $"the copy from {entry.At:dd MMM HH:mm}"
+            : "\"" + entry.Label + "\"";
 
     /// <summary>
     /// Asks what to call a copy. True when something was written.

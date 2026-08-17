@@ -980,9 +980,17 @@ public partial class MainWindow : Window
             updated.Reviewed = true;
             _settings.Save(updated);
 
-            // The language is the context for every row: changing it re-reads the whole list.
+            // 🔴 **The list AND whatever is open on the right.** The language is the context for
+            // every row and for every line of the card — which translation is "in your language",
+            // which target would be written, what the differences with Mod defaults are. Refreshing
+            // the list alone left the card showing an answer computed against the language before
+            // last: a game whose card read "Breton -> English" while the picker said French.
+            //
+            // Same call as OpenSettingsAsync, and for the same reason: this changes the same
+            // setting that window changes, so it cannot redraw less than that window does.
             RecomputeSituations();
             RefreshList();
+            _ = ShowWhateverIsOnTheRightAsync();
         };
     }
 
@@ -3381,8 +3389,17 @@ public partial class MainWindow : Window
             return;
         }
 
-        // Redrawn because the answer changes what a card says. Only the card: the list rows carry
-        // no build version, so refreshing them would be work nobody sees.
+        // 🔴 **The list too, and that is the whole point of the tag being there.** This said "only
+        // the card: the list rows carry no build version" — true when it was written, false since
+        // ReadSituation learnt to compute LoaderStanding for the rows. What it produced was a tag
+        // that appeared only once its game had been SELECTED, because selecting is what drew the
+        // card that warmed this cache: an at-a-glance badge you had to click to glance at.
+        //
+        // ⚠ Recompute before refresh: the rows are drawn from _situations, so refreshing without
+        // re-reading redraws the same stale answer.
+        RecomputeSituations();
+        RefreshList();
+
         if (_selected is not null) await ShowSelectedAsync();
     }
 

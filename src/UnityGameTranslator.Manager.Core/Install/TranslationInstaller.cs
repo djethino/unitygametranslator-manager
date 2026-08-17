@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using UnityGameTranslator.Common;
 using UnityGameTranslator.Manager.Core.Detection;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
@@ -97,8 +98,13 @@ public sealed class TranslationInstaller
     /// "the server moved on" from "I edited this". Without it every downloaded file would look
     /// locally modified from the first launch, and the mod would offer to merge against nothing.
     /// </summary>
+    /// <param name="installedFrom">
+    /// Whose translation is being installed, as a mention. It is what the backup row will read,
+    /// and the only thing that makes one row tell itself apart from another.
+    /// </param>
     public TranslationWriteResult Install(GameInstall game, LoaderDescriptor descriptor,
-                                          string json, string? serverHash)
+                                          string json, string? serverHash,
+                                          string? installedFrom = null)
     {
         if (WhyNotNow(game) is { } refusal) return new TranslationWriteResult(false, null, refusal);
 
@@ -112,6 +118,12 @@ public sealed class TranslationInstaller
             var prepared = StampSource(json, serverHash);
 
             Directory.CreateDirectory(folder);
+
+            // 🔴 Kept BEFORE the write, named by the act — see Backups. The old `removed/` file
+            // said only "something replaced this, at this time"; a row reading "before installing
+            // @Seniorito's translation" is a memory, a date is a lottery.
+            TranslationBackupStore.TakeAutomatic(gamePath, descriptor, BackupReason.Installed,
+                                                 installedFrom);
 
             string? backup = null;
             if (File.Exists(target)) backup = MoveAside(target);
@@ -192,6 +204,8 @@ public sealed class TranslationInstaller
             var prepared = StampMerged(mergedJson, serverHash, aheadOfServer);
 
             Directory.CreateDirectory(folder);
+
+            TranslationBackupStore.TakeAutomatic(game.Path, descriptor, BackupReason.Merged);
 
             string? backup = null;
             if (File.Exists(target)) backup = MoveAside(target);
@@ -284,6 +298,8 @@ public sealed class TranslationInstaller
             var prepared = StampEdits(sentJson, receivedJson);
 
             Directory.CreateDirectory(folder);
+
+            TranslationBackupStore.TakeAutomatic(gamePath, descriptor, BackupReason.Edited);
 
             string? backup = null;
             if (File.Exists(target)) backup = MoveAside(target);
@@ -548,6 +564,10 @@ public sealed class TranslationInstaller
 
         try
         {
+            // ⚠ Kept, and named as such: "when the translation was removed" is the one row
+            // somebody will look for after realising they removed the wrong thing.
+            TranslationBackupStore.TakeAutomatic(game.Path, descriptor, BackupReason.Removed);
+
             var aside = MoveAside(target);
 
             // ⚠ The ancestor goes too. It describes the file that just left, so keeping it would

@@ -12,7 +12,11 @@ namespace UnityGameTranslator.Manager.Core.Install;
 /// </summary>
 public sealed class FileOperations
 {
-    /// <summary>Backups of files we overwrote, kept until the user uninstalls.</summary>
+    /// <summary>
+    /// Copies of files we overwrite, held for the duration of an install and dropped when it
+    /// succeeds — see <see cref="DropBackups"/>. They exist so a failure halfway can put the
+    /// folder back, and for nothing else.
+    /// </summary>
     public const string BackupDirectory = ".ugt-manager-backup";
 
     private readonly string _gameRoot;
@@ -38,7 +42,7 @@ public sealed class FileOperations
         if (preExisting)
         {
             // Overwriting someone's file without a copy is not something we can undo, so we
-            // never do it. The backup outlives the install and is removed only on uninstall.
+            // never do it. The copy lives as long as the install and no longer.
             backupRelative = $"{BackupDirectory}/{relativeTarget}";
             var backupPath = ResolveInsideGame(backupRelative);
             EnsureDirectory(Path.GetDirectoryName(backupPath)!);
@@ -116,6 +120,30 @@ public sealed class FileOperations
         using var stream = File.OpenRead(path);
         using var sha = SHA256.Create();
         return Convert.ToHexString(sha.ComputeHash(stream)).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Removes the copies once they can no longer be needed — the install having succeeded.
+    ///
+    /// 🔴 They exist for <see cref="Rollback"/> and for nothing else. Kept past that point they
+    /// were a second copy of a mod loader living inside every game, forever, hidden and never
+    /// swept: tens of megabytes for files anybody can download again and this tool installs on
+    /// demand. What deserves keeping is the translation, which now keeps its own history.
+    ///
+    /// ⚠ Never throws: a folder that will not go is a folder somebody can delete, and failing an
+    /// install that has already succeeded over housekeeping would be absurd.
+    /// </summary>
+    public static void DropBackups(string gameRoot)
+    {
+        try
+        {
+            var root = Path.Combine(gameRoot, BackupDirectory);
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+        catch
+        {
+            // Housekeeping.
+        }
     }
 
     /// <summary>Undoes everything recorded so far. Used when an install fails halfway.</summary>

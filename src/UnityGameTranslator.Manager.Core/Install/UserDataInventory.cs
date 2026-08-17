@@ -79,7 +79,15 @@ public static class UserDataInventory
             // label that says "judge them yourself" beside a consequence written for stray files,
             // and somebody clearing what they thought was clutter would have thrown away the only
             // copy of work they had replaced by mistake.
-            else if (string.Equals(top, TranslationInstaller.BackupFolderName, StringComparison.OrdinalIgnoreCase))
+            else if (string.Equals(top, TranslationInstaller.BackupFolderName, StringComparison.OrdinalIgnoreCase)
+                     // ⚠ And the folder that replaced it. Filed as unrecognised it would sit under
+                     // "judge them yourself" — the exact trap this branch was written to close for
+                     // `removed/`, reopened by the folder that took its place.
+                     || string.Equals(top, Common.Backups.FolderName, StringComparison.OrdinalIgnoreCase)
+                     // The two loose files the mod used to write. Each is a translation; unnamed,
+                     // somebody clearing what looks like clutter throws away the only copy.
+                     || top.StartsWith(LocalTranslationProbe.TranslationFileName + ".",
+                                       StringComparison.OrdinalIgnoreCase))
                 setAside.Add(item);
             else if (string.Equals(top, LocalTranslationProbe.ConfigFileName, StringComparison.OrdinalIgnoreCase))
                 configuration.Add(item);
@@ -99,9 +107,9 @@ public static class UserDataInventory
             "Lines captured while playing may exist nowhere else. Anything never uploaded is gone.");
 
         // Right after the translation in place, because it is the same thing at an earlier date.
-        Add(groups, "Set-aside translations", setAside,
-            "Earlier translations of this game, kept when something replaced them. Restore local "
-            + "brings one back; deleting them ends that.");
+        Add(groups, "Backups of your translation", setAside,
+            "Earlier versions of this game's translation, kept when something replaced them and "
+            + "whenever you asked. Backups brings one back; deleting them ends that.");
 
         Add(groups, "Settings", configuration,
             "Your language, translator and sign-in for this game. The mod asks again from scratch.");

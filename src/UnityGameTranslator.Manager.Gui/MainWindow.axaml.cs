@@ -5268,23 +5268,25 @@ public partial class MainWindow : Window
             actions.Children.Add(clear);
         }
 
-        // The undo for the line above, and for every take that replaced something. Only shown when
-        // there is something to put back — a button that opens an empty list is a promise broken
-        // on the click.
-        if (descriptor is not null
-            && TranslationInstaller.Backups(report.Game.Path, descriptor) is { Count: > 0 } kept)
+        // This translation's own history: copies taken by an action, and copies somebody asked for.
+        //
+        // 🔴 **Always offered, even at zero.** It used to appear only once something had been
+        // replaced — so the one way to take a copy BEFORE doing something risky was invisible
+        // until after the risk had been taken. The panel is where somebody learns the mechanism
+        // exists, and the only useful moment to learn it is beforehand.
+        //
+        // ⚠ The words, the two families and their limits come from Backups, so this window and
+        // the mod's own panel describe the same folder identically.
+        if (descriptor is not null)
         {
-            // ⚠ "Restore local", not "Put an earlier one back". Six words of English prose where
-            // one international word does the job — the word every program has used for thirty
-            // years, which is what somebody reading their fourth language recognises. And "local"
-            // is spelt out beside the scope mark, exactly as on Remove local translation: this is
-            // the pair of buttons that move a file in and out of a game, and being clear twice
-            // costs nothing there.
-            var back = ScopeMark.Marked(EditSide.Local, "Restore local…", standing.CanWriteLocally);
-            ToolTip.SetTip(back, kept.Count == 1
-                ? "Puts back the translation replaced last."
-                : $"Puts back one of the {kept.Count} translations set aside.");
-            back.Click += async (_, _) => await RestoreTranslationAsync(report, descriptor, kept);
+            var kept = TranslationBackupStore.List(report.Game.Path, descriptor);
+
+            var back = ScopeMark.Marked(EditSide.Local, "Backups…", standing.CanWriteLocally);
+            ToolTip.SetTip(back, kept.Count == 0
+                ? "Keep a copy of this translation before you try something, and come back to it."
+                : $"{Backups.SavedCount(kept)} saved by you, "
+                  + $"{kept.Count - Backups.SavedCount(kept)} kept automatically.");
+            back.Click += async (_, _) => await ShowBackupsAsync(report, descriptor);
             actions.Children.Add(back);
         }
 
@@ -7409,7 +7411,9 @@ public partial class MainWindow : Window
             return $"The translation could not be downloaded ({api.LastError ?? "no reason given"}). Everything else is in place.";
 
         var result = new TranslationInstaller(_platform)
-            .Install(report.Game, loader, json, translation.FileHash);
+            .Install(report.Game, loader, json, translation.FileHash,
+                     // Whose work is being put in place — it is what the backup row will read.
+                     People.MentionOf(translation.Author, _settings.Current.ApiUser));
 
         if (!result.Written)
             return $"The translation could not be written ({result.Failure}). Everything else is in place.";
@@ -7420,12 +7424,12 @@ public partial class MainWindow : Window
         preference.TranslationId = translation.Id;
         _preferences.Set(report.Game.Path, preference);
 
+        // ⚠ Names the place somebody can act from, not a folder on disk. "It is in
+        // .ugt/removed/translations-20260817.json" is an instruction to open a file manager;
+        // "Backups" is a button they have already seen on this card.
         var message = "The translation is in place.";
         if (result.BackupPath is not null)
-        {
-            message += $" Your previous file was kept in {TranslationInstaller.BackupFolderName}/"
-                     + $"{Path.GetFileName(result.BackupPath)}.";
-        }
+            message += " What was here is kept under Backups.";
 
         return message;
     }
@@ -8717,62 +8721,329 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Puts a set-aside translation back, choosing between them when there are several.</summary>
-    private async Task RestoreTranslationAsync(GameReport report, LoaderDescriptor descriptor,
-                                               IReadOnlyList<TranslationBackup> kept)
+    /// <summary>
+    /// This translation as it stood at earlier moments, in one window.
+    ///
+    /// 🔴 **The same two lists the mod shows, in the same words.** They do not live equally long —
+    /// an automatic copy ages out on its own, a saved one stays until somebody removes it — and
+    /// two rows that look alike but do not survive alike is how people lose what they thought was
+    /// kept. Everything said here comes from Backups; only the drawing belongs to this window.
+    ///
+    /// ⚠ Every act refuses while the game is running, like every write on this card: the mod
+    /// rewrites the file from memory on its own timer, so a copy put back now simply disappears.
+    /// </summary>
+    private async Task ShowBackupsAsync(GameReport report, LoaderDescriptor descriptor)
     {
-        var chosen = kept[0];
-
-        if (kept.Count > 1)
+        // Reopened after each act rather than redrawn in place: the list, the counts and every
+        // tooltip change together, and a window that refreshes half of itself is how a stale row
+        // gets pressed.
+        while (true)
         {
-            // ⚠ Described by what each one HOLDS. A list of dated file names asks somebody to
-            // remember which evening they did what.
-            var picker = new ComboBox { Width = 380 };
-            foreach (var backup in kept)
-            {
-                var whose = _lineages.For(backup.Uuid) is { } line
-                    ? (line.IsMain ? " · yours (Main)" : " · your contribution")
-                    : "";
+            var kept = TranslationBackupStore.List(report.Game.Path, descriptor);
+            var saved = Backups.SavedCount(kept);
+            var running = _running.IsRunning(report.Game);
 
-                picker.Items.Add(new ComboBoxItem
-                {
-                    Content = $"{backup.Replaced:d MMM yyyy, HH:mm} — {backup.Lines} line(s){whose}",
-                    Tag = backup,
-                });
-            }
-            picker.SelectedIndex = 0;
+            Func<Task>? chosen = null;
 
-            var panel = new StackPanel { Spacing = 8 };
+            var panel = new StackPanel { Spacing = 10, MinWidth = 520 };
+
             panel.Children.Add(new TextBlock
             {
-                Text = "Whatever is in the game now is set aside in its turn, so this can be undone.",
+                Text = Backups.PrivacyNote,
+                FontSize = 11,
                 TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextMuted"),
             });
-            panel.Children.Add(picker);
 
-            if (!await ConfirmAsync($"Restore a translation into {report.Game.Name}?", panel,
-                                    "Restore")) return;
+            // 🔴 The current state first. Without it no row reads: a line count is neither more
+            // nor less until somebody knows where they stand today.
+            panel.Children.Add(new TextBlock
+            {
+                Text = report.LocalTranslation is { } local
+                    ? $"Now: {local.EntryCount} lines"
+                    : "Now: this game holds no translation",
+                FontWeight = FontWeight.SemiBold,
+                Foreground = Brush("TextPrimary"),
+            });
 
-            chosen = (picker.SelectedItem as ComboBoxItem)?.Tag as TranslationBackup ?? kept[0];
-        }
-        else if (!await ConfirmAsync($"Restore this translation into {report.Game.Name}?",
-                     $"{chosen.Lines} line(s), set aside on {chosen.Replaced:d MMM yyyy} at "
-                     + $"{chosen.Replaced:HH:mm}. Whatever is in the game now is set aside in its "
-                     + "turn, so this can be undone.",
-                     "Restore")) return;
+            var why = Backups.WhyCannotSave(kept);
 
-        Busy(true, "Putting it back...");
-        var done = TranslationInstaller.Restore(report.Game.Path, descriptor, chosen.Path);
-        Busy(false, "Ready.");
+            var save = ScopeMark.Marked(EditSide.Local, "Save a copy",
+                                        enabled: why is null && !running
+                                                 && report.LocalTranslation is not null);
+            save.Classes.Add("primary");
 
-        if (!done.Written)
-        {
-            await MessageAsync("Nothing was restored", done.Failure ?? "The copy could not be read.");
-            return;
+            // ⚠ Never a control that cannot be pressed without words saying which of the three
+            // reasons applies.
+            ToolTip.SetTip(save, running
+                ? $"{report.Game.Name} is running, so its files are locked."
+                : why
+                  ?? (report.LocalTranslation is null
+                      ? "There is no translation here to copy yet."
+                      : "Keeps the translation as it stands, with the fonts and images it uses."));
+
+            save.Click += (_, _) =>
+            {
+                chosen = () =>
+                {
+                    TranslationBackupStore.SaveCopy(report.Game.Path, descriptor);
+                    return Task.CompletedTask;
+                };
+
+                CloseBackupsWindow();
+            };
+
+            var top = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            top.Children.Add(save);
+            top.Children.Add(new TextBlock
+            {
+                Text = $"{saved} of {Backups.SavedKept} saved",
+                FontSize = 11,
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = Brush("TextSecondary"),
+            });
+
+            panel.Children.Add(top);
+
+            void Group(string heading, string? note, bool wantSaved)
+            {
+                var headingRow = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 8,
+                    Margin = new Avalonia.Thickness(0, 6, 0, 0),
+                };
+
+                headingRow.Children.Add(new TextBlock
+                {
+                    Text = heading,
+                    FontWeight = FontWeight.SemiBold,
+                    FontSize = 12,
+                    Foreground = Brush("TextSecondary"),
+                });
+
+                // ⚠ Beside the heading: it is a property of the LIST, and sitting on a row it
+                // would read as being about that row.
+                if (note is not null)
+                {
+                    headingRow.Children.Add(new TextBlock
+                    {
+                        Text = note,
+                        FontSize = 11,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Foreground = Brush("TextMuted"),
+                    });
+                }
+
+                panel.Children.Add(headingRow);
+
+                var any = false;
+
+                foreach (var entry in kept)
+                {
+                    if (entry.IsSaved != wantSaved) continue;
+                    any = true;
+
+                    panel.Children.Add(BackupRow(report, descriptor, entry, kept, running,
+                                                 act => { chosen = act; CloseBackupsWindow(); }));
+                }
+
+                if (any) return;
+
+                panel.Children.Add(new TextBlock
+                {
+                    Text = wantSaved
+                        ? "Nothing kept yet. Save a copy puts one here before you try something."
+                        : "Nothing yet. One is kept whenever something replaces the translation.",
+                    FontSize = 11,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = Brush("TextMuted"),
+                });
+            }
+
+            Group(Backups.SavedHeading, null, wantSaved: true);
+            Group(Backups.AutomaticHeading, Backups.AutomaticNote, wantSaved: false);
+
+            // ⚠ Dressed exactly like ConfirmAsync above, for the reason written there: the same
+            // act asked in a richer form must not arrive looking like a debug dialog.
+            var close = new Button { Content = "Close", IsDefault = true, IsCancel = true };
+
+            var layout = new StackPanel { Spacing = 14, Margin = new Avalonia.Thickness(24) };
+            layout.Children.Add(new TextBlock
+            {
+                Text = $"Backups — {report.Game.Name}",
+                FontSize = 15,
+                FontWeight = FontWeight.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextPrimary"),
+            });
+            layout.Children.Add(panel);
+            layout.Children.Add(new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Children = { close },
+            });
+
+            _backupsWindow = new Window
+            {
+                Title = "Backups",
+                Width = 620,
+                SizeToContent = SizeToContent.Height,
+                MaxHeight = 760,
+                MinHeight = 240,
+                CanResize = false,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Background = Brush("SurfaceBase"),
+                Content = new ScrollViewer { Content = layout },
+            };
+
+            close.Click += (_, _) => CloseBackupsWindow();
+
+            await _backupsWindow.ShowDialog(this);
+            _backupsWindow = null;
+
+            if (chosen is null) break;
+
+            Busy(true, "Working...");
+            await chosen();
+            Busy(false, "Ready.");
+
+            await RereadAsync(report.Game, redraw: false);
         }
 
         await ShowSelectedAsync();
     }
 
+    /// <summary>Open while the list is up, so a verb on a row can close it and act.</summary>
+    private Window? _backupsWindow;
+
+    private void CloseBackupsWindow() => _backupsWindow?.Close();
+
+    /// <summary>One copy: what it is, why it exists, and what may be done with it.</summary>
+    private Control BackupRow(GameReport report, LoaderDescriptor descriptor, BackupEntry entry,
+                              IReadOnlyList<BackupEntry> all, bool running, Action<Func<Task>> pick)
+    {
+        var box = new StackPanel { Spacing = 2, Margin = new Avalonia.Thickness(0, 2, 0, 2) };
+
+        var facts = $"{entry.At:dd MMM HH:mm}   {entry.Lines} lines";
+        if (entry.ByHand > 0) facts += $" · {entry.ByHand} by hand";
+        if (entry.WithAssets) facts += " · with fonts and images";
+
+        box.Children.Add(new TextBlock { Text = facts, Foreground = Brush("TextPrimary") });
+
+        // 🔴 The one restore nothing can undo, said where the counts are and not in small print:
+        // this copy is a different translation, not an earlier version of the one in place.
+        if (Backups.IsAnotherLineage(entry.Uuid, report.LocalTranslation?.Uuid))
+        {
+            box.Children.Add(new TextBlock
+            {
+                Text = Backups.AnotherLineageNote,
+                FontSize = 11,
+                Foreground = Brush("StatusWarning"),
+            });
+        }
+
+        box.Children.Add(new TextBlock
+        {
+            Text = string.IsNullOrEmpty(entry.Label)
+                ? Backups.Describe(entry.Reason, entry.By)
+                : "\"" + entry.Label + "\"",
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("TextSecondary"),
+        });
+
+        var verbs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+
+        var restore = ScopeMark.Marked(EditSide.Local, "Restore", enabled: !running);
+        ToolTip.SetTip(restore, running
+            ? $"{report.Game.Name} is running, so its files are locked."
+            : "Puts this one back. What is here now is kept first, so this can be walked back.");
+
+        restore.Click += (_, _) => pick(() =>
+        {
+            TranslationBackupStore.Restore(report.Game.Path, descriptor, entry.Id);
+            return Task.CompletedTask;
+        });
+
+        verbs.Children.Add(restore);
+
+        if (entry.IsSaved)
+        {
+            var rename = new Button { Content = "Rename", FontSize = 12 };
+            ToolTip.SetTip(rename, "Ten dated rows are not a choice. A name makes one findable.");
+            // ⚠ Closes the list and reopens it, like every other verb here: a second dialog
+            // stacked on the first leaves two windows describing the same folder, one of them
+            // already out of date.
+            rename.Click += (_, _) => pick(() => RenameBackupAsync(report, descriptor, entry));
+            verbs.Children.Add(rename);
+
+            var delete = new Button { Content = "Delete", FontSize = 12 };
+            ToolTip.SetTip(delete, "Removes this copy and frees a slot. Nothing else is touched.");
+            delete.Click += (_, _) => pick(() =>
+            {
+                TranslationBackupStore.Delete(report.Game.Path, descriptor, entry.Id);
+                return Task.CompletedTask;
+            });
+            verbs.Children.Add(delete);
+        }
+        else
+        {
+            // ⚠ The gesture that closes the loop between the two lists: recognise the one worth
+            // having before it ages out, and it stops ageing.
+            var keep = new Button
+            {
+                Content = "Keep",
+                FontSize = 12,
+                IsEnabled = Backups.CanSaveAnother(all),
+            };
+
+            ToolTip.SetTip(keep, Backups.WhyCannotSave(all)
+                                 ?? "Moves it in with the ones you saved, so it stops ageing out.");
+
+            keep.Click += (_, _) => pick(() =>
+            {
+                TranslationBackupStore.Keep(report.Game.Path, descriptor, entry.Id);
+                return Task.CompletedTask;
+            });
+
+            verbs.Children.Add(keep);
+        }
+
+        box.Children.Add(verbs);
+        return box;
+    }
+
+    private async Task RenameBackupAsync(GameReport report, LoaderDescriptor descriptor,
+                                         BackupEntry entry)
+    {
+        var field = new TextBox
+        {
+            Text = entry.Label ?? "",
+            Watermark = "What is this one?",
+            MinWidth = 320,
+        };
+
+        var panel = new StackPanel { Spacing = 8 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"The copy from {entry.At:dd MMM HH:mm}, {entry.Lines} lines.",
+            Foreground = Brush("TextSecondary"),
+            FontSize = 12,
+        });
+        panel.Children.Add(field);
+
+        if (!await ConfirmAsync("Name this copy", panel, "Save")) return;
+
+        TranslationBackupStore.Rename(report.Game.Path, descriptor, entry.Id, field.Text);
+    }
     private async Task RunUninstallAsync(GameReport report, bool fromLoaderSection = false)
     {
         var engine = new UninstallEngine(_platform, _catalog);

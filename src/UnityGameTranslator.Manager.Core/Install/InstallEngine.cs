@@ -282,6 +282,19 @@ public sealed class InstallEngine
                            perGame: plan.Preference);
             }
 
+            // 🔴 **The copies were for the rollback, and the rollback is over.** They existed so a
+            // half-failed install could put back every file it had overwritten — which is
+            // indisputable, and needs them only until this line. Kept afterwards they were a
+            // permanent duplicate of a mod loader inside every game: 33 to 72 MB apiece on the
+            // test machine, in a hidden folder nobody swept, for files their publisher hands out
+            // for free and this very tool knows how to reinstall.
+            //
+            // ⚠ Nobody in this trade keeps a redownloadable dependency. Mod Organizer never writes
+            // to the game at all; Vortex backs up what it overwrites and gives it back on Purge —
+            // and its most reported complaint is precisely the orphaned copies left behind. What
+            // is worth keeping is somebody's TRANSLATION, and that has its own history now.
+            FileOperations.DropBackups(plan.Game.Path);
+
             Status?.Invoke("Done.");
 
             return new InstallOutcome(true, BuildSuccessMessage(plan, configured), receipt);

@@ -5811,18 +5811,27 @@ public partial class MainWindow : Window
         // somebody asked for a clean game, got its previous loader written back in the same
         // breath, saw a loader still detected and concluded the uninstall had failed.
         //
-        // Shown only when there is something to put back, and it survives the uninstall — the
-        // backup folder is deliberately not swept while it still holds anything.
-        if (UninstallEngine.BackedUpFiles(report.Game) is { Count: > 0 } aside)
+        // 🔴 **Only when it would DO something, and counting what it would do.** Offered on the
+        // stored count, this appeared on every installed game — where every one of those paths is
+        // still occupied, so restoring writes nothing — under a label reading "(98)". Ninety-eight
+        // announced changes, zero real ones, next to a verb vague enough to read as a threat. It
+        // now appears only where the files are actually missing, which in practice means after an
+        // uninstall, and the number is what would be written.
+        if (UninstallEngine.RestorableFiles(report.Game) is { Count: > 0 } missing)
         {
-            var putBack = new Button
-            {
-                Content = $"Put back what was here before ({aside.Count})",
-                IsEnabled = !running,
-            };
-            ToolTip.SetTip(putBack, "This game had files of its own where UnityGameTranslator "
-                                    + "Manager wrote its own — its previous mod loader, most "
-                                    + "often. They were copied aside and can be written back.");
+            // ⚠ Two words. It was "Put back what was here before", then "Restore this game's own
+            // files" — a sentence either way. "Restore" is the verb every program has used for
+            // thirty years; "files" is what tells it apart from "Restore local…", the translation
+            // button. The count and the reason belong in the tooltip, which is where somebody
+            // looks once the label has told them which button this is.
+            var putBack = ScopeMark.Marked(EditSide.Local, $"Restore files ({missing.Count})",
+                                           enabled: !running);
+
+            ToolTip.SetTip(putBack,
+                $"{missing.Count} file(s) this game had before UnityGameTranslator Manager "
+                + "replaced them are missing — its previous mod loader, most often. This writes "
+                + "them back. Nothing is deleted: anything already in place is left alone.");
+
             putBack.Click += async (_, _) => await RunPutBackAsync(report);
             buttons.Children.Add(putBack);
         }
@@ -6499,11 +6508,14 @@ public partial class MainWindow : Window
         // settings apply would write the language, the backend and the update preferences in the
         // same breath, which is not what a button that changes a shortcut may do.
         //
-        // ⚠ Named rather than counted, unlike the two Apply (N) elsewhere on this card. This block
-        // holds exactly one setting, so a number would say nothing — and the naming rule asks the
-        // label to say WHAT it writes. It carries the same Local mark as the others: it writes
-        // into this game and sends nothing anywhere.
-        write = ScopeMark.Marked(EditSide.Local, "Apply this key to the game", enabled: false);
+        // ⚠ "Apply (N)", the same as every other block. It was "Apply this key to the game" — a
+        // sentence on a button, which is the one thing a label must never be here: this interface
+        // ships in no language but English, so every extra word is read in somebody's fourth.
+        //
+        // ⚠ And the count is NOT dropped because this block holds one setting. The count is the
+        // convention: a reader learns "Apply (N)" once and recognises it everywhere. An exception
+        // made for being obvious is an exception somebody has to notice.
+        write = ScopeMark.Marked(EditSide.Local, "Apply", enabled: false);
         write.FontSize = 12;
         write.HorizontalAlignment = HorizontalAlignment.Left;
         write.Margin = new Avalonia.Thickness(120, 4, 0, 0);
@@ -6544,6 +6556,8 @@ public partial class MainWindow : Window
 
             var pending = draftKey is { } key && !string.Equals(key, inGame, StringComparison.Ordinal);
 
+            // ⚠ SetLabel, never Content: the button holds its scope marks beside the text.
+            ScopeMark.SetLabel(write, pending ? "Apply (1)" : "Apply");
             write.IsEnabled = pending && !_running.IsRunning(report.Game) && !takesDefault;
 
             ToolTip.SetTip(write, !pending
@@ -8939,23 +8953,27 @@ public partial class MainWindow : Window
     /// </summary>
     private async Task RunPutBackAsync(GameReport report)
     {
-        var aside = UninstallEngine.BackedUpFiles(report.Game);
+        // ⚠ The same list the button counted: what is MISSING, never what is stored.
+        var aside = UninstallEngine.RestorableFiles(report.Game);
         if (aside.Count == 0)
         {
             await MessageAsync("Nothing to put back",
-                "This game had no file of its own where UnityGameTranslator Manager wrote its own.");
+                "Every file this game had before is already in place.");
             return;
         }
 
         var shown = string.Join(Environment.NewLine, aside.Take(12).Select(f => "• " + f));
         if (aside.Count > 12) shown += Environment.NewLine + $"• …and {aside.Count - 12} more";
 
-        var body = $"{report.Game.Name} had these files before UnityGameTranslator Manager "
-                 + "replaced them. Writing them back restores the mod loader this game came with, "
-                 + "so it will be detected again."
+        // ⚠ "Nothing is deleted" first, in its own sentence. A confirmation naming two hundred
+        // files invites exactly one question — what am I about to lose — and the answer is
+        // nothing: this only fills the gaps its own uninstall left.
+        var body = "Nothing is deleted. These files were here before UnityGameTranslator Manager "
+                 + $"replaced them, and are missing from {report.Game.Name} now — writing them "
+                 + "back restores the mod loader it came with, so it will be detected again."
                  + Environment.NewLine + Environment.NewLine + shown
                  + Environment.NewLine + Environment.NewLine
-                 + "Anything sitting at one of those paths right now is left alone.";
+                 + "Anything already in place is left exactly as it is.";
 
         if (!await ConfirmAsync($"Put back what {report.Game.Name} had before?", body, "Put them back"))
             return;

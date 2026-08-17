@@ -407,6 +407,38 @@ public sealed class UninstallEngine
     }
 
     /// <summary>
+    /// Of those, the ones that are actually MISSING from the game right now — what a restore would
+    /// really write.
+    ///
+    /// 🔴 **Not the same number as <see cref="BackedUpFiles"/>, and showing that one was the
+    /// mistake.** A game still installed has every one of those paths occupied, so restoring would
+    /// write nothing at all — while a button reading "(98)" beside it announced ninety-eight
+    /// changes. It counted what is STORED; the only figure worth showing is what would HAPPEN.
+    ///
+    /// Empty therefore means "nothing to put back", which is the ordinary state of an installed
+    /// game and the reason the offer should not appear there at all.
+    /// </summary>
+    public static IReadOnlyList<string> RestorableFiles(GameInstall game)
+    {
+        var files = new FileOperations(game.Path);
+
+        var missing = new List<string>();
+        foreach (var relative in BackedUpFiles(game))
+        {
+            try
+            {
+                if (!File.Exists(files.ResolveInsideGame(relative))) missing.Add(relative);
+            }
+            catch
+            {
+                // A path we cannot resolve is one we would not write to either.
+            }
+        }
+
+        return missing;
+    }
+
+    /// <summary>
     /// Puts back what this game had before UnityGameTranslator Manager replaced it.
     ///
     /// 🔴 **Its own act, on purpose, and never folded into an uninstall.** Removing our files and

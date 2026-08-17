@@ -1148,10 +1148,12 @@ public static class CommandLine
             return 3;
         }
 
-        var aside = UninstallEngine.BackedUpFiles(report.Game);
+        // ⚠ What is MISSING, never what is stored — the same figure the window shows. An
+        // installed game holds every one of those paths, so there is nothing to write.
+        var aside = UninstallEngine.RestorableFiles(report.Game);
         if (aside.Count == 0)
         {
-            Console.WriteLine($"{report.Game.Name} had no file of its own where ours went. "
+            Console.WriteLine($"Every file {report.Game.Name} had before is already in place. "
                               + "There is nothing to put back.");
             return 0;
         }

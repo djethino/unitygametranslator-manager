@@ -24,11 +24,15 @@ namespace UnityGameTranslator.Manager.Gui;
 /// holds clears it again. Freezing what was shown would turn opening a card into twenty-five
 /// decisions nobody took — and every one of them would stop following the defaults for good.
 ///
-/// ⚠ **Apply writes into the game, and keeps the answers.** This is a brick like the loader and the
-/// mod: its verb acts. Storing alone was the hole — with the one-click reading the box, and so
-/// writing Mod defaults or nothing at all, answers left in a preference file would never have
-/// arrived anywhere. They are kept as well, because they can be given before there is a loader to
-/// write into, and because a game reinstalled from scratch should get them back.
+/// ⚠ **Apply writes into the game, and the game keeps them.** This is a brick like the loader
+/// and the mod: its verb acts. Storing alone was the hole — answers left in a preference file
+/// would never have arrived anywhere.
+///
+/// 🔴 **And they are not kept a second time.** The config.json IS the storage; a copy beside it
+/// goes stale, and the resolver reads that copy FIRST. Change the language inside the mod and the
+/// card went on showing the one the Manager remembered, with Apply lit and offering to write it
+/// back over the player's choice. What the Manager remembers is only what has nowhere else to
+/// live — answers given before there is a file — and it forgets them the moment they land in one.
 ///
 /// ⚠ **No server sweep and no test bench.** Those set a translator up, once, for this machine;
 /// they live in the defaults window and this form links to it. What it does offer is a Refresh on
@@ -838,7 +842,7 @@ public sealed class GameModSettingsForm
         _apply.IsEnabled = count > 0;
 
         ToolTip.SetTip(_apply, count > 0
-            ? $"Writes these {count} setting(s) into the game, and keeps them for a later install."
+            ? $"Writes these {count} setting(s) into the game."
             : "This game already holds every setting answered here.");
     }
 

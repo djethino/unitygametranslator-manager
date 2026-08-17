@@ -6171,7 +6171,11 @@ public partial class MainWindow : Window
         {
             await MessageAsync("Nothing was changed",
                 $"This game's settings could not be written ({result.Failure}).");
+            return;
         }
+
+        // They are in the file now, so the file answers for them from here on.
+        ForgetWrittenAnswers(report);
     }
 
     /// <summary>
@@ -7402,9 +7406,43 @@ public partial class MainWindow : Window
     /// — there was no key of its own to protect. Where a game did carry one, we left it alone and
     /// the answer stays no.
     /// </summary>
+    /// <summary>
+    /// Drops this game's remembered answers once they are in its config.json.
+    ///
+    /// 🔴 **The config.json IS the storage, and a second copy of it goes stale.** These answers
+    /// exist for one reason: to be carried until there is a file to write them into. Kept after
+    /// that, they became a rival source of truth — and the resolver reads them FIRST, so the stale
+    /// one won. Change the language inside the mod and the card went on showing the language the
+    /// Manager remembered, marked "set for this game", with Apply lit and offering to write it back
+    /// over what the player had just chosen.
+    ///
+    /// ⚠ Nothing is lost by dropping them. With no answer of its own, the resolver falls through to
+    /// what the game holds — which is where they were just written. What changes is that the game
+    /// is asked every time instead of being remembered once, so a change made in the mod is picked
+    /// up by construction rather than by somebody thinking to reconcile it.
+    ///
+    /// ⚠ Only once the file exists: a write that failed must not take the answers with it.
+    ///
+    /// ⚠ The rest of the preference stays. It holds what the mod knows nothing about — the box, the
+    /// chosen translation, whether this loader is ours to manage. That is the line: anything the
+    /// config.json carries belongs to the config.json.
+    /// </summary>
+    private void ForgetWrittenAnswers(GameReport report)
+    {
+        var preference = _preferences.Read(report.Game.Path);
+        if (preference.Mod is null) return;
+        if (!GameConfig(report).IsConfigured) return;
+
+        preference.Mod = null;
+        _preferences.Set(report.Game.Path, preference);
+    }
+
     private void RememberDefaultsWereWritten(GameReport report, InstallPlan plan,
                                              GameConfigSnapshot before)
     {
+        // Both install paths come through here, so it is where the answers stop being remembered.
+        ForgetWrittenAnswers(report);
+
         if (plan.Settings is null || plan.TargetLanguage is null) return;
 
         var preference = _preferences.Read(report.Game.Path);
@@ -8789,6 +8827,11 @@ public partial class MainWindow : Window
             .Apply(report.Game.Path, descriptor, settings, target, perGame: preference);
 
         Busy(false, "Ready.");
+
+        // ⚠ Here too: writing Mod defaults puts values into the file over whatever this game
+        // answered, so a remembered answer left behind would contradict the file it was just
+        // overwritten in — and would win, being read first.
+        if (result.Written) ForgetWrittenAnswers(report);
 
         await MessageAsync(
             result.Written ? "Applied" : "Nothing was changed",

@@ -1109,13 +1109,25 @@ public partial class MainWindow : Window
             })
             .ToList();
 
+        // 🔴 **The guard goes up BEFORE the assignment, not after it.** Replacing ItemsSource drops
+        // the selection, which raises SelectionChanged on its own — unguarded, and one line too
+        // early to be caught. The handler then did what a real click does: back to the This game
+        // tab, folds shut. So refreshing the list threw somebody out of the Set up tab they were
+        // reading, and they had to click back in and scroll down again to see the very change they
+        // had just asked for.
+        //
+        // ⚠ It looked guarded, and the comment below says why it has to be — the guard was simply
+        // covering the restore and not the loss that precedes it. Both are bookkeeping; neither is
+        // a choice the player made.
+        _restoringSelection = true;
+
         GameList.ItemsSource = items;
 
         // Restoring the selection is bookkeeping, not a choice the player made. Left unguarded it
         // raised SelectionChanged, which rebuilt the whole card on the right — fifty-three times
         // during the opening sweep, which is what made it flash.
-        _restoringSelection = true;
         if (previous is not null) SelectByPath(previous);
+
         _restoringSelection = false;
     }
 
@@ -2599,6 +2611,17 @@ public partial class MainWindow : Window
     private async Task ShowSelectedAsync()
     {
         if (GameList.SelectedItem is not ListBoxItem { Tag: GameInstall game }) return;
+
+        // 🔴 **Where somebody scrolled to is a place they put themselves in.** This method is the
+        // one redraw of the card and everything calls it, so every act — applying a setting,
+        // changing the language, a version resolving in the background — threw the reader back to
+        // the top. Reading the differences half way down the Set up tab and changing the language
+        // meant scrolling down again to see the very line that had just changed.
+        //
+        // ⚠ Only on a redraw of the SAME card. A different game is a different page, and landing
+        // on it half way down would be the tool remembering something nobody asked it to.
+        var offset = _selected?.Path == game.Path ? DetailScroll.Offset : default;
+
         _selected = game;
 
         ClearDetail();
@@ -2632,6 +2655,14 @@ public partial class MainWindow : Window
         RefreshRowFrom(report);
 
         RenderReport(report);
+
+        // ⚠ Posted, and at Loaded: the content has only just been added, so it has no height yet
+        // and an offset set now would be clamped straight back to zero.
+        if (offset != default)
+        {
+            Dispatcher.UIThread.Post(() => DetailScroll.Offset = offset,
+                                     DispatcherPriority.Loaded);
+        }
     }
 
     /// <summary>Puts what a freshly built report says onto this game's row in the list.</summary>

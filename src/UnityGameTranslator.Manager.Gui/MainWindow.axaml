@@ -111,7 +111,7 @@
           for something that could not be done yet, and it made a scan in progress look like a tool
           waiting for its user.
         -->
-        <ScrollViewer Grid.Row="1">
+        <ScrollViewer Grid.Row="1" x:Name="DetailScroll">
           <StackPanel x:Name="DetailPanel" Margin="20,16,24,24" Spacing="14" />
         </ScrollViewer>
 

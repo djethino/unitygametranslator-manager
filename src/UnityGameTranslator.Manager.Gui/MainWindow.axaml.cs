@@ -6377,7 +6377,21 @@ public partial class MainWindow : Window
         // That was backwards: what this game holds against what would be written is precisely the
         // information somebody needs in order to decide whether to tick it. Hiding it left the
         // choice to be made blind, and an unticked box looking like a game with nothing to settle.
-        if (!_settings.Current.Reviewed) yield break;
+        // ⚠ Said rather than left blank. With no Mod defaults there is nothing to compare against,
+        // and an empty space reads as a game with nothing to settle — which is the opposite of what
+        // it means. One line, and it names what is missing.
+        if (!_settings.Current.Reviewed)
+        {
+            yield return new TextBlock
+            {
+                Text = "Nothing to compare with yet: Mod defaults has not been filled in.",
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextMuted"),
+            };
+
+            yield break;
+        }
 
         var descriptor = InstalledDescriptor(report);
         if (descriptor is null) yield break;
@@ -6545,7 +6559,15 @@ public partial class MainWindow : Window
     private IEnumerable<Control> HotkeyDecision(GameReport report, GamePreference preference,
                                                 Action refresh)
     {
-        if (!_settings.Current.Reviewed) yield break;
+        // 🔴 **No guard on Mod defaults here, and there was one.** This block does two things: it
+        // offers to take the key from Mod defaults, and it lets somebody set a key for THIS game.
+        // Only the first needs Mod defaults — a replacement needs a second key to offer. Setting one
+        // needs nothing at all, and the `yield break` at the top of this method took both away: on a
+        // machine whose Mod defaults had never been filled in there was NO WAY ANYWHERE to choose a
+        // hotkey, on the first run, which is exactly when somebody wants to.
+        //
+        // The two halves are guarded separately below.
+        var reviewed = _settings.Current.Reviewed;
 
         var descriptor = InstalledDescriptor(report);
 
@@ -6560,13 +6582,18 @@ public partial class MainWindow : Window
         // agrees, or the key that would be written is one that cannot travel between games. The
         // capture below is offered either way; being settled is not a reason to take the control
         // away.
-        var difference = Differences(report, preference)
-            .FirstOrDefault(d => d.Key == GameConfigWriter.HotkeyKey);
+        // ⚠ Null without Mod defaults, rather than a comparison against a key nobody chose: the
+        // second term would be the program's own guess, and reporting "kept — Mod defaults uses X"
+        // about a guess states a decision that was never taken.
+        var difference = reviewed
+            ? Differences(report, preference)
+                .FirstOrDefault(d => d.Key == GameConfigWriter.HotkeyKey)
+            : null;
 
         // ⚠ The box only where there is something to DECIDE. A game with no key of its own has
         // nothing to protect: the key is written outright, and a box asking permission to replace
         // a key that does not exist would be a question about nothing.
-        if (inGame is not null)
+        if (inGame is not null && reviewed)
         {
             // ⚠ "with mine" named nobody. The key that would replace it comes from Mod defaults,
             // which is a screen with a title — and on a machine whose games may belong to different
@@ -6632,7 +6659,12 @@ public partial class MainWindow : Window
         // The control is the shared HotkeyEditor, so the refusals it enforces (a key Unity cannot
         // name, a key that means something else in another game) are the same ones Mod defaults
         // enforces, in the same words.
-        var takesDefault = preference.ReplaceHotkey && inGame is not null;
+        // ⚠ **And `reviewed`, which is not padding.** This locks the editor below and its tooltip
+        // says "untick the box above" — with Mod defaults unfilled there IS no box above, so a
+        // ReplaceHotkey left true from an earlier setup would leave the capture disabled pointing at
+        // a control that is not on the screen. A condition split in one place has to be followed
+        // into everything that read it.
+        var takesDefault = reviewed && preference.ReplaceHotkey && inGame is not null;
 
         // 🔴 **It shows what THIS GAME uses — the field says so, and every other field on this card
         // is filled the same way.** It was seeded from Mod defaults for a while, so a field titled

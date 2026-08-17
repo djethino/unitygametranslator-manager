@@ -248,6 +248,7 @@ public partial class MainWindow : Window
             // the tool: carried across a click in the list, it would drop somebody into the
             // machinery of a game they have not looked at yet.
             _gameTab = GameTab.Home;
+            _openBlocks.Clear();
 
             await ShowSelectedAsync();
         };
@@ -3409,6 +3410,35 @@ public partial class MainWindow : Window
     private GameTab _gameTab = GameTab.Home;
 
     /// <summary>
+    /// Which folded blocks of the current card are open.
+    ///
+    /// 🔴 **A card is redrawn constantly, and every redraw used to fold everything shut.** Apply a
+    /// setting, change the language, let a version resolve in the background — the block being
+    /// worked in closed under the person working in it, and they had to find it and reopen it. A
+    /// fold is a place somebody put themselves in, not a property of the freshly built controls.
+    ///
+    /// ⚠ Cleared with the tab, and for the same reason: it is a place in ONE card. Carried across a
+    /// click in the list it would open somebody else's machinery on a game nobody has looked at.
+    /// </summary>
+    private readonly HashSet<string> _openBlocks = new(StringComparer.Ordinal);
+
+    /// <summary>Opens it where it was left, and remembers where it is left.</summary>
+    private Expander Remembering(Expander expander, string key)
+    {
+        expander.IsExpanded = _openBlocks.Contains(key);
+
+        expander.PropertyChanged += (_, e) =>
+        {
+            if (e.Property != Expander.IsExpandedProperty) return;
+
+            if (expander.IsExpanded) _openBlocks.Add(key);
+            else _openBlocks.Remove(key);
+        };
+
+        return expander;
+    }
+
+    /// <summary>
     /// The two tabs, and the only place that switches between them.
     ///
     /// ⚠ Reset to Home on every game, deliberately: the tab is a place in ONE game's card, not a
@@ -5712,7 +5742,7 @@ public partial class MainWindow : Window
             open.Click += (_, _) => Shell.OpenFolder(report.Game.Path);
             panel.Children.Add(open);
 
-            panel.Children.Add(new Expander
+            panel.Children.Add(Remembering(new Expander
             {
                 Header = new TextBlock
                 {
@@ -5727,10 +5757,9 @@ public partial class MainWindow : Window
                     TextWrapping = TextWrapping.Wrap,
                     Foreground = Brush("TextMuted"),
                 },
-                IsExpanded = false,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 Margin = new Avalonia.Thickness(0, 4, 0, 0),
-            });
+            }, "foreign-loader"));
         }
 
         // A refusal we are willing to let the user overrule gets a way forward. A dead button and
@@ -6059,7 +6088,7 @@ public partial class MainWindow : Window
 
         var answered = preference.Mod?.Count ?? 0;
 
-        yield return new Expander
+        yield return Remembering(new Expander
         {
             Header = new TextBlock
             {
@@ -6073,10 +6102,9 @@ public partial class MainWindow : Window
                 Foreground = Brush("TextSecondary"),
             },
             Content = form.Build(),
-            IsExpanded = false,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             Margin = new Avalonia.Thickness(0, 8, 0, 0),
-        };
+        }, "own-settings");
     }
 
     /// <summary>
@@ -7385,7 +7413,7 @@ public partial class MainWindow : Window
             });
         }
 
-        yield return new Expander
+        yield return Remembering(new Expander
         {
             Header = new TextBlock
             {
@@ -7394,10 +7422,9 @@ public partial class MainWindow : Window
                 Foreground = Brush("TextMuted"),
             },
             Content = lines,
-            IsExpanded = false,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             Margin = new Avalonia.Thickness(14, 0, 0, 0),
-        };
+        }, "what-changes");
     }
 
     /// <summary>

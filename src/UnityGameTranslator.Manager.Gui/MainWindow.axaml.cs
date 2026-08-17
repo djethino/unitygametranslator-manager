@@ -5973,7 +5973,10 @@ public partial class MainWindow : Window
     /// </summary>
     private IEnumerable<Control> ModSettings(GameReport report)
     {
-        var preference = _preferences.Read(report.Game.Path);
+        // ⚠ With the pending choice laid over it, and on a copy — see PreferenceWithPending. The
+        // handlers below mutate this object and hand the result to _pendingWay; nothing here
+        // reaches the file.
+        var preference = PreferenceWithPending(report.Game.Path);
 
         yield return new Border
         {
@@ -6117,12 +6120,17 @@ public partial class MainWindow : Window
                 FontSize = 12,
             };
 
+            // ⚠ Held for the session, never written here: choosing a way decides nothing until
+            // something acts on it. It is applied to the preference in memory too, so everything
+            // the card asks next — the differences, the form, the bar — answers from the choice
+            // just made rather than from the one on disk.
             button.IsCheckedChanged += (_, _) =>
             {
                 if (button.IsChecked != true) return;
 
                 pick();
-                _preferences.Set(report.Game.Path, preference);
+                _pendingWay[report.Game.Path] = (preference.ApplyModDefaults,
+                                                 preference.LetWizardAsk);
                 Refresh();
             };
 
@@ -6398,7 +6406,7 @@ public partial class MainWindow : Window
             // be answered before there is anywhere to write them (no loader yet), and because a
             // game reinstalled from scratch should get them back rather than silently lose them.
             preference.Mod = form.Draft.IsEmpty ? null : form.Draft.Copy();
-            _preferences.Set(report.Game.Path, preference);
+            SaveAnswer(report.Game.Path, p => p.Mod = preference.Mod?.Copy());
 
             await ApplyOwnSettingsAsync(report, preference);
 
@@ -6814,7 +6822,7 @@ public partial class MainWindow : Window
             replace.IsCheckedChanged += (_, _) =>
             {
                 preference.ReplaceHotkey = replace.IsChecked == true;
-                _preferences.Set(report.Game.Path, preference);
+                SaveAnswer(report.Game.Path, p => p.ReplaceHotkey = preference.ReplaceHotkey);
 
                 // ⚠ Posted, unlike the box governing the whole section. That one is a sibling of
                 // the blocks a redraw empties and survives it; this one lives inside such a block,
@@ -6980,7 +6988,12 @@ public partial class MainWindow : Window
             // having been written is a key the next install would carry on somebody's behalf.
             preference.Mod ??= new GameModOverrides();
             preference.Mod.SettingsHotkey = chosen;
-            _preferences.Set(report.Game.Path, preference);
+
+            SaveAnswer(report.Game.Path, p =>
+            {
+                p.Mod ??= new GameModOverrides();
+                p.Mod.SettingsHotkey = chosen;
+            });
 
             await ShowSelectedAsync();
         };
@@ -7286,7 +7299,7 @@ public partial class MainWindow : Window
     /// want it.
     /// </summary>
     private bool NeedsModDefaults(GameReport report) =>
-        _preferences.Read(report.Game.Path).UsesModDefaults(GameConfig(report));
+        PreferenceWithPending(report.Game.Path).UsesModDefaults(GameConfig(report));
 
     /// <summary>
     /// Whether the mod still asks its own questions in this game after we write to it.
@@ -8103,6 +8116,67 @@ public partial class MainWindow : Window
         new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
+    /// The way chosen for a game — Mod defaults, the mod's Setup, or its own settings — before
+    /// anything has acted on it.
+    ///
+    /// 🔴 **Clicking a radio decided nothing yet, and it was written to disk on the click.** So a
+    /// choice tried out on a Tuesday was still in force on a Wednesday, on a game nobody had
+    /// installed, deciding what the one-click would configure it with — and the only sign of it was
+    /// a radio somebody had to think to look at. What made it dangerous is that the answer had
+    /// since become wrong: Mod defaults was filled in between the two, and the game still said
+    /// "Set it up in the game".
+    ///
+    /// ⚠ Same rule as every other answer given before an act: held for the session, promoted by
+    /// whatever validates it. See <see cref="ValidateInto"/>.
+    /// </summary>
+    private readonly Dictionary<string, (bool? Defaults, bool Wizard)> _pendingWay =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Writes ONE answer to disk, on the stored preference rather than on a copy.
+    ///
+    /// 🔴 **The card reasons on a copy carrying unvalidated choices** — see PreferenceWithPending —
+    /// so a handler inside it that saved its own object would file those choices away as a side
+    /// effect of confirming something else entirely. Applying a hotkey is not a decision about
+    /// where this game's settings come from.
+    /// </summary>
+    private void SaveAnswer(string gamePath, Action<GamePreference> change)
+    {
+        var stored = _preferences.Read(gamePath);
+        change(stored);
+        _preferences.Set(gamePath, stored);
+    }
+
+    /// <summary>
+    /// A copy of what this game answers, with anything still pending laid over it.
+    ///
+    /// ⚠ A COPY, always. GamePreferences.Read hands back the stored object, so overlaying onto it
+    /// would put unvalidated answers into the next unrelated Set — which is the whole thing being
+    /// avoided here.
+    /// </summary>
+    private GamePreference PreferenceWithPending(string gamePath)
+    {
+        var preference = _preferences.Read(gamePath).Copy();
+
+        if (_pendingWay.TryGetValue(gamePath, out var way))
+        {
+            preference.ApplyModDefaults = way.Defaults;
+            preference.LetWizardAsk = way.Wizard;
+        }
+
+        if (_pendingMod.TryGetValue(gamePath, out var mod))
+            preference.Mod = mod.IsEmpty ? null : mod.Copy();
+
+        if (_pendingPlan.TryGetValue(gamePath, out var plan))
+        {
+            preference.StartTranslation = plan.Start;
+            preference.GameContext = plan.Context;
+        }
+
+        return preference;
+    }
+
+    /// <summary>
     /// Moves whatever is pending for this game onto the preference and saves it, because the act
     /// about to run IS the validation.
     ///
@@ -8135,6 +8209,14 @@ public partial class MainWindow : Window
             preference.StartTranslation = plan.Start;
             preference.GameContext = plan.Context;
             if (save) _pendingPlan.Remove(path);
+            moved = true;
+        }
+
+        if (_pendingWay.TryGetValue(path, out var way))
+        {
+            preference.ApplyModDefaults = way.Defaults;
+            preference.LetWizardAsk = way.Wizard;
+            if (save) _pendingWay.Remove(path);
             moved = true;
         }
 

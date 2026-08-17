@@ -6010,8 +6010,21 @@ public partial class MainWindow : Window
         // looking pressed and the next Space goes nowhere. Three things react to a change here: the
         // list of differences, the form of this game's own settings, and the band at the bottom
         // that says what one click would do.
-        var driftHost = new StackPanel { Spacing = 4 };
-        var ownHost = new StackPanel { Spacing = 4 };
+        // 🔴 **Indented under the way they belong to.** With one tickbox, a block underneath was
+        // unmistakably its consequence. With three radios, the same block sitting under the group
+        // belongs to none of them in particular — and the question "what is this attached to?" has
+        // no answer on the screen. Each goes under its own line, set in.
+        var driftHost = new StackPanel
+        {
+            Spacing = 4,
+            Margin = new Avalonia.Thickness(24, 2, 0, 6),
+        };
+
+        var ownHost = new StackPanel
+        {
+            Spacing = 4,
+            Margin = new Avalonia.Thickness(24, 2, 0, 0),
+        };
         var hotkeyHost = new StackPanel { Spacing = 4 };
 
         void Refresh()
@@ -6127,6 +6140,11 @@ public partial class MainWindow : Window
             reviewedNow,
             () => { preference.ApplyModDefaults = true; preference.LetWizardAsk = false; }));
 
+        // ⚠ Under this one whichever way is chosen, and that is deliberate: what this game holds
+        // against what that way would write is precisely what somebody needs in order to pick it.
+        // Hidden until chosen, the choice would be made blind.
+        source.Children.Add(driftHost);
+
         // ⚠ Only while the mod has never finished its own setup here. Afterwards the latch is
         // closed and no tick reopens it — the button below does, by name.
         if (firstTime)
@@ -6146,7 +6164,37 @@ public partial class MainWindow : Window
             enabled: true,
             () => { preference.ApplyModDefaults = false; preference.LetWizardAsk = false; }));
 
+        source.Children.Add(ownHost);
+
         yield return source;
+
+        // 🔴 **The hotkey question sits HERE — governed by the box above, beside the differences,
+        // and outside both.** It belongs to "Use Mod defaults in this game" exactly as the list of
+        // differences does; it is not one of this game's own settings, so it is not in that form.
+        //
+        // ⚠ And it is NOT inside the differences callout. That callout holds MODIFICATIONS — what
+        // applying would change. This is an OPTION: it decides whether one of those modifications
+        // happens at all. Wrapping a control in the banner that reports consequences makes the
+        // control read as one of them. The difference itself does appear in that callout, in the
+        // same shape as every other line — which was the whole point of moving its rendering.
+        yield return hotkeyHost;
+
+        // 🔴 **After the whole chain, on ONE row, because they are ACTS and not settings.**
+        //
+        // These two sat between the radios and the blocks the radios govern — the differences with
+        // Mod defaults, and this game's own form — cutting a chain that reads as one thing: the way
+        // chosen, then what that way changes. It is the second time in a day; the rule is written
+        // in .claude/rules/name-things-in-ui.md and the fix is to read the neighbour before adding.
+        //
+        // ⚠ And side by side, not one per line. Two buttons stacked take two lines to say what a
+        // row says in one, and the vertical stack made them read as two more options in the list
+        // above rather than as two things one can do.
+        var acts = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Margin = new Avalonia.Thickness(0, 8, 0, 0),
+        };
 
         // 🔴 **The way back into the mod's own setup, once the latch is closed.** A key the two
         // programs read differently, a translator that turns out not to work, a game somebody
@@ -6157,8 +6205,6 @@ public partial class MainWindow : Window
             {
                 Content = "Run the mod's setup again",
                 FontSize = 12,
-                HorizontalAlignment = HorizontalAlignment.Left,
-                Margin = new Avalonia.Thickness(22, 4, 0, 0),
             };
 
             ToolTip.SetTip(again,
@@ -6183,7 +6229,7 @@ public partial class MainWindow : Window
                 await ShowSelectedAsync();
             };
 
-            yield return again;
+            acts.Children.Add(again);
         }
 
         // 🔴 **The other half of the circle: a game already set up can SEED Mod defaults.** Without
@@ -6197,8 +6243,6 @@ public partial class MainWindow : Window
                 Content = "Use as Mod defaults",
                 FontSize = 12,
                 Classes = { "primary" },
-                HorizontalAlignment = HorizontalAlignment.Left,
-                Margin = new Avalonia.Thickness(22, 6, 0, 0),
             };
 
             ToolTip.SetTip(seed,
@@ -6223,26 +6267,11 @@ public partial class MainWindow : Window
                 await ShowSelectedAsync();
             };
 
-            yield return seed;
+            acts.Children.Add(seed);
         }
 
-        // Directly under the box that governs it: the list of differences is what ticking that box
-        // would change, so it belongs to it. Further down it read as an unrelated warning about
-        // the game, and the connection between the two had to be guessed.
-        yield return driftHost;
 
-        yield return ownHost;
-
-        // 🔴 **The hotkey question sits HERE — governed by the box above, beside the differences,
-        // and outside both.** It belongs to "Use Mod defaults in this game" exactly as the list of
-        // differences does; it is not one of this game's own settings, so it is not in that form.
-        //
-        // ⚠ And it is NOT inside the differences callout. That callout holds MODIFICATIONS — what
-        // applying would change. This is an OPTION: it decides whether one of those modifications
-        // happens at all. Wrapping a control in the banner that reports consequences makes the
-        // control read as one of them. The difference itself does appear in that callout, in the
-        // same shape as every other line — which was the whole point of moving its rendering.
-        yield return hotkeyHost;
+        if (acts.Children.Count > 0) yield return acts;
 
         // The first fill, which also settles whether the form above starts out on screen.
         Refresh();

@@ -8816,38 +8816,43 @@ public partial class MainWindow : Window
 
             head.Children.Add(top);
 
-            void Group(string heading, string? note, bool wantSaved)
+            // 🔴 **Two lists, and they must LOOK like two.** Both groups were rows in one
+            // scrolling column with a bold line between them: the headings drifted off with the
+            // rows, nothing tied a row to the heading above it, and by the fifth entry the window
+            // was one undifferentiated list. Each group now owns a bordered block, its heading
+            // pinned above its own rows and never above somebody else's.
+            void Group(string heading, string? note, bool wantSaved, double height)
             {
-                var headingRow = new StackPanel
-                {
-                    Orientation = Orientation.Horizontal,
-                    Spacing = 8,
-                    Margin = new Avalonia.Thickness(0, 6, 0, 0),
-                };
+                var titleRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
 
-                headingRow.Children.Add(new TextBlock
+                var title = new TextBlock
                 {
                     Text = heading,
+                    FontSize = 13,
                     FontWeight = FontWeight.SemiBold,
-                    FontSize = 12,
-                    Foreground = Brush("TextSecondary"),
-                });
+                    Foreground = Brush("TextPrimary"),
+                };
 
-                // ⚠ Beside the heading: it is a property of the LIST, and sitting on a row it
-                // would read as being about that row.
+                Grid.SetColumn(title, 0);
+                titleRow.Children.Add(title);
+
                 if (note is not null)
                 {
-                    headingRow.Children.Add(new TextBlock
+                    // ⚠ Beside the heading, right-aligned: it qualifies the LIST — how full it is,
+                    // or that it ages out — and on a row it would read as being about that row.
+                    var hint = new TextBlock
                     {
                         Text = note,
                         FontSize = 11,
                         VerticalAlignment = VerticalAlignment.Center,
                         Foreground = Brush("TextMuted"),
-                    });
+                    };
+
+                    Grid.SetColumn(hint, 1);
+                    titleRow.Children.Add(hint);
                 }
 
-                panel.Children.Add(headingRow);
-
+                var rows = new StackPanel { Spacing = 2 };
                 var any = false;
 
                 foreach (var entry in kept)
@@ -8855,25 +8860,57 @@ public partial class MainWindow : Window
                     if (entry.IsSaved != wantSaved) continue;
                     any = true;
 
-                    panel.Children.Add(BackupRow(report, descriptor, entry, kept, running,
-                                                 act => { chosen = act; CloseBackupsWindow(); }));
+                    rows.Children.Add(BackupRow(report, descriptor, entry, kept, running,
+                                                act => { chosen = act; CloseBackupsWindow(); }));
                 }
 
-                if (any) return;
-
-                panel.Children.Add(new TextBlock
+                if (!any)
                 {
-                    Text = wantSaved
-                        ? "Nothing kept yet. Save a copy puts one here before you try something."
-                        : "Nothing yet. One is kept whenever something replaces the translation.",
-                    FontSize = 11,
-                    TextWrapping = TextWrapping.Wrap,
-                    Foreground = Brush("TextMuted"),
+                    rows.Children.Add(new TextBlock
+                    {
+                        Text = wantSaved
+                            ? "Nothing kept yet. Save a copy puts one here before you try something."
+                            : "Nothing yet. One is kept whenever something replaces the translation.",
+                        FontSize = 11,
+                        TextWrapping = TextWrapping.Wrap,
+                        Margin = new Avalonia.Thickness(0, 2, 0, 0),
+                        Foreground = Brush("TextMuted"),
+                    });
+                }
+
+                var body = new StackPanel { Spacing = 6 };
+                body.Children.Add(titleRow);
+
+                // 🔴 Its own scroll area, capped. Ten rows in a shared scroller push the second
+                // heading below the fold, and scrolling to reach it loses the first — which is the
+                // list this window exists to compare against.
+                body.Children.Add(new ScrollViewer
+                {
+                    Content = rows,
+                    MaxHeight = height,
+                    HorizontalScrollBarVisibility =
+                        Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+                    VerticalScrollBarVisibility =
+                        Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+                });
+
+                panel.Children.Add(new Border
+                {
+                    Background = Palette.Of("SurfaceInput"),
+                    BorderBrush = Palette.Of("BorderSubtle"),
+                    BorderThickness = new Avalonia.Thickness(1),
+                    CornerRadius = new Avalonia.CornerRadius(4),
+                    Padding = new Avalonia.Thickness(10, 8),
+                    Margin = new Avalonia.Thickness(0, 0, 0, 10),
+                    Child = body,
                 });
             }
 
-            Group(Backups.SavedHeading, null, wantSaved: true);
-            Group(Backups.AutomaticHeading, Backups.AutomaticNote, wantSaved: false);
+            Group(Backups.SavedHeading, $"{saved} of {Backups.SavedKept}",
+                  wantSaved: true, height: 210);
+
+            Group(Backups.AutomaticHeading, Backups.AutomaticNote,
+                  wantSaved: false, height: 170);
 
             // ⚠ Dressed exactly like ConfirmAsync above, for the reason written there: the same
             // act asked in a richer form must not arrive looking like a debug dialog.
@@ -8900,14 +8937,11 @@ public partial class MainWindow : Window
             });
             titled.Children.Add(head);
 
-            var scroller = new ScrollViewer
-            {
-                Content = panel,
-                HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
-                VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
-                Margin = new Avalonia.Thickness(0, 12, 0, 12),
-                MaxHeight = 420,
-            };
+            // ⚠ No scrollbar of its own: each block above caps and scrolls itself, so this only
+            // stacks two bounded things. A second scrollbar around them would be the one that
+            // moves when somebody means to move a list.
+            var scroller = new StackPanel { Margin = new Avalonia.Thickness(0, 12, 0, 12) };
+            scroller.Children.Add(panel);
 
             var footer = new StackPanel
             {
@@ -8985,15 +9019,25 @@ public partial class MainWindow : Window
             });
         }
 
-        box.Children.Add(new TextBlock
+        // 🔴 **Nothing when there is nothing to add.** An unnamed saved copy printed "Saved by
+        // you" — the heading of the very block it sits in — on every row: a whole line, repeated,
+        // saying what the title above already said. The act earns a line on an automatic copy,
+        // where it differs from row to row; a name earns one when somebody wrote it. Otherwise
+        // the date and the counts are the row.
+        var subtitle = !string.IsNullOrEmpty(entry.Label) ? "\"" + entry.Label + "\""
+                     : entry.IsSaved ? null
+                     : Backups.Describe(entry.Reason, entry.By);
+
+        if (subtitle is not null)
         {
-            Text = string.IsNullOrEmpty(entry.Label)
-                ? Backups.Describe(entry.Reason, entry.By)
-                : "\"" + entry.Label + "\"",
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Brush("TextSecondary"),
-        });
+            box.Children.Add(new TextBlock
+            {
+                Text = subtitle,
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextSecondary"),
+            });
+        }
 
         // ⚠ **Only Restore carries a scope mark, and that is not an omission.** The mark answers
         // "where does the result land": Restore lands in the game, so it is Local. Rename, Delete

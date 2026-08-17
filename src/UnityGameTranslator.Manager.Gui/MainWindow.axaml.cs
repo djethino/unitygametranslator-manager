@@ -7029,6 +7029,88 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// What happens about Mod defaults, and the two ways out — in the bar, which both tabs show.
+    ///
+    /// 🔴 **The bar is the only part of a card that Home and Set up have in common**, so anything
+    /// about how this game will be configured has to be sayable from it. It was not: the message
+    /// and its button existed only while the one-click was BLOCKED, so choosing "let the mod ask"
+    /// or "set it up here" cleared the block and took the explanation with it. Somebody on Home
+    /// then saw a lit button and nothing about what it would set the game up with.
+    ///
+    /// ⚠ Nothing at all once Mod defaults has been filled in. This is the cold start and no more.
+    ///
+    /// ⚠ Two ways out because there are two, and one of them is not this window: filling the
+    /// defaults in serves every game, answering on Set up serves this one. Neither is the right
+    /// answer for everybody, so neither is the only button.
+    /// </summary>
+    /// <param name="blocking">
+    /// Whether the one-click is refusing. It changes the sentence and nothing else: refused, it
+    /// says what is missing; allowed, it says what will happen instead.
+    /// </param>
+    private IEnumerable<Control> ModDefaultsWayOut(GameReport report, bool blocking)
+    {
+        if (_settings.Current.Reviewed) yield break;
+
+        var preference = _preferences.Read(report.Game.Path);
+        var snapshot = GameConfig(report);
+
+        var way = SetupWayOf(preference, snapshot, reviewed: false,
+                             firstTime: !snapshot.FirstRunCompleted);
+
+        if (!blocking)
+        {
+            yield return new TextBlock
+            {
+                Text = way == SetupWay.Wizard
+                    ? "Mod defaults is empty, so the mod asks in the game."
+                    : "Mod defaults is empty. This game uses its own settings.",
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextMuted"),
+            };
+        }
+
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Margin = new Avalonia.Thickness(0, 4, 0, 0),
+        };
+
+        // 🔴 Primary, like every other button that is the way forward. It sat flat and transparent
+        // beside a greyed OneClick — the one control on the screen that could be pressed, dressed
+        // as the least important thing on it.
+        var open = new Button
+        {
+            Content = "Open Mod defaults",
+            FontSize = 12,
+            Classes = { "primary" },
+        };
+
+        ToolTip.SetTip(open, "Answer once, and every game can be set up from it.");
+        open.Click += async (_, _) => await OpenSettingsAsync();
+        buttons.Children.Add(open);
+
+        // ⚠ Only from Home. On Set up it would scroll somebody to a block they are looking at.
+        if (_gameTab == GameTab.Home)
+        {
+            var here = new Button { Content = "Set up this game", FontSize = 12 };
+
+            ToolTip.SetTip(here, "Answer for this game alone, on the Set up tab.");
+
+            here.Click += async (_, _) =>
+            {
+                _gameTab = GameTab.Setup;
+                await ShowSelectedAsync();
+            };
+
+            buttons.Children.Add(here);
+        }
+
+        yield return buttons;
+    }
+
+    /// <summary>
     /// One version against another, in a single line, or silence when there is nothing to say.
     /// </summary>
     private Control StandingLine(VersionStanding? standing, string? instead)
@@ -7288,26 +7370,8 @@ public partial class MainWindow : Window
                 Foreground = Brush("StatusWarning"),
             });
 
-            // The one blocker the person can clear from here without leaving the window. The
-            // others are about the game or about it being open, and no button of ours fixes those.
-            if (!_settings.Current.Reviewed)
-            {
-                // 🔴 **Primary, like every other button that is the way forward.** It sat flat and
-                // transparent beside a greyed OneClick — the one control on the screen that can be
-                // pressed, dressed as the least important thing on it. On a first launch nothing
-                // can be set up in any game until it is pressed, so it IS the action here, and the
-                // greyed one beside it is not.
-                var open = new Button
-                {
-                    Content = "Open Mod defaults",
-                    FontSize = 12,
-                    Classes = { "primary" },
-                    HorizontalAlignment = HorizontalAlignment.Left,
-                    Margin = new Avalonia.Thickness(0, 4, 0, 0),
-                };
-                open.Click += async (_, _) => await OpenSettingsAsync();
-                explanation.Children.Add(open);
-            }
+            foreach (var control in ModDefaultsWayOut(report, blocking: true))
+                explanation.Children.Add(control);
         }
         else
         {
@@ -7323,6 +7387,17 @@ public partial class MainWindow : Window
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("TextSecondary"),
             });
+
+            // ⚠ **After the steps, because it qualifies them.** Unblocked means a way was chosen —
+            // the mod asks in the game, or this game answers for itself — and this is the case that
+            // was silent: the message and its button lived only while the one-click was refusing,
+            // so choosing a way cleared the block and took the explanation with it.
+            //
+            // ⚠ And the bar is the one part of a card that BOTH tabs show. Somebody arriving on
+            // Home saw a lit button and nothing about what it would configure the game with, the
+            // answer being on a tab they had not opened.
+            foreach (var control in ModDefaultsWayOut(report, blocking: false))
+                explanation.Children.Add(control);
         }
 
         Grid.SetColumn(explanation, 0);

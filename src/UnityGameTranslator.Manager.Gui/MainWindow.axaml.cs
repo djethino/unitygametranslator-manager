@@ -10066,9 +10066,18 @@ public partial class MainWindow : Window
 
             foreach (var item in group.Items)
             {
+                // 🔴 **Everything starts ticked EXCEPT the translation's history.** The box that
+                // opens this list reads "(a copy is kept aside)", and that sentence is only true
+                // while the backups stay: ticked, RemoveUserData sees the history in the list, takes
+                // no last backup, and deletes it — so the promise was undone by the default sitting
+                // underneath it, inside a section that opens collapsed.
+                //
+                // ⚠ Asked of UserDataInventory rather than judged from the group label: the same
+                // question is asked in three places, and two spellings of it would disagree in the
+                // direction that deletes.
                 var box = new CheckBox
                 {
-                    IsChecked = true,
+                    IsChecked = !UserDataInventory.IsBackup(item.RelativePath),
                     Tag = item.RelativePath,
                     Content = new TextBlock
                     {
@@ -10085,9 +10094,15 @@ public partial class MainWindow : Window
                 files.Children.Add(box);
             }
 
+            // Read from the files, never assumed: a group whose files start unticked must not show
+            // a ticked header, or the section reads as "everything goes" while collapsed.
+            var startingTicks = groupBoxes.Count(b => b.IsChecked == true);
+
             var header = new CheckBox
             {
-                IsChecked = true,
+                IsChecked = startingTicks == groupBoxes.Count ? true
+                          : startingTicks == 0 ? false
+                          : null,
                 IsThreeState = true,
                 Content = new TextBlock
                 {

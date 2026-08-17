@@ -179,7 +179,21 @@ public sealed class GameModOverrides
             if (own is not null && own != has) pending++;
         }
 
-        Text(TargetLanguage, held.TargetLanguage);
+        // 🔴 **The language goes through Canonical, both sides.** The game stores a NAME
+        // ("Breton"), everything here works in codes ("br") — compared as text they are two
+        // different answers, so Apply (1) stayed lit for ever on a game already set to the very
+        // language it was asking to write.
+        //
+        // ⚠ The form documents this same trap on its own picker and handles it there; it caught
+        // this method anyway, which is what a rule living in a comment does. Anything comparing two
+        // languages in this project goes through Canonical — see its own note.
+        if (TargetLanguage is not null
+            && !string.Equals(Languages.Canonical(TargetLanguage),
+                              Languages.Canonical(held.TargetLanguage), StringComparison.Ordinal))
+        {
+            pending++;
+        }
+
         Text(TranslationBackend, held.TranslationBackend);
         Text(AiUrl, held.AiUrl);
         Text(AiModel, held.AiModel);

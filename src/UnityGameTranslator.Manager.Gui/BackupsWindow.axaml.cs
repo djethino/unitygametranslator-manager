@@ -35,7 +35,12 @@ public sealed class BackupsWindow : Window
     private readonly LoaderDescriptor _descriptor;
     private readonly bool _running;
 
-    private readonly StackPanel _cards = new() { Spacing = 16 };
+    /// <summary>
+    /// Two rows of equal share: both lists grow when the window does, which is what makes
+    /// enlarging it worth doing. Stacked with fixed caps they ignored the extra room and left an
+    /// empty band under them.
+    /// </summary>
+    private readonly Grid _cards = new() { RowDefinitions = new RowDefinitions("*,*") };
     private readonly TextBlock _now = new();
 
     /// <summary>Whether anything was written, so the caller knows to refresh the card behind.</summary>
@@ -49,14 +54,14 @@ public sealed class BackupsWindow : Window
 
         Title = $"Backups — {game.Name}";
         Width = 720;
-        MinWidth = 640;
+        Height = 660;
+        MinWidth = 620;
+        MinHeight = 460;
 
-        // ⚠ Sized to its content rather than to a fixed height, and capped by the cards inside:
-        // an empty history is a short window, a full one never becomes a tall one. Settings can
-        // afford a fixed 780 because it always holds the same six cards; this holds nought to
-        // fifteen rows.
-        SizeToContent = SizeToContent.Height;
-        MaxHeight = 820;
+        // 🔴 **A plain size, and no SizeToContent.** Sizing to the content fought every attempt to
+        // enlarge the window — the height was recomputed from the content, so dragging it taller
+        // did nothing and only shrinking worked. Settings and Mod defaults give themselves a size
+        // and let the person change it; this does the same.
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Background = this.FindResource("SurfaceBase") as IBrush;
 
@@ -69,9 +74,14 @@ public sealed class BackupsWindow : Window
 
     private Control Build()
     {
-        var layout = new StackPanel { Spacing = 16, Margin = new Avalonia.Thickness(24) };
+        // 🔴 **No scrollbar around the whole thing.** With one here AND one inside each list there
+        // were three, and the outer one appeared as soon as the content ran a few pixels over —
+        // so the window both overflowed and could not be grown. The head takes what it needs, the
+        // two cards share everything left, and each list scrolls inside its own share. Nothing
+        // ever overflows, so no third scrollbar can appear.
+        var head = new StackPanel { Spacing = 16 };
 
-        layout.Children.Add(new TextBlock
+        head.Children.Add(new TextBlock
         {
             Text = Backups.PrivacyNote + " They are what you come back to when something replaces "
                  + "your work, or when you want to try an idea and be able to walk out of it.",
@@ -84,9 +94,21 @@ public sealed class BackupsWindow : Window
         // neither more nor less until somebody knows where they stand today.
         _now.FontWeight = FontWeight.SemiBold;
         _now.Foreground = Brush("TextPrimary");
-        layout.Children.Add(_now);
+        head.Children.Add(_now);
 
-        layout.Children.Add(_cards);
+        var body = new Grid
+        {
+            Margin = new Avalonia.Thickness(24),
+            RowDefinitions = new RowDefinitions("Auto,*"),
+        };
+
+        Grid.SetRow(head, 0);
+        Grid.SetRow(_cards, 1);
+
+        _cards.Margin = new Avalonia.Thickness(0, 16, 0, 0);
+
+        body.Children.Add(head);
+        body.Children.Add(_cards);
 
         var close = new Button { Content = "Close", IsDefault = true, IsCancel = true,
                                  Classes = { "primary" } };
@@ -112,7 +134,7 @@ public sealed class BackupsWindow : Window
         var root = new DockPanel();
         DockPanel.SetDock(bar, Dock.Bottom);
         root.Children.Add(bar);
-        root.Children.Add(new ScrollViewer { Content = layout });
+        root.Children.Add(body);
 
         return root;
     }
@@ -139,8 +161,16 @@ public sealed class BackupsWindow : Window
 
         _cards.Children.Clear();
 
-        _cards.Children.Add(SavedCard(kept, local is not null));
-        _cards.Children.Add(AutomaticCard(kept));
+        var saved = SavedCard(kept, local is not null);
+        var automatic = AutomaticCard(kept);
+
+        ((Border)automatic).Margin = new Avalonia.Thickness(0, 16, 0, 0);
+
+        Grid.SetRow(saved, 0);
+        Grid.SetRow(automatic, 1);
+
+        _cards.Children.Add(saved);
+        _cards.Children.Add(automatic);
     }
 
     private Control SavedCard(IReadOnlyList<BackupEntry> kept, bool hasTranslation)
@@ -148,10 +178,17 @@ public sealed class BackupsWindow : Window
         var saved = Backups.SavedCount(kept);
         var why = Backups.WhyCannotSave(kept);
 
-        var body = new StackPanel { Spacing = 10 };
-        body.Children.Add(Rows(kept, wantSaved: true, height: 230,
+        // ⚠ A grid, not a stack: a StackPanel gives each child its natural height, so the list
+        // would keep its own and spill out of the card instead of scrolling inside it. The list
+        // takes the room, the verb keeps its line under it.
+        var body = new Grid { RowDefinitions = new RowDefinitions("*,Auto") };
+
+        var list = Rows(kept, wantSaved: true,
             empty: "Nothing kept yet. Keep one before you try something, and you can walk back out "
-                 + "of whatever you try."));
+                 + "of whatever you try.");
+
+        Grid.SetRow(list, 0);
+        body.Children.Add(list);
 
         // 🔴 **Under the list it fills, not above it.** Every verb in this product sits below the
         // zone it acts on and to the right — the Apply of a settings block, the Apply of a hotkey.
@@ -175,12 +212,16 @@ public sealed class BackupsWindow : Window
             Redraw();
         };
 
-        body.Children.Add(new StackPanel
+        var verb = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Avalonia.Thickness(0, 10, 0, 0),
             Children = { save },
-        });
+        };
+
+        Grid.SetRow(verb, 1);
+        body.Children.Add(verb);
 
         return Card(Backups.SavedHeading, $"{saved} of {Backups.SavedKept} kept. "
                     + "These stay until you remove one — nothing here ages out.", body);
@@ -188,9 +229,8 @@ public sealed class BackupsWindow : Window
 
     private Control AutomaticCard(IReadOnlyList<BackupEntry> kept)
     {
-        var body = new StackPanel { Spacing = 10 };
-        body.Children.Add(Rows(kept, wantSaved: false, height: 190,
-            empty: "Nothing yet. One is kept whenever something replaces this game's translation."));
+        var body = Rows(kept, wantSaved: false,
+            empty: "Nothing yet. One is kept whenever something replaces this game's translation.");
 
         return Card(Backups.AutomaticHeading,
                     $"The last {Backups.AutomaticKept}, taken on their own before something "
@@ -199,14 +239,13 @@ public sealed class BackupsWindow : Window
     }
 
     /// <summary>
-    /// The rows of one list, in their own capped scroll area.
+    /// The rows of one list, scrolling inside whatever room its card was given.
     ///
-    /// 🔴 Capped and scrolling on its own: ten rows in a shared scroller push the second card below
-    /// the fold, and scrolling to reach it loses the first — which is the list this window exists
-    /// to compare against.
+    /// 🔴 Its own scroll area, never a shared one: ten rows in a single scroller push the second
+    /// card below the fold, and scrolling to reach it loses the first — which is the list this
+    /// window exists to compare against.
     /// </summary>
-    private Control Rows(IReadOnlyList<BackupEntry> kept, bool wantSaved, double height,
-                         string empty)
+    private Control Rows(IReadOnlyList<BackupEntry> kept, bool wantSaved, string empty)
     {
         var rows = new StackPanel { Spacing = 6 };
         var any = false;
@@ -234,7 +273,6 @@ public sealed class BackupsWindow : Window
         return new ScrollViewer
         {
             Content = rows,
-            MaxHeight = height,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         };
@@ -457,7 +495,23 @@ public sealed class BackupsWindow : Window
             });
         }
 
-        body.Children.Add(content);
+        // ⚠ The list is the child that grows: the title and the intro take what they need, the
+        // rows take the rest. Without this the card stretches and the list keeps its own height,
+        // leaving a band of empty card under it.
+        var grid = new Grid { RowDefinitions = new RowDefinitions("Auto,*") };
+
+        var top = new StackPanel { Spacing = 10 };
+        while (body.Children.Count > 0)
+        {
+            var child = body.Children[0];
+            body.Children.RemoveAt(0);
+            top.Children.Add(child);
+        }
+
+        Grid.SetRow(top, 0);
+        Grid.SetRow(content, 1);
+        grid.Children.Add(top);
+        grid.Children.Add(content);
 
         return new Border
         {
@@ -466,7 +520,7 @@ public sealed class BackupsWindow : Window
             BorderThickness = new Avalonia.Thickness(1),
             CornerRadius = new Avalonia.CornerRadius(8),
             Padding = new Avalonia.Thickness(16),
-            Child = body,
+            Child = grid,
         };
     }
 }

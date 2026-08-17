@@ -6151,7 +6151,7 @@ public partial class MainWindow : Window
         {
             source.Children.Add(Way(
                 "Set it up in the game",
-                "The mod asks when the game starts.",
+                "The mod shows its Setup when the game starts.",
                 chosenWay == SetupWay.Wizard,
                 enabled: true,
                 () => { preference.ApplyModDefaults = false; preference.LetWizardAsk = true; }));
@@ -6201,29 +6201,47 @@ public partial class MainWindow : Window
         // wants to start over: the wizard answers all three and there was no way to ask for it.
         if (!firstTime && snapshotNow.Exists)
         {
+            // 🔴 **It names the screen and where the screen is.** "Run the mod's setup again" left
+            // both to be guessed: what setup, and whose — this window has settings of its own and a
+            // reader has no way to tell that the thing being reopened belongs to the other program.
+            // The mod titles that screen "Unity Game Translator - Setup", so it is called Setup,
+            // and it happens in the game. Both facts are on the button.
             var again = new Button
             {
-                Content = "Run the mod's setup again",
+                Content = "Show Setup in the game",
                 FontSize = 12,
             };
 
             ToolTip.SetTip(again,
-                "The mod asks its own questions the next time this game starts. Nothing else is "
-                + "changed, and the answers here stay as they are.");
+                $"The mod opens its Setup screen the next time {report.Game.Name} starts, and asks "
+                + "its own questions there. Nothing is changed now.");
 
             again.Click += async (_, _) =>
             {
                 if (InstalledDescriptor(report) is not { } loader) return;
 
+                // 🔴 **Asked, because it edits this game's configuration.** It is one key and it
+                // writes nothing else, but somebody pressing it is entitled to know that a file is
+                // being changed and which one — the rule every act on this card follows.
+                var go = await ConfirmAsync(
+                    "Show Setup in the game?",
+                    $"The mod opens its Setup screen the next time {report.Game.Name} starts, and "
+                    + "what you answer there is written into the game.\n\nThe only change made "
+                    + "now is to this game's configuration, which stops saying it has already been "
+                    + "set up. Its settings, its translation and its key stay exactly as they are.",
+                    "Show Setup");
+
+                if (!go) return;
+
                 // ⚠ Null REMOVES the key, which is how the mod reads "never answered". Writing
                 // false would be a claim of its own; removing puts the game back where it started.
                 var done = new GameConfigWriter().ApplyOne(
-                    report.Game.Path, loader, "first_run_completed", null, "first-run wizard");
+                    report.Game.Path, loader, "first_run_completed", null, "first-run setup");
 
                 await MessageAsync(
                     done.Written ? "It will ask again" : "Nothing was changed",
                     done.Written
-                        ? $"{report.Game.Name} runs the mod's own setup the next time it starts."
+                        ? $"{report.Game.Name} opens the mod's Setup the next time it starts."
                         : $"The game's configuration could not be written ({done.Failure}).");
 
                 await ShowSelectedAsync();

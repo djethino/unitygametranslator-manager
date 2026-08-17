@@ -7910,14 +7910,17 @@ public partial class MainWindow : Window
     /// them and it has its own button: saving a sentence must not carry the language and the
     /// backend in with it.
     /// </summary>
+    /// <summary>What this game already says about itself, or null when it says nothing.</summary>
+    private string? InGameContext(GameReport report, LoaderDescriptor? descriptor) =>
+        GameConfigWriter.InGameValue(report.Game.Path, descriptor, GameConfigWriter.GameContextKey);
+
     private IEnumerable<Control> GameContextField(GameReport report, GamePreference preference,
-                                                  LoaderDescriptor? descriptor, Action refresh)
+                                                  PlanDraft draft, PlanApply applyBar)
     {
         // ⚠ Pre-filled from the game when it already carries one — somebody may well have written
         // it from inside the mod's options while playing. An empty box over an answer that exists
         // invites retyping it, and cannot be told apart from "nothing was ever asked".
-        var inGameContext = GameConfigWriter.InGameValue(
-            report.Game.Path, descriptor, GameConfigWriter.GameContextKey);
+        var inGameContext = draft.Context;
 
         yield return new TextBlock
         {
@@ -7938,7 +7941,7 @@ public partial class MainWindow : Window
 
         var context = new TextBox
         {
-            Text = (preference.GameContext ?? inGameContext) ?? "",
+            Text = inGameContext ?? "",
             Watermark = "Genre, tone, setting - a sentence is enough",
             FontSize = 12,
             AcceptsReturn = true,
@@ -7947,85 +7950,28 @@ public partial class MainWindow : Window
             Margin = new Avalonia.Thickness(0, 4, 0, 0),
         };
 
-        var actions = new StackPanel { Spacing = 4, Margin = new Avalonia.Thickness(0, 4, 0, 0) };
-
-        // Saved when the field loses focus rather than on every keystroke: a file written per
-        // character is a file written a hundred times for one sentence.
-        context.LostFocus += (_, _) =>
+        // ⚠ Read on every keystroke into the DRAFT, and written by nothing here. It used to save
+        // itself on LostFocus — no Apply, on a setting that lands in the game's config.json — and
+        // then offered a "Save this into the game" button of its own beside it, so the same answer
+        // had two ways of reaching the file and neither was the one the rest of the card uses.
+        context.TextChanged += (_, _) =>
         {
-            var written = string.IsNullOrWhiteSpace(context.Text) ? null : context.Text.Trim();
-
-            // Against what is DISPLAYED: a value read from the game and left alone is not an edit,
-            // and storing it would turn merely opening the card into a decision to write it back.
-            if (written == (preference.GameContext ?? inGameContext)) return;
-
-            preference.GameContext = written;
-            _preferences.Set(report.Game.Path, preference);
-            refresh();
+            draft.Context = string.IsNullOrWhiteSpace(context.Text) ? null : context.Text.Trim();
+            applyBar.Refresh();
         };
 
         yield return context;
 
-        var current = preference.GameContext ?? inGameContext;
-
-        if (string.Equals(current, inGameContext, StringComparison.Ordinal))
+        yield return new TextBlock
         {
-            if (preference.GameContext is null && inGameContext is not null)
-            {
-                actions.Children.Add(new TextBlock
-                {
-                    Text = "Read from this game.",
-                    FontSize = 11,
-                    TextWrapping = TextWrapping.Wrap,
-                    Foreground = Brush("TextMuted"),
-                });
-            }
-        }
-        else if (descriptor is not null)
-        {
-            var save = new Button
-            {
-                Content = "Save this into the game",
-                FontSize = 12,
-                HorizontalAlignment = HorizontalAlignment.Left,
-                IsEnabled = !_running.IsRunning(report.Game),
-            };
-
-            save.Click += async (_, _) =>
-            {
-                Busy(true, "Saving...");
-
-                // One key, on its own — going through Apply would write the language, the backend
-                // and the update preferences in the same breath.
-                var result = new GameConfigWriter().ApplyOne(
-                    report.Game.Path, descriptor, GameConfigWriter.GameContextKey,
-                    current, "what this game is about");
-
-                Busy(false, "Ready.");
-
-                if (!result.Written)
-                {
-                    await MessageAsync("Nothing was changed",
-                        $"It could not be written ({result.Failure}).");
-                    return;
-                }
-
-                refresh();
-            };
-
-            actions.Children.Add(save);
-            actions.Children.Add(new TextBlock
-            {
-                Text = inGameContext is null
-                    ? "This game has nothing written for it yet."
-                    : $"This game currently says: {inGameContext}",
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = Brush("TextMuted"),
-            });
-        }
-
-        yield return actions;
+            Text = InGameContext(report, InstalledDescriptor(report)) is { } written
+                ? $"This game currently says: {written}"
+                : "This game has nothing written for it yet.",
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Avalonia.Thickness(0, 2, 0, 0),
+            Foreground = Brush("TextMuted"),
+        };
     }
 
     /// <summary>
@@ -8057,11 +8003,20 @@ public partial class MainWindow : Window
             FontSize = 12,
         };
 
+        // 🔴 **Held, not written.** This wrote straight to disk on every click — the only pair of
+        // mod settings in the tool that did, and a plain breach of the rule the rest of it keeps:
+        // nothing reaches a game until Apply is pressed. It also made the switch below it
+        // meaningless, since there was never a moment where an answer was pending.
+        var draft = new PlanDraft(
+            StartTranslation: preference.StartTranslation ?? settings.EnableAi,
+            GameContext: preference.GameContext ?? InGameContext(report, descriptor));
+
+        var applyBar = PlanApplyBar(report, preference, draft, refresh);
+
         start.IsCheckedChanged += (_, _) =>
         {
-            preference.StartTranslation = start.IsChecked == true;
-            _preferences.Set(report.Game.Path, preference);
-            ShowActionBar(report);
+            draft.StartTranslation = start.IsChecked == true;
+            applyBar.Refresh();
         };
 
         yield return start;
@@ -8105,10 +8060,108 @@ public partial class MainWindow : Window
 
         // Only where it can do something: it is the context handed to a translator, and without
         // one it is a box that changes nothing. Kept under the switch that gives it its purpose.
-        if (backend is null) yield break;
+        if (backend is null)
+        {
+            // ⚠ The bar goes out even here: the switch above it is still answerable, and an answer
+            // with nowhere to be confirmed is the fault this whole change is about.
+            yield return applyBar.View;
+            yield break;
+        }
 
-        foreach (var control in GameContextField(report, preference, descriptor, refresh))
+        foreach (var control in GameContextField(report, preference, draft, applyBar))
             yield return control;
+
+        // ⚠ Last, and once. It settles both settings of this block — the switch and the
+        // description — exactly as the form below settles the settings IT holds. One block, one
+        // Apply, in the same place and with the same words: a reader who has learnt the pattern
+        // once should not have to learn it again three inches lower.
+        yield return applyBar.View;
+    }
+
+    /// <summary>
+    /// The Apply of the plan block: same control, same words and same place as the one under
+    /// "This game's own settings", because it does the same kind of thing to the same file.
+    ///
+    /// ⚠ A block that holds settings owns exactly one Apply. Two bricks with two buttons is a
+    /// grammar somebody learns once; a bespoke "Save this into the game" beside one field and
+    /// silent writes beside another is three behaviours for one idea.
+    /// </summary>
+    private sealed class PlanApply
+    {
+        public required Control View { get; init; }
+        public required Action Refresh { get; init; }
+    }
+
+    private PlanApply PlanApplyBar(GameReport report, GamePreference preference,
+                                   PlanDraft draft, Action refresh)
+    {
+        // Local: this writes into THIS game's config.json and sends nothing anywhere — the same
+        // mark the settings form carries, for the same reason.
+        var apply = ScopeMark.Marked(EditSide.Local, "Apply", enabled: false);
+        apply.Classes.Add("primary");
+        apply.FontSize = 12;
+
+        void Redraw()
+        {
+            var count = draft.Pending;
+
+            // ⚠ SetLabel, never Content: the button holds its scope marks beside the text.
+            ScopeMark.SetLabel(apply, count > 0 ? $"Apply ({count})" : "Apply");
+            apply.IsEnabled = count > 0 && !_running.IsRunning(report.Game);
+
+            ToolTip.SetTip(apply, count > 0
+                ? $"Writes these {count} setting(s) into the game."
+                : "Nothing has been changed here.");
+        }
+
+        apply.Click += async (_, _) =>
+        {
+            preference.StartTranslation = draft.Start;
+            preference.GameContext = draft.Context;
+            _preferences.Set(report.Game.Path, preference);
+
+            await ApplyOwnSettingsAsync(report, preference);
+            refresh();
+        };
+
+        Redraw();
+
+        return new PlanApply
+        {
+            View = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Avalonia.Thickness(0, 6, 0, 0),
+                Children = { apply },
+            },
+            Refresh = Redraw,
+        };
+    }
+
+    /// <summary>The two answers this block holds while they wait for Apply.</summary>
+    private sealed class PlanDraft
+    {
+        public PlanDraft(bool StartTranslation, string? GameContext)
+        {
+            Start = StartTranslation;
+            Context = GameContext;
+            _start = StartTranslation;
+            _context = GameContext;
+        }
+
+        private readonly bool _start;
+        private readonly string? _context;
+
+        public bool Start { get; set; }
+        public string? Context { get; set; }
+
+        public bool StartTranslation { set => Start = value; }
+
+        /// <summary>How many of the two differ from what the game holds. Never a count of fields.</summary>
+        public int Pending =>
+            (Start != _start ? 1 : 0)
+            + (!string.Equals(Context ?? "", _context ?? "", StringComparison.Ordinal) ? 1 : 0);
     }
 
     /// <summary>

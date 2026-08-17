@@ -300,6 +300,18 @@ public sealed class GameConfigWriter
     /// ⚠ Still not the same statement as OnlyIfAbsent. That one means "we are not offering to
     /// change this"; this one means "the offer is attached to this very line".
     /// </param>
+    /// <param name="AnsweredOnTheCard">
+    /// This key already has a control of its own on the game's card, with its own Apply.
+    ///
+    /// 🔴 **Written as always, and never LISTED as a difference.** "Use Mod defaults in this game"
+    /// answers exactly one question — what would applying Mod defaults change here — and these two
+    /// do not come from Mod defaults at all: they are per-game answers with their own switch a few
+    /// lines above. Listing them counted the same decision twice, and offered to settle with one
+    /// button something the reader had just settled with another.
+    ///
+    /// ⚠ The opposite of <see cref="AskedSeparately"/>, which means "the offer IS this line".
+    /// Here the offer is elsewhere, so the line has nothing to add.
+    /// </param>
     private readonly record struct Intent(
         string? Parent,
         string Key,
@@ -308,7 +320,8 @@ public sealed class GameConfigWriter
         bool Secret = false,
         string? Note = null,
         bool OnlyIfAbsent = false,
-        bool AskedSeparately = false);
+        bool AskedSeparately = false,
+        bool AnsweredOnTheCard = false);
 
     /// <summary>
     /// Everything we would write, and nothing else.
@@ -358,12 +371,14 @@ public sealed class GameConfigWriter
         // being translated.
         var startsTranslating = perGame?.StartTranslation ?? settings.EnableAi;
         intents.Add(new Intent(null, "enable_ai", startsTranslating,
-            startsTranslating ? "auto-translation on" : "auto-translation off"));
+            startsTranslating ? "auto-translation on" : "auto-translation off",
+            AnsweredOnTheCard: true));
 
         // Only when this game has one, and never cleared by omission: a description written inside
         // the game, in the mod's own options, must survive an install from here.
         if (perGame?.GameContext is { } context)
-            intents.Add(new Intent(null, GameContextKey, context, "what this game is about"));
+            intents.Add(new Intent(null, GameContextKey, context, "what this game is about",
+                                   AnsweredOnTheCard: true));
 
         // ⚠ Three conditions, and each one closed a real way of locking somebody out of the panel.
         //
@@ -645,6 +660,9 @@ public sealed class GameConfigWriter
         {
             // A key we would only remove has nothing to compare: its absence is our intent.
             if (intent.Value is null) continue;
+
+            // Answered by its own control, with its own Apply — see Intent.AnsweredOnTheCard.
+            if (intent.AnsweredOnTheCard) continue;
 
             // Unnamed keys travel with a named one — proxy_url with proxy_mode, auto_download with
             // the update preferences. Reporting them separately would list six differences for one

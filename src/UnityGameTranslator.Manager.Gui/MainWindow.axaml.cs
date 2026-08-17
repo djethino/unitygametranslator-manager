@@ -7079,10 +7079,22 @@ public partial class MainWindow : Window
     /// </summary>
     private string SettingsStepText(GameReport report, GamePreference preference)
     {
-        // Only ever reached with the box ticked, so there is one source to name and no branch.
         var changes = Differences(report, preference).Count(d => d.Writes);
 
-        return changes > 0 ? $"apply Mod defaults ({changes} changes)" : "apply Mod defaults";
+        // ⚠ **Two sources when there are two, because "apply Mod defaults" was only half true.** A
+        // game that answered for itself is set up from the defaults EXCEPT where it answered, and
+        // announcing the defaults alone told somebody their two answers were about to be ignored —
+        // which, before they were laid down at install, they had been.
+        //
+        // ⚠ This used to be reachable only with the box ticked, hence the single source. It is now
+        // reached on a game with no configuration whatever the box says.
+        var own = preference.Mod?.Count ?? 0;
+
+        var source = own == 0
+            ? "Mod defaults"
+            : $"Mod defaults, with {own} set for this game";
+
+        return changes > 0 ? $"apply {source} ({changes} changes)" : $"apply {source}";
     }
 
     /// <summary>

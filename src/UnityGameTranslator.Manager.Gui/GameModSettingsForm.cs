@@ -822,7 +822,15 @@ public sealed class GameModSettingsForm
     {
         if (_populating || !_installed || _apply is null) return;
 
-        var count = _draft.Count;
+        // 🔴 **What is not in the file yet, not what this game answers.** The block header counts
+        // the answers — that is what "3 set for this game" means, and it stays 3 after they are
+        // written. The button counts what writing would CHANGE, so it goes out once the file holds
+        // them. Using the first for the second left "Apply (2)" lit on a freshly installed game
+        // offering to write the two values it had just been installed with.
+        //
+        // ⚠ Against this game's config.json. Applying Mod defaults is a different act, with its own
+        // button in the block that lists the differences with them.
+        var count = _draft.PendingAgainst(_inGame);
 
         // ⚠ SetLabel, never Content: the button holds the scope marks beside its text, and
         // assigning Content would throw them away on the first change.
@@ -831,7 +839,7 @@ public sealed class GameModSettingsForm
 
         ToolTip.SetTip(_apply, count > 0
             ? $"Writes these {count} setting(s) into the game, and keeps them for a later install."
-            : "No setting has been changed for this game.");
+            : "This game already holds every setting answered here.");
     }
 
     // ---------------------------------------------------------------- layout

@@ -148,6 +148,59 @@ public sealed class GameModOverrides
         + (NotificationPosition is null ? 0 : 1) + (Channel is null ? 0 : 1);
 
     /// <summary>
+    /// How many of these answers the game does not hold yet — the figure on the Apply button.
+    ///
+    /// 🔴 **Not <see cref="Count"/>, and confusing the two is why Apply never went out.** Count says
+    /// how many settings this game answers ON ITS OWN: it labels the block, it is what stops those
+    /// settings following Mod defaults later, and it is still 2 after those 2 have been written.
+    /// Reusing it for the button left "Apply (2)" lit for ever on a game already carrying them,
+    /// offering to write what was already there.
+    ///
+    /// ⚠ **Compared against the game's own config.json, never against Mod defaults.** Applying the
+    /// defaults is a different act with its own button, in the block that lists the differences
+    /// with them. This one asks one question: is what I answered in the file yet.
+    /// </summary>
+    /// <param name="inGame">What the game's config.json holds today.</param>
+    public int PendingAgainst(GameModOverrides? inGame)
+    {
+        var held = inGame ?? new GameModOverrides();
+        var pending = 0;
+
+        // ⚠ An answer equal to what the file holds is applied, whatever its origin. Somebody who
+        // sets a value the game already carried has changed nothing, and a button offering to write
+        // it would be counting an intention rather than a difference.
+        void Text(string? own, string? has)
+        {
+            if (own is not null && !string.Equals(own, has, StringComparison.Ordinal)) pending++;
+        }
+
+        void Flag(bool? own, bool? has)
+        {
+            if (own is not null && own != has) pending++;
+        }
+
+        Text(TargetLanguage, held.TargetLanguage);
+        Text(TranslationBackend, held.TranslationBackend);
+        Text(AiUrl, held.AiUrl);
+        Text(AiModel, held.AiModel);
+        Text(AiApiKey, held.AiApiKey);
+        Text(GoogleApiKey, held.GoogleApiKey);
+        Text(DeeplApiKey, held.DeeplApiKey);
+        Text(MergeStrategy, held.MergeStrategy);
+        Text(NotificationPosition, held.NotificationPosition);
+        Text(Channel, held.Channel);
+
+        Flag(DeeplUseFree, held.DeeplUseFree);
+        Flag(ModOnlineMode, held.ModOnlineMode);
+        Flag(AutoDownload, held.AutoDownload);
+        Flag(NotifyUpdates, held.NotifyUpdates);
+        Flag(CheckModUpdates, held.CheckModUpdates);
+        Flag(NotificationsEnabled, held.NotificationsEnabled);
+
+        return pending;
+    }
+
+    /// <summary>
     /// Encrypts the secrets on the way to disk. The ONE path from plaintext to a file, exactly as
     /// SettingsStore.Save is for the defaults.
     /// </summary>

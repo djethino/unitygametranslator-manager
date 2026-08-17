@@ -2706,6 +2706,20 @@ public partial class MainWindow : Window
         DetailPanel.Children.Add(BackToOverview(report));
         DetailPanel.Children.Add(Header(report));
 
+        // 🔴 **Above the tabs, and the same banner the overview shows.** Nothing can be set up in
+        // any game until this is answered, and the only place saying so was the band at the very
+        // bottom of the card. Somebody who walked past it on the overview then met a greyed
+        // OneClick with the reason a screen-height below the eye — no way forward, and the honest
+        // conclusion is that the program does not work.
+        //
+        // ⚠ Not a second wording. It is the notice from the overview, repeated verbatim: seeing the
+        // same sentence again is recognising it, seeing a new one is being told a new thing.
+        //
+        // ⚠ Above the tabs rather than inside one, because it is true of both halves and of every
+        // game — reading goes top to bottom, and this is the first thing there is to say.
+        if (!_settings.Current.Reviewed)
+            DetailPanel.Children.Add(WhatGoesIntoGames()!);
+
         // ⚠ Directly under the name. Placed after the technical card, the tabs sat below a screenful
         // of paths and engine versions — somebody had to scroll to discover the card even had two
         // halves, which is the same as not having them.
@@ -6845,8 +6859,15 @@ public partial class MainWindow : Window
         // The prerequisite that is about the person rather than the game. Without it we do not
         // know their language, so "install everything and be ready to play" is a promise we
         // cannot keep — the mod would open its own wizard on first launch and ask them there.
+        // ⚠ Short, and short is the point. This read "Mod defaults has not been filled in yet, so
+        // there is nothing to configure this game with." — a subordinate clause explaining a
+        // consequence, in the fourth language of most of the people reading it, sitting above the
+        // button that fixes it. The eye takes in what is short; what is long it skips, and skipping
+        // this one leaves somebody in front of a greyed button with no way forward.
+        //
+        // The reason lives in the banner at the top of the card, which has the room for it.
         if (!_settings.Current.Reviewed)
-            return "Mod defaults has not been filled in yet, so there is nothing to configure this game with.";
+            return "Mod defaults comes first.";
 
         return null;
     }
@@ -6941,10 +6962,16 @@ public partial class MainWindow : Window
             // others are about the game or about it being open, and no button of ours fixes those.
             if (!_settings.Current.Reviewed)
             {
+                // 🔴 **Primary, like every other button that is the way forward.** It sat flat and
+                // transparent beside a greyed OneClick — the one control on the screen that can be
+                // pressed, dressed as the least important thing on it. On a first launch nothing
+                // can be set up in any game until it is pressed, so it IS the action here, and the
+                // greyed one beside it is not.
                 var open = new Button
                 {
                     Content = "Open Mod defaults",
                     FontSize = 12,
+                    Classes = { "primary" },
                     HorizontalAlignment = HorizontalAlignment.Left,
                     Margin = new Avalonia.Thickness(0, 4, 0, 0),
                 };

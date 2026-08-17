@@ -415,6 +415,13 @@ public static class CommandLine
     /// a report that claims a plugin is current when nothing could be reached would have whoever
     /// reads it looking for a bug in a version that was never checked.
     /// </summary>
+    /// <summary>The catalog entry for the loader this game has, or null when it has none we know.</summary>
+    private static LoaderDescriptor? InstalledDescriptorFor(GameReport report) =>
+        report.InstalledLoader is null
+            ? null
+            : new CatalogProvider(PlatformFactory.Create()).Get(offline: true)
+                  .Document.Loaders.FirstOrDefault(l => l.Id == report.InstalledLoader.Id);
+
     private static string Standing(VersionStanding standing) => standing switch
     {
         { CheckFailed: { } why } => $"could not check for a newer version ({why})",
@@ -497,6 +504,26 @@ public static class CommandLine
         else
         {
             Console.WriteLine("Local trans.: none");
+        }
+
+        // ⚠ The same history the window lists, printed here for the same reason every other line
+        // is: this command is what somebody pastes into an issue, and a copy they can no longer
+        // find is exactly the kind of thing they paste it about.
+        if (InstalledDescriptorFor(report) is { } backupsLoader)
+        {
+            var kept = TranslationBackupStore.List(report.Game.Path, backupsLoader);
+            var saved = Backups.SavedCount(kept);
+
+            Console.WriteLine($"Backups     : {saved} saved by you, {kept.Count - saved} automatic");
+
+            foreach (var entry in kept)
+            {
+                var what = string.IsNullOrEmpty(entry.Label)
+                    ? Backups.Describe(entry.Reason, entry.By)
+                    : $"\"{entry.Label}\"";
+
+                Console.WriteLine($"              {entry.At:dd MMM HH:mm}  {entry.Lines,6} lines  {what}");
+            }
         }
 
         // What starting this game would produce, from the game's own configuration. The window

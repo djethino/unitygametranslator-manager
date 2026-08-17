@@ -109,9 +109,16 @@ public sealed class GameModSettingsForm
     /// </summary>
     private readonly string? _languagePinnedTo;
 
+    /// <summary>
+    /// Whether the pin comes from a PUBLISHED translation, which decides the wording: published is
+    /// final, work in progress is changed inside the game.
+    /// </summary>
+    private readonly bool _languagePinnedPublished;
+
     public GameModSettingsForm(IPlatform platform, InstallerSettings defaults,
                                GameConfigSnapshot snapshot, GameModOverrides? stored,
-                               string? languagePinnedTo = null)
+                               string? languagePinnedTo = null,
+                               bool languagePinnedPublished = false)
     {
         _platform = platform;
         _defaults = defaults;
@@ -119,6 +126,7 @@ public sealed class GameModSettingsForm
         _inGameHotkey = snapshot.InGameHotkey;
         _draft = stored?.Copy() ?? new GameModOverrides();
         _languagePinnedTo = languagePinnedTo;
+        _languagePinnedPublished = languagePinnedPublished;
     }
 
     /// <summary>What the person has answered for this game, ready to be stored.</summary>
@@ -254,8 +262,15 @@ public sealed class GameModSettingsForm
         {
             _host.Children.Add(new TextBlock
             {
-                Text = $"Stays on {_languagePinnedTo}: this game already holds a "
-                     + $"{_languagePinnedTo} translation. Take one in another language to change it.",
+                // Two reasons, two sentences. "Published" is final — the file is on the site
+                // under that language and nothing here can move it. "Being written here" is not:
+                // it is changed in the game, which is where that file lives.
+                Text = _languagePinnedPublished
+                    ? $"Stays on {_languagePinnedTo}: this game holds a published "
+                      + $"{_languagePinnedTo} translation. Take one in another language to change it."
+                    : $"Stays on {_languagePinnedTo}: a {_languagePinnedTo} translation is being "
+                      + "written in this game. Change it in the game, or the lines already "
+                      + "captured would be left behind.",
                 FontSize = 11,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Avalonia.Thickness(120, 0, 0, 0),

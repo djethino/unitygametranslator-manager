@@ -3681,7 +3681,46 @@ public partial class MainWindow : Window
     /// </summary>
     private IEnumerable<Control> LineageNotes(GameReport report)
     {
-        if (report.MyPosition is not { } position) yield break;
+        if (report.MyPosition is not { } position)
+        {
+            // 🔴 **The third case, which used to be silence.** Leading a lineage was green,
+            // contributing to one was amber, and running somebody else's work said nothing at all
+            // — so it was told apart from the other two by an ABSENCE, and from "not loaded yet"
+            // by nothing whatever. The name on the card looked identical in all three.
+            //
+            // ⚠ Only when we actually KNOW there is no part to hold: the listing read, an account
+            // signed in, and a published author who is not that account. Any of those missing and
+            // this stays silent, because the alternative is a guess printed as a fact.
+            if (_lineages.Known
+                && !string.IsNullOrWhiteSpace(_settings.Current.ApiUser)
+                && report.MatchingOnline is { Author: { Length: > 0 } author } theirs
+                && !People.IsYou(author, _settings.Current.ApiUser))
+            {
+                // The way on depends on what that person decided — the same flag their card shows
+                // as "Accepts contributions" or "Solo work". Naming only the wall would leave
+                // somebody to discover the door by trying it.
+                var onward = theirs.AcceptsBranches == true
+                    ? " They take contributions: your changes can be sent to them for review."
+                    : theirs.AcceptsBranches == false
+                        ? " They work alone: publish your own version to take it further."
+                        : "";
+
+                yield return new TextBlock
+                {
+                    // Muted, not green and not amber: those two carry a POWER over the file —
+                    // reviewing contributions, having yours reviewed. Using somebody's work
+                    // carries none, and colouring it like the others would say it does.
+                    Text = $"{People.Mention(author)}'s translation, and you hold no part in it."
+                         + onward,
+                    FontSize = 12,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = Brush("TextMuted"),
+                    Margin = new Avalonia.Thickness(0, 2, 0, 0),
+                };
+            }
+
+            yield break;
+        }
 
         if (position.IsMain)
         {
@@ -5945,8 +5984,9 @@ public partial class MainWindow : Window
     {
         var snapshot = GameConfig(report);
 
+        var pinned = LanguagePinnedTo(report, preference);
         var form = new GameModSettingsForm(_platform, _settings.Current, snapshot, preference.Mod,
-                                           LanguagePinnedTo(report, preference));
+                                           pinned.Language, pinned.Published);
 
         form.Applied += async () =>
         {
@@ -6073,17 +6113,37 @@ public partial class MainWindow : Window
     /// nothing at all — the exact shape of "a setting silently without effect" this program refuses
     /// to leave behind anywhere else.
     /// </summary>
-    private string? LanguagePinnedTo(GameReport report, GamePreference preference)
+    private (string? Language, bool Published) LanguagePinnedTo(GameReport report,
+                                                                GamePreference preference)
     {
-        if (InstalledDescriptor(report) is not { } descriptor) return null;
+        if (InstalledDescriptor(report) is not { } descriptor) return (null, false);
 
-        var settings = SettingsFor(report, preference);
+        // 🔴 **Pinned by the FACT, not by a disagreement.** This asked whether the imposed language
+        // happened to differ from the person's own preference, and unlocked the picker when the
+        // two matched — so on a game whose published translation was French, somebody whose
+        // default is also French got an editable language field on a translation that can never
+        // change language. Worse on somebody else's translation, where nothing about it is theirs
+        // to move.
+        //
+        // What made it invisible: ApplyOwnSettingsAsync writes TargetFor() regardless, so the
+        // pick was silently discarded. A control that changes nothing is worse than no control —
+        // it is a promise the product does not keep.
+        //
+        // The rule is the mod's, so the two agree: TranslatorCore.AreLanguagesLocked is
+        // "something of this lineage is published", full stop.
+        if (report.MatchingOnline is { TargetLanguage: { Length: > 0 } published })
+            return (published, true);
 
-        var written = TargetFor(report, descriptor, settings);
-        var picked = Languages.NameOf(
-            GameLanguages.Resolve(settings.TargetLanguage, _platform.SystemLanguage()));
+        // Not published, but a file is being built here. TargetFor keeps its target for a reason —
+        // retargeting mid-work orphans every line already captured — so the picker must not claim
+        // otherwise. Said differently from the case above: this one IS changeable, in the game.
+        if (report.LocalTranslation is not null)
+        {
+            var (_, target) = LocalTranslationProbe.ReadLanguages(report.Game.Path, descriptor);
+            if (target is { Length: > 0 }) return (target, false);
+        }
 
-        return string.Equals(written, picked, StringComparison.OrdinalIgnoreCase) ? null : written;
+        return (null, false);
     }
 
     /// <summary>

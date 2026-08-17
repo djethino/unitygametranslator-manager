@@ -398,24 +398,15 @@ public partial class MainWindow : Window
 
     // ---------------------------------------------------------------- scanning
 
-    private async Task ScanAsync()
+    /// <summary>
+    /// The reader of games, rebuilt from whatever catalogue is in force.
+    ///
+    /// ⚠ Its own method because the catalogue can change under it: the window starts on the copy
+    /// this machine already had and asks the publisher afterwards, so a newer one lands while the
+    /// list is on screen and everything derived from it has to be made again.
+    /// </summary>
+    private void BuildInventory()
     {
-        Busy(true, "Looking for the loader catalog...");
-        ShowScanning();
-
-        _sweep?.Cancel();
-
-        var result = await Task.Run(() => new CatalogProvider(_platform).Get());
-        _catalog = result.Document;
-        // Asked once and shared by every report built from here — see PluginReleases. Forgotten
-        // first because reaching this method IS the gesture that means "look again": a rescan
-        // that re-read the drives and kept yesterday's idea of the newest plugin would be a
-        // refresh button that refreshes some things.
-        _releases.Forget();
-
-        // ⚠ The token goes with the search, and only so the answer carries this account's own vote.
-        // Without it every arrow drew neutral whatever somebody had chosen, so a second click
-        // withdrew the vote they meant to confirm.
         _inventory = new GameInventory(_platform, _catalog, new CatalogApiClient(),
                                        _settings.Current.ApiToken)
         {
@@ -435,13 +426,82 @@ public partial class MainWindow : Window
             BepInEx6Channel = _settings.Current.BepInEx6Channel,
         };
 
+    }
+
+    /// <summary>
+    /// Asks the publisher for a newer catalogue once the window is up, and redraws if one arrives.
+    ///
+    /// ⚠ Silent when nothing changes, and silent on failure: not having today's catalogue costs a
+    /// loader version nobody has asked about yet, and the copy in force is always a real one.
+    /// </summary>
+    private async Task RefreshCatalogAsync()
+    {
+        if (!_settings.Current.OnlineMode) return;
+
+        var fresh = await Task.Run(() => new CatalogProvider(_platform).Get());
+
+        // Only when it actually reached somebody. Cache and Embedded are what we already started
+        // from, so applying them again would redraw the whole list to change nothing.
+        if (fresh.Source is CatalogSource.Cache or CatalogSource.Embedded) return;
+
+        _catalog = fresh.Document;
+        BuildInventory();
+
+        RecomputeSituations();
+        RefreshList();
+
+        if (_selected is not null) await ShowSelectedAsync();
+    }
+
+    private async Task ScanAsync()
+    {
+        Busy(true, "Looking for your games...");
+        ShowScanning();
+
+        _sweep?.Cancel();
+
+        // 🔴 **The catalogue is read off this machine, and asked for over the network afterwards.**
+        // CatalogProvider tries GitHub, then the site mirror, and only then falls back to the cache
+        // it already has — which is right for a CLI with nothing else to do, and wrong here: it put
+        // two network timeouts in front of the first thing anybody sees. Measured on this machine,
+        // "manager scan" takes 0.4s offline and 6.3s online, and the sweep of the drives is 0.2s of
+        // that. The whole wait was one HTTP request nobody was waiting for.
+        //
+        // ⚠ There is always something to start from: the cache from last time, or the copy compiled
+        // into this binary. A loader published this morning is the only thing missing, for a few
+        // seconds, on a screen that is not yet showing loaders.
+        var result = await Task.Run(() => new CatalogProvider(_platform).Get(offline: true));
+        _catalog = result.Document;
+        // Asked once and shared by every report built from here — see PluginReleases. Forgotten
+        // first because reaching this method IS the gesture that means "look again": a rescan
+        // that re-read the drives and kept yesterday's idea of the newest plugin would be a
+        // refresh button that refreshes some things.
+        _releases.Forget();
+
+        // ⚠ The token goes with the search, and only so the answer carries this account's own vote.
+        // Without it every arrow drew neutral whatever somebody had chosen, so a second click
+        // withdrew the vote they meant to confirm.
+        BuildInventory();
+
         // There is a folder list to show from here on — see the note where it is switched off.
         FoldersButton.IsEnabled = true;
+
         ToolTip.SetTip(FoldersButton, FoldersTip);
 
         Status($"Catalog: {_catalog.Loaders.Count} loaders ({result.Source}). Scanning your drives...");
 
+        // ⚠ **Ten seconds of nothing is what makes ten seconds feel long.** The gear has a second
+        // line for exactly this — see SpinningGear.Detail, which exists so the caption can stay
+        // still while something under it moves. Posted, because the sweep reports from its own
+        // thread.
+        _inventory.Report = where => Dispatcher.UIThread.Post(() =>
+        {
+            if (_scanGear is not null) _scanGear.Detail = where;
+        });
+
         var found = await Task.Run(() => _inventory.ScanAll());
+
+        _inventory.Report = null;
 
         // The games themselves are being replaced, so rows built for the previous set have nothing
         // left to describe.
@@ -483,6 +543,9 @@ public partial class MainWindow : Window
         // it to be usable — so it must not hold the list back. But a card drawn before the answer
         // arrives shows a loader without its version and would keep showing it until something
         // else caused a redraw: an interface that is only right if you happen to click twice.
+        // ⚠ Before the loader builds, which measure themselves against it.
+        _ = RefreshCatalogAsync();
+
         _ = WarmLoaderBuildsAsync();
 
         StartOnlineSweep();

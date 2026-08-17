@@ -87,6 +87,14 @@ public sealed class GameInventory
     /// Every Unity game we can find: Steam first because it is the richest source, then the
     /// launcher defaults, then the folders the user added themselves.
     /// </summary>
+    /// <summary>
+    /// Where the sweep has got to, so a screen can say so. Null when nobody is listening.
+    ///
+    /// ⚠ Raised on the scanning thread, so a listener that touches controls has to post. The one
+    /// listener there is does exactly that.
+    /// </summary>
+    public Action<string>? Report { get; set; }
+
     public List<GameInstall> ScanAll()
     {
         var games = new List<GameInstall>();
@@ -97,12 +105,29 @@ public sealed class GameInventory
             if (seen.Add(Path.GetFullPath(game.Path))) games.Add(game);
         }
 
-        foreach (var game in new SteamScanner(_platform).Scan()) Add(game);
-        foreach (var game in new StoreScanner(_platform).Scan()) Add(game);
+        // 🔴 **The two libraries are swept at once.** They are independent walks of different
+        // folders and they ran one after the other, so the wait was the sum of them — ten seconds
+        // of an empty window on a machine with a large Steam library and a large Epic one.
+        //
+        // ⚠ Collected into lists first and merged here, on this thread. Add() writes a list and a
+        // set that are not thread-safe, and "the scan is faster now" is not worth a collection
+        // corrupting once a fortnight.
+        var steam = Task.Run(() => new SteamScanner(_platform).Scan().ToList());
+        var stores = Task.Run(() => new StoreScanner(_platform).Scan().ToList());
+
+        Task.WaitAll(steam, stores);
+
+        Report?.Invoke("Steam");
+        foreach (var game in steam.Result) Add(game);
+
+        Report?.Invoke("other stores");
+        foreach (var game in stores.Result) Add(game);
 
         // Applied after detection, never instead of it: we always read the files first, so a
         // stale answer about a game that has since been updated gets replaced by the truth.
         foreach (var game in games) Overrides.Apply(game);
+
+        if (Folders.All.Count > 0) Report?.Invoke("your own folders");
 
         foreach (var folder in Folders.All)
         {

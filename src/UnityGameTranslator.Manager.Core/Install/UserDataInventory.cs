@@ -107,9 +107,13 @@ public static class UserDataInventory
             "Lines captured while playing may exist nowhere else. Anything never uploaded is gone.");
 
         // Right after the translation in place, because it is the same thing at an earlier date.
-        Add(groups, "Backups of your translation", setAside,
-            "Earlier versions of this game's translation, kept when something replaced them and "
-            + "whenever you asked. Backups brings one back; deleting them ends that.");
+        // ⚠ Named from Common.Backups, not spelled out here: this list and the screen that manages
+        // the same folder must call it the same thing, or ticking this reads as removing something
+        // else. One word for the thing — see the vocabulary note in Backups.
+        Add(groups, Common.Backups.ScreenTitle, setAside,
+            "Earlier versions of this game's translation, taken when something replaced them and "
+            + $"whenever you asked. {Common.Backups.ScreenTitle} restores one; deleting them ends "
+            + "that.");
 
         Add(groups, "Settings", configuration,
             "Your language, translator and sign-in for this game. The mod asks again from scratch.");
@@ -118,7 +122,8 @@ public static class UserDataInventory
             "Font files and their generated atlases. Rebuilt on demand, so nothing is lost for good.");
 
         Add(groups, "Replacement images", images,
-            "Images you put in place of the game's own. Not recoverable unless you kept a copy.");
+            "Images you put in place of the game's own. Not recoverable unless you have the "
+            + "originals elsewhere.");
 
         Add(groups, "Other files", other,
             "Written here by the mod or by you. Not recognised, so judge them yourself.");

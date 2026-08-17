@@ -5283,9 +5283,9 @@ public partial class MainWindow : Window
 
             var back = ScopeMark.Marked(EditSide.Local, "Backups…", standing.CanWriteLocally);
             ToolTip.SetTip(back, kept.Count == 0
-                ? "Keep a copy of this translation before you try something, and come back to it."
-                : $"{Backups.SavedCount(kept)} saved by you, "
-                  + $"{kept.Count - Backups.SavedCount(kept)} kept automatically.");
+                ? "Back this translation up before you try something, and come back to it."
+                : $"{Backups.SavedCount(kept)} of your own, "
+                  + $"{kept.Count - Backups.SavedCount(kept)} taken automatically.");
             back.Click += async (_, _) => await ShowBackupsAsync(report, descriptor);
             actions.Children.Add(back);
         }

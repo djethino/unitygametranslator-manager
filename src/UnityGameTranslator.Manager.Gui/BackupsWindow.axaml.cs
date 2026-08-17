@@ -52,7 +52,7 @@ public sealed class BackupsWindow : Window
         _descriptor = descriptor;
         _running = running;
 
-        Title = $"Backups — {game.Name}";
+        Title = $"{Backups.ScreenTitle} — {game.Name}";
         Width = 760;
 
         // ⚠ 780, the height Settings gives itself. Shorter, the two lists showed less than two
@@ -187,7 +187,7 @@ public sealed class BackupsWindow : Window
         var body = new Grid { RowDefinitions = new RowDefinitions("*,Auto") };
 
         var list = Rows(kept, wantSaved: true,
-            empty: "Nothing kept yet. Keep one before you try something, and you can walk back out "
+            empty: "No backups yet. Take one before you try something, and you can walk back out "
                  + "of whatever you try.");
 
         Grid.SetRow(list, 0);
@@ -196,7 +196,9 @@ public sealed class BackupsWindow : Window
         // 🔴 **Under the list it fills, not above it.** Every verb in this product sits below the
         // zone it acts on and to the right — the Apply of a settings block, the Apply of a hotkey.
         // Above, it read as a heading for the list rather than an act upon it.
-        var save = ScopeMark.Marked(EditSide.Local, "Save a copy",
+        // ⚠ `Backup`, one verb, nothing after it — the window is named "Translation backups", so
+        // the subject is already written above and repeating it in the button says it twice.
+        var save = ScopeMark.Marked(EditSide.Local, "Backup",
                                     enabled: why is null && !_running && hasTranslation);
         save.Classes.Add("primary");
 
@@ -205,8 +207,8 @@ public sealed class BackupsWindow : Window
             ? $"{_game.Name} is running, so its files are locked."
             : why
               ?? (!hasTranslation
-                  ? "There is no translation here to copy yet."
-                  : "Keeps the translation as it stands, with the fonts and images it uses."));
+                  ? "There is no translation here to back up yet."
+                  : "Backs up the translation as it stands, with the fonts and images it uses."));
 
         save.Click += (_, _) =>
         {
@@ -227,16 +229,16 @@ public sealed class BackupsWindow : Window
         body.Children.Add(verb);
 
         return Card(Backups.SavedHeading,
-                    $"{saved} of {Backups.SavedKept} — these stay until you remove one.", body);
+                    $"{saved} of {Backups.SavedKept} — these stay until you delete one.", body);
     }
 
     private Control AutomaticCard(IReadOnlyList<BackupEntry> kept)
     {
         var body = Rows(kept, wantSaved: false,
-            empty: "Nothing yet. One is kept whenever something replaces this game's translation.");
+            empty: "Nothing yet. One is taken whenever something replaces this game's translation.");
 
         return Card(Backups.AutomaticHeading,
-                    $"The last {Backups.AutomaticKept} taken before something replaced your "
+                    $"The last {Backups.AutomaticKept} taken before something replaced this game's "
                     + "translation — the oldest goes as a new one arrives. Keep holds on to one.",
                     body);
     }
@@ -367,7 +369,8 @@ public sealed class BackupsWindow : Window
         var restore = ScopeMark.Marked(EditSide.Local, "Restore", enabled: !_running);
         ToolTip.SetTip(restore, _running
             ? $"{_game.Name} is running, so its files are locked."
-            : "Puts this one back. What is here now is kept first, so this can be walked back.");
+            : "Puts this backup into the game. What is there now is backed up first, so this can "
+              + "be walked back.");
 
         // 🔴 **Asked, exactly as the mod asks it.** This window and the mod's panel look at the same
         // folder; one of them removed a copy on the click while the other asked first. Two screens
@@ -408,7 +411,7 @@ public sealed class BackupsWindow : Window
             verbs.Children.Add(rename);
 
             var delete = new Button { Content = "Delete", FontSize = 12 };
-            ToolTip.SetTip(delete, "Removes this copy and frees a slot. Nothing else is touched.");
+            ToolTip.SetTip(delete, "Deletes this backup and frees a slot. Nothing else is touched.");
             // ⚠ The one act on this window nothing puts back — the others all leave a way out.
             delete.Click += async (_, _) =>
             {
@@ -436,7 +439,7 @@ public sealed class BackupsWindow : Window
             };
 
             ToolTip.SetTip(keep, Backups.WhyCannotSave(all)
-                                 ?? "Moves it in with the ones you kept, so it stops ageing out.");
+                                 ?? $"Moves it into {Backups.SavedHeading}, so it stops ageing out.");
 
             keep.Click += (_, _) => Act(() =>
                 TranslationBackupStore.Keep(_game.Path, _descriptor, entry.Id));
@@ -472,7 +475,7 @@ public sealed class BackupsWindow : Window
     private string? LocalUuid() => LocalTranslationProbe.Read(_game.Path, _descriptor)?.Uuid;
 
     /// <summary>
-    /// How a copy is referred to in a question about it.
+    /// How a backup is referred to in a question about it.
     ///
     /// ⚠ Its name when it has one, its date otherwise — never "this backup". Somebody holding ten
     /// of them has to recognise WHICH one is about to go, and the dialog is the last place that can
@@ -480,11 +483,11 @@ public sealed class BackupsWindow : Window
     /// </summary>
     private static string NameFor(BackupEntry entry) =>
         string.IsNullOrEmpty(entry.Label)
-            ? $"the copy from {entry.At:dd MMM HH:mm}"
+            ? $"from {entry.At:dd MMM HH:mm}"
             : "\"" + entry.Label + "\"";
 
     /// <summary>
-    /// Asks what to call a copy. True when something was written.
+    /// Asks what to call a backup. True when something was written.
     ///
     /// ⚠ Owned by this window rather than by the main one: a dialog whose owner sits behind
     /// another modal opens behind it on some window managers, which reads as a frozen program.
@@ -505,7 +508,7 @@ public sealed class BackupsWindow : Window
 
         layout.Children.Add(new TextBlock
         {
-            Text = "Name this copy",
+            Text = "Name this backup",
             FontSize = 15,
             FontWeight = FontWeight.SemiBold,
             Foreground = Brush("TextPrimary"),
@@ -513,7 +516,7 @@ public sealed class BackupsWindow : Window
 
         layout.Children.Add(new TextBlock
         {
-            Text = $"The copy from {entry.At:dd MMM HH:mm}, {entry.Lines} lines.",
+            Text = $"The backup from {entry.At:dd MMM HH:mm}, {entry.Lines} lines.",
             FontSize = 12,
             Foreground = Brush("TextSecondary"),
         });
@@ -529,7 +532,7 @@ public sealed class BackupsWindow : Window
 
         var dialog = new Window
         {
-            Title = "Name this copy",
+            Title = "Name this backup",
             Width = 460,
             SizeToContent = SizeToContent.Height,
             CanResize = false,

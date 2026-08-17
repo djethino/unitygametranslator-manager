@@ -6189,10 +6189,15 @@ public partial class MainWindow : Window
         // ⚠ And side by side, not one per line. Two buttons stacked take two lines to say what a
         // row says in one, and the vertical stack made them read as two more options in the list
         // above rather than as two things one can do.
+        // ⚠ **To the right, away from Install and Uninstall.** Those sit left-aligned a little
+        // above, and a third pair on the same edge reads as more of the same row — one of them
+        // being "Uninstall...", which is not a neighbour to be mistaken for. Right is also where
+        // this product already puts the act that closes a block, every Apply included.
         var acts = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             Spacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Right,
             Margin = new Avalonia.Thickness(0, 8, 0, 0),
         };
 

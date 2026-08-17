@@ -5996,7 +5996,12 @@ public partial class MainWindow : Window
         var snapshot = GameConfig(report);
 
         var pinned = LanguagePinnedTo(report, preference);
-        var form = new GameModSettingsForm(_platform, _settings.Current, snapshot, preference.Mod,
+
+        // ⚠ What is pending wins over what is stored: it is the newer answer, and it is why the
+        // form survives this card being redrawn under somebody who is still filling it in.
+        var stored = _pendingMod.TryGetValue(report.Game.Path, out var held) ? held : preference.Mod;
+
+        var form = new GameModSettingsForm(_platform, _settings.Current, snapshot, stored,
                                            pinned.Language, pinned.Published,
                                            installed: snapshot.IsConfigured);
 
@@ -6008,11 +6013,10 @@ public partial class MainWindow : Window
         //
         // ⚠ No refresh() here. The person is still in the form; rebuilding the card would destroy
         // the control under their cursor mid-edit.
-        form.Recorded += () =>
-        {
-            preference.Mod = form.Draft.IsEmpty ? null : form.Draft.Copy();
-            _preferences.Set(report.Game.Path, preference);
-        };
+        //
+        // ⚠ **Held, not saved.** Nothing here has been validated: writing it to disk would have the
+        // program come back tomorrow with answers somebody typed and walked away from.
+        form.Recorded += () => _pendingMod[report.Game.Path] = form.Draft.Copy();
 
         form.Applied += async () =>
         {
@@ -7198,10 +7202,17 @@ public partial class MainWindow : Window
         var preference = _preferences.Read(report.Game.Path);
         var translation = _takeTranslation ? PickTranslation(report) : null;
 
+        // 🔴 **A copy for the question, the real thing only once it is answered.** The list below
+        // has to name what is pending — a step reading "apply Mod defaults" while two answers wait
+        // beside it is the confirmation lying about the act it is confirming. But promoting them
+        // here would write unvalidated answers to disk for somebody who then presses Cancel.
+        var shown = preference.Copy();
+        ValidateInto(report, shown, save: false);
+
         // Everything at stake, gathered and asked once.
         var body = new StackPanel { Spacing = 10 };
 
-        var steps = OneClickSteps(report, preference).ToList();
+        var steps = OneClickSteps(report, shown).ToList();
 
         // ⚠ One block per step rather than one paragraph, so the settings step can carry its own
         // detail. It used to be a single joined string, and "apply your settings" was therefore a
@@ -7247,6 +7258,10 @@ public partial class MainWindow : Window
         // ⚠ Read BEFORE anything is written: applying the settings makes this game "configured",
         // and what we need to know afterwards is what it was beforehand.
         var configBefore = GameConfig(report);
+
+        // The question above was answered, so what it named is now decided. Before the plan, which
+        // reads the preference.
+        ValidatePending(report, preference);
 
         Busy(true, "Starting...");
 
@@ -7466,6 +7481,67 @@ public partial class MainWindow : Window
             message += " What was here is kept under Backups.";
 
         return message;
+    }
+
+    /// <summary>
+    /// Answers given on a game with nothing installed, waiting for the act that validates them.
+    ///
+    /// 🔴 **In memory, and nowhere else.** Before the mod is installed there is no Apply — the verb
+    /// has no object — so these answers have to survive a card being redrawn, a tab being changed
+    /// and a rescan, or they vanish under the person still filling the form in. What they must NOT
+    /// survive is closing the program: nothing was validated, and finding half-typed answers
+    /// waiting on the next launch is the tool deciding something nobody decided.
+    ///
+    /// ⚠ Not parked on the GamePreference either, even unsaved: Read hands back the live stored
+    /// object, so any unrelated Set — picking a translation, ticking a box — would write them to
+    /// disk as a side effect of something else entirely.
+    ///
+    /// Promoted by <see cref="ValidatePending"/>, called by the three acts that write them.
+    /// </summary>
+    private readonly Dictionary<string, GameModOverrides> _pendingMod =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The same, for the two answers the plan block holds.</summary>
+    private readonly Dictionary<string, (bool Start, string? Context)> _pendingPlan =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Moves whatever is pending for this game onto the preference and saves it, because the act
+    /// about to run IS the validation.
+    ///
+    /// ⚠ Called BEFORE the plan is built, never after: the plan reads the preference, so promoting
+    /// afterwards would install with the old values and store the new ones — the same fault this
+    /// whole area was carrying, one step further along.
+    /// </summary>
+    private void ValidatePending(GameReport report, GamePreference preference) =>
+        ValidateInto(report, preference, save: true);
+
+    /// <param name="save">
+    /// False to merely SHOW what is pending — a confirmation has to name it, and somebody who then
+    /// presses Cancel must not find it stored. The caller passes a copy in that case, so the
+    /// pending stays pending and the real preference is untouched.
+    /// </param>
+    private void ValidateInto(GameReport report, GamePreference preference, bool save)
+    {
+        var path = report.Game.Path;
+        var moved = false;
+
+        if (_pendingMod.TryGetValue(path, out var mod))
+        {
+            preference.Mod = mod.IsEmpty ? null : mod.Copy();
+            if (save) _pendingMod.Remove(path);
+            moved = true;
+        }
+
+        if (_pendingPlan.TryGetValue(path, out var plan))
+        {
+            preference.StartTranslation = plan.Start;
+            preference.GameContext = plan.Context;
+            if (save) _pendingPlan.Remove(path);
+            moved = true;
+        }
+
+        if (moved && save) _preferences.Set(path, preference);
     }
 
     /// <summary>
@@ -7934,6 +8010,10 @@ public partial class MainWindow : Window
     {
         var preference = _preferences.Read(report.Game.Path);
 
+        // Pressing this button IS the validation of whatever was answered on a game that had no
+        // Apply to offer. Before the plan, because the plan reads the preference.
+        ValidatePending(report, preference);
+
         // The loader still comes along when there is none — a plugin without one loads in no game,
         // and refusing here would mean the mod's own button could not work on a fresh game.
         var plan = BuildPlan(report, preference,
@@ -8229,12 +8309,8 @@ public partial class MainWindow : Window
         // instead lost them — and the one-click then installed without them.
         if (!GameConfig(report).IsConfigured)
         {
-            void Keep()
-            {
-                preference.StartTranslation = draft.Start;
-                preference.GameContext = draft.Context;
-                _preferences.Set(report.Game.Path, preference);
-            }
+            // ⚠ Held, not saved — see _pendingPlan. Nothing here has been validated yet.
+            void Keep() => _pendingPlan[report.Game.Path] = (draft.Start, draft.Context);
 
             return new PlanApply
             {

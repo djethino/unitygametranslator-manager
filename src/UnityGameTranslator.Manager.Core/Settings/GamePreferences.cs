@@ -145,6 +145,26 @@ public sealed class GamePreference
     /// </summary>
     [JsonPropertyName("adopt_loader")] public bool AdoptLoader { get; set; }
 
+    /// <summary>
+    /// A detached copy, for asking a question about answers that are not decided yet.
+    ///
+    /// ⚠ Exists because <see cref="GamePreferences.Read"/> hands back the STORED object: a
+    /// confirmation that has to name what is pending would otherwise write it onto the live
+    /// preference, and somebody pressing Cancel would find it kept. The copy is shown, the original
+    /// is only touched once the answer comes back.
+    /// </summary>
+    public GamePreference Copy() => new()
+    {
+        Schema = Schema,
+        ApplyModDefaults = ApplyModDefaults,
+        Mod = Mod?.Copy(),
+        StartTranslation = StartTranslation,
+        GameContext = GameContext,
+        ReplaceHotkey = ReplaceHotkey,
+        TranslationId = TranslationId,
+        InstallTranslation = InstallTranslation,
+        AdoptLoader = AdoptLoader,
+    };
 }
 
 /// <summary>

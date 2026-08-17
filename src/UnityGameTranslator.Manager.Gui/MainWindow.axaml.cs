@@ -6447,12 +6447,22 @@ public partial class MainWindow : Window
             preference.Mod?.SettingsHotkey ?? inGame ?? _settings.Current.SettingsHotkey,
             Brush("TextMuted"), Brush("StatusWarning"), warnOnArrival: false);
 
+        // 🔴 **Held, not stored.** Every keystroke used to land in preference.Mod.SettingsHotkey
+        // and be written to the preferences file straight away — so a key merely tried out was
+        // remembered, counted in "N set for this game", and carried into the next install by
+        // somebody who never confirmed it. The block already had a verb; what it lacked was
+        // anything to press it FOR.
+        //
+        // The button below is that verb, and it now does both halves: remember the key, and write
+        // it into the game. Nothing before it.
+        var draftKey = preference.Mod?.SettingsHotkey;
+
+        Button? write = null;
+
         editor.Changed += () =>
         {
-            preference.Mod ??= new GameModOverrides();
-            preference.Mod.SettingsHotkey = editor.Value;
-            _preferences.Set(report.Game.Path, preference);
-            Avalonia.Threading.Dispatcher.UIThread.Post(refresh);
+            draftKey = editor.Value;
+            RefreshHotkeyApply();
         };
 
         var row = new StackPanel
@@ -6488,38 +6498,61 @@ public partial class MainWindow : Window
         // Its own verb, like every other brick: one key, written on its own. Going through the
         // settings apply would write the language, the backend and the update preferences in the
         // same breath, which is not what a button that changes a shortcut may do.
-        if (descriptor is not null && preference.Mod?.SettingsHotkey is { } own
-            && !string.Equals(own, inGame, StringComparison.Ordinal))
+        //
+        // ⚠ Named rather than counted, unlike the two Apply (N) elsewhere on this card. This block
+        // holds exactly one setting, so a number would say nothing — and the naming rule asks the
+        // label to say WHAT it writes. It carries the same Local mark as the others: it writes
+        // into this game and sends nothing anywhere.
+        write = ScopeMark.Marked(EditSide.Local, "Apply this key to the game", enabled: false);
+        write.FontSize = 12;
+        write.HorizontalAlignment = HorizontalAlignment.Left;
+        write.Margin = new Avalonia.Thickness(120, 4, 0, 0);
+
+        write.Click += async (_, _) =>
         {
-            var write = new Button
+            if (draftKey is not { } chosen) return;
+
+            Busy(true, "Applying the key...");
+
+            var result = new GameConfigWriter().ApplyOne(
+                report.Game.Path, descriptor, GameConfigWriter.HotkeyKey, chosen, "in-game hotkey");
+
+            Busy(false, "Ready.");
+
+            if (!result.Written)
             {
-                Content = "Apply this key to the game",
-                FontSize = 12,
-                HorizontalAlignment = HorizontalAlignment.Left,
-                IsEnabled = !_running.IsRunning(report.Game) && !takesDefault,
-                Margin = new Avalonia.Thickness(120, 4, 0, 0),
-            };
+                await MessageAsync("Nothing was changed",
+                    $"The key could not be written ({result.Failure}).");
+                return;
+            }
 
-            write.Click += async (_, _) =>
-            {
-                Busy(true, "Applying the key...");
+            // ⚠ Remembered only now, and only because it reached the game. A key stored without
+            // having been written is a key the next install would carry on somebody's behalf.
+            preference.Mod ??= new GameModOverrides();
+            preference.Mod.SettingsHotkey = chosen;
+            _preferences.Set(report.Game.Path, preference);
 
-                var result = new GameConfigWriter().ApplyOne(
-                    report.Game.Path, descriptor, GameConfigWriter.HotkeyKey, own, "in-game hotkey");
+            await ShowSelectedAsync();
+        };
 
-                Busy(false, "Ready.");
+        RefreshHotkeyApply();
+        yield return write;
 
-                if (!result.Written)
-                {
-                    await MessageAsync("Nothing was changed",
-                        $"The key could not be written ({result.Failure}).");
-                    return;
-                }
+        void RefreshHotkeyApply()
+        {
+            if (write is null) return;
 
-                await ShowSelectedAsync();
-            };
+            var pending = draftKey is { } key && !string.Equals(key, inGame, StringComparison.Ordinal);
 
-            yield return write;
+            write.IsEnabled = pending && !_running.IsRunning(report.Game) && !takesDefault;
+
+            ToolTip.SetTip(write, !pending
+                ? "This game already uses that key."
+                : takesDefault
+                    ? "Untick the box above to choose a key here instead."
+                    : _running.IsRunning(report.Game)
+                        ? $"{report.Game.Name} is running, so its files are locked."
+                        : "Writes this key into the game, and remembers it for a later install.");
         }
 
         // 🔴 **THE REASON — one line, and it has to be TRUE.** It was a paragraph, then it was

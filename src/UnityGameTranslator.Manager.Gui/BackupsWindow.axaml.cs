@@ -53,10 +53,13 @@ public sealed class BackupsWindow : Window
         _running = running;
 
         Title = $"Backups — {game.Name}";
-        Width = 720;
-        Height = 660;
-        MinWidth = 620;
-        MinHeight = 460;
+        Width = 760;
+
+        // ⚠ 780, the height Settings gives itself. Shorter, the two lists showed less than two
+        // entries each — a list you cannot read two rows of is a list, not a choice.
+        Height = 780;
+        MinWidth = 660;
+        MinHeight = 520;
 
         // 🔴 **A plain size, and no SizeToContent.** Sizing to the content fought every attempt to
         // enlarge the window — the height was recomputed from the content, so dragging it taller
@@ -83,8 +86,8 @@ public sealed class BackupsWindow : Window
 
         head.Children.Add(new TextBlock
         {
-            Text = Backups.PrivacyNote + " They are what you come back to when something replaces "
-                 + "your work, or when you want to try an idea and be able to walk out of it.",
+            // ⚠ One line. Every line spent here is a row nobody can see below.
+            Text = Backups.PrivacyNote,
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("TextSecondary"),
@@ -223,8 +226,8 @@ public sealed class BackupsWindow : Window
         Grid.SetRow(verb, 1);
         body.Children.Add(verb);
 
-        return Card(Backups.SavedHeading, $"{saved} of {Backups.SavedKept} kept. "
-                    + "These stay until you remove one — nothing here ages out.", body);
+        return Card(Backups.SavedHeading,
+                    $"{saved} of {Backups.SavedKept} — these stay until you remove one.", body);
     }
 
     private Control AutomaticCard(IReadOnlyList<BackupEntry> kept)
@@ -233,9 +236,9 @@ public sealed class BackupsWindow : Window
             empty: "Nothing yet. One is kept whenever something replaces this game's translation.");
 
         return Card(Backups.AutomaticHeading,
-                    $"The last {Backups.AutomaticKept}, taken on their own before something "
-                    + "replaced your translation. The oldest goes as a new one arrives — Keep one "
-                    + "to hold on to it.", body);
+                    $"The last {Backups.AutomaticKept} taken before something replaced your "
+                    + "translation — the oldest goes as a new one arrives. Keep holds on to one.",
+                    body);
     }
 
     /// <summary>
@@ -247,7 +250,7 @@ public sealed class BackupsWindow : Window
     /// </summary>
     private Control Rows(IReadOnlyList<BackupEntry> kept, bool wantSaved, string empty)
     {
-        var rows = new StackPanel { Spacing = 6 };
+        var rows = new StackPanel { Spacing = 4 };
         var any = false;
 
         foreach (var entry in kept)
@@ -278,22 +281,28 @@ public sealed class BackupsWindow : Window
         };
     }
 
-    /// <summary>One copy: what it is, why it exists, and what may be done with it.</summary>
+    /// <summary>
+    /// One copy: what it is, why it exists, and what may be done with it.
+    ///
+    /// 🔴 **Two lines at most, and the verbs share the first one.** Stacked — facts, then reason,
+    /// then a row of buttons — a copy took four lines, and the lists showed less than two entries
+    /// each. A list you cannot read two rows of is not a list, it is a keyhole.
+    /// </summary>
     private Control Row(BackupEntry entry, IReadOnlyList<BackupEntry> all)
     {
-        var box = new StackPanel { Spacing = 3 };
-
         var facts = $"{entry.At:dd MMM HH:mm}   {entry.Lines} lines";
         if (entry.ByHand > 0) facts += $" · {entry.ByHand} by hand";
         if (entry.WithAssets) facts += " · with fonts and images";
 
-        box.Children.Add(new TextBlock { Text = facts, Foreground = Brush("TextPrimary") });
+        var text = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center };
+
+        text.Children.Add(new TextBlock { Text = facts, Foreground = Brush("TextPrimary") });
 
         // 🔴 The one restore nothing can undo, said where the counts are and not in small print:
         // this copy is a different translation, not an earlier version of the one in place.
         if (Backups.IsAnotherLineage(entry.Uuid, LocalUuid()))
         {
-            box.Children.Add(new TextBlock
+            text.Children.Add(new TextBlock
             {
                 Text = Backups.AnotherLineageNote,
                 FontSize = 11,
@@ -302,20 +311,19 @@ public sealed class BackupsWindow : Window
         }
 
         // 🔴 **Nothing when there is nothing to add.** An unnamed saved copy printed "Saved by
-        // you" — the title of the very card it sits in — on every row: a whole line, repeated. The
-        // act earns a line where it differs from row to row; a name earns one when somebody wrote
-        // it. Otherwise the date and the counts are the row.
+        // you" — the title of the very card it sits in — on every row. The act earns a line where
+        // it differs from row to row; a name earns one when somebody wrote it.
         var subtitle = !string.IsNullOrEmpty(entry.Label) ? "\"" + entry.Label + "\""
                      : entry.IsSaved ? null
                      : Backups.Describe(entry.Reason, entry.By);
 
         if (subtitle is not null)
         {
-            box.Children.Add(new TextBlock
+            text.Children.Add(new TextBlock
             {
                 Text = subtitle,
                 FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
+                TextTrimming = TextTrimming.CharacterEllipsis,
                 Foreground = Brush("TextSecondary"),
             });
         }
@@ -324,7 +332,12 @@ public sealed class BackupsWindow : Window
         // "where does the result land": Restore lands in the game, so it is Local. Rename, Delete
         // and Keep touch nothing but the backup folder, and marking them would announce a change
         // to a game that is not happening.
-        var verbs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        var verbs = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
 
         var restore = ScopeMark.Marked(EditSide.Local, "Restore", enabled: !_running);
         ToolTip.SetTip(restore, _running
@@ -373,7 +386,12 @@ public sealed class BackupsWindow : Window
             verbs.Children.Add(keep);
         }
 
-        box.Children.Add(verbs);
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+
+        Grid.SetColumn(text, 0);
+        Grid.SetColumn(verbs, 1);
+        grid.Children.Add(text);
+        grid.Children.Add(verbs);
 
         return new Border
         {
@@ -381,8 +399,8 @@ public sealed class BackupsWindow : Window
             BorderBrush = Brush("BorderSubtle"),
             BorderThickness = new Avalonia.Thickness(1),
             CornerRadius = new Avalonia.CornerRadius(4),
-            Padding = new Avalonia.Thickness(10, 8),
-            Child = box,
+            Padding = new Avalonia.Thickness(10, 6),
+            Child = grid,
         };
     }
 

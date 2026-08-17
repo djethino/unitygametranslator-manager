@@ -6000,6 +6000,7 @@ public partial class MainWindow : Window
         var driftHost = new StackPanel { Spacing = 4 };
         var ownHost = new StackPanel { Spacing = 4 };
         var hotkeyHost = new StackPanel { Spacing = 4 };
+        var wizardHost = new StackPanel { Spacing = 4 };
 
         void Refresh()
         {
@@ -6022,6 +6023,10 @@ public partial class MainWindow : Window
             hotkeyHost.Children.Clear();
             foreach (var control in HotkeyDecision(report, preference, Refresh))
                 hotkeyHost.Children.Add(control);
+
+            wizardHost.Children.Clear();
+            foreach (var control in WizardDecision(report, preference))
+                wizardHost.Children.Add(control);
 
             ShowActionBar(report);
         }
@@ -6053,37 +6058,6 @@ public partial class MainWindow : Window
 
         yield return applyDefaults;
 
-        // 🔴 **Whether the mod still asks its own questions in this game.** Writing a complete set
-        // of settings also writes first_run_completed, so the wizard never appeared — a latch this
-        // tool closed on somebody's behalf with no way to say otherwise. Ticking this writes the
-        // values all the same; they become what the wizard opens on rather than what replaces it.
-        //
-        // ⚠ Beside the box above and not inside the differences: those list what applying would
-        // CHANGE. This decides how the game finishes being set up, which is a different question.
-        var letWizard = new CheckBox
-        {
-            Content = "Let the mod ask on first launch",
-            IsChecked = preference.LetWizardAsk || !_settings.Current.Reviewed,
-            IsEnabled = _settings.Current.Reviewed,
-            FontSize = 12,
-        };
-
-        ToolTip.SetTip(letWizard, _settings.Current.Reviewed
-            ? "The mod opens its own setup the first time this game runs. What is written here is "
-              + "what it starts from."
-            : "Mod defaults has not been filled in, so what would be written is guesswork. The mod "
-              + "asks in the game whatever this says.");
-
-        letWizard.IsCheckedChanged += (_, _) =>
-        {
-            if (!_settings.Current.Reviewed) return;
-
-            preference.LetWizardAsk = letWizard.IsChecked == true;
-            _preferences.Set(report.Game.Path, preference);
-        };
-
-        yield return letWizard;
-
         // Directly under the box that governs it: the list of differences is what ticking that box
         // would change, so it belongs to it. Further down it read as an unrelated warning about
         // the game, and the connection between the two had to be guessed.
@@ -6102,8 +6076,73 @@ public partial class MainWindow : Window
         // same shape as every other line — which was the whole point of moving its rendering.
         yield return hotkeyHost;
 
+        // ⚠ Beside the hotkey question and for the same reason: both are OPTIONS about what a
+        // write does, not settings of this game and not entries in the list of differences. They
+        // come after the form because they are read once the values are settled, not before.
+        yield return wizardHost;
+
         // The first fill, which also settles whether the form above starts out on screen.
         Refresh();
+    }
+
+    /// <summary>
+    /// Whether the mod still asks its own questions in this game — shown only when it decides
+    /// something.
+    ///
+    /// 🔴 **first_run_completed is a latch, and until now only this tool ever closed it.** Writing a
+    /// complete set of settings also claims the wizard was answered, so the mod never asks — right
+    /// when the settings really do answer it, wrong the moment somebody wants to finish the job
+    /// inside the game.
+    ///
+    /// 🔴 **It appears only where it can change the outcome**, which is the rule this card holds
+    /// everywhere: a control whose verb cannot act must not invite the act. Three states where it
+    /// cannot, and in every one of them it would be a box that does nothing:
+    ///
+    /// · **the game has already run its wizard.** The latch is closed and nothing here reopens it —
+    ///   only the mod does, from inside. Ticking would promise a screen that will never appear;
+    /// · **nothing is going to be written into this game.** No write, no latch;
+    /// · **Mod defaults has never been filled in.** What would be written is the program's own
+    ///   guesses, so the wizard is kept whatever anybody thinks — and a ticked, greyed box is worse
+    ///   than none: it looks like a decision somebody took and cannot undo.
+    ///
+    /// ⚠ Placed beside the hotkey question rather than under the box at the top. Both are OPTIONS
+    /// about what a write does; neither is a setting of this game nor a line in the list of
+    /// differences. Slotting this between the box and the differences it governs cut a chain that
+    /// reads as one thing — box, what it would change, the form that answers instead.
+    /// </summary>
+    private IEnumerable<Control> WizardDecision(GameReport report, GamePreference preference)
+    {
+        var snapshot = GameConfig(report);
+
+        if (snapshot.FirstRunCompleted) yield break;
+        if (!_settings.Current.Reviewed) yield break;
+
+        // The same condition BuildPlan writes on, so the box is present exactly when a write is.
+        var writes = preference.Mod is { IsEmpty: false }
+                     || !snapshot.IsConfigured
+                     || preference.UsesModDefaults(snapshot);
+
+        if (!writes) yield break;
+
+        var box = new CheckBox
+        {
+            Content = "Let the mod ask on first launch",
+            IsChecked = preference.LetWizardAsk,
+            FontSize = 12,
+            Margin = new Avalonia.Thickness(0, 6, 0, 0),
+        };
+
+        ToolTip.SetTip(box,
+            "The mod opens its own setup the first time this game runs, and what is written here "
+            + "is what it starts from. Unticked, the settings stand and it never asks.");
+
+        box.IsCheckedChanged += (_, _) =>
+        {
+            preference.LetWizardAsk = box.IsChecked == true;
+            _preferences.Set(report.Game.Path, preference);
+        };
+
+        yield return box;
     }
 
     /// <summary>

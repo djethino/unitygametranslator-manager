@@ -512,10 +512,11 @@ public sealed class SettingsWindow : Window
         };
 
         _apiPanel = new StackPanel { Spacing = 10 };
+        // ⚠ On the row, beside the field it acts on — the shape the AI card uses for its own two
+        // buttons. A button on a line of its own underneath is a second grammar on one screen.
         _apiPanel.Children.Add(Row("Provider", _provider));
-        _apiPanel.Children.Add(Row("API key", _providerKey));
+        _apiPanel.Children.Add(Row("API key", _providerKey, test));
         _apiPanel.Children.Add(_deeplFree);
-        _apiPanel.Children.Add(test);
         _apiPanel.Children.Add(_apiStatus);
 
         // 🔴 **A key of your own comes first, and the allowance second.** This led with "both have

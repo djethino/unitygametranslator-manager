@@ -688,10 +688,6 @@ public sealed class GameModSettingsForm
 
         ShowProvider();
 
-        panel.Children.Add(Row("Provider", _provider));
-        panel.Children.Add(Row("API key", _providerKey));
-        panel.Children.Add(_deeplFree);
-
         // 🔴 **A way to find out, here too.** A key was typed, encrypted, written into the game, and
         // the first thing that ever tested it was the mod failing to translate mid-game with no
         // screen saying why. The same probe as Mod defaults, so both screens answer alike.
@@ -739,7 +735,13 @@ public sealed class GameModSettingsForm
             }
         };
 
-        panel.Children.Add(test);
+        // ⚠ On the row, beside the field it acts on — the shape the Model row above uses for its
+        // own Refresh. A button on a line of its own underneath is a second grammar on one screen,
+        // and both cards are on that one screen.
+        panel.Children.Add(Row("Provider", _provider));
+        panel.Children.Add(Row("API key", _providerKey, test));
+        panel.Children.Add(_deeplFree);
+
         panel.Children.Add(new StackPanel
         {
             Orientation = Orientation.Horizontal,

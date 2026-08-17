@@ -5982,12 +5982,25 @@ public partial class MainWindow : Window
             Margin = new Avalonia.Thickness(0, 10, 0, 4),
         };
 
+        // 🔴 **It names what it is.** The heading read "In this game" — which names nothing: the
+        // whole card is about this game. Somebody meeting this screen for the first time had to
+        // work out from the controls what the section was even for, and the one thing they came to
+        // do is set the mod up.
         yield return new TextBlock
         {
-            Text = "In this game",
+            Text = "Mod settings",
             FontSize = 12,
             FontWeight = FontWeight.SemiBold,
             Foreground = Brush("TextSecondary"),
+        };
+
+        yield return new TextBlock
+        {
+            Text = "What the mod uses in this game.",
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Avalonia.Thickness(0, 0, 0, 4),
+            Foreground = Brush("TextMuted"),
         };
 
         // ⚠ Only the parts that depend on these controls are rebuilt, never the whole card.
@@ -6058,18 +6071,38 @@ public partial class MainWindow : Window
 
         var source = new StackPanel { Spacing = 2 };
 
-        RadioButton Way(string label, string tip, bool chosen, bool enabled, Action pick)
+        // 🔴 **Three words on the label, the consequence underneath, and neither is a hover.**
+        // "Settings of its own" is not English anybody reads at speed, and a reason parked in a
+        // tooltip is a reason nobody meets — least of all somebody deciding whether this program is
+        // worth another thirty seconds. Every line here is what the mod DOES, said the way the
+        // three products say things: plain, short, and in the fourth language of most readers.
+        RadioButton Way(string label, string says, bool chosen, bool enabled, Action pick)
         {
+            var text = new StackPanel { Spacing = 1 };
+
+            text.Children.Add(new TextBlock
+            {
+                Text = label,
+                FontSize = 12,
+                Foreground = Brush(enabled ? "TextPrimary" : "TextMuted"),
+            });
+
+            text.Children.Add(new TextBlock
+            {
+                Text = says,
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextMuted"),
+            });
+
             var button = new RadioButton
             {
-                Content = label,
+                Content = text,
                 GroupName = "setup-" + report.Game.Path,
                 IsChecked = chosen,
                 IsEnabled = enabled,
                 FontSize = 12,
             };
-
-            ToolTip.SetTip(button, tip);
 
             button.IsCheckedChanged += (_, _) =>
             {
@@ -6086,10 +6119,10 @@ public partial class MainWindow : Window
         var chosenWay = SetupWayOf(preference, snapshotNow, reviewedNow, firstTime);
 
         source.Children.Add(Way(
-            "Use Mod defaults in this game",
+            "Use Mod defaults",
             reviewedNow
-                ? "This game is set up with the values from Mod defaults."
-                : "Mod defaults has not been filled in yet, so there is nothing to take from it.",
+                ? "The same settings as your other games."
+                : "Mod defaults has not been filled in yet.",
             chosenWay == SetupWay.ModDefaults,
             reviewedNow,
             () => { preference.ApplyModDefaults = true; preference.LetWizardAsk = false; }));
@@ -6099,17 +6132,16 @@ public partial class MainWindow : Window
         if (firstTime)
         {
             source.Children.Add(Way(
-                "Let the mod ask on first launch",
-                "Nothing is decided here. The mod runs its own setup the first time this game "
-                + "starts, and whatever is set below is what it opens on.",
+                "Set it up in the game",
+                "The mod asks when the game starts.",
                 chosenWay == SetupWay.Wizard,
                 enabled: true,
                 () => { preference.ApplyModDefaults = false; preference.LetWizardAsk = true; }));
         }
 
         source.Children.Add(Way(
-            "Settings of its own",
-            "This game keeps its own answers, starting from what it already holds.",
+            "Set it up here",
+            "Choose the settings below.",
             chosenWay == SetupWay.Custom,
             enabled: true,
             () => { preference.ApplyModDefaults = false; preference.LetWizardAsk = false; }));
@@ -6247,7 +6279,17 @@ public partial class MainWindow : Window
         if (preference.ApplyModDefaults == true && reviewed) return SetupWay.ModDefaults;
 
         if (preference.ApplyModDefaults == false)
-            return preference.LetWizardAsk && firstTime ? SetupWay.Wizard : SetupWay.Custom;
+        {
+            if (preference.LetWizardAsk && firstTime) return SetupWay.Wizard;
+
+            // ⚠ **A stored "not the defaults" is not a request to fill in twenty-five fields.** On
+            // a game with no configuration and no answers of its own — somebody who unticked a box
+            // once and moved on — reading it as Custom greets them with an empty form and no way
+            // through. It means Custom once there is something of its own to mean it with.
+            if (snapshot.IsConfigured || preference.Mod is { IsEmpty: false }) return SetupWay.Custom;
+
+            return firstTime ? SetupWay.Wizard : SetupWay.Custom;
+        }
 
         // Nobody has decided for this game.
         if (snapshot.IsConfigured) return SetupWay.Custom;

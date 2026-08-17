@@ -116,8 +116,8 @@ public static class CommandLine
             --force                 proceed despite a refusal (never for an anti-cheat)
             --yes skips the confirmation prompt.
             --loader, --settings  (uninstall) also remove the mod loader / your settings
-                                  and translations. Both are off by default; settings and
-                                  translations are copied aside before being deleted.
+                                  and translations. Both are off by default. The translation
+                                  is backed up one last time first, and the backups stay.
             """);
         return 0;
     }
@@ -1262,8 +1262,11 @@ public static class CommandLine
         if (choice.RemoveLoader) Console.WriteLine("  - the mod loader (we installed it, nothing else uses it)");
         else if (!available.RemoveLoader) Console.WriteLine("  (the loader stays: it was already there, or other mods use it)");
 
+        // ⚠ Says which of the two things survives, because they do not survive alike: the
+        // backups stay with the game, the settings do not come back.
         Console.WriteLine(choice.RemoveUserData
-            ? "  - your settings and translations, copied aside first"
+            ? "  - your settings and this game's translation (backed up one last time first,"
+              + " and the backups themselves stay)"
             : "  (your settings and translations stay — add --settings to remove them)");
         Console.WriteLine();
 
@@ -1274,8 +1277,9 @@ public static class CommandLine
         Console.WriteLine();
         Console.WriteLine(outcome.Message);
         foreach (var item in outcome.Kept) Console.WriteLine($"  kept: {item}");
-        if (outcome.BackupPath is not null)
-            Console.WriteLine($"Your translations were copied to: {outcome.BackupPath}");
+        if (outcome.LastBackupTaken)
+            Console.WriteLine("The translation was backed up one last time, with the fonts and "
+                              + "images it used.");
 
         return outcome.Success ? 0 : 4;
     }

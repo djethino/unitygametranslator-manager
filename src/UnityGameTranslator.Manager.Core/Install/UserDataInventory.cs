@@ -79,15 +79,7 @@ public static class UserDataInventory
             // label that says "judge them yourself" beside a consequence written for stray files,
             // and somebody clearing what they thought was clutter would have thrown away the only
             // copy of work they had replaced by mistake.
-            else if (string.Equals(top, TranslationInstaller.BackupFolderName, StringComparison.OrdinalIgnoreCase)
-                     // ⚠ And the folder that replaced it. Filed as unrecognised it would sit under
-                     // "judge them yourself" — the exact trap this branch was written to close for
-                     // `removed/`, reopened by the folder that took its place.
-                     || string.Equals(top, Common.Backups.FolderName, StringComparison.OrdinalIgnoreCase)
-                     // The two loose files the mod used to write. Each is a translation; unnamed,
-                     // somebody clearing what looks like clutter throws away the only copy.
-                     || top.StartsWith(LocalTranslationProbe.TranslationFileName + ".",
-                                       StringComparison.OrdinalIgnoreCase))
+            else if (IsBackup(relative))
                 setAside.Add(item);
             else if (string.Equals(top, LocalTranslationProbe.ConfigFileName, StringComparison.OrdinalIgnoreCase))
                 configuration.Add(item);
@@ -167,6 +159,34 @@ public static class UserDataInventory
 
         found.Sort(StringComparer.OrdinalIgnoreCase);
         return found;
+    }
+
+    /// <summary>
+    /// Whether one file inside the mod's folder is part of the translation's history.
+    ///
+    /// 🔴 Its own group, not "Other files". These are TRANSLATIONS — replaced earlier and kept so
+    /// one can be restored. Filed as unrecognised, they sat under a label that says "judge them
+    /// yourself" beside a consequence written for stray files, and somebody clearing what they
+    /// thought was clutter would have thrown away the only copy of work they replaced by mistake.
+    ///
+    /// ⚠ **Public, and asked rather than re-derived.** The uninstall has to know the same thing —
+    /// whether the history is among what is being deleted, because that decides whether it takes a
+    /// last backup first. Two spellings of "is this a backup" would eventually disagree, and the
+    /// direction they would disagree in is the one that deletes without keeping anything.
+    /// </summary>
+    public static bool IsBackup(string relativePath)
+    {
+        var top = relativePath.Replace('\\', '/').Split('/')[0];
+
+        return string.Equals(top, TranslationInstaller.BackupFolderName, StringComparison.OrdinalIgnoreCase)
+               // ⚠ And the folder that replaced it. Filed as unrecognised it would sit under
+               // "judge them yourself" — the exact trap this closes for `removed/`, reopened by
+               // the folder that took its place.
+               || string.Equals(top, Common.Backups.FolderName, StringComparison.OrdinalIgnoreCase)
+               // The two loose files the mod used to write. Each is a translation; unnamed,
+               // somebody clearing what looks like clutter throws away the only copy.
+               || top.StartsWith(LocalTranslationProbe.TranslationFileName + ".",
+                                 StringComparison.OrdinalIgnoreCase);
     }
 
     private static void Add(List<UserDataGroup> groups, string label,

@@ -8896,9 +8896,21 @@ public partial class MainWindow : Window
         // "are you sure" can only guess.
         if (dataBox.IsChecked == true && chosenData is { Count: > 0 })
         {
-            var summary = $"{chosenData.Count} file(s) will be deleted from {report.Game.Name}, "
-                        + "including anything captured while playing that was never uploaded. "
-                        + "A copy is kept aside first.";
+            // 🔴 **Two different acts behind one tick, and the sentence has to say which one.**
+            // Leaving the backups alone means the translation is backed up one last time and the
+            // history stays with the game; ticking them too means nothing survives at all. Told
+            // "a copy is kept aside first" in both cases — which is what this said — somebody
+            // erasing everything read a reassurance that was false for them.
+            var history = chosenData.Count(UserDataInventory.IsBackup);
+
+            var summary = history == 0
+                ? $"{chosenData.Count} file(s) will be deleted from {report.Game.Name}, including "
+                  + "anything captured while playing that was never uploaded.\n\nThe translation is "
+                  + $"backed up one last time first, and this game's {Backups.ScreenTitle.ToLowerInvariant()} "
+                  + "stay where they are."
+                : $"{chosenData.Count} file(s) will be deleted from {report.Game.Name}, including "
+                  + $"{history} backup file(s) and anything captured while playing that was never "
+                  + "uploaded.\n\nNothing is kept aside. This cannot be undone.";
 
             if (!await ConfirmAsync("Delete this game's data?", summary, "Delete them")) return;
         }
@@ -8915,9 +8927,12 @@ public partial class MainWindow : Window
         if (outcome.Kept.Count > 0)
             message += Environment.NewLine + Environment.NewLine + "Left in place:" +
                        Environment.NewLine + string.Join(Environment.NewLine, outcome.Kept.Select(k => "• " + k));
-        if (outcome.BackupPath is not null)
+        // ⚠ Names the place somebody can act from, not a folder on disk. A path is an instruction
+        // to open a file manager; "Backups" is a button they have already seen on this card.
+        if (outcome.LastBackupTaken)
             message += Environment.NewLine + Environment.NewLine +
-                       "Your settings and translations were copied to:" + Environment.NewLine + outcome.BackupPath;
+                       "The translation was backed up one last time. It is under Backups, with the "
+                       + "fonts and images it used.";
 
         await MessageAsync("Uninstalled", message);
         await ShowSelectedAsync();

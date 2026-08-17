@@ -192,12 +192,19 @@ public static class TranslationBackupStore
     /// 🔴 Called from inside the write, never beside it. Nine call sites across two products each
     /// had to remember, and one forgot — see the note in <see cref="Backups"/>.
     /// </summary>
+    /// <param name="withAssets">
+    /// ⚠ False everywhere but one caller. An ordinary replacement leaves the fonts and images in
+    /// place, so copying them would duplicate megabytes that never left. The uninstall is the
+    /// exception: it deletes them in the same breath, and a backup of a translation whose fonts
+    /// are gone restores a translation that cannot be read.
+    /// </param>
     public static void TakeAutomatic(string gamePath, LoaderDescriptor descriptor,
-                                     BackupReason reason, string? by = null)
+                                     BackupReason reason, string? by = null,
+                                     bool withAssets = false)
     {
         if (reason == BackupReason.Saved) return;
 
-        Take(gamePath, descriptor, reason, by, label: null, withAssets: false);
+        Take(gamePath, descriptor, reason, by, label: null, withAssets: withAssets);
         Prune(gamePath, descriptor);
     }
 

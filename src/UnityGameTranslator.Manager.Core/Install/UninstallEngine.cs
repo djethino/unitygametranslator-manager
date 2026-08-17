@@ -1,3 +1,4 @@
+using UnityGameTranslator.Common;
 using UnityGameTranslator.Manager.Core.Api;
 using UnityGameTranslator.Manager.Core.Detection;
 using UnityGameTranslator.Manager.Core.Model;
@@ -25,7 +26,15 @@ public sealed record UninstallOutcome(
     string Message,
     IReadOnlyList<string> Removed,
     IReadOnlyList<string> Kept,
-    string? BackupPath);
+
+    /// <summary>
+    /// Whether the translation was backed up one last time before being deleted.
+    ///
+    /// ⚠ A yes-or-no, where this used to be the path of a folder outside the game. Printing a path
+    /// is an instruction to open a file manager; what somebody needs to hear is that it is where
+    /// every other backup is, on a screen they have already seen.
+    /// </summary>
+    bool LastBackupTaken);
 
 /// <summary>
 /// What putting a game back the way it was did.
@@ -190,34 +199,34 @@ public sealed class UninstallEngine
                     return new UninstallOutcome(true,
                         $"Removed {name}. It was not installed by UnityGameTranslator Manager, so "
                         + "nothing else was touched — your settings and translations are still there.",
-                        swept, Array.Empty<string>(), null);
+                        swept, Array.Empty<string>(), false);
                 }
                 catch (Exception ex)
                 {
                     return new UninstallOutcome(false,
                         $"The plugin could not be removed ({ex.Message}).",
-                        Array.Empty<string>(), Array.Empty<string>(), null);
+                        Array.Empty<string>(), Array.Empty<string>(), false);
                 }
             }
 
             return new UninstallOutcome(false,
                 "No install receipt here, and no UnityGameTranslator assembly to remove.",
-                Array.Empty<string>(), Array.Empty<string>(), null);
+                Array.Empty<string>(), Array.Empty<string>(), false);
         }
 
         if (_platform.IsGameRunning(game))
         {
             return new UninstallOutcome(false, "The game is running. Close it and try again.",
-                Array.Empty<string>(), Array.Empty<string>(), null);
+                Array.Empty<string>(), Array.Empty<string>(), false);
         }
 
         var removed = new List<string>();
         var kept = new List<string>();
-        string? backupPath = null;
+        var lastBackupTaken = false;
         var files = new FileOperations(game.Path);
 
-        // User data first: it is the only irreplaceable thing here, so it gets saved before
-        // anything else is touched, even if the rest fails afterwards.
+        // User data first: it is the only irreplaceable thing here, so its last backup is taken
+        // before anything else is touched, even if the rest fails afterwards.
         if (choice.RemoveUserData)
         {
             // ⚠ The session BEFORE the files. The marker is one of the files about to go, and
@@ -226,7 +235,7 @@ public sealed class UninstallEngine
             // exists, and a slot held on the site until it expires a day later.
             EndAnyEditSession(game, receipt);
 
-            backupPath = BackupUserData(game, receipt, choice, removed, kept);
+            lastBackupTaken = RemoveUserData(game, receipt, choice, removed, kept);
         }
 
         if (choice.RemovePlugin)
@@ -316,7 +325,7 @@ public sealed class UninstallEngine
                      + "\"Put back what was here before\" restores them.";
         }
 
-        return new UninstallOutcome(true, message, removed, kept, backupPath);
+        return new UninstallOutcome(true, message, removed, kept, lastBackupTaken);
     }
 
     /// <summary>
@@ -608,15 +617,36 @@ public sealed class UninstallEngine
         }
     }
 
-    private string? BackupUserData(GameInstall game, Receipt receipt, UninstallChoice choice,
-                                   List<string> removed, List<string> kept)
+    /// <summary>
+    /// Deletes what was ticked, and takes one last backup first when the history survives.
+    ///
+    /// 🔴 **Nothing is copied out of the game any more.** Every ticked file used to be copied to
+    /// `%LOCALAPPDATA%\…\removed\&lt;game&gt;-&lt;stamp&gt;\` before being deleted: one folder per
+    /// uninstall, never listed, never bounded, never restorable, and holding the only copies of
+    /// translations somebody had explicitly asked to delete. A safety net nobody can reach is not
+    /// one — it is an accumulating pile of other people's work with a path printed once.
+    ///
+    /// What replaces it is the folder that already has a screen, a bound and a Restore button: when
+    /// the backups are NOT among what is being deleted, the translation is backed up one last time,
+    /// reason <see cref="BackupReason.Removed"/>, and that backup stays with the game. When the
+    /// backups ARE ticked, nothing is kept — which is the explicit request, said in figures in the
+    /// confirmation before anything is touched.
+    ///
+    /// ⚠ Settings are no longer copied anywhere either, and that is deliberate: `config.json`
+    /// carries the API token, and stashing an identity in an unlisted folder for ever is the
+    /// opposite of what the rest of this project does with secrets. Its group already promises the
+    /// honest outcome — the mod asks again from scratch — and a token is revocable server-side.
+    /// </summary>
+    /// <returns>Whether a last backup was taken, so the caller can say so.</returns>
+    private bool RemoveUserData(GameInstall game, Receipt receipt, UninstallChoice choice,
+                                List<string> removed, List<string> kept)
     {
         var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == receipt.Loader?.Id)
                          ?? _catalog.Loaders.FirstOrDefault(l => l.Id == receipt.Plugin?.Build);
-        if (descriptor is null) return null;
+        if (descriptor is null) return false;
 
         var userData = UserDataInventory.FolderFor(game.Path, descriptor);
-        if (userData is null) return null;
+        if (userData is null) return false;
 
         var chosen = choice.UserDataFiles
                      ?? UserDataInventory.Scan(game.Path, descriptor)
@@ -624,12 +654,27 @@ public sealed class UninstallEngine
                                          .Select(i => i.RelativePath)
                                          .ToList();
 
-        if (chosen.Count == 0) return null;
+        if (chosen.Count == 0) return false;
 
-        var stamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss");
-        var backupDir = Path.Combine(_platform.UserDataDirectory, "removed", $"{SafeName(game.Name)}-{stamp}");
+        // ⚠ **Before a single file goes**, and only when there is somewhere for it to survive. Taken
+        // with the fonts and images: they are on the same list, so a backup without them would
+        // restore a translation nobody can read.
+        //
+        // ⚠ Automatic rather than deliberate, like every other removal — the row reads "When the
+        // translation was removed", so it is recognisable and can be pressed into Keep. The cost is
+        // that five later replacements would age it out; the alternative, a deliberate backup, has
+        // a full list to refuse against and would make this act behave two different ways.
+        var keepingHistory = !chosen.Any(UserDataInventory.IsBackup);
+        var lastBackupTaken = false;
 
-        var any = false;
+        if (keepingHistory
+            && chosen.Any(r => r.Equals(LocalTranslationProbe.TranslationFileName,
+                                        StringComparison.OrdinalIgnoreCase)))
+        {
+            TranslationBackupStore.TakeAutomatic(game.Path, descriptor, BackupReason.Removed,
+                                                 withAssets: true);
+            lastBackupTaken = true;
+        }
 
         foreach (var relative in chosen)
         {
@@ -646,14 +691,13 @@ public sealed class UninstallEngine
 
             if (!File.Exists(full)) continue;
 
+            // ⚠ The last backup was taken above, out of this loop, so this one only deletes. Copying
+            // here is what produced the unreachable pile: a file at a time, into a folder chosen by
+            // a timestamp, with no idea what the set added up to.
             try
             {
-                var target = Path.Combine(backupDir, relative.Replace('/', Path.DirectorySeparatorChar));
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                File.Copy(full, target, overwrite: true);
                 File.Delete(full);
                 removed.Add(relative);
-                any = true;
             }
             catch (Exception ex)
             {
@@ -663,13 +707,16 @@ public sealed class UninstallEngine
 
         // Folders the mod made for its own files — fonts/, images/ — go once they are empty, and
         // only then: one left behind by a file we could not remove still holds that file.
+        //
+        // ⚠ `backups/` survives this when its files were not ticked, which is the whole point: it
+        // is not empty, so nothing here reaches it.
         foreach (var directory in Directory.EnumerateDirectories(userData, "*", SearchOption.AllDirectories)
                                            .OrderByDescending(d => d.Length))
         {
             FileOperations.TryRemoveEmptyDirectory(directory);
         }
 
-        return any ? backupDir : null;
+        return lastBackupTaken;
     }
 
     /// <summary>Mods other than ours sharing the loader. Any of them blocks removing it.</summary>
@@ -693,9 +740,4 @@ public sealed class UninstallEngine
         return LoaderProbe.Detect(game.Path, _catalog)?.ForeignMods ?? Array.Empty<string>();
     }
 
-    private static string SafeName(string name)
-    {
-        var invalid = Path.GetInvalidFileNameChars();
-        return new string(name.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
-    }
 }

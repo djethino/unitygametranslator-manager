@@ -46,7 +46,17 @@ public partial class MainWindow : Window
     /// Held by the window rather than by the inventory it feeds, because the inventory is rebuilt
     /// on every scan and this answer is about the internet, not about this machine's drives.
     /// </summary>
-    private readonly PluginReleases _releases = new();
+    /// <summary>
+    /// Who is asked whether a newer mod exists.
+    ///
+    /// 🔴 **Eight seconds, not thirty.** The shared release client waits thirty, which is right for
+    /// DOWNLOADING a build and absurd for a line on a card: opening the first game took twelve
+    /// seconds on a slow answer, for a nicety. The download path keeps its own client and its own
+    /// patience — this one only decides whether a sentence can be written.
+    /// </summary>
+    private readonly PluginReleases _releases =
+        new(GitHubReleaseClient.ForMod(
+            Core.Net.Http.Create(TimeSpan.FromSeconds(8))));
 
     /// <summary>
     /// What was decided for each game: apply the defaults here, start translating here, what this
@@ -2630,12 +2640,19 @@ public partial class MainWindow : Window
 
         Busy(true, $"Reading {game.Name}...");
 
-        // One call for the whole library, and only the first selection pays for it. A failure is
-        // recorded rather than raised: not knowing one's role costs a line on a card, and must
-        // never stand between someone and installing the mod.
-        await _lineages.EnsureAsync(_settings.Current.ApiToken);
+        // 🔴 **Both at once.** One call for the whole library, and only the first selection pays
+        // for it — but it used to be awaited BEFORE the report, and the report makes a call of its
+        // own. Two waits end to end, on the one card somebody opens first, for two answers that
+        // have nothing to say to each other.
+        //
+        // A failure is recorded rather than raised: not knowing one's role costs a line on a card,
+        // and must never stand between someone and installing the mod.
+        var lineages = _lineages.EnsureAsync(_settings.Current.ApiToken);
+        var building = _inventory.BuildReportAsync(game);
 
-        var report = await _inventory.BuildReportAsync(game);
+        await Task.WhenAll(lineages, building);
+
+        var report = await building;
         Busy(false, "Ready.");
 
         // The user may have clicked elsewhere while we were reading.
@@ -7221,13 +7238,41 @@ public partial class MainWindow : Window
 
         if (standing.CheckFailed is { } failure)
         {
-            return new TextBlock
+            // 🔴 **A way to ask again, beside the sentence saying it failed.** There was none: the
+            // answer is cached, so the only ways out were re-selecting the game or restarting the
+            // program — neither of which anybody guesses, and a reader who does not guess is left
+            // with a refusal and nothing to do about it. Forget() exists precisely for this.
+            var said = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            said.Children.Add(new TextBlock
             {
                 Text = $"Could not check for a newer version ({failure}).",
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
+                VerticalAlignment = VerticalAlignment.Center,
                 Foreground = Brush("StatusWarning"),
+            });
+
+            var retry = new Button { Content = "Try again", FontSize = 11 };
+
+            ToolTip.SetTip(retry, "Asks the publisher again. Nothing is installed or changed.");
+
+            retry.Click += async (_, _) =>
+            {
+                // ⚠ The failure is remembered like the answer would be, so it has to be dropped
+                // before asking — otherwise this button re-reads the same refusal.
+                _releases.Forget();
+                await ShowSelectedAsync();
             };
+
+            said.Children.Add(retry);
+
+            return said;
         }
 
         if (standing.UpdateAvailable)
@@ -8157,6 +8202,24 @@ public partial class MainWindow : Window
     private GamePreference PreferenceWithPending(string gamePath)
     {
         var preference = _preferences.Read(gamePath).Copy();
+
+        // 🔴 **A way stored by a session that never acted does not survive it.** Holding the choice
+        // in memory stops NEW ones being written; it does nothing about the ones already on disk,
+        // and those are the dangerous kind — a way tried out weeks ago, still deciding what an
+        // install will do, on an answer that may since have become wrong.
+        //
+        // ⚠ "Never acted" is read from the game, not from the file: no configuration and no
+        // answers of its own means nothing was ever written here by anybody, so nothing validated
+        // the choice. A game that HAS been set up keeps what it says, because there the choice was
+        // carried out.
+        // ⚠ The receipt is the proof: it is written by an install and by nothing else. A game
+        // configured from inside the mod without one still lands on Custom, because a null answer
+        // on a configured game reads that way already — so nothing is lost by not asking twice.
+        if (ReceiptStore.Read(gamePath) is null && preference.Mod is null)
+        {
+            preference.ApplyModDefaults = null;
+            preference.LetWizardAsk = false;
+        }
 
         if (_pendingWay.TryGetValue(gamePath, out var way))
         {

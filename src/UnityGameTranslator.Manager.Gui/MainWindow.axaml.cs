@@ -6000,7 +6000,6 @@ public partial class MainWindow : Window
         var driftHost = new StackPanel { Spacing = 4 };
         var ownHost = new StackPanel { Spacing = 4 };
         var hotkeyHost = new StackPanel { Spacing = 4 };
-        var wizardHost = new StackPanel { Spacing = 4 };
 
         void Refresh()
         {
@@ -6008,11 +6007,19 @@ public partial class MainWindow : Window
             foreach (var control in ConfigDrift(report, preference))
                 driftHost.Children.Add(control);
 
-            // ⚠ Present ONLY while the box is unticked, because that is the only state in which it
-            // means anything: ticked, every one of these fields is answered by the defaults, and a
-            // form full of values nobody may change here would be an invitation with no door.
+            // ⚠ Present ONLY under "Settings of its own", because that is the only way in which it
+            // means anything. Under Mod defaults every field is answered by that screen; under
+            // "Let the mod ask" they are answered in the game. A form full of values nobody may
+            // change here would be an invitation with no door behind it.
+            //
+            // ⚠ Keyed on the chosen way and no longer on "the box is unticked": unticked now covers
+            // TWO ways, and only one of them owns this form.
+            var snapshotHere = GameConfig(report);
+
             ownHost.Children.Clear();
-            ownHost.IsVisible = !preference.UsesModDefaults(GameConfig(report));
+            ownHost.IsVisible = SetupWayOf(preference, snapshotHere, _settings.Current.Reviewed,
+                                           firstTime: !snapshotHere.FirstRunCompleted)
+                                == SetupWay.Custom;
 
             if (ownHost.IsVisible)
             {
@@ -6024,39 +6031,168 @@ public partial class MainWindow : Window
             foreach (var control in HotkeyDecision(report, preference, Refresh))
                 hotkeyHost.Children.Add(control);
 
-            wizardHost.Children.Clear();
-            foreach (var control in WizardDecision(report, preference))
-                wizardHost.Children.Add(control);
-
             ShowActionBar(report);
         }
 
-        // ⚠ Read through the game rather than from the stored answer. Null in the file means
-        // "nobody has decided", and the answer is then taken from the game itself: one that is
-        // already configured starts UNTICKED, so the first one-click cannot quietly overwrite a
-        // set-up somebody made inside the mod. See GamePreference.UsesModDefaults.
-        // ⚠ The source is NAMED. "Use my mod defaults here" said neither whose nor where: a machine
-        // owns nothing, this one carries games belonging to different people, and "here" is the
-        // whole card. Mod defaults is a screen with that title on it.
-        var applyDefaults = new CheckBox
+        // 🔴 **Three ways to set a game up, and they are exclusive — so they are radios.**
+        //
+        // They were two independent boxes ("Use Mod defaults in this game", plus a wizard tick), a
+        // shape that can express states meaning nothing while hiding the one question somebody
+        // actually has on a fresh install: where do this game's settings come from. Three answers,
+        // one of which is always true:
+        //
+        // · **Mod defaults** — the values from that screen. Unavailable until it has been filled
+        //   in, and greyed rather than absent: it is the ordinary answer, so its absence needs a
+        //   reason and the reason is one hover away;
+        // · **Let the mod ask** — nothing is decided here and the mod runs its own setup in the
+        //   game. The honest default on a machine nobody has configured, and the reason a first
+        //   launch is never a dead end;
+        // · **Settings of its own** — the form below.
+        //
+        // ⚠ Stored in the two fields that already existed rather than a third: ApplyModDefaults
+        // says whether the defaults are taken, LetWizardAsk whether the latch stays open. A third
+        // field would be a second truth about one decision.
+        var snapshotNow = GameConfig(report);
+        var reviewedNow = _settings.Current.Reviewed;
+        var firstTime = !snapshotNow.FirstRunCompleted;
+
+        var source = new StackPanel { Spacing = 2 };
+
+        RadioButton Way(string label, string tip, bool chosen, bool enabled, Action pick)
         {
-            Content = "Use Mod defaults in this game",
-            IsChecked = preference.UsesModDefaults(GameConfig(report)),
-            FontSize = 12,
-        };
+            var button = new RadioButton
+            {
+                Content = label,
+                GroupName = "setup-" + report.Game.Path,
+                IsChecked = chosen,
+                IsEnabled = enabled,
+                FontSize = 12,
+            };
 
-        ToolTip.SetTip(applyDefaults,
-            "Ticked, this game is set up with the values from Mod defaults. Unticked, it keeps "
-            + "settings of its own, starting from what it already holds.");
+            ToolTip.SetTip(button, tip);
 
-        applyDefaults.IsCheckedChanged += (_, _) =>
+            button.IsCheckedChanged += (_, _) =>
+            {
+                if (button.IsChecked != true) return;
+
+                pick();
+                _preferences.Set(report.Game.Path, preference);
+                Refresh();
+            };
+
+            return button;
+        }
+
+        var chosenWay = SetupWayOf(preference, snapshotNow, reviewedNow, firstTime);
+
+        source.Children.Add(Way(
+            "Use Mod defaults in this game",
+            reviewedNow
+                ? "This game is set up with the values from Mod defaults."
+                : "Mod defaults has not been filled in yet, so there is nothing to take from it.",
+            chosenWay == SetupWay.ModDefaults,
+            reviewedNow,
+            () => { preference.ApplyModDefaults = true; preference.LetWizardAsk = false; }));
+
+        // ⚠ Only while the mod has never finished its own setup here. Afterwards the latch is
+        // closed and no tick reopens it — the button below does, by name.
+        if (firstTime)
         {
-            preference.ApplyModDefaults = applyDefaults.IsChecked == true;
-            _preferences.Set(report.Game.Path, preference);
-            Refresh();
-        };
+            source.Children.Add(Way(
+                "Let the mod ask on first launch",
+                "Nothing is decided here. The mod runs its own setup the first time this game "
+                + "starts, and whatever is set below is what it opens on.",
+                chosenWay == SetupWay.Wizard,
+                enabled: true,
+                () => { preference.ApplyModDefaults = false; preference.LetWizardAsk = true; }));
+        }
 
-        yield return applyDefaults;
+        source.Children.Add(Way(
+            "Settings of its own",
+            "This game keeps its own answers, starting from what it already holds.",
+            chosenWay == SetupWay.Custom,
+            enabled: true,
+            () => { preference.ApplyModDefaults = false; preference.LetWizardAsk = false; }));
+
+        yield return source;
+
+        // 🔴 **The way back into the mod's own setup, once the latch is closed.** A key the two
+        // programs read differently, a translator that turns out not to work, a game somebody
+        // wants to start over: the wizard answers all three and there was no way to ask for it.
+        if (!firstTime && snapshotNow.Exists)
+        {
+            var again = new Button
+            {
+                Content = "Run the mod's setup again",
+                FontSize = 12,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Avalonia.Thickness(22, 4, 0, 0),
+            };
+
+            ToolTip.SetTip(again,
+                "The mod asks its own questions the next time this game starts. Nothing else is "
+                + "changed, and the answers here stay as they are.");
+
+            again.Click += async (_, _) =>
+            {
+                if (InstalledDescriptor(report) is not { } loader) return;
+
+                // ⚠ Null REMOVES the key, which is how the mod reads "never answered". Writing
+                // false would be a claim of its own; removing puts the game back where it started.
+                var done = new GameConfigWriter().ApplyOne(
+                    report.Game.Path, loader, "first_run_completed", null, "first-run wizard");
+
+                await MessageAsync(
+                    done.Written ? "It will ask again" : "Nothing was changed",
+                    done.Written
+                        ? $"{report.Game.Name} runs the mod's own setup the next time it starts."
+                        : $"The game's configuration could not be written ({done.Failure}).");
+
+                await ShowSelectedAsync();
+            };
+
+            yield return again;
+        }
+
+        // 🔴 **The other half of the circle: a game already set up can SEED Mod defaults.** Without
+        // it, somebody who configured a game inside the mod and never filled the defaults in had to
+        // type the same answers a second time to get anywhere on their other games — with the
+        // values sitting right there on the screen.
+        if (!reviewedNow && snapshotNow.IsConfigured)
+        {
+            var seed = new Button
+            {
+                Content = "Use as Mod defaults",
+                FontSize = 12,
+                Classes = { "primary" },
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Avalonia.Thickness(22, 6, 0, 0),
+            };
+
+            ToolTip.SetTip(seed,
+                $"Fills Mod defaults in with what {report.Game.Name} already holds, so the other "
+                + "games can be set up from it. Nothing in this game changes.");
+
+            seed.Click += async (_, _) =>
+            {
+                var seeded = ModSettingsResolver.Resolve(
+                    _settings.Current, new GamePreference(), snapshotNow);
+
+                seeded.Reviewed = true;
+                _settings.Save(seeded);
+
+                await MessageAsync("Mod defaults filled in",
+                    $"Mod defaults now holds what {report.Game.Name} was set up with. Open it to "
+                    + "check it over — nothing in this game was changed.");
+
+                SyncLanguageBox();
+                RecomputeSituations();
+                RefreshList();
+                await ShowSelectedAsync();
+            };
+
+            yield return seed;
+        }
 
         // Directly under the box that governs it: the list of differences is what ticking that box
         // would change, so it belongs to it. Further down it read as an unrelated warning about
@@ -6076,73 +6212,47 @@ public partial class MainWindow : Window
         // same shape as every other line — which was the whole point of moving its rendering.
         yield return hotkeyHost;
 
-        // ⚠ Beside the hotkey question and for the same reason: both are OPTIONS about what a
-        // write does, not settings of this game and not entries in the list of differences. They
-        // come after the form because they are read once the values are settled, not before.
-        yield return wizardHost;
-
         // The first fill, which also settles whether the form above starts out on screen.
         Refresh();
     }
 
-    /// <summary>
-    /// Whether the mod still asks its own questions in this game — shown only when it decides
-    /// something.
-    ///
-    /// 🔴 **first_run_completed is a latch, and until now only this tool ever closed it.** Writing a
-    /// complete set of settings also claims the wizard was answered, so the mod never asks — right
-    /// when the settings really do answer it, wrong the moment somebody wants to finish the job
-    /// inside the game.
-    ///
-    /// 🔴 **It appears only where it can change the outcome**, which is the rule this card holds
-    /// everywhere: a control whose verb cannot act must not invite the act. Three states where it
-    /// cannot, and in every one of them it would be a box that does nothing:
-    ///
-    /// · **the game has already run its wizard.** The latch is closed and nothing here reopens it —
-    ///   only the mod does, from inside. Ticking would promise a screen that will never appear;
-    /// · **nothing is going to be written into this game.** No write, no latch;
-    /// · **Mod defaults has never been filled in.** What would be written is the program's own
-    ///   guesses, so the wizard is kept whatever anybody thinks — and a ticked, greyed box is worse
-    ///   than none: it looks like a decision somebody took and cannot undo.
-    ///
-    /// ⚠ Placed beside the hotkey question rather than under the box at the top. Both are OPTIONS
-    /// about what a write does; neither is a setting of this game nor a line in the list of
-    /// differences. Slotting this between the box and the differences it governs cut a chain that
-    /// reads as one thing — box, what it would change, the form that answers instead.
-    /// </summary>
-    private IEnumerable<Control> WizardDecision(GameReport report, GamePreference preference)
+    /// <summary>Where one game's settings come from. Exactly one is true at a time.</summary>
+    private enum SetupWay
     {
-        var snapshot = GameConfig(report);
+        /// <summary>The values from the Mod defaults screen.</summary>
+        ModDefaults,
 
-        if (snapshot.FirstRunCompleted) yield break;
-        if (!_settings.Current.Reviewed) yield break;
+        /// <summary>Nothing decided here; the mod runs its own setup inside the game.</summary>
+        Wizard,
 
-        // The same condition BuildPlan writes on, so the box is present exactly when a write is.
-        var writes = preference.Mod is { IsEmpty: false }
-                     || !snapshot.IsConfigured
-                     || preference.UsesModDefaults(snapshot);
+        /// <summary>The answers in this game's own form.</summary>
+        Custom,
+    }
 
-        if (!writes) yield break;
+    /// <summary>
+    /// Which of the three is in force, resolved the way the rest of the card resolves things.
+    ///
+    /// ⚠ **Undecided is not a fourth state, it is a reading of the game.** A game already carrying a
+    /// configuration keeps its own — the rule UsesModDefaults has always held, and the reason the
+    /// first one-click cannot quietly overwrite a set-up somebody made inside the mod. A game with
+    /// nothing yet follows the defaults when there are any, and asks in the game when there are not.
+    ///
+    /// ⚠ And once the mod has finished its own setup, Wizard is not on offer: the latch is closed
+    /// and no tick here reopens it. A stored answer saying otherwise reads as Custom, which is what
+    /// it amounts to — this game answers for itself.
+    /// </summary>
+    private static SetupWay SetupWayOf(GamePreference preference, GameConfigSnapshot snapshot,
+                                       bool reviewed, bool firstTime)
+    {
+        if (preference.ApplyModDefaults == true && reviewed) return SetupWay.ModDefaults;
 
-        var box = new CheckBox
-        {
-            Content = "Let the mod ask on first launch",
-            IsChecked = preference.LetWizardAsk,
-            FontSize = 12,
-            Margin = new Avalonia.Thickness(0, 6, 0, 0),
-        };
+        if (preference.ApplyModDefaults == false)
+            return preference.LetWizardAsk && firstTime ? SetupWay.Wizard : SetupWay.Custom;
 
-        ToolTip.SetTip(box,
-            "The mod opens its own setup the first time this game runs, and what is written here "
-            + "is what it starts from. Unticked, the settings stand and it never asks.");
+        // Nobody has decided for this game.
+        if (snapshot.IsConfigured) return SetupWay.Custom;
 
-        box.IsCheckedChanged += (_, _) =>
-        {
-            preference.LetWizardAsk = box.IsChecked == true;
-            _preferences.Set(report.Game.Path, preference);
-        };
-
-        yield return box;
+        return reviewed ? SetupWay.ModDefaults : SetupWay.Wizard;
     }
 
     /// <summary>
@@ -6569,13 +6679,15 @@ public partial class MainWindow : Window
         // The two halves are guarded separately below.
         var reviewed = _settings.Current.Reviewed;
 
+        // 🔴 **Offered with nothing installed too, and this guard was the last thing hiding it.**
+        // "Nothing installed to write into" is true and it is not a reason to take the question
+        // away: choosing a shortcut is precisely what somebody does while setting a game up, and
+        // the answer has somewhere to go — the same session-held answers the settings form uses
+        // before there is a file, laid down by the install.
         var descriptor = InstalledDescriptor(report);
+        var installed = descriptor is not null;
 
-        // Nothing installed to write into. The brick has no state to report and no verb to offer,
-        // which is exactly what the loader and mod cards do in the same situation.
-        if (descriptor is null) yield break;
-
-        var inGame = GameConfig(report).InGameHotkey;
+        var inGame = installed ? GameConfig(report).InGameHotkey : null;
 
         // ⚠ Read from the same comparison that feeds the block above — one source, so the two can
         // never disagree about this key. Null means there is nothing to REPORT: the game already
@@ -6675,8 +6787,19 @@ public partial class MainWindow : Window
         // key — captured in the game, against the keyboard as that game reads it — and the editor
         // used to greet the reader by declaring their own working choice unusable. It is only
         // unusable FROM HERE, which matters when choosing a new one and not before.
+        // 🔴 **Held, not stored.** Every keystroke used to land in preference.Mod.SettingsHotkey and
+        // be written to the preferences file straight away — so a key merely tried out was
+        // remembered, counted in "N set for this game", and carried into the next install by
+        // somebody who never confirmed it.
+        //
+        // ⚠ Seeded from the session-held answers first, so a key captured before the mod is
+        // installed survives this card being redrawn under the person capturing it.
+        var draftKey = (_pendingMod.TryGetValue(report.Game.Path, out var pendingKeys)
+                            ? pendingKeys.SettingsHotkey : null)
+                       ?? preference.Mod?.SettingsHotkey;
+
         var editor = new HotkeyEditor(
-            preference.Mod?.SettingsHotkey ?? inGame ?? _settings.Current.SettingsHotkey,
+            draftKey ?? inGame ?? _settings.Current.SettingsHotkey,
             Brush("TextMuted"), Brush("StatusWarning"), warnOnArrival: false);
 
         // 🔴 **Held, not stored.** Every keystroke used to land in preference.Mod.SettingsHotkey
@@ -6687,7 +6810,6 @@ public partial class MainWindow : Window
         //
         // The button below is that verb, and it now does both halves: remember the key, and write
         // it into the game. Nothing before it.
-        var draftKey = preference.Mod?.SettingsHotkey;
 
         Button? write = null;
 
@@ -6750,7 +6872,7 @@ public partial class MainWindow : Window
             Busy(true, "Applying the key...");
 
             var result = new GameConfigWriter().ApplyOne(
-                report.Game.Path, descriptor, GameConfigWriter.HotkeyKey, chosen, "in-game hotkey");
+                report.Game.Path, descriptor!, GameConfigWriter.HotkeyKey, chosen, "in-game hotkey");
 
             Busy(false, "Ready.");
 
@@ -6771,7 +6893,37 @@ public partial class MainWindow : Window
         };
 
         RefreshHotkeyApply();
-        yield return write;
+
+        // 🔴 **No Apply where there is nothing to apply to** — the rule the settings form follows
+        // three inches above. With no config.json the verb has no object, so the key is recorded as
+        // it is captured and the install lays it down, and the line below says so instead.
+        if (installed)
+        {
+            yield return write;
+        }
+        else
+        {
+            editor.Changed += () =>
+            {
+                if (editor.Value is not { } key) return;
+
+                var held = _pendingMod.TryGetValue(report.Game.Path, out var kept)
+                    ? kept
+                    : new GameModOverrides();
+
+                held.SettingsHotkey = key;
+                _pendingMod[report.Game.Path] = held;
+            };
+
+            yield return new TextBlock
+            {
+                Text = "Written into the game when the mod is installed.",
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Avalonia.Thickness(120, 4, 0, 0),
+                Foreground = Brush("TextMuted"),
+            };
+        }
 
         void RefreshHotkeyApply()
         {

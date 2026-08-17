@@ -8745,9 +8745,14 @@ public partial class MainWindow : Window
 
             Func<Task>? chosen = null;
 
-            var panel = new StackPanel { Spacing = 10, MinWidth = 520 };
+            // 🔴 Two parts, deliberately. `head` never scrolls — the state you are in and the
+            // button that keeps a copy are what somebody reads BEFORE choosing a row, and scrolled
+            // away by the twelfth entry they would have to scroll back to remember where they
+            // stand. `panel` is the list, and it is the only thing with a scrollbar.
+            var head = new StackPanel { Spacing = 10 };
+            var panel = new StackPanel { Spacing = 4 };
 
-            panel.Children.Add(new TextBlock
+            head.Children.Add(new TextBlock
             {
                 Text = Backups.PrivacyNote,
                 FontSize = 11,
@@ -8757,7 +8762,7 @@ public partial class MainWindow : Window
 
             // 🔴 The current state first. Without it no row reads: a line count is neither more
             // nor less until somebody knows where they stand today.
-            panel.Children.Add(new TextBlock
+            head.Children.Add(new TextBlock
             {
                 Text = report.LocalTranslation is { } local
                     ? $"Now: {local.EntryCount} lines"
@@ -8809,7 +8814,7 @@ public partial class MainWindow : Window
                 Foreground = Brush("TextSecondary"),
             });
 
-            panel.Children.Add(top);
+            head.Children.Add(top);
 
             void Group(string heading, string? note, bool wantSaved)
             {
@@ -8874,8 +8879,18 @@ public partial class MainWindow : Window
             // act asked in a richer form must not arrive looking like a debug dialog.
             var close = new Button { Content = "Close", IsDefault = true, IsCancel = true };
 
-            var layout = new StackPanel { Spacing = 14, Margin = new Avalonia.Thickness(24) };
-            layout.Children.Add(new TextBlock
+            // ⚠ Three rows: what stays, what scrolls, what acts. The middle one is the only one
+            // that grows, and it is capped — a window that sizes itself to twelve entries walks
+            // off the bottom of a laptop screen, and nothing about a list of backups justifies
+            // filling one.
+            var layout = new Grid
+            {
+                Margin = new Avalonia.Thickness(24),
+                RowDefinitions = new RowDefinitions("Auto,*,Auto"),
+            };
+
+            var titled = new StackPanel { Spacing = 14 };
+            titled.Children.Add(new TextBlock
             {
                 Text = $"Backups — {report.Game.Name}",
                 FontSize = 15,
@@ -8883,25 +8898,45 @@ public partial class MainWindow : Window
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("TextPrimary"),
             });
-            layout.Children.Add(panel);
-            layout.Children.Add(new StackPanel
+            titled.Children.Add(head);
+
+            var scroller = new ScrollViewer
+            {
+                Content = panel,
+                HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+                VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+                Margin = new Avalonia.Thickness(0, 12, 0, 12),
+                MaxHeight = 420,
+            };
+
+            var footer = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Right,
                 Children = { close },
-            });
+            };
+
+            Grid.SetRow(titled, 0);
+            Grid.SetRow(scroller, 1);
+            Grid.SetRow(footer, 2);
+
+            layout.Children.Add(titled);
+            layout.Children.Add(scroller);
+            layout.Children.Add(footer);
 
             _backupsWindow = new Window
             {
                 Title = "Backups",
                 Width = 620,
+
+                // ⚠ Height follows the content only up to the cap the scroller sets, so an empty
+                // list is a small window and a full one never becomes a tall one.
                 SizeToContent = SizeToContent.Height,
-                MaxHeight = 760,
-                MinHeight = 240,
+                MinHeight = 260,
                 CanResize = false,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Background = Brush("SurfaceBase"),
-                Content = new ScrollViewer { Content = layout },
+                Content = layout,
             };
 
             close.Click += (_, _) => CloseBackupsWindow();
@@ -8960,6 +8995,10 @@ public partial class MainWindow : Window
             Foreground = Brush("TextSecondary"),
         });
 
+        // ⚠ **Only Restore carries a scope mark, and that is not an omission.** The mark answers
+        // "where does the result land": Restore lands in the game, so it is Local. Rename, Delete
+        // and Keep touch nothing but this folder — marking them would tell somebody their game is
+        // about to change when it is not.
         var verbs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
 
         var restore = ScopeMark.Marked(EditSide.Local, "Restore", enabled: !running);

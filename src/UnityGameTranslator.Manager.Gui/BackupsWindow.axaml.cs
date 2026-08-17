@@ -290,9 +290,23 @@ public sealed class BackupsWindow : Window
     /// </summary>
     private Control Row(BackupEntry entry, IReadOnlyList<BackupEntry> all)
     {
+        // 🔴 **What identifies stays on the first line; what qualifies goes underneath, small.**
+        // Everything used to be strung onto one line, which grew past its column and ran under
+        // the buttons — the saved list showed it first, carrying three verbs instead of two. Cut
+        // with an ellipsis it lost the end; split in two it loses nothing, and the row reads the
+        // way the rows below it already did.
         var facts = $"{entry.At:dd MMM HH:mm}   {entry.Lines} lines";
-        if (entry.ByHand > 0) facts += $" · {entry.ByHand} by hand";
-        if (entry.WithAssets) facts += " · with fonts and images";
+
+        var details = new List<string>();
+
+        // The name somebody gave it, or the act that caused it — first, because it is what the
+        // eye is looking for. An unnamed saved copy says nothing here: "Saved by you" would be
+        // the title of the very card it sits in, repeated on every row.
+        if (!string.IsNullOrEmpty(entry.Label)) details.Add("\"" + entry.Label + "\"");
+        else if (!entry.IsSaved) details.Add(Backups.Describe(entry.Reason, entry.By));
+
+        if (entry.ByHand > 0) details.Add($"{entry.ByHand} by hand");
+        if (entry.WithAssets) details.Add("with fonts and images");
 
         // ⚠ **Trimmed, and clipped to its column.** A Grid does not clip its children, and a
         // TextBlock with neither wrapping nor trimming simply paints past the edge — so a long
@@ -326,18 +340,13 @@ public sealed class BackupsWindow : Window
             });
         }
 
-        // 🔴 **Nothing when there is nothing to add.** An unnamed saved copy printed "Saved by
-        // you" — the title of the very card it sits in — on every row. The act earns a line where
-        // it differs from row to row; a name earns one when somebody wrote it.
-        var subtitle = !string.IsNullOrEmpty(entry.Label) ? "\"" + entry.Label + "\""
-                     : entry.IsSaved ? null
-                     : Backups.Describe(entry.Reason, entry.By);
-
-        if (subtitle is not null)
+        // ⚠ Absent entirely when there is nothing to say, rather than an empty line: a copy
+        // somebody took a second ago, unnamed and with no assets, is one line and no more.
+        if (details.Count > 0)
         {
             text.Children.Add(new TextBlock
             {
-                Text = subtitle,
+                Text = string.Join(" · ", details),
                 FontSize = 11,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 Foreground = Brush("TextSecondary"),

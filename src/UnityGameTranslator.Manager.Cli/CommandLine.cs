@@ -810,7 +810,7 @@ public static class CommandLine
         Console.WriteLine(trial.WarmElapsed is { } warm
             ? $"  then   : {warm.TotalSeconds:F1}s per line"
             : "  then   : not measured");
-        Console.WriteLine($"  on GPU : {trial.OnGpu switch { true => "yes", false => "NO - running on the processor", _ => "unknown (this server does not say)" }}");
+        Console.WriteLine($"  on GPU : {trial.GpuText}");
         Console.WriteLine($"  VRAM   : {trial.VramText}");
         Console.WriteLine($"  keeps placeholders : {Yes(trial.KeptPlaceholders)}");
         Console.WriteLine($"  answers with the translation only : {Yes(trial.AnsweredWithTranslationOnly)}");
@@ -868,7 +868,7 @@ public static class CommandLine
             Console.WriteLine($"{model,-24} {trial.RunsKeepingPlaceholders}/{trial.Runs,-4} "
                               + $"{trial.RunsAnsweringOnly}/{trial.Runs,-4} "
                               + $"{perLine.TotalSeconds,6:F1}s   {trial.VramText,-8} "
-                              + $"{trial.OnGpu switch { true => "yes", false => "NO", _ => "?" },-8}");
+                              + $"{trial.OnCardShare switch { null => "?", var share => $"{(int)Math.Round(share.Value * 100)}%" },-8}");
         }
 
         Console.WriteLine();

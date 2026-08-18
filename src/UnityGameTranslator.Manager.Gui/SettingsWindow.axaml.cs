@@ -1746,12 +1746,10 @@ public sealed class SettingsWindow : Window
             // The token reaches the measurement too, or "Stop" would sit unanswered through the four
             // requests this makes before the suite even starts.
             var trial = await _probe.MeasureAsync(url, model, _suiteStop.Token);
-            var gpu = trial.OnGpu switch
-            {
-                true => "in use",
-                false => "NOT used - running on the processor",
-                _ => "unknown, this server does not report it",
-            };
+            // ⚠ The wording lives on AiTrial, not here: the CLI prints the same fact and the two
+            // must not phrase it differently. It also states a SHARE — a model 83% on the card was
+            // being announced as running on the processor.
+            var gpu = trial.GpuText;
 
             _metrics.Text = trial.Succeeded
                 ? $"First line {trial.Elapsed.TotalSeconds:F1}s "

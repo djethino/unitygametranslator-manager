@@ -18,7 +18,6 @@ public sealed record AiTrial(
     bool Succeeded,
     string? Output,
     TimeSpan Elapsed,
-    bool? OnGpu,
     string? Detail)
 {
     /// <summary>
@@ -60,6 +59,39 @@ public sealed record AiTrial(
 
     /// <summary>Video memory the model actually occupies, in bytes, when the server says so.</summary>
     public long? VramBytes { get; init; }
+
+    /// <summary>
+    /// How much of the model actually sits on the graphics card, from 0 to 1, or null when the
+    /// server does not say.
+    ///
+    /// 🔴 **A proportion, because the yes/no it replaces was untrue.** This used to be a boolean
+    /// set by "is at least 90% of it on the card", and everything under that was printed as
+    /// "GPU NOT used - running on the processor". Measured on a real machine, a model sitting at
+    /// 83% on the card was announced as running on the processor — while answering at GPU speed,
+    /// which is what made a reader doubt the tool rather than the reading.
+    ///
+    /// ⚠ Placement is decided per LAYER, not per active expert: a mixture-of-experts model does
+    /// not keep "the experts it uses" on the card and the others off it. But such a model only
+    /// computes its active experts, so it stays fast even when partly on the processor — which is
+    /// why speed alone never proves where a model is, and why this number is read from the server.
+    /// </summary>
+    public double? OnCardShare { get; init; }
+
+    /// <summary>
+    /// Where the model runs, in words. Lives here so the window and the CLI cannot word it
+    /// differently — the same fact has to read the same way in both.
+    /// </summary>
+    public string GpuText => OnCardShare switch
+    {
+        null => "unknown, this server does not report it",
+        >= 0.99 => "in use, with the whole model on it",
+        <= 0.01 => "NOT used - the model runs entirely on the processor",
+        // ⚠ Written out rather than formatted with "P0": that follows the machine's own language
+        // and would print "83 %" here and "83%" elsewhere, inside an interface that is English
+        // everywhere and for everyone.
+        var share => $"in use for {(int)Math.Round(share!.Value * 100)}% of the model"
+                     + " - the rest runs on the processor",
+    };
 
     /// <summary>
     /// How many answers were judged, and how many of them held.
@@ -189,7 +221,7 @@ public sealed class AiServerProbe
         // Whether the first run pays for loading the model is not ours to assume: it depends on
         // what the server already has in memory. Asked before measuring, rather than asserted
         // afterwards — a "includes loading the model" printed next to 0.6s is simply false.
-        var alreadyLoaded = await IsResidentOnGpuAsync(baseUrl, model, ct).ConfigureAwait(false) == true;
+        var alreadyLoaded = await IsLoadedAsync(baseUrl, model, ct).ConfigureAwait(false) == true;
 
         var first = await TryTranslateAsync(baseUrl, model, ct).ConfigureAwait(false);
         if (!first.Succeeded) return first;
@@ -746,13 +778,14 @@ public sealed class AiServerProbe
             stopwatch.Stop();
 
             if (text is null)
-                return new AiTrial(false, null, stopwatch.Elapsed, null, "no answer");
-            var onGpu = await IsResidentOnGpuAsync(baseUrl, model, ct).ConfigureAwait(false);
+                return new AiTrial(false, null, stopwatch.Elapsed, "no answer");
+            var share = await OnCardShareAsync(baseUrl, model, ct).ConfigureAwait(false);
             var vram = await VramBytesAsync(baseUrl, model, ct).ConfigureAwait(false);
 
-            return new AiTrial(text is not null, text, stopwatch.Elapsed, onGpu, null)
+            return new AiTrial(text is not null, text, stopwatch.Elapsed, null)
             {
                 VramBytes = vram,
+                OnCardShare = share,
                 KeptPlaceholders = text is null ? null : KeepsPlaceholders(text),
                 AnsweredWithTranslationOnly = text is null ? null : IsBareTranslation(text),
             };
@@ -760,7 +793,7 @@ public sealed class AiServerProbe
         catch (Exception ex)
         {
             stopwatch.Stop();
-            return new AiTrial(false, null, stopwatch.Elapsed, null, ex.GetType().Name);
+            return new AiTrial(false, null, stopwatch.Elapsed, ex.GetType().Name);
         }
     }
 
@@ -775,6 +808,34 @@ public sealed class AiServerProbe
     /// ⚠ Ollama-specific: /api/ps is not part of the OpenAI-compatible surface. Other servers
     /// return null here, and the caller must say "unknown" rather than "no".
     /// </summary>
+    /// <summary>
+    /// Whether the server already holds this model, whatever the split between card and processor.
+    ///
+    /// 🔴 Separate from <see cref="IsResidentOnGpuAsync"/> on purpose. One question is "will the
+    /// next request pay to load it", the other is "where does it run", and answering the first
+    /// with the second's 90% threshold called a model that was loaded and answering "not loaded" —
+    /// so the report announced a cold first line that had in fact cost nothing.
+    /// </summary>
+    public async Task<bool?> IsLoadedAsync(string baseUrl, string model,
+                                           CancellationToken ct = default)
+    {
+        var placement = await PlacementAsync(baseUrl, model, ct).ConfigureAwait(false);
+        return placement is null ? null : placement.Value.Size > 0;
+    }
+
+    /// <summary>
+    /// How much of the model is on the graphics card, from 0 to 1, or null when unknown.
+    /// See <see cref="AiTrial.OnCardShare"/> for why this is not a yes or no.
+    /// </summary>
+    public async Task<double?> OnCardShareAsync(string baseUrl, string model,
+                                                CancellationToken ct = default)
+    {
+        var placement = await PlacementAsync(baseUrl, model, ct).ConfigureAwait(false);
+        if (placement is null || placement.Value.Size <= 0) return null;
+
+        return (double)placement.Value.OnCard / placement.Value.Size;
+    }
+
     public async Task<bool?> IsResidentOnGpuAsync(string baseUrl, string model,
                                                   CancellationToken ct = default)
     {

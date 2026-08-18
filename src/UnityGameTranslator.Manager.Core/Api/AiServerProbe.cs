@@ -295,6 +295,10 @@ public sealed class AiServerProbe
 
         foreach (var test in ModelTestSuite.Build(targetLanguage, gameContext, sourceCode, gameName))
         {
+            // Checked here as well as inside the request: stopping should not spend one more case
+            // than it has to, and each case is several requests.
+            ct.ThrowIfCancellationRequested();
+
             var attempt = await TranslateLikeTheModAsync(baseUrl, model, test.Rule, test.Source, ct)
                 .ConfigureAwait(false);
 
@@ -455,21 +459,27 @@ public sealed class AiServerProbe
                                      attempt == 2 ? 0.3 : 0.0, maxTokens, "none", ct)
                 .ConfigureAwait(false);
 
-            // ⚠ Cleaned before it is judged, exactly where the mod cleans it. A model that wraps
-            // its answer in quotation marks, opens with "Translation:" or adds a note about its
-            // own work is not a model that broke a rule — a game copes with all of that and shows
-            // the text underneath. Scoring the wrapping would have measured this bench.
-            var asItArrived = answer!;
-            answer = Answers.Clean(asItArrived);
-            neededCleaning |= !string.Equals(answer, asItArrived.Trim(), StringComparison.Ordinal);
-
             // A refused request is not a refused translation: the mod gives up here too rather
             // than burning its retries on a server problem.
+            //
+            // 🔴 Tested BEFORE the answer is used, which it was not: the null-forgiving `!` below
+            // promised the compiler a value that a refused request does not provide, and the
+            // Trim() two lines further down took the whole process down with a
+            // NullReferenceException — no message, no window, nothing. Reachable whenever a server
+            // stops answering, and reached in practice by pressing Stop while a model loaded.
             if (answer is null)
             {
                 stopwatch.Stop();
                 return new ModAttempt(null, attempt + 1, stopwatch.Elapsed, false, false, neededCleaning);
             }
+
+            // ⚠ Cleaned before it is judged, exactly where the mod cleans it. A model that wraps
+            // its answer in quotation marks, opens with "Translation:" or adds a note about its
+            // own work is not a model that broke a rule — a game copes with all of that and shows
+            // the text underneath. Scoring the wrapping would have measured this bench.
+            var asItArrived = answer;
+            answer = Answers.Clean(asItArrived);
+            neededCleaning |= !string.Equals(answer, asItArrived.Trim(), StringComparison.Ordinal);
 
             // Nothing to validate: the model was asked to skip this line and did.
             if (answer.Contains(ModelTestSuite.SkipMarker, StringComparison.Ordinal))
@@ -686,6 +696,16 @@ public sealed class AiServerProbe
 
                 var error = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
                 if (!_negotiation.Concede(error, out _)) return null;
+            }
+            // 🔴 An abandoned request is not a server that went quiet, and this catch used to
+            // swallow both. Reported as "no answer", a cancellation let the suite carry calmly on
+            // to the next case and mark all of them failed — the opposite of stopping.
+            //
+            // ⚠ Guarded on the token: HttpClient raises the same exception when its own timeout
+            // runs out, and that one really is a server that did not answer in time.
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
             }
             catch
             {

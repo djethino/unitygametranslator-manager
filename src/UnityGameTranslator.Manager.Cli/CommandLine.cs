@@ -101,6 +101,7 @@ public static class CommandLine
               ai --compare a,b,c            Score several models on the job the mod asks of them
               ai --suite --model M          Put one model through the mod's instructions, hardest last
                   [--context "..."]         ...with the game description the mod would send
+                  [--game "..."]            ...and the game name, as the mod sends it
               ai --ollama [--yes]           Start an installed Ollama, or price installing one
               urls <address>                Show which endpoints an address resolves to
               self-update [--check]        Update this tool itself (--check only looks)
@@ -986,10 +987,18 @@ public static class CommandLine
         // running the suite both ways settles it for a given model.
         var gameContext = ValueOf(args, "--context");
 
+        // The game's own name, which the mod sends whenever the game states one. Offered for the
+        // same reason and it settles a real doubt: a model that knows the game should gain its
+        // vocabulary, one that has never heard of it may invent an universe instead.
+        var gameName = ValueOf(args, "--game");
+
         Console.WriteLine($"{model} on {server.Product}, translating to {Languages.NameOf(language)}");
         Console.WriteLine(gameContext is null
             ? "Game context: none (the mod's default wording)"
             : $"Game context: {gameContext}");
+        Console.WriteLine(gameName is null
+            ? "Game name: none (as in a game that does not state one)"
+            : $"Game name: {gameName}");
 
         // Which language it is translating FROM, named rather than assumed. It is chosen so it is
         // never the target — asking for English from English is a job the mod never gives a model
@@ -1013,7 +1022,8 @@ public static class CommandLine
         var outcomes = new List<ModelTestResult>();
 
         await probe.RunSuiteAsync(server.Url, model, language, gameContext: gameContext,
-                                  sourceCode: ValueOf(args, "--source"), onResult: result =>
+                                  sourceCode: ValueOf(args, "--source"), gameName: gameName,
+                                  onResult: result =>
         {
             outcomes.Add(result);
 

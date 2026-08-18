@@ -211,8 +211,16 @@ public static class ModelTestSuite
     /// is the whole reason these sets exist. Someone whose games are written in Chinese can name
     /// Chinese here, because that is their real case and only they know it.
     /// </param>
+    /// <param name="gameName">
+    /// The game the mod would have named, or null for none.
+    ///
+    /// ⚠ Here for the same reason as <paramref name="gameContext"/>, and it settles a real doubt:
+    /// naming a game a model knows should give it the vocabulary, while naming one it has never
+    /// heard of may invite it to invent an universe. Running the suite both ways answers that per
+    /// model, which is the only way anyone will ever know.
+    /// </param>
     public static IReadOnlyList<ModelTest> Build(string targetLanguage, string? gameContext = null,
-                                                 string? sourceCode = null)
+                                                 string? sourceCode = null, string? gameName = null)
     {
         var language = Languages.NameOf(targetLanguage);
 
@@ -225,7 +233,7 @@ public static class ModelTestSuite
         // ⚠ The source language IS sent. This report announces "Translating from: X" at the top,
         // and the mod names it in the prompt whenever it knows it — so leaving it out here scored
         // models on a harder question than a configured game ever asks them.
-        string Rules(string source) => Prompt(language, source, gameContext, from.Language);
+        string Rules(string source) => Prompt(language, source, gameContext, from.Language, gameName: gameName);
 
         var tests = new List<ModelTest>
         {
@@ -380,7 +388,7 @@ public static class ModelTestSuite
 
             new("refuses another real language", "experimental",
                 foreign.PlainLine,
-                Prompt(language, foreign.PlainLine, gameContext, from.Language, strictSource: true),
+                Prompt(language, foreign.PlainLine, gameContext, from.Language, strictSource: true, gameName: gameName),
                 (_, answer) => Answers.Read(answer) == AnswerKind.Skip)
             {
                 // The sentence is chosen so it is neither the source nor the target. A fixed one
@@ -404,7 +412,7 @@ public static class ModelTestSuite
             // in a real game. Refusing what it cannot know is the behaviour being measured.
             new("refuses what it cannot know", "experimental",
                 Fixtures.Klingon,
-                Prompt(language, Fixtures.Klingon, gameContext, from.Language, strictSource: true),
+                Prompt(language, Fixtures.Klingon, gameContext, from.Language, strictSource: true, gameName: gameName),
                 (_, answer) => Answers.Read(answer) == AnswerKind.Skip)
             {
                 Expectation = $"answers exactly {SkipMarker}, rather than inventing a translation",
@@ -456,7 +464,8 @@ public static class ModelTestSuite
     /// space in it would be taken for a single word and get a closing line the game never adds.
     /// </summary>
     private static string Prompt(string language, string source, string? gameContext = null,
-                                 string? sourceLanguage = null, bool strictSource = false)
+                                 string? sourceLanguage = null, bool strictSource = false,
+                                 string? gameName = null)
     {
         var markers = new Prompts.Markers
         {
@@ -468,7 +477,7 @@ public static class ModelTestSuite
 
         var asTheGameSawIt = source.Replace("[!nl]", "\n", StringComparison.Ordinal);
 
-        return Prompts.ForGameText(language, sourceLanguage, gameContext, strictSource,
+        return Prompts.ForGameText(language, sourceLanguage, gameName, gameContext, strictSource,
                                    Prompts.Classify(asTheGameSawIt), markers);
     }
 

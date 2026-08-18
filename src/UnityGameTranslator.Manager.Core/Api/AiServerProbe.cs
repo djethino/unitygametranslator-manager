@@ -250,10 +250,14 @@ public sealed class AiServerProbe
     /// run both ways: it is the one line of the prompt a player writes themselves, and whether it
     /// helps or hurts was until now a matter of opinion.
     /// </param>
+    /// <param name="gameName">
+    /// The game the mod would have named, passed through for the same reason: naming a game the
+    /// model knows should hand it the vocabulary, naming one it does not may invite invention.
+    /// </param>
     public async Task<IReadOnlyList<ModelTestResult>> RunSuiteAsync(
         string baseUrl, string model, string targetLanguage,
         Action<ModelTestResult>? onResult = null, CancellationToken ct = default,
-        string? gameContext = null, string? sourceCode = null)
+        string? gameContext = null, string? sourceCode = null, string? gameName = null)
     {
         var results = new List<ModelTestResult>();
         LastPlacement = null;
@@ -269,7 +273,7 @@ public sealed class AiServerProbe
 
         var placementRead = false;
 
-        foreach (var test in ModelTestSuite.Build(targetLanguage, gameContext, sourceCode))
+        foreach (var test in ModelTestSuite.Build(targetLanguage, gameContext, sourceCode, gameName))
         {
             var attempt = await TranslateLikeTheModAsync(baseUrl, model, test.Rule, test.Source, ct)
                 .ConfigureAwait(false);

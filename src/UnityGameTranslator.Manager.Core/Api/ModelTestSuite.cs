@@ -9,8 +9,26 @@ public sealed record ModelTest(
     string Difficulty,
     string Source,
     string Rule,
-    Func<string, string, bool> Check)
+    Func<string, string, bool>? Check)
 {
+    /// <summary>
+    /// This case has no verdict: it is shown so a human can judge it.
+    ///
+    /// 🔴 **It exists because everything else here is structural** — a marker present, a term
+    /// untouched, no punctuation invented — and none of that can see whether the translation is
+    /// any GOOD. The prompt asks for the right language, the source's tone and a comparable
+    /// length; not one of the three can be verified by a machine, and the Breton run proved how
+    /// far that gap goes: fluent French passed every structural check ever written here.
+    ///
+    /// ⚠ Kept out of the score rather than counted as a pass. A case nobody judged is not a case
+    /// that succeeded, and folding it in either way would move a number that is supposed to mean
+    /// something precise.
+    /// </summary>
+    public bool ForReading => Check is null;
+
+    /// <summary>What the reader is being asked to look at. Only for <see cref="ForReading"/>.</summary>
+    public string? ReadThisFor { get; init; }
+
     /// <summary>
     /// Whether a second try was ever possible for this line.
     ///
@@ -93,6 +111,25 @@ public sealed record ModelTestResult(
     public bool Repaired { get; init; }
 
     /// <summary>
+    /// A mark out of ten the model gave this translation in a second pass, or null when it was not
+    /// asked or would not answer with a number.
+    ///
+    /// 🔴 **Called self-assessment everywhere it is shown, and the name is the warning.** Three
+    /// things limit it, and the first is severe: **a judge cannot mark a language it does not
+    /// have.** The model that wrote fluent French believing it was writing Breton would have
+    /// re-read French believing it was re-reading Breton, and given itself a good mark — so the
+    /// number is least trustworthy exactly where it would be most useful. Second, a model prefers
+    /// text that is stylistically familiar to it, which is a bias even though requests carry no
+    /// memory and it cannot know the translation is its own. Third, small models bunch everything
+    /// between 6 and 8.
+    ///
+    /// ⇒ What carries meaning is the GAP — between two models, or between two versions of the
+    /// prompt, on the same cases. A single mark on its own says very little, and it never
+    /// overrules the reader.
+    /// </summary>
+    public int? SelfAssessment { get; init; }
+
+    /// <summary>
     /// The answer arrived wrapped in something a game takes off before showing it: a
     /// "Translation:" opener, markdown emphasis, quotation marks, a note about its own work.
     ///
@@ -132,6 +169,70 @@ public static class ModelTestSuite
 {
     /// <summary>The exact marker the mod expects for a line it must not translate.</summary>
     public const string SkipMarker = "AxNoTranslateXa";
+
+    /// <summary>
+    /// What a run will cost, before anybody starts it.
+    ///
+    /// 🔴 **Because this is not free for everyone.** A local server costs electricity and a wait;
+    /// a paid endpoint charges per request and per token, and a bench that quietly fires forty
+    /// requests at one is a bill somebody did not agree to. The figures are said BEFORE the
+    /// button, never in a summary afterwards.
+    ///
+    /// ⚠ **Counted from the cases themselves, never written down.** Add a case and these numbers
+    /// follow on their own; a constant here would be right on the day it was typed and wrong at
+    /// the next commit, which is worse than saying nothing.
+    /// </summary>
+    public sealed record RunCost(int Cases, int Requests, int MostRequests, int Characters)
+    {
+        /// <summary>
+        /// A rough token count. ⚠ **Rough, and it must be shown as such**: an English word is
+        /// about four characters to a token while a Chinese character is close to one, so the same
+        /// text is a wildly different bill depending on the language. Four is the usual figure for
+        /// Latin scripts and it is the honest middle for a warning, not a quote.
+        /// </summary>
+        public int AboutTokens => Characters / 4;
+    }
+
+    /// <summary>
+    /// Adds up what <see cref="Build"/> would send, so a screen can say it before asking.
+    ///
+    /// ⚠ Two request counts, deliberately. <see cref="RunCost.Requests"/> is what it costs when
+    /// every answer is accepted first time; <see cref="RunCost.MostRequests"/> is the ceiling, if
+    /// every case that can be retried is retried to the end. Announcing only the first understates
+    /// a bad model's bill by a factor of three, and announcing only the second frightens people
+    /// away from a good one.
+    /// </summary>
+    public static RunCost Cost(string targetLanguage, string? gameContext = null,
+                               string? sourceCode = null, string? gameName = null,
+                               bool rate = false)
+    {
+        var tests = Build(targetLanguage, gameContext, sourceCode, gameName);
+
+        var requests = 0;
+        var most = 0;
+        var characters = 0;
+
+        foreach (var test in tests)
+        {
+            requests++;
+            most += test.CanBeAskedAgain ? Placeholders.MaxAttempts : 1;
+
+            // The system prompt goes with every request, and it is the larger half of most cases.
+            characters += test.Rule.Length + test.Source.Length;
+
+            if (!rate) continue;
+
+            // The second pass sends its own instructions plus both texts. The translation is not
+            // written yet, so the source stands in for it — the right order of magnitude, which is
+            // all a warning needs.
+            requests++;
+            most++;
+            characters += Prompts.ForRating("English", targetLanguage, default).Length
+                          + test.Source.Length * 2;
+        }
+
+        return new RunCost(tests.Count, requests, most, characters);
+    }
 
     /// <summary>
     /// Which language a given run translates FROM, so a report can name it.
@@ -420,6 +521,56 @@ public static class ModelTestSuite
 
                 Caveat = "A model that translates this anyway is telling you what it does with a "
                        + "game's invented words and proper nouns: it rewrites them.",
+            },
+
+            // Everything below has no verdict. See ModelTest.ForReading for why they exist at all.
+
+            new("a paragraph with everything in it", "stress",
+                from.ParagraphFull,
+                Rules(from.ParagraphFull),
+                (_, answer) => InOrder(answer,
+                    "[!t*0]", "[!t*1]", "[!nl]", "[!STR*0]", "[!v*0]", "[!v*1]", "[!v*2]", "[!v*3]"))
+            {
+                // Kept beside "a paragraph, not a label" rather than replacing it: that one isolates
+                // distance, this one measures the pile-up, and one case doing both would not say
+                // which of the two broke.
+                Expectation = "tags, inserted text, four numbers and a blank line all survive together",
+            },
+
+            new("keeps the tone", "read",
+                from.ToneMarked,
+                Rules(from.ToneMarked),
+                null)
+            {
+                ReadThisFor = "Is it still wry and spoken, or has it become a flat statement of fact?",
+            },
+
+            new("stays as short as the source", "read",
+                from.PlainLine,
+                Rules(from.PlainLine),
+                null)
+            {
+                ReadThisFor = "Would this still fit on a button, or has it grown into a sentence?",
+            },
+
+            // The invented game, in two steps. Name alone first: anything in the answer that is
+            // neither in the source nor in a description is something the model made up.
+            new($"named a game it cannot know: {Fixtures.InventedGame}", "read",
+                from.Paragraph,
+                Prompt(language, from.Paragraph, gameContext: null, from.Language,
+                       gameName: Fixtures.InventedGame),
+                null)
+            {
+                ReadThisFor = "Did naming a game nobody has heard of add anything that was not in the source?",
+            },
+
+            new($"...and described it: {Fixtures.InventedGameContext}", "read",
+                from.Paragraph,
+                Prompt(language, from.Paragraph, Fixtures.InventedGameContext, from.Language,
+                       gameName: Fixtures.InventedGame),
+                null)
+            {
+                ReadThisFor = "Compared with the line above: did the description steer the wording, and for the better?",
             },
         };
 

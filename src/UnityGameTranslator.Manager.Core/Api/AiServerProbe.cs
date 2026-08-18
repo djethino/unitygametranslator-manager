@@ -254,13 +254,33 @@ public sealed class AiServerProbe
     /// The game the mod would have named, passed through for the same reason: naming a game the
     /// model knows should hand it the vocabulary, naming one it does not may invite invention.
     /// </param>
+    /// <param name="rate">
+    /// Ask the model to mark each translation out of ten, in a second pass.
+    ///
+    /// ⚠ One extra request per case, so the run takes about twice as long. On by default where a
+    /// single model is measured deliberately, and off where several are compared one after
+    /// another — there the cost multiplies by the number of models for a figure whose value is
+    /// comparative anyway.
+    /// </param>
+    /// <param name="judge">
+    /// Mark with a DIFFERENT model. Null uses the one being tested.
+    ///
+    /// ⚠ This is a way to MEASURE the bias, not to correct it: a model prefers text that reads
+    /// like its own, so running the same cases twice — judged by itself, then by another — is the
+    /// only way to see how far that goes on the small models this project runs on.
+    /// </param>
     public async Task<IReadOnlyList<ModelTestResult>> RunSuiteAsync(
         string baseUrl, string model, string targetLanguage,
         Action<ModelTestResult>? onResult = null, CancellationToken ct = default,
-        string? gameContext = null, string? sourceCode = null, string? gameName = null)
+        string? gameContext = null, string? sourceCode = null, string? gameName = null,
+        bool rate = false, string? judge = null)
     {
         var results = new List<ModelTestResult>();
         LastPlacement = null;
+
+        // The judge is told which language it is reading FROM, and it has to be the same one the
+        // cases are written in or it marks a correct translation of a text it thinks it is not.
+        var sourceLanguageName = ModelTestSuite.SourceFor(targetLanguage, sourceCode).Language;
 
         // Everything else let go of the card first. Otherwise the first model measured keeps the
         // room and the next one is quietly split with the processor — which is not a fact about
@@ -300,7 +320,12 @@ public sealed class AiServerProbe
                 var echoed = ModelTestSuite.LooksLikeEchoedInstructions(answer);
                 var translation = echoed ? ModelTestSuite.ExtractTranslation(answer) : answer;
 
-                result = new ModelTestResult(test, answer, test.Check(test.Source, translation), null)
+                result = new ModelTestResult(test,
+                                             answer,
+                                             // No verdict for a case meant to be read: null is not
+                                             // a pass and not a failure, and the report says so.
+                                             test.Check?.Invoke(test.Source, translation) ?? false,
+                                             null)
                 {
                     EchoedInstructions = echoed,
                     Translation = translation,
@@ -310,6 +335,18 @@ public sealed class AiServerProbe
                     Repaired = attempt.Repaired,
                     NeededCleaning = attempt.NeededCleaning,
                 };
+
+                // The second pass. Asked of every usable answer, including the ones with no
+                // verdict — those are precisely where a mark is worth the most, since nothing
+                // else says anything about them at all.
+                if (rate && attempt.Accepted)
+                {
+                    var mark = await RateAsync(baseUrl, judge ?? model, sourceLanguageName,
+                                               targetLanguage, test.Source, translation, ct)
+                        .ConfigureAwait(false);
+
+                    result = result with { SelfAssessment = mark };
+                }
             }
 
             // Read once, after the model is loaded and working — asking before the first request
@@ -484,6 +521,45 @@ public sealed class AiServerProbe
         }
 
         return last!;
+    }
+
+    /// <summary>
+    /// The second pass: asks a model to mark one translation out of ten. Bench only.
+    ///
+    /// Returns null when there is no mark to report — the server said nothing, or the answer was
+    /// not a single number. ⚠ **Never a default.** A mark nobody produced would land mid-range,
+    /// which is exactly where a genuinely bad one would have shown; an empty cell says "this model
+    /// would not answer the question", and that is itself a result.
+    ///
+    /// ⚠ The markers are described to the judge and then declared out of scope: unexplained, it
+    /// reads [!v*0] on both sides, takes it for gibberish, and marks a correct translation down.
+    /// Judged, it would measure a second time what every case already checks mechanically — and
+    /// let a structural fault sink a mark that is supposed to be about language.
+    ///
+    /// See <see cref="ModelTestResult.SelfAssessment"/> for how far the number may be trusted.
+    /// </summary>
+    public async Task<int?> RateAsync(string baseUrl, string judgeModel,
+                                      string sourceLanguage, string targetLanguage,
+                                      string source, string translation, CancellationToken ct)
+    {
+        var markers = new Prompts.Markers
+        {
+            LineBreaks = source.Contains("[!nl]", StringComparison.Ordinal),
+            Tags = source.Contains("[!t*", StringComparison.Ordinal),
+            Numbers = source.Contains("[!v*", StringComparison.Ordinal),
+            Variables = source.Contains("[!STR*", StringComparison.Ordinal),
+        };
+
+        var systemPrompt = Prompts.ForRating(sourceLanguage, targetLanguage, markers);
+
+        // Labelled, because the judge is handed two texts and has to know which is which. The
+        // labels are in English like the rest of the instructions.
+        var userContent = $"SOURCE:\n{source}\n\nTRANSLATION:\n{translation}";
+
+        var answer = await AskAsync(baseUrl, judgeModel, systemPrompt, userContent, ct)
+            .ConfigureAwait(false);
+
+        return Answers.ReadRating(answer);
     }
 
     /// <summary>

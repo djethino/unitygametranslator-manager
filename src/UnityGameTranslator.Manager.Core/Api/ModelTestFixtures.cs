@@ -72,6 +72,30 @@ public sealed class Fixtures
     public required string MarkersInRow { get; init; }
 
     /// <summary>
+    /// Everything at once: tags, inserted text, four numbers, three line breaks and a blank one.
+    ///
+    /// ⚠ **In addition to <see cref="Paragraph"/>, never instead of it.** That one isolates
+    /// DISTANCE — a marker is lost in the middle of a long line, not on a short one — and this one
+    /// measures the pile-up. Merged into a single case, a failure would not say which of the two
+    /// went wrong, and the pile-up is the harder question of the two to act on.
+    ///
+    /// ⚠ It is the only long text carrying [!STR*0], the marker that was tested on three words
+    /// until now and is the most fragile of the four: it holds text that must come through
+    /// untranslated, and in Korean it hides the sound the following particle is chosen by.
+    /// </summary>
+    public required string ParagraphFull { get; init; }
+
+    /// <summary>
+    /// A line whose register is the whole content — wry, spoken, a shrug.
+    ///
+    /// 🔴 Nothing here can be checked by machine, and that is the point: it exists to be READ. The
+    /// prompt asks for the tone of the source to be kept, and no structural test can tell whether
+    /// it was. A translation that turns this into a flat statement of fact obeys every rule the
+    /// bench can verify and has still lost what the line was.
+    /// </summary>
+    public required string ToneMarked { get; init; }
+
+    /// <summary>
     /// Nothing but markers, and the same in every language because there is nothing to write: a
     /// number inside its own colour tag, the shape behind every coloured counter in a HUD.
     /// </summary>
@@ -89,6 +113,34 @@ public sealed class Fixtures
     /// rewrite them in a real game.
     /// </summary>
     public const string Klingon = "nuqneH, tlhIngan maH!";
+
+    /// <summary>
+    /// A game that does not exist, and its description.
+    ///
+    /// 🔴 **Invented rather than borrowed, and that settles two things at once.** Nothing is taken
+    /// from anybody's game — neither the name nor the words — and we can be CERTAIN the model has
+    /// never heard of it. With a real title we would never know whether it knew the game, so we
+    /// would not know what we were measuring.
+    ///
+    /// What it makes visible, in two separate questions:
+    ///   - does the model INVENT? Lore that is in neither the source nor the description is
+    ///     something it made up, and it will do the same inside a real game;
+    ///   - does the context STEER the wording, which is the effect we are after rather than a
+    ///     fault — that is why it is asked in two steps, name alone and then name plus
+    ///     description.
+    ///
+    /// ⚠ **Coherent with the fixtures on purpose, never a trap.** A medieval description over
+    /// spacecraft text would prove nothing anyone needs: whoever writes an incoherent description
+    /// in the mod gets an incoherent result, and that is theirs to fix. What is worth measuring is
+    /// what an honest description does.
+    ///
+    /// ⚠ Checked against published games before being fixed here (2026-08-18, nothing found). If a
+    /// game ever takes this name, the point of the case is gone and it needs another one.
+    /// </summary>
+    public const string InventedGame = "Halyard Nine";
+
+    /// <summary>The description its author might have written. See <see cref="InventedGame"/>.</summary>
+    public const string InventedGameContext = "a science fiction game about a salvage ship and its crew";
 
     public static readonly IReadOnlyList<Fixtures> All = new[]
     {
@@ -115,6 +167,11 @@ public sealed class Fixtures
                 + "output. Vent the coolant before the next jump, or the crew will not survive it. "
                 + "Repairs cost [!v*1] credits and take [!v*2] cycles, and nothing else can be "
                 + "built while they are under way.",
+            ParagraphFull =
+                "[!t*0]Salvage report[!t*1][!nl][!STR*0] was recovered from the wreck in bay "
+                + "[!v*0].[!nl][!nl]Repairs cost [!v*1] credits and take [!v*2] cycles. The crew "
+                + "cannot work while the reactor stays below [!v*3] percent.",
+            ToneMarked = "Well, that went about as well as anyone expected.",
         },
 
         new Fixtures
@@ -142,6 +199,12 @@ public sealed class Fixtures
                 + "nominal. Purga el refrigerante antes del próximo salto o la tripulación no "
                 + "sobrevivirá. Las reparaciones cuestan [!v*1] créditos y tardan [!v*2] ciclos, y "
                 + "no se puede construir nada más mientras duran.",
+            ParagraphFull =
+                "[!t*0]Informe de rescate[!t*1][!nl][!STR*0] se recuperó de los restos en la "
+                + "bahía [!v*0].[!nl][!nl]Las reparaciones cuestan [!v*1] créditos y tardan "
+                + "[!v*2] ciclos. La tripulación no puede trabajar mientras el reactor siga por "
+                + "debajo del [!v*3] por ciento.",
+            ToneMarked = "Bueno, salió justo como todos esperaban.",
         },
 
         new Fixtures
@@ -167,6 +230,11 @@ public sealed class Fixtures
                 + "мощности. Стравите охладитель до следующего прыжка, иначе экипаж не выживет. "
                 + "Ремонт стоит [!v*1] кредитов и занимает [!v*2] циклов, и пока он идёт, ничего "
                 + "другого построить нельзя.",
+            ParagraphFull =
+                "[!t*0]Отчёт о спасении[!t*1][!nl][!STR*0] извлечён из обломков в отсеке "
+                + "[!v*0].[!nl][!nl]Ремонт стоит [!v*1] кредитов и занимает [!v*2] циклов. "
+                + "Экипаж не может работать, пока реактор остаётся ниже [!v*3] процентов.",
+            ToneMarked = "Что ж, всё прошло именно так, как все и ожидали.",
         },
 
         new Fixtures
@@ -190,6 +258,10 @@ public sealed class Fixtures
             Paragraph =
                 "[!t*0]警告[!t*1][!nl]反应堆正以额定功率的 [!v*0] % 运行。下一次跃迁前请排出冷却剂，"
                 + "否则船员无法生还。维修需要 [!v*1] 信用点和 [!v*2] 个周期，期间无法建造其他任何东西。",
+            ParagraphFull =
+                "[!t*0]打捞报告[!t*1][!nl][!STR*0] 已从 [!v*0] 号舱的残骸中回收。[!nl][!nl]"
+                + "维修需要 [!v*1] 信用点和 [!v*2] 个周期。反应堆低于 [!v*3] % 时，船员无法工作。",
+            ToneMarked = "好吧，结果和大家想的一样。",
         },
 
         new Fixtures
@@ -216,6 +288,11 @@ public sealed class Fixtures
                 "[!t*0]警告[!t*1][!nl]リアクターは定格出力の [!v*0] パーセントで稼働中です。"
                 + "次のジャンプの前に冷却材を排出してください。さもなければ乗組員は助かりません。"
                 + "修理には [!v*1] クレジットと [!v*2] サイクルが必要で、その間は他に何も建造できません。",
+            ParagraphFull =
+                "[!t*0]回収報告[!t*1][!nl][!STR*0] を [!v*0] 番ベイの残骸から回収しました。[!nl][!nl]"
+                + "修理には [!v*1] クレジットと [!v*2] サイクルが必要です。"
+                + "リアクターが [!v*3] パーセントを下回っている間、乗組員は作業できません。",
+            ToneMarked = "まあ、みんなの予想どおりの結果だ。",
         },
 
         new Fixtures
@@ -242,6 +319,11 @@ public sealed class Fixtures
                 "[!t*0]경고[!t*1][!nl]원자로가 정격 출력의 [!v*0] 퍼센트로 작동 중입니다. "
                 + "다음 도약 전에 냉각수를 배출하십시오. 그렇지 않으면 승무원은 살아남지 못합니다. "
                 + "수리에는 [!v*1] 크레딧과 [!v*2] 주기가 필요하며, 그동안 다른 것은 건조할 수 없습니다.",
+            ParagraphFull =
+                "[!t*0]인양 보고[!t*1][!nl][!v*0]번 격납고의 잔해에서 [!STR*0]을(를) 회수했습니다.[!nl][!nl]"
+                + "수리에는 [!v*1] 크레딧과 [!v*2] 주기가 필요합니다. "
+                + "원자로가 [!v*3] 퍼센트 아래로 유지되는 동안 승무원은 작업할 수 없습니다.",
+            ToneMarked = "뭐, 다들 예상한 대로였다.",
         },
 
         new Fixtures
@@ -266,6 +348,11 @@ public sealed class Fixtures
                 "[!t*0]تحذير[!t*1][!nl]يعمل المفاعل عند [!v*0] بالمئة من طاقته المقررة. "
                 + "أفرغ سائل التبريد قبل القفزة التالية وإلا فلن ينجو الطاقم. "
                 + "تكلف الإصلاحات [!v*1] رصيدًا وتستغرق [!v*2] دورات، ولا يمكن بناء أي شيء آخر خلالها.",
+            ParagraphFull =
+                "[!t*0]تقرير الإنقاذ[!t*1][!nl]تم انتشال [!STR*0] من الحطام في الحوض "
+                + "[!v*0].[!nl][!nl]تكلف الإصلاحات [!v*1] رصيدًا وتستغرق [!v*2] دورات. "
+                + "لا يستطيع الطاقم العمل ما دام المفاعل دون [!v*3] بالمئة.",
+            ToneMarked = "حسنًا، جرى الأمر تمامًا كما توقع الجميع.",
         },
     };
 

@@ -102,6 +102,8 @@ public static class CommandLine
               ai --suite --model M          Put one model through the mod's instructions, hardest last
                   [--context "..."]         ...with the game description the mod would send
                   [--game "..."]            ...and the game name, as the mod sends it
+                  [--no-rate]               skip the marks it gives its own answers
+                  [--judge M]               ...or have another model give them
               ai --ollama [--yes]           Start an installed Ollama, or price installing one
               urls <address>                Show which endpoints an address resolves to
               self-update [--check]        Update this tool itself (--check only looks)
@@ -992,6 +994,16 @@ public static class CommandLine
         // vocabulary, one that has never heard of it may invent an universe instead.
         var gameName = ValueOf(args, "--game");
 
+        // The second pass, on by default here: this command measures ONE model deliberately, and
+        // the marks are the only thing said about the cases no check can judge. It costs one extra
+        // request per case, so --no-rate is there for whoever is paying per request.
+        var rate = !args.Contains("--no-rate", StringComparer.OrdinalIgnoreCase);
+
+        // Marking with another model measures the bias rather than removing it: a model prefers
+        // text that reads like its own, and the gap between the two runs is the only way to see
+        // how far that goes.
+        var judge = ValueOf(args, "--judge");
+
         Console.WriteLine($"{model} on {server.Product}, translating to {Languages.NameOf(language)}");
         Console.WriteLine(gameContext is null
             ? "Game context: none (the mod's default wording)"
@@ -1013,6 +1025,18 @@ public static class CommandLine
         var note = ModelNotesProvider.Describe(notes, model);
         if (note is not null) Console.WriteLine(note);
 
+        // What it is about to spend, before spending it. Free on a local server, billed per
+        // request and per token on a paid endpoint — and this run is not small.
+        var cost = ModelTestSuite.Cost(language, gameContext, ValueOf(args, "--source"),
+                                       gameName, rate);
+
+        Write($"{cost.Cases} tests, {cost.Requests} requests"
+              + (cost.MostRequests > cost.Requests ? $" (up to {cost.MostRequests} with retries)" : "")
+              + $", about {cost.AboutTokens:N0} tokens sent."
+              + Environment.NewLine, ConsoleColor.DarkGray);
+        Write("A paid service charges for every one of them." + Environment.NewLine,
+              ConsoleColor.DarkGray);
+
         Console.WriteLine();
 
         var passed = 0;
@@ -1023,6 +1047,7 @@ public static class CommandLine
 
         await probe.RunSuiteAsync(server.Url, model, language, gameContext: gameContext,
                                   sourceCode: ValueOf(args, "--source"), gameName: gameName,
+                                  rate: rate, judge: judge,
                                   onResult: result =>
         {
             outcomes.Add(result);
@@ -1040,14 +1065,21 @@ public static class CommandLine
             // Same vocabulary as the window, and for the same reason: an experimental test that
             // does not pass is not a KO. Amber says "this door stays closed", green says "this
             // model opens one almost none do" — the outcome that is easy to miss.
+            //
+            // A case with no verdict is a third thing again: nobody judged it, so it is neither.
+            // Counting it as a pass would inflate the score with work nobody checked.
             var experimental = result.Test.UnlocksOption is not null;
-            var mark = experimental
-                ? (result.Passed ? "can" : "cannot")
-                : (result.Passed ? "ok" : "KO");
+            var mark = result.Test.ForReading
+                ? "--"
+                : experimental
+                    ? (result.Passed ? "can" : "cannot")
+                    : (result.Passed ? "ok" : "KO");
 
-            Write($"[{mark}] ", result.Passed
-                ? ConsoleColor.Green
-                : experimental ? ConsoleColor.Yellow : ConsoleColor.Red);
+            Write($"[{mark}] ", result.Test.ForReading
+                ? ConsoleColor.Cyan
+                : result.Passed
+                    ? ConsoleColor.Green
+                    : experimental ? ConsoleColor.Yellow : ConsoleColor.Red);
             // What the line cost, on the same row as its verdict. A model that passes every case
             // on the third try is not the same model as one that passes on the first, and the
             // difference is the wait a player sits through.
@@ -1069,8 +1101,15 @@ public static class CommandLine
             Write(cost + Environment.NewLine,
                   result.Accepted ? ConsoleColor.DarkGray : ConsoleColor.Red);
             Console.WriteLine($"       asked  : {result.Test.Source.ReplaceLineEndings(" / ")}");
-            Console.WriteLine($"       expect : {result.Test.Expectation}");
+            Console.WriteLine(result.Test.ForReading
+                ? $"       read   : {result.Test.ReadThisFor}"
+                : $"       expect : {result.Test.Expectation}");
             Console.WriteLine($"       answer : {result.Answer?.ReplaceLineEndings(" / ") ?? "(nothing)"}");
+
+            // The mark, when one was asked for. Never presented as a verdict — the word is there
+            // to say who produced it, and the caveat under the run says how far it goes.
+            if (result.SelfAssessment is { } assessment)
+                Console.WriteLine($"       self   : {assessment}/10 (self-assessment)");
 
             if (result.EchoedInstructions)
             {

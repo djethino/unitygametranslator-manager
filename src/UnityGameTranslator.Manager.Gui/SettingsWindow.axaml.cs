@@ -55,6 +55,9 @@ public sealed class SettingsWindow : Window
     private TextBlock _locality = null!;
     private ComboBox _aiModel = null!;
     private ComboBox _testInto = null!;
+
+    /// <summary>What the run will cost, said before the button rather than after it.</summary>
+    private TextBlock _testCost = null!;
     private ComboBox _testFrom = null!;
     private HotkeyEditor _hotkey = null!;
     private TextBlock _hotkeyProblem = null!;
@@ -693,8 +696,8 @@ public sealed class SettingsWindow : Window
 
         LanguageMark.Fill(_testInto, Languages.All());
 
-        _testInto.SelectionChanged += (_, _) => RefreshTestSources();
-        _testFrom.SelectionChanged += (_, _) => _testOutput.Children.Clear();
+        _testInto.SelectionChanged += (_, _) => { RefreshTestSources(); ShowTestCost(); };
+        _testFrom.SelectionChanged += (_, _) => { _testOutput.Children.Clear(); ShowTestCost(); };
 
         // Each picker carries its own word. They were laid out bare under a single "Test" label
         // with a caption naming them in order, which asked the reader to work out which was which
@@ -713,9 +716,21 @@ public sealed class SettingsWindow : Window
             Foreground = Brush("TextMuted"),
         });
 
+        // ⚠ Same shape as the line above on purpose — a second caption under the same row, not a
+        // control of its own. It says what the run costs BEFORE it is started: free on a local
+        // server, billed per request and per token on a paid one, and this run is not small.
+        _testCost = new TextBlock
+        {
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("TextMuted"),
+        };
+        _aiPanel.Children.Add(_testCost);
+
         // Defaulted once, when the panel is built, and never written anywhere: this pair aims the
         // test, it does not change the setting above.
         Select(_testInto, _store.ResolveTargetLanguage());
+        ShowTestCost();
         RefreshTestSources();
         _aiPanel.Children.Add(_modelNote);
         _aiPanel.Children.Add(_metrics);
@@ -1545,6 +1560,35 @@ public sealed class SettingsWindow : Window
     /// entirely. So the list is rebuilt whenever "Into" moves, and any earlier result is cleared:
     /// marks gathered for another pair are marks under the wrong heading.
     /// </summary>
+    /// <summary>
+    /// Says what pressing the button will spend, and updates as the pair of languages changes.
+    ///
+    /// 🔴 **Because this run is not free for everyone.** On a local server it costs a wait; on a
+    /// paid endpoint it is billed per request and per token, and a bench that quietly fires
+    /// several dozen requests is a bill nobody agreed to. So the figures come BEFORE the button,
+    /// not in a summary afterwards.
+    ///
+    /// ⚠ Counted from the cases themselves (ModelTestSuite.Cost), never written down here: add a
+    /// case and this follows on its own. A number typed into this screen would be right the day it
+    /// was typed and quietly wrong at the next commit.
+    ///
+    /// ⚠ The token figure is announced as approximate and has to stay that way — four characters
+    /// to a token holds for Latin scripts and not at all for Chinese, where it is closer to one.
+    /// </summary>
+    private void ShowTestCost()
+    {
+        var language = Tag(_testInto) ?? _store.ResolveTargetLanguage();
+        var cost = ModelTestSuite.Cost(language, sourceCode: Tag(_testFrom), rate: true);
+
+        var retries = cost.MostRequests > cost.Requests
+            ? $", up to {cost.MostRequests} if answers have to be asked again"
+            : "";
+
+        _testCost.Text = $"{cost.Cases} tests: {cost.Requests} requests{retries}, "
+                       + $"about {cost.AboutTokens:N0} tokens sent. "
+                       + "A paid service charges for every one of them.";
+    }
+
     private void RefreshTestSources()
     {
         _testOutput.Children.Clear();
@@ -1707,7 +1751,8 @@ public sealed class SettingsWindow : Window
             + "still refuses. The times below are what you would wait in game.",
             "TextMuted"));
 
-        await _probe.RunSuiteAsync(url, model, language, sourceCode: sourceCode, onResult: result =>
+        await _probe.RunSuiteAsync(url, model, language, sourceCode: sourceCode, rate: true,
+                                  onResult: result =>
         {
             Dispatcher.UIThread.Post(() =>
             {
@@ -1840,18 +1885,24 @@ public sealed class SettingsWindow : Window
     {
         var experimental = result.Test.UnlocksOption is not null;
 
-        var mark = experimental
-            ? (result.Passed ? "can" : "cannot")
-            : (result.Passed ? "ok" : "KO");
+        // A case with no verdict is a third outcome: nobody judged it. Neither mark would be
+        // true, and either would move a score that is meant to say something precise.
+        var mark = result.Test.ForReading
+            ? "read"
+            : experimental
+                ? (result.Passed ? "can" : "cannot")
+                : (result.Passed ? "ok" : "KO");
 
         // An experimental test never fails a model, so "cannot" must not be red — that would read
         // as a defect where there is none. But it was grey on both sides, and grey buried the one
         // outcome worth seeing: "can" means an option the mod keeps off can be switched on for
         // this model, and almost no model manages it. Green for the gain, amber for the closed
         // door — visible, and unmistakably not an error.
-        var colour = experimental
-            ? (result.Passed ? "StatusSuccess" : "StatusWarning")
-            : (result.Passed ? "StatusSuccess" : "StatusError");
+        var colour = result.Test.ForReading
+            ? "TextSecondary"
+            : experimental
+                ? (result.Passed ? "StatusSuccess" : "StatusWarning")
+                : (result.Passed ? "StatusSuccess" : "StatusError");
 
         var body = new StackPanel { Spacing = 2 };
 
@@ -1915,6 +1966,34 @@ public sealed class SettingsWindow : Window
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("TextSecondary"),
         });
+
+        // What the reader is being asked to look at. Only these cases carry it, and it is the
+        // whole of their content: there is no verdict to read instead.
+        if (result.Test.ReadThisFor is { } question)
+        {
+            body.Children.Add(new TextBlock
+            {
+                Text = question,
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextMuted"),
+            });
+        }
+
+        // ⚠ Called a self-assessment wherever it appears, and never placed where a verdict goes:
+        // the model marked its own work, in a language it may not have. See
+        // ModelTestResult.SelfAssessment — the number is worth something as a gap between two
+        // runs, very little on its own, and it never overrules the reader.
+        if (result.SelfAssessment is { } assessment)
+        {
+            body.Children.Add(new TextBlock
+            {
+                Text = $"self-assessment: {assessment}/10",
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextMuted"),
+            });
+        }
 
         if (experimental)
         {

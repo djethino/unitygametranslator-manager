@@ -30,6 +30,19 @@ public sealed record ModelTest(
     public string? ReadThisFor { get; init; }
 
     /// <summary>
+    /// The right answer here is a refusal, not a translation — so there is nothing to mark.
+    ///
+    /// ⚠ Asking for a mark anyway gets a confident 10 out of 10 for a fluent translation of a
+    /// sentence the model was supposed to leave alone, printed directly beneath a verdict saying
+    /// it failed. Two numbers contradicting each other on the same line teaches the reader to
+    /// trust neither.
+    ///
+    /// Stated rather than inferred from UnlocksOption: that field says an option can be switched
+    /// on, which is not the same fact and need not stay attached to a refusal for ever.
+    /// </summary>
+    public bool ExpectsRefusal { get; init; }
+
+    /// <summary>
     /// Whether a second try was ever possible for this line.
     ///
     /// ⚠ The mod asks again only when a structural check fails, and it only checks when the text
@@ -487,6 +500,67 @@ public static class ModelTestSuite
                 Expectation = "six numbered markers come back in their original order, none merged",
             },
 
+            // The cases below carry no verdict. See ModelTest.ForReading for why.
+            //
+            // ⚠ Their difficulty column says how hard the TEXT is, like every other case — not
+            // "read". The [read] marker already says there is no verdict, and printing the word
+            // twice on one row buys nothing while costing the column its meaning.
+
+            new("a paragraph with everything in it", "stress",
+                from.ParagraphFull,
+                Rules(from.ParagraphFull),
+                // ⚠ InOrder alone cannot judge this one: it demands each token EXACTLY once, and
+                // this text carries [!nl] three times — one after the heading, two for the blank
+                // line. Written that way it marked a perfect translation KO, every time, for a
+                // fault that was the test's own. The line breaks are therefore counted, and the
+                // markers that really are unique are checked for order among themselves.
+                (_, answer) => Occurrences(answer, "[!nl]") == 3
+                               && InOrder(answer,
+                                   "[!t*0]", "[!t*1]", "[!STR*0]",
+                                   "[!v*0]", "[!v*1]", "[!v*2]", "[!v*3]"))
+            {
+                // Kept beside "a paragraph, not a label" rather than replacing it: that one isolates
+                // distance, this one measures the pile-up, and one case doing both would not say
+                // which of the two broke.
+                Expectation = "tags, inserted text, four numbers and a blank line all survive together",
+            },
+
+            new("keeps the tone", "easy",
+                from.ToneMarked,
+                Rules(from.ToneMarked),
+                null)
+            {
+                ReadThisFor = "Is it still wry and spoken, or has it become a flat statement of fact?",
+            },
+
+            new("stays as short as the source", "easy",
+                from.PlainLine,
+                Rules(from.PlainLine),
+                null)
+            {
+                ReadThisFor = "Would this still fit on a button, or has it grown into a sentence?",
+            },
+
+            // The invented game, in two steps. Name alone first: anything in the answer that is
+            // neither in the source nor in a description is something the model made up.
+            new($"named a game it cannot know: {Fixtures.InventedGame}", "stress",
+                from.Paragraph,
+                Prompt(language, from.Paragraph, gameContext: null, from.Language,
+                       gameName: Fixtures.InventedGame),
+                null)
+            {
+                ReadThisFor = "Did naming a game nobody has heard of add anything that was not in the source?",
+            },
+
+            new($"...and described it: {Fixtures.InventedGameContext}", "stress",
+                from.Paragraph,
+                Prompt(language, from.Paragraph, Fixtures.InventedGameContext, from.Language,
+                       gameName: Fixtures.InventedGame),
+                null)
+            {
+                ReadThisFor = "Compared with the line above: did the description steer the wording, and for the better?",
+            },
+
             new("refuses another real language", "experimental",
                 foreign.PlainLine,
                 Prompt(language, foreign.PlainLine, gameContext, from.Language, strictSource: true, gameName: gameName),
@@ -497,6 +571,7 @@ public static class ModelTestSuite
                 // to every French player's model and ask it to refuse French while translating
                 // into French, and had done so quietly since the day it was written.
                 Expectation = $"answers exactly {SkipMarker} and nothing else",
+                ExpectsRefusal = true,
                 UnlocksOption = "strict_source",
 
                 Caveat = "It stays experimental whatever this test says: one sentence is not a "
@@ -517,61 +592,13 @@ public static class ModelTestSuite
                 (_, answer) => Answers.Read(answer) == AnswerKind.Skip)
             {
                 Expectation = $"answers exactly {SkipMarker}, rather than inventing a translation",
+                ExpectsRefusal = true,
                 UnlocksOption = "strict_source",
 
                 Caveat = "A model that translates this anyway is telling you what it does with a "
                        + "game's invented words and proper nouns: it rewrites them.",
             },
 
-            // Everything below has no verdict. See ModelTest.ForReading for why they exist at all.
-
-            new("a paragraph with everything in it", "stress",
-                from.ParagraphFull,
-                Rules(from.ParagraphFull),
-                (_, answer) => InOrder(answer,
-                    "[!t*0]", "[!t*1]", "[!nl]", "[!STR*0]", "[!v*0]", "[!v*1]", "[!v*2]", "[!v*3]"))
-            {
-                // Kept beside "a paragraph, not a label" rather than replacing it: that one isolates
-                // distance, this one measures the pile-up, and one case doing both would not say
-                // which of the two broke.
-                Expectation = "tags, inserted text, four numbers and a blank line all survive together",
-            },
-
-            new("keeps the tone", "read",
-                from.ToneMarked,
-                Rules(from.ToneMarked),
-                null)
-            {
-                ReadThisFor = "Is it still wry and spoken, or has it become a flat statement of fact?",
-            },
-
-            new("stays as short as the source", "read",
-                from.PlainLine,
-                Rules(from.PlainLine),
-                null)
-            {
-                ReadThisFor = "Would this still fit on a button, or has it grown into a sentence?",
-            },
-
-            // The invented game, in two steps. Name alone first: anything in the answer that is
-            // neither in the source nor in a description is something the model made up.
-            new($"named a game it cannot know: {Fixtures.InventedGame}", "read",
-                from.Paragraph,
-                Prompt(language, from.Paragraph, gameContext: null, from.Language,
-                       gameName: Fixtures.InventedGame),
-                null)
-            {
-                ReadThisFor = "Did naming a game nobody has heard of add anything that was not in the source?",
-            },
-
-            new($"...and described it: {Fixtures.InventedGameContext}", "read",
-                from.Paragraph,
-                Prompt(language, from.Paragraph, Fixtures.InventedGameContext, from.Language,
-                       gameName: Fixtures.InventedGame),
-                null)
-            {
-                ReadThisFor = "Compared with the line above: did the description steer the wording, and for the better?",
-            },
         };
 
         // Removed rather than failed. Asking a script with no capitals to answer in capitals is

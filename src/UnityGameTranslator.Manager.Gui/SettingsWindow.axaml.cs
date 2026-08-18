@@ -58,6 +58,15 @@ public sealed class SettingsWindow : Window
 
     /// <summary>What the run will cost, said before the button rather than after it.</summary>
     private TextBlock _testCost = null!;
+
+    /// <summary>
+    /// Set while a run is going, so the same button can stop it.
+    ///
+    /// 🔴 The counterpart of the cost line above: a screen that says "this will be forty requests
+    /// on a paid service" and then offers no way out has told the reader about a decision they
+    /// cannot take back. Null when nothing is running.
+    /// </summary>
+    private CancellationTokenSource? _suiteStop;
     private ComboBox _testFrom = null!;
     private HotkeyEditor _hotkey = null!;
     private TextBlock _hotkeyProblem = null!;
@@ -614,7 +623,17 @@ public sealed class SettingsWindow : Window
             // neither.
             VerticalAlignment = VerticalAlignment.Bottom,
         };
-        _testButton.Click += async (_, _) => await RunSuiteAsync();
+        _testButton.Click += async (_, _) =>
+        {
+            // One button, two verbs — never a second control that is greyed out half the time.
+            if (_suiteStop is { } running)
+            {
+                running.Cancel();
+                return;
+            }
+
+            await RunSuiteAsync();
+        };
 
         _testOutput = new StackPanel { Spacing = 6 };
 
@@ -1695,7 +1714,8 @@ public sealed class SettingsWindow : Window
         var url = _aiUrl.Text?.Trim();
         if (model is null || string.IsNullOrWhiteSpace(url)) return;
 
-        _testButton.IsEnabled = false;
+        _suiteStop = new CancellationTokenSource();
+        _testButton.Content = "Stop tests";
         _testOutput.Children.Clear();
 
         // Sits at the bottom of the list, which is where the next result will appear. A model
@@ -1709,28 +1729,8 @@ public sealed class SettingsWindow : Window
         _metrics.IsVisible = true;
         _metrics.Text = "Measuring...";
 
-        var trial = await _probe.MeasureAsync(url, model);
-        var gpu = trial.OnGpu switch
-        {
-            true => "in use",
-            false => "NOT used - running on the processor",
-            _ => "unknown, this server does not report it",
-        };
-
-        _metrics.Text = trial.Succeeded
-            ? $"First line {trial.Elapsed.TotalSeconds:F1}s "
-              + (trial.FirstRunWasCold ? "(the model had to be loaded)" : "(it was already loaded)")
-              + $" - then {(trial.WarmElapsed ?? trial.Elapsed).TotalSeconds:F1}s per line"
-              + $" - {trial.VramText} of video memory - GPU {gpu}."
-              + Environment.NewLine
-              + "Measured with no game running. In play the model shares the graphics card, so expect slower."
-            : $"Could not measure ({trial.Detail}).";
-
-        // The pair the reader chose on this screen, not the setting being edited: this test asks
-        // "what would this model do", and that question is theirs to aim.
-        var language = Tag(_testInto) ?? _store.ResolveTargetLanguage();
-        var sourceCode = Tag(_testFrom);
-
+        // Declared out here: the summary below the try reads them, and a cancellation must
+        // still leave them in a state that can be reported.
         var passed = 0;
         var required = 0;
         var echoed = 0;
@@ -1738,76 +1738,125 @@ public sealed class SettingsWindow : Window
         var experimentalStarted = false;
         var outcomes = new List<ModelTestResult>();
 
-        // Known before the first request, which is the point: "3 of 9" tells someone there is
-        // more coming. A bare spinner would not.
-        var total = ModelTestSuite.Build(language, sourceCode: sourceCode).Count;
-        waiting.Message = $"Running test 1 of {total}...";
-
-        var from = ModelTestSuite.SourceFor(language, sourceCode);
-
-        _testOutput.Children.Add(Note(
-            $"Translating from {from.Language} into {Languages.NameOf(language)}, the way the mod "
-            + "does it: up to three attempts on a line it refuses, and the line left alone if it "
-            + "still refuses. The times below are what you would wait in game.",
-            "TextMuted"));
-
-        await _probe.RunSuiteAsync(url, model, language, sourceCode: sourceCode, rate: true,
-                                  onResult: result =>
+        // ⚠ try/finally, not a defensive catch: the button has to come back whatever
+        // happens, and a cancellation is a path the reader ASKED for rather than a fault
+        // to swallow — it is reported on screen just below.
+        try
         {
-            Dispatcher.UIThread.Post(() =>
+            // The token reaches the measurement too, or "Stop" would sit unanswered through the four
+            // requests this makes before the suite even starts.
+            var trial = await _probe.MeasureAsync(url, model, _suiteStop.Token);
+            var gpu = trial.OnGpu switch
             {
-                if (result.Test.UnlocksOption is null)
+                true => "in use",
+                false => "NOT used - running on the processor",
+                _ => "unknown, this server does not report it",
+            };
+
+            _metrics.Text = trial.Succeeded
+                ? $"First line {trial.Elapsed.TotalSeconds:F1}s "
+                  + (trial.FirstRunWasCold ? "(the model had to be loaded)" : "(it was already loaded)")
+                  + $" - then {(trial.WarmElapsed ?? trial.Elapsed).TotalSeconds:F1}s per line"
+                  + $" - {trial.VramText} of video memory - GPU {gpu}."
+                  + Environment.NewLine
+                  + "Measured with no game running. In play the model shares the graphics card, so expect slower."
+                : $"Could not measure ({trial.Detail}).";
+
+            // The pair the reader chose on this screen, not the setting being edited: this test asks
+            // "what would this model do", and that question is theirs to aim.
+            var language = Tag(_testInto) ?? _store.ResolveTargetLanguage();
+            var sourceCode = Tag(_testFrom);
+
+
+            // Known before the first request, which is the point: "3 of 9" tells someone there is
+            // more coming. A bare spinner would not.
+            var total = ModelTestSuite.Build(language, sourceCode: sourceCode).Count;
+            waiting.Message = $"Running test 1 of {total}...";
+
+            var from = ModelTestSuite.SourceFor(language, sourceCode);
+
+            _testOutput.Children.Add(Note(
+                $"Translating from {from.Language} into {Languages.NameOf(language)}, the way the mod "
+                + "does it: up to three attempts on a line it refuses, and the line left alone if it "
+                + "still refuses. The times below are what you would wait in game.",
+                "TextMuted"));
+
+            await _probe.RunSuiteAsync(url, model, language, ct: _suiteStop.Token,
+                                      sourceCode: sourceCode, rate: true,
+                                      onResult: result =>
+            {
+                Dispatcher.UIThread.Post(() =>
                 {
-                    required++;
-                    if (result.Passed) passed++;
-                }
-                if (result.EchoedInstructions) echoed++;
-
-                outcomes.Add(result);
-                done++;
-
-                // The experimental cases are a different subject and had nothing to say so: they
-                // sat in the same list, in the same shape, as though a "cannot" there counted
-                // against the model. It does not — the mod ships that option off — and the score
-                // above does not include them. A heading is the cheapest way to stop the reader
-                // adding them up with the rest.
-                if (result.Test.UnlocksOption is not null && !experimentalStarted)
-                {
-                    experimentalStarted = true;
-
-                    _testOutput.Children.Insert(_testOutput.Children.Count - 1, new TextBlock
+                    if (result.Test.UnlocksOption is null && !result.Test.ForReading)
                     {
-                        Text = "EXPERIMENTAL — not counted above",
-                        FontSize = 10,
-                        FontWeight = FontWeight.SemiBold,
-                        Foreground = Brush("TextMuted"),
-                        Margin = new Thickness(0, 10, 0, 0),
-                    });
+                        required++;
+                        if (result.Passed) passed++;
+                    }
+                    if (result.EchoedInstructions) echoed++;
 
-                    _testOutput.Children.Insert(_testOutput.Children.Count - 1, new TextBlock
+                    outcomes.Add(result);
+                    done++;
+
+                    // The experimental cases are a different subject and had nothing to say so: they
+                    // sat in the same list, in the same shape, as though a "cannot" there counted
+                    // against the model. It does not — the mod ships that option off — and the score
+                    // above does not include them. A heading is the cheapest way to stop the reader
+                    // adding them up with the rest.
+                    if (result.Test.UnlocksOption is not null && !experimentalStarted)
                     {
-                        Text = "These two decide one thing only: whether the mod's 'strict_source' "
-                             + "option would work with this model. It is off by default, so a "
-                             + "\"cannot\" here is not a defect — it means that option stays off. "
-                             + "Both must pass: refusing invented words while still translating "
-                             + "other real languages is not what the option promises.",
-                        FontSize = 11,
-                        TextWrapping = TextWrapping.Wrap,
-                        Foreground = Brush("TextMuted"),
-                        Margin = new Thickness(0, 0, 0, 4),
-                    });
-                }
+                        experimentalStarted = true;
 
-                // Inserted above the gear so the gear stays last: results accumulate, and the
-                // thing that says "more is coming" keeps sitting where the next one will land.
-                _testOutput.Children.Insert(_testOutput.Children.Count - 1, TestRow(result));
+                        _testOutput.Children.Insert(_testOutput.Children.Count - 1, new TextBlock
+                        {
+                            Text = "EXPERIMENTAL — not counted above",
+                            FontSize = 10,
+                            FontWeight = FontWeight.SemiBold,
+                            Foreground = Brush("TextMuted"),
+                            Margin = new Thickness(0, 10, 0, 0),
+                        });
 
-                waiting.Message = done < total
-                    ? $"Running test {done + 1} of {total}..."
-                    : "Finishing...";
-                waiting.IsVisible = done < total;
+                        _testOutput.Children.Insert(_testOutput.Children.Count - 1, new TextBlock
+                        {
+                            Text = "These two decide one thing only: whether the mod's 'strict_source' "
+                                 + "option would work with this model. It is off by default, so a "
+                                 + "\"cannot\" here is not a defect — it means that option stays off. "
+                                 + "Both must pass: refusing invented words while still translating "
+                                 + "other real languages is not what the option promises.",
+                            FontSize = 11,
+                            TextWrapping = TextWrapping.Wrap,
+                            Foreground = Brush("TextMuted"),
+                            Margin = new Thickness(0, 0, 0, 4),
+                        });
+                    }
+
+                    // Inserted above the gear so the gear stays last: results accumulate, and the
+                    // thing that says "more is coming" keeps sitting where the next one will land.
+                    _testOutput.Children.Insert(_testOutput.Children.Count - 1, TestRow(result));
+
+                    waiting.Message = done < total
+                        ? $"Running test {done + 1} of {total}..."
+                        : "Finishing...";
+                    waiting.IsVisible = done < total;
+                });
             });
-        });
+        }
+        catch (OperationCanceledException)
+        {
+            _testOutput.Children.Add(Note("Stopped. What is above is what was measured "
+                                          + "before you stopped it.", "StatusInfo"));
+            return;
+        }
+        finally
+        {
+            // The spinner is normally taken down by the summary below; on a cancellation there is
+            // no summary, and a gear left turning says the run is still going.
+            _testOutput.Children.Remove(waiting);
+
+            _suiteStop?.Dispose();
+            _suiteStop = null;
+            _testButton.Content = "Test this model";
+            _testButton.IsEnabled = _aiModel.SelectedItem is not null;
+        }
 
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
@@ -1820,6 +1869,27 @@ public sealed class SettingsWindow : Window
                 Margin = new Thickness(0, 8, 0, 0),
                 Foreground = Brush(passed == required ? "StatusSuccess" : "StatusWarning"),
             });
+
+            // ⚠ Its own line, below the score and in the muted colour the marks themselves use —
+            // never folded into the figure above. That one counts instructions a machine verified;
+            // this one is the model grading its own work, in a language it may not even have. Two
+            // different kinds of claim, and merging them would give the weaker one the authority
+            // of the stronger. See ModelTestResult.SelfAssessment.
+            var marks = outcomes.Where(r => r.SelfAssessment is not null)
+                                .Select(r => r.SelfAssessment!.Value)
+                                .ToList();
+
+            if (marks.Count > 0)
+            {
+                _testOutput.Children.Add(new TextBlock
+                {
+                    Text = $"Self-assessment: {marks.Average():F1}/10 on average, over "
+                         + $"{marks.Count} answers. The model grading itself, not a verdict.",
+                    FontSize = 11,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = Brush("TextMuted"),
+                });
+            }
 
             // Said next to the mark, never inside it: a line that passed after the mod corrected
             // something does work in a game, and the model still got it wrong first. Two models
@@ -1898,8 +1968,10 @@ public sealed class SettingsWindow : Window
         // outcome worth seeing: "can" means an option the mod keeps off can be switched on for
         // this model, and almost no model manages it. Green for the gain, amber for the closed
         // door — visible, and unmistakably not an error.
+        // Blue, the colour this program already uses for something worth knowing that is not a
+        // judgement — never the grey of a disabled thing, which would read as "skipped".
         var colour = result.Test.ForReading
-            ? "TextSecondary"
+            ? "StatusInfo"
             : experimental
                 ? (result.Passed ? "StatusSuccess" : "StatusWarning")
                 : (result.Passed ? "StatusSuccess" : "StatusError");

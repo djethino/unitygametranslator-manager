@@ -1058,8 +1058,14 @@ public static class CommandLine
             }
             else
             {
-                total++;
-                if (result.Passed) passed++;
+                // ⚠ A case nobody judged is not a case that failed. Counted here, four unjudged
+                // cases turned a perfect 16/16 into "16/20" — a model marked down for work the
+                // tool deliberately declined to grade.
+                if (!result.Test.ForReading)
+                {
+                    total++;
+                    if (result.Passed) passed++;
+                }
             }
 
             // Same vocabulary as the window, and for the same reason: an experimental test that
@@ -1069,8 +1075,10 @@ public static class CommandLine
             // A case with no verdict is a third thing again: nobody judged it, so it is neither.
             // Counting it as a pass would inflate the score with work nobody checked.
             var experimental = result.Test.UnlocksOption is not null;
+            // The same word the window shows. "--" said nothing, and the two front ends have to
+            // name the same fact the same way.
             var mark = result.Test.ForReading
-                ? "--"
+                ? "read"
                 : experimental
                     ? (result.Passed ? "can" : "cannot")
                     : (result.Passed ? "ok" : "KO");
@@ -1123,6 +1131,18 @@ public static class CommandLine
         });
 
         Console.WriteLine($"{passed}/{total} required instructions followed.");
+
+        // The marks, gathered into one figure. Kept apart from the score above and named for what
+        // it is: the model grading itself. See ModelTestResult.SelfAssessment for how far it goes.
+        var marks = outcomes.Where(o => o.SelfAssessment is not null)
+                            .Select(o => o.SelfAssessment!.Value)
+                            .ToList();
+
+        if (marks.Count > 0)
+        {
+            Console.WriteLine($"Self-assessment: {marks.Average():F1}/10 on average, over "
+                              + $"{marks.Count} answer(s) — the model grading its own work, not a verdict.");
+        }
 
         var helped = outcomes.Count(r => r.Test.UnlocksOption is null && r.PassedWithHelp);
         if (helped > 0)

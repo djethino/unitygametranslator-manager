@@ -339,10 +339,15 @@ public sealed class AiServerProbe
                 // The second pass. Asked of every usable answer, including the ones with no
                 // verdict — those are precisely where a mark is worth the most, since nothing
                 // else says anything about them at all.
-                if (rate && attempt.Accepted)
+                // Not marked when the expected answer is a refusal: see ModelTest.ExpectsRefusal.
+                if (rate && attempt.Accepted && !test.ExpectsRefusal)
                 {
+                    // ⚠ The NAME, not the code. Build() converts it and this did not, so the
+                    // judge was being asked "is this written in fr?" — a question a small model
+                    // answers far less reliably than "is this written in French?".
                     var mark = await RateAsync(baseUrl, judge ?? model, sourceLanguageName,
-                                               targetLanguage, test.Source, translation, ct)
+                                               Languages.NameOf(targetLanguage),
+                                               test.Source, translation, ct)
                         .ConfigureAwait(false);
 
                     result = result with { SelfAssessment = mark };
@@ -549,6 +554,15 @@ public sealed class AiServerProbe
             Numbers = source.Contains("[!v*", StringComparison.Ordinal),
             Variables = source.Contains("[!STR*", StringComparison.Ordinal),
         };
+
+        // ⚠ Nothing to judge, so nothing is asked. A line made only of markers — the shape behind
+        // every coloured counter in a HUD — leaves the judge two identical strings it has just
+        // been told to ignore, and it answers 0 for want of anything to say. That zero would sit
+        // in the column looking like a verdict on a translation that was in fact perfect.
+        var bare = System.Text.RegularExpressions.Regex.Replace(
+            source, @"\[!(nl|t\*\d+|v\*\d+|STR\*\d+)\]", "");
+
+        if (!bare.Any(char.IsLetter)) return null;
 
         var systemPrompt = Prompts.ForRating(sourceLanguage, targetLanguage, markers);
 

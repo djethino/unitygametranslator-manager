@@ -1,4 +1,5 @@
 using System.Net;
+using UnityGameTranslator.Common;
 
 namespace UnityGameTranslator.Manager.Core.Net;
 
@@ -123,25 +124,41 @@ public static class Http
     /// </summary>
     public static string Describe(Exception exception, string what)
     {
-        var reason = exception switch
-        {
-            TaskCanceledException => "it took too long to answer",
-            HttpRequestException { StatusCode: not null } http
-                => $"the server answered {(int)http.StatusCode}",
-            HttpRequestException => "the connection could not be made",
-            _ => exception.Message,
-        };
+        // The request DID arrive — the server answered, it simply answered badly. Not a
+        // connection problem, so none of the advice below applies to it.
+        if (exception is HttpRequestException { StatusCode: not null } http)
+            return $"Could not reach {what}: the server answered {(int)http.StatusCode}. "
+                 + "Nothing was lost — you can try again.";
 
-        var route = (Proxy.Mode ?? "default").Trim().ToLowerInvariant() switch
-        {
-            "custom" => $"Requests go through the proxy you configured ({Proxy.Url}).",
-            "none" => "Requests bypass any proxy, as you asked.",
-            "system" => "Requests follow the system proxy settings.",
-            _ => "If you are behind a company proxy, set it in the network settings.",
-        };
+        // 🔴 The cause comes from the shared library, not from a guess made here. This used to
+        // say "a firewall or antivirus blocking this program is the usual cause" whatever had
+        // happened — which is right for a blocked socket and WRONG for a name that does not
+        // resolve or a server that is down, the two cases where it sends someone hunting through
+        // their antivirus for a problem that is not there. The socket error code says which it is.
+        // Same wording as the mod, on purpose: one failure must not read as two different things.
+        var problem = Connectivity.Classify(exception);
+        var cause = Connectivity.Explain(problem) ?? exception.Message;
 
-        return $"Could not reach {what}: {reason}. "
-             + $"A firewall or antivirus blocking this program is the usual cause. {route} "
-             + "Nothing was lost — you can try again.";
+        // Only where a proxy could plausibly be in the way. With no network at all it is noise.
+        var route = problem == ConnectionProblem.NoNetwork ? null : RouteNote();
+
+        // The guess is still worth making when nothing could be named — that is what a guess is for.
+        var hint = problem == ConnectionProblem.Unknown
+            ? "A firewall or antivirus blocking this program is the usual cause."
+            : null;
+
+        return string.Join(" ", new[]
+        {
+            $"Could not reach {what}.", cause, hint, route, "Nothing was lost — you can try again.",
+        }.Where(part => !string.IsNullOrEmpty(part)));
     }
+
+    /// <summary>Where requests actually go, so the person knows what to check.</summary>
+    private static string RouteNote() => (Proxy.Mode ?? "default").Trim().ToLowerInvariant() switch
+    {
+        "custom" => $"Requests go through the proxy you configured ({Proxy.Url}).",
+        "none" => "Requests bypass any proxy, as you asked.",
+        "system" => "Requests follow the system proxy settings.",
+        _ => "If you are behind a company proxy, set it in the network settings.",
+    };
 }

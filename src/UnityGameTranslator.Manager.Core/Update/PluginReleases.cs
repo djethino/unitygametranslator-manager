@@ -1,4 +1,6 @@
-using UnityGameTranslator.Manager.Core.Install;
+﻿using UnityGameTranslator.Manager.Core.Install;
+
+using UnityGameTranslator.Common;
 
 namespace UnityGameTranslator.Manager.Core.Update;
 
@@ -79,9 +81,9 @@ public sealed class PluginReleases
             catch (Exception ex)
             {
                 _release = null;
-                LastError = ex is HttpRequestException
-                    ? "the release list could not be reached"
-                    : $"{ex.GetType().Name}: {ex.Message}";
+                // The short form: this is read inside "could not check for a newer version (…)",
+                // where a two-sentence explanation would be unreadable.
+                LastError = Connectivity.Summarize(ex);
             }
 
             _answered = channel;

@@ -1,4 +1,4 @@
-using System.Net.Http;
+﻿using System.Net.Http;
 using System.Text.Json;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Net;
@@ -85,7 +85,7 @@ public sealed class CatalogApiClient
         }
         catch (Exception ex)
         {
-            LastError = $"{ex.GetType().Name}: {ex.Message}";
+            LastError = Net.Http.Describe(ex, "the community site");
             return Array.Empty<OnlineTranslation>();
         }
     }
@@ -142,7 +142,7 @@ public sealed class CatalogApiClient
         }
         catch (Exception ex)
         {
-            LastError = $"{ex.GetType().Name}: {ex.Message}";
+            LastError = Net.Http.Describe(ex, "the community site");
             return Array.Empty<OnlineTranslation>();
         }
     }
@@ -199,7 +199,7 @@ public sealed class CatalogApiClient
         }
         catch (Exception ex)
         {
-            error = $"{ex.GetType().Name}: {ex.Message}";
+            error = Net.Http.Describe(ex, "the community site");
             return Array.Empty<OnlineTranslation>();
         }
     }

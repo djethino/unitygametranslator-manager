@@ -1,4 +1,5 @@
 using System.Text.Json;
+using UnityGameTranslator.Common;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Net;
 
@@ -173,11 +174,11 @@ public sealed class AccountLineages
                     BranchesWithWork = Number(entry, "branches_with_work"),
                     LinesAvailable = Number(entry, "lines_available"),
 
-                    // What those lines ARE. Null on a server too old to break the total down — the
-                    // screens then show the total alone, exactly as they did before.
-                    LinesNew = Number(entry, "lines_new"),
-                    LinesReworded = Number(entry, "lines_reworded"),
-                    LinesValidated = Number(entry, "lines_validated"),
+                    // The other axis, and what it is made of. Absent on a server too old to say —
+                    // the screens then show the total alone, exactly as they did before.
+                    LinesToReview = Waiting(entry) is { } w ? Number(w, "review") : null,
+                    LinesNew = Waiting(entry) is { } n ? Tally(n, "new") : default,
+                    LinesDiffering = Waiting(entry) is { } d ? Tally(d, "differing") : default,
 
                     MainMissing = Flag(entry, "main_missing"),
                     AcceptsBranches = Flag(entry, "accepts_branches"),
@@ -205,6 +206,39 @@ public sealed class AccountLineages
         element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()
             : null;
+
+    /// <summary>
+    /// The block describing what a review holds, or null on a server that predates it.
+    ///
+    /// ⚠ One object rather than eight loose numbers: the two axes and their four letters are read
+    /// together and printed together, and a field added later would otherwise be a ninth name to
+    /// remember at both ends.
+    /// </summary>
+    private static JsonElement? Waiting(JsonElement entry) =>
+        entry.TryGetProperty("lines_waiting", out var block) && block.ValueKind == JsonValueKind.Object
+            ? block
+            : null;
+
+    /// <summary>
+    /// One side of the review — "new" or "differing" — read into the socle's own shape.
+    ///
+    /// ⚠ A missing letter is zero here, unlike a missing figure elsewhere: the server sends only
+    /// the tags it counted, so an absent "S" means no refusals rather than an unknown number. What
+    /// stands for "we do not know" is the whole block being absent.
+    /// </summary>
+    private static TagTally Tally(JsonElement waiting, string side)
+    {
+        if (!waiting.TryGetProperty(side, out var tags) || tags.ValueKind != JsonValueKind.Object)
+            return default;
+
+        return new TagTally
+        {
+            Human = Number(tags, "H") ?? 0,
+            Validated = Number(tags, "V") ?? 0,
+            Machine = Number(tags, "A") ?? 0,
+            Skipped = Number(tags, "S") ?? 0,
+        };
+    }
 
     private static int? Number(JsonElement element, string name) =>
         element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number

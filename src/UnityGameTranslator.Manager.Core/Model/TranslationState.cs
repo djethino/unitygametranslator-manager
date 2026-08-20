@@ -239,24 +239,31 @@ public sealed class LineagePosition
     public int? LinesAvailable { get; init; }
 
     /// <summary>
-    /// What those lines are: text the Main does not have, text somebody retranslated, and lines it
-    /// already held that somebody read and stood behind. They sum to <see cref="LinesAvailable"/>.
+    /// How many rows need a DECISION — lines the Main does not hold, plus lines both sides hold
+    /// differently, the ones it will keep its own on included.
     ///
-    /// 🔴 **The third is the one a total hides, and often the bulk of the work.** Reading a machine
-    /// line and marking it validated changes no words at all — it is exactly what the site asks
-    /// contributors for, and "38 lines" cannot tell it apart from 38 new sentences. Which of the
-    /// three is waiting is what decides whether a review is worth an evening.
+    /// 🔴 **Not <see cref="LinesAvailable"/>, and neither follows from the other.** That one is
+    /// what would be taken; this is what has to be looked at. On the lineage this was measured
+    /// against, 56 and 38 — the 18 in between being two machine translations that differ, where the
+    /// Main keeps its own. One answers "how long will this take", the other "is there anything here
+    /// for me", and a card showing a single figure cannot answer both.
     ///
-    /// ⚠ Null on a server too old to break the total down. Unknown is not zero: the words come from
+    /// ⚠ Null on a server too old to say. Unknown is not zero: the words come from
     /// <see cref="Common.Contributions.WhatKindOfWork"/>, which says nothing rather than a zero.
     /// </summary>
-    public int? LinesNew { get; init; }
+    public int? LinesToReview { get; init; }
 
-    /// <inheritdoc cref="LinesNew"/>
-    public int? LinesReworded { get; init; }
+    /// <summary>
+    /// Of those rows, the ones the Main does not hold at all, by the contribution's tag.
+    ///
+    /// 🔴 **The tag is what says whether an evening is worth it.** 21 new lines all written by hand
+    /// is not the proposition 21 machine lines are, and a count alone tells the two apart from
+    /// neither.
+    /// </summary>
+    public TagTally LinesNew { get; init; }
 
-    /// <inheritdoc cref="LinesNew"/>
-    public int? LinesValidated { get; init; }
+    /// <summary>Of those rows, the ones both sides hold differently, by the contribution's tag.</summary>
+    public TagTally LinesDiffering { get; init; }
 
     /// <summary>
     /// A branch whose Main is gone. Null means unknown, never "the Main is fine": an older site
@@ -323,10 +330,11 @@ public sealed class LineagePosition
         var said = "This translation is yours, and there is work waiting: "
                  + Contributions.WhatIsWaiting(waiting, LinesAvailable);
 
-        // ⚠ Appended rather than folded into the sentence above: WhatIsWaiting answers "how much",
-        // and this answers "of what". Two questions, and the second is the one that decides whether
-        // to open the review at all — so it must not be buried inside a clause about the first.
-        var kinds = Contributions.WhatKindOfWork(LinesNew, LinesReworded, LinesValidated);
+        // ⚠ Appended rather than folded into the sentence above: WhatIsWaiting answers "how much is
+        // there for me", and this answers "how much is there to look at, and what is it". Two
+        // questions, and the second decides whether the review gets opened at all — so it must not
+        // be buried inside a clause about the first.
+        var kinds = Contributions.WhatKindOfWork(LinesToReview, LinesNew, LinesDiffering);
 
         return kinds.Length == 0 ? said : said + " — " + kinds + ".";
     }

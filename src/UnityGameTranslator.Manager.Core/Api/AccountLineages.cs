@@ -166,6 +166,13 @@ public sealed class AccountLineages
                     Uuid = uuid,
                     IsMain = string.Equals(role, "main", StringComparison.OrdinalIgnoreCase),
                     BranchesCount = Number(entry, "branches_count"),
+
+                    // ⚠ What is actually WAITING: contributions not been through, holding
+                    // something. Null on a server too old to say, and null is unknown — a screen
+                    // falls back to the raw count rather than announcing that nothing waits.
+                    BranchesWithWork = Number(entry, "branches_with_work"),
+                    LinesAvailable = Number(entry, "lines_available"),
+
                     MainMissing = Flag(entry, "main_missing"),
                     AcceptsBranches = Flag(entry, "accepts_branches"),
                     BranchFrozen = Flag(entry, "branch_frozen"),

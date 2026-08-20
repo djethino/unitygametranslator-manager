@@ -214,10 +214,29 @@ public sealed class LineagePosition
     public required bool IsMain { get; init; }
 
     /// <summary>
-    /// Contributions waiting on this Main. Null on a branch — a branch has no branches to answer
-    /// about, which is a different thing from having none.
+    /// How many people contribute to this Main. Null on a branch — a branch has no branches to
+    /// answer about, which is a different thing from having none.
+    ///
+    /// ⚠ **Not what a screen shows.** See <see cref="BranchesWithWork"/>: this counts everybody,
+    /// including a contributor who took the file months ago and never came back.
     /// </summary>
     public int? BranchesCount { get; init; }
+
+    /// <summary>
+    /// What is actually waiting: contributions their Main has not been through in their current
+    /// state, AND that are holding something a merge would offer.
+    ///
+    /// 🔴 This is the number a row or a badge shows. Either filter dropped produces noise — an
+    /// unreviewed contribution offering nothing sends somebody to an empty screen, and work already
+    /// arbitrated comes back for ever until the number means nothing at all.
+    ///
+    /// ⚠ Null on a server too old to say. Unknown is not zero, so a screen falls back to the raw
+    /// count rather than announcing that nothing is waiting.
+    /// </summary>
+    public int? BranchesWithWork { get; init; }
+
+    /// <summary>How many lines those contributions hold, counted once each. Null if unknown.</summary>
+    public int? LinesAvailable { get; init; }
 
     /// <summary>
     /// A branch whose Main is gone. Null means unknown, never "the Main is fine": an older site
@@ -273,13 +292,16 @@ public sealed class LineagePosition
                 : $"This is your branch: your changes are reviewed by {mainOwner}.";
         }
 
-        var waiting = BranchesCount ?? 0;
+        // ⚠ What is WAITING, not how many people contribute. Falls back to the raw count only when
+        // the site could not answer: unknown is not zero, and saying "you are its Main" full stop
+        // would tell somebody their contributions are settled when nobody knows.
+        var waiting = BranchesWithWork ?? BranchesCount ?? 0;
 
-        return waiting == 0
-            ? "This translation is yours: you are its Main."
-            : $"This translation is yours, and {waiting} "
-              + (waiting == 1 ? "contribution is" : "contributions are")
-              + " waiting for your review.";
+        if (waiting == 0) return "This translation is yours: you are its Main.";
+
+        // The socle's words, so this sentence and the mod's card say one thing.
+        return "This translation is yours, and there is work waiting: "
+             + Contributions.WhatIsWaiting(waiting, LinesAvailable);
     }
 
     /// <summary>

@@ -78,7 +78,8 @@ public static class TranslationBadges
         return Strip(Badges.For(
             publication: Publications.Of(hereOnDisk: true, onTheSite: mine is not null),
             isMain: mine?.IsMain,
-            branchesWaiting: mine?.BranchesCount,
+            branchesWaiting: mine?.BranchesWithWork ?? mine?.BranchesCount,
+            linesAvailable: mine?.LinesAvailable,
             mainMissing: mine?.MainMissing == true,
             sync: report.Sync,
             stage: counts.Stage,

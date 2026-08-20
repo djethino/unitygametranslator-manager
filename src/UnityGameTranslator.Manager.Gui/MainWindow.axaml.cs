@@ -725,7 +725,7 @@ public partial class MainWindow : Window
         // identical from here, and announcing "nobody is waiting" on that basis would be a guess
         // dressed as a fact — the reason AccountLineages exposes Known at all.
         var waiting = _lineages.Known
-            ? _lineages.For(report.LocalTranslation?.Uuid)?.BranchesCount
+            ? _lineages.For(report.LocalTranslation?.Uuid)?.BranchesWithWork ?? _lineages.For(report.LocalTranslation?.Uuid)?.BranchesCount
             : null;
 
         return (SituationReader.Read(report, language, checkedOnline, waiting,
@@ -2778,7 +2778,7 @@ public partial class MainWindow : Window
         var game = report.Game;
 
         var waiting = _lineages.Known
-            ? _lineages.For(report.LocalTranslation?.Uuid)?.BranchesCount
+            ? _lineages.For(report.LocalTranslation?.Uuid)?.BranchesWithWork ?? _lineages.For(report.LocalTranslation?.Uuid)?.BranchesCount
             : null;
 
         _situations[game.Path] = SituationReader.Read(
@@ -3928,7 +3928,8 @@ public partial class MainWindow : Window
 
         if (position.IsMain)
         {
-            var waiting = position.BranchesCount ?? 0;
+            // What is waiting, not how many contribute — same rule as Describe() reads.
+            var waiting = position.BranchesWithWork ?? position.BranchesCount ?? 0;
 
             yield return new TextBlock
             {

@@ -514,7 +514,7 @@ public sealed class TranslationsWindow : Window
         // Said on the card that carries them, rather than only on the game card: a Main owner
         // scrolling a list of six translations should not have to work out which one has people
         // waiting behind it.
-        if (isYours && lineage is { BranchesCount: > 0 })
+        if (isYours && (lineage?.BranchesWithWork ?? lineage?.BranchesCount) > 0)
         {
             body.Children.Add(new TextBlock
             {

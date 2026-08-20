@@ -9373,7 +9373,13 @@ public partial class MainWindow : Window
         // they end up with a translation they never agreed to — and the rule that made it (best
         // ranked in your language) is worth naming, because it is a defensible rule rather than
         // a coin toss.
-        if (preference.TranslationId is null)
+        //
+        // 🔴 **Only when this game holds nothing.** "Chosen for you" answers "which one goes in",
+        // which is a question a game with no translation has and a game already running one does
+        // not: there, the file on disk IS the answer, and announcing a pick made by ranking reads
+        // as if the tool were about to swap what is installed. On a game belonging to another
+        // account it was worse still — a choice announced on somebody else's setup.
+        if (preference.TranslationId is null && report.LocalTranslation is null)
         {
             yield return new TextBlock
             {
@@ -9476,21 +9482,12 @@ public partial class MainWindow : Window
         act.Click += async (_, _) => await TakeSelectedTranslationAsync(report, picked, replacing);
         yield return act;
 
-        // ⚠ A greyed button with no reason is how somebody concludes the tool is broken. The
-        // workbench above says it too, and that repetition is deliberate: this is a different part
-        // of the screen, reached by a different question, and the eye that lands here needs the
-        // answer here.
-        if (!mayWrite)
-        {
-            yield return new TextBlock
-            {
-                Text = Standings.ExplainRefusal(standing.Standing, toServer: false),
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Avalonia.Thickness(0, 4, 0, 0),
-                Foreground = Brush("StatusWarning"),
-            };
-        }
+        // ⚠ **The refusal is NOT repeated here.** It was, for one build: a greyed button deserves
+        // its reason, and this is a different part of the screen. But both live in the SAME card,
+        // visible at once — so it printed the same sentence twice, inches apart. Repeating an
+        // explanation is right when the eye comes back to it at another moment; it is noise when
+        // the two copies share a frame. The workbench above says it, first, before everything it
+        // governs — this button included.
     }
 
     /// <summary>

@@ -160,11 +160,26 @@ public sealed class GameModSettingsForm
     /// </summary>
     private readonly bool _installed;
 
+    /// <summary>
+    /// Why this form may not write, when it may not — and null in the ordinary case.
+    ///
+    /// 🔴 **A game's configuration is one file for the whole computer**, while each Windows account
+    /// keeps its own Manager answers in its own folder. So a game set up under another account is
+    /// read here and not written, exactly as its translation is. The form still shows everything:
+    /// seeing how somebody else's game is configured costs nothing and answers the question people
+    /// actually come here with.
+    ///
+    /// ⚠ Carried in rather than worked out here. This component knows about forms and files; who
+    /// somebody is signed in as is the window's business, and it is already answered there once.
+    /// </summary>
+    private readonly string? _refusal;
+
     public GameModSettingsForm(IPlatform platform, InstallerSettings defaults,
                                GameConfigSnapshot snapshot, GameModOverrides? stored,
                                string? languagePinnedTo = null,
                                bool languagePinnedPublished = false,
-                               bool installed = true)
+                               bool installed = true,
+                               string? refusal = null)
     {
         _platform = platform;
         _defaults = defaults;
@@ -174,6 +189,7 @@ public sealed class GameModSettingsForm
         _languagePinnedTo = languagePinnedTo;
         _languagePinnedPublished = languagePinnedPublished;
         _installed = installed;
+        _refusal = refusal;
     }
 
     /// <summary>What the person has answered for this game, ready to be stored.</summary>
@@ -944,6 +960,13 @@ public sealed class GameModSettingsForm
         ToolTip.SetTip(_apply, count > 0
             ? $"Writes these {count} setting(s) into the game."
             : "This game already holds every setting answered here.");
+
+        // Last, and it overrules both: a count of pending answers says nothing about whether they
+        // may be written here. Greyed with its reason, never hidden — see the note above.
+        if (_refusal is not { } why) return;
+
+        _apply.IsEnabled = false;
+        ToolTip.SetTip(_apply, why);
     }
 
     // ---------------------------------------------------------------- layout

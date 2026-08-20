@@ -106,6 +106,39 @@ public sealed record ServerStanding(ServerStandingKind Kind, string? GameAccount
 
         _ => null,
     };
+
+    /// <summary>
+    /// The same refusal, for the acts that are not about the translation: the mod's settings, its
+    /// in-game key, and removing what is installed.
+    ///
+    /// ⚠ A second text rather than the one above, because <see cref="Reason"/> answers "why can
+    /// this translation not be touched" and speaks of publishing, contributing and credit — none of
+    /// which is what somebody reads under a greyed "Uninstall". The ground is different too, and it
+    /// is worth naming: a game's configuration, its loader and its plugin are ONE set of files for
+    /// the whole computer, while each Windows account keeps its own Manager choices in its own
+    /// folder. So two people share a game and share nothing that decides what to do with it.
+    /// </summary>
+    public string? SetupRefusal => Kind switch
+    {
+        ServerStandingKind.OtherAccount =>
+            $"This game is set up under the account \"{GameAccount}\", and this window is signed in "
+            + $"as \"{SignedInAs}\". Its settings and installed files are shared by everyone using "
+            + $"this computer. Sign in as \"{GameAccount}\" to change them, or change them in the "
+            + "game.",
+
+        ServerStandingKind.OtherServer =>
+            $"This game is set up against a different site ({GameAccount}). Its configuration "
+            + "belongs there, and this window talks to another server.",
+
+        // Nobody signed in here, and the game belongs to somebody. Whose it is decides — the same
+        // reading as Standing above, and it must stay the same one.
+        ServerStandingKind.SignedOut when GameAccount is not null =>
+            $"This game is set up under the account \"{GameAccount}\" and this window is signed in "
+            + "as nobody. Its settings and installed files are shared by everyone using this "
+            + $"computer. Sign in as \"{GameAccount}\" to change them, or change them in the game.",
+
+        _ => null,
+    };
 }
 
 /// <summary>

@@ -3097,17 +3097,9 @@ public partial class MainWindow : Window
         }
         else
         {
-            question.Children.Add(new TextBlock
-            {
-                Text = TranslationBackendLabel(_settings.Current) is not null
-                    ? "Yours would be the first: play with the mod on and it translates as it "
-                      + "meets text, then you can publish it for everyone else."
-                    : "You can still make one without any translator: the mod captures the game's "
-                      + "text as you play, and its live editor lets you write the lines yourself.",
-                FontSize = 12,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = Brush("TextSecondary"),
-            });
+            // ⚠ The same words as the other tab, from one place. They were written twice, in two
+            // registers, for a fact that does not change with the tab it is read on.
+            foreach (var control in NothingPublishedYet(report)) question.Children.Add(control);
         }
 
         yield return Card(question);
@@ -3366,29 +3358,42 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// The translation chosen in the list but not yet in the game, or null when none is waiting.
+    /// The translation this game would receive and has not got — chosen from the list, or proposed
+    /// by ranking — and null when there is nothing to put there.
     ///
-    /// ⚠ **Deliberate choices only.** Without a stored TranslationId the tool is merely proposing
-    /// the best-ranked one in the reader's language, and calling that "pending" would invent a
-    /// decision nobody took. What is proposed is already said above, in the muted register.
+    /// 🔴 **Proposals count too, and that is a change.** It used to answer for deliberate choices
+    /// only, which meant the OTHER tab needed a second button for the proposed one — a second door
+    /// to <see cref="TakeSelectedTranslationAsync"/>, with its own label and its own guards, and it
+    /// was the door that had no account check. One act, one entry point: the difference between a
+    /// choice and a proposal belongs in the WORDS, not in a separate control.
     ///
-    /// ⚠ Silent while the chosen one IS the one installed: a card claiming something is pending
-    /// when the game already runs it teaches people to ignore the notice.
+    /// 🔴 **Silent when this game already runs that very translation**, whether or not the server
+    /// has moved since. Bringing down a newer version of the file already here is the workbench's
+    /// act — "Download what changed online…", which weighs the merge and carries its own scope mark.
+    /// Offering it here as well put two buttons three inches apart doing one thing.
     /// </summary>
     private OnlineTranslation? TranslationWaiting(GameReport report)
     {
-        if (_preferences.Read(report.Game.Path).TranslationId is not { } chosenId) return null;
+        var chosenId = _preferences.Read(report.Game.Path).TranslationId;
 
-        var picked = report.OnlineTranslations.FirstOrDefault(t => t.Id == chosenId)
-                     ?? (report.MatchingOnline is { } main && main.Id == chosenId ? main : null);
+        // The named one first, including when it is this game's own Main — which is not in the
+        // list of alternatives. Failing that, the pick the one-click reads, so the card and the
+        // bar at the bottom cannot describe different intentions.
+        var picked = chosenId is { } id
+            ? report.OnlineTranslations.FirstOrDefault(t => t.Id == id)
+              ?? (report.MatchingOnline is { } main && main.Id == id ? main : null)
+            : PickTranslation(report);
 
         if (picked is null) return null;
 
-        return report.LocalTranslation is not null
-               && TranslationOffers.For(report, picked) == TranslationOffer.AlreadyInPlace
-            ? null
-            : picked;
+        // ⚠ This covers AlreadyInPlace and more: the same lineage with the server ahead reports
+        // FreeToTake, and that is precisely the case the workbench owns.
+        return report.MatchingOnline is { } here && here.Id == picked.Id ? null : picked;
     }
+
+    /// <summary>Whether the waiting translation was named by somebody, rather than ranked for them.</summary>
+    private bool WasChosenDeliberately(GameReport report, OnlineTranslation picked) =>
+        _preferences.Read(report.Game.Path).TranslationId == picked.Id;
 
     /// <summary>
     /// Apply and Undo, for the right-hand side of the line where translations are chosen.
@@ -3409,12 +3414,35 @@ public partial class MainWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
         };
 
-        var ready = report.InstalledPluginVersion is not null && !_running.IsRunning(report.Game);
+        var offer = TranslationOffers.For(report, picked);
+        var deliberate = WasChosenDeliberately(report, picked);
+
+        // ⚠ **"Apply (N)" only for something somebody chose.** It is the norm for a PENDING change,
+        // and a proposal nobody made is not pending — so the act is named instead. The three labels
+        // came from the second entry point this replaces, where they were already right.
+        var label = (offer, deliberate) switch
+        {
+            (_, true) => "Apply (1)",
+            (TranslationOffer.ReplacesWork or TranslationOffer.ReplacesChoice, _)
+                => "Replace it with this one...",
+            (_, _) when report.LocalTranslation is not null => "Update the translation",
+            _ => "Download this translation",
+        };
+
+        // 🔴 **Taking a translation OVERWRITES this game's file, so it obeys the account rule.**
+        //
+        // The guards here were "the mod is installed" and "the game is not running". On a game set
+        // up under somebody else's account every control of the workbench is greyed — Edit, Publish,
+        // Merge, Remove — and this one, which replaces the very same file, stayed live.
+        var standing = ServerIdentity.For(_settings.Current, report.SiteAccount, BuildInfo.ApiBaseUrl);
+        var ready = report.InstalledPluginVersion is not null
+                    && !_running.IsRunning(report.Game)
+                    && standing.CanWriteLocally;
 
         // ⚠ Marked like every other action that writes. Apply is not a lesser verb because it
         // carries a count: it puts a file into a game, and where a write lands is the first thing
         // this interface promises to say. Local — the site holds whatever it held before.
-        var apply = ScopeMark.Marked(EditSide.Local, "Apply (1)", ready);
+        var apply = ScopeMark.Marked(EditSide.Local, label, ready);
         apply.Classes.Add("primary");
 
         // No greyed control without words — the rule this program holds everywhere.
@@ -3423,14 +3451,18 @@ public partial class MainWindow : Window
             : _running.IsRunning(report.Game)
                 ? "This game is open. The mod rewrites its translation file from memory while it "
                   + "runs, so anything written now would be replaced without warning."
-                : $"Puts {picked.SourceLanguage} → {picked.TargetLanguage} by "
-                  + $"{People.MentionOf(picked.Author, _settings.Current.ApiUser)} into this game.");
+                : standing.Reason
+                  ?? $"Puts {picked.SourceLanguage} → {picked.TargetLanguage} by "
+                     + $"{People.MentionOf(picked.Author, _settings.Current.ApiUser)} into this game.");
 
-        var replacing = TranslationOffers.For(report, picked)
-            is TranslationOffer.ReplacesWork or TranslationOffer.ReplacesChoice;
+        var replacing = offer is TranslationOffer.ReplacesWork or TranslationOffer.ReplacesChoice;
 
         apply.Click += async (_, _) => await TakeSelectedTranslationAsync(report, picked, replacing);
         row.Children.Add(apply);
+
+        // ⚠ Only beside a real choice. Undo forgets a stored TranslationId, and there is none to
+        // forget behind a proposal — a button that does nothing is worse than no button.
+        if (!deliberate) return row;
 
         var undo = new Button { Content = "Undo", FontSize = 12 };
         ToolTip.SetTip(undo, "Forgets this choice. The game keeps whatever it runs now.");
@@ -3469,15 +3501,24 @@ public partial class MainWindow : Window
         // What identifies a translation to somebody about to install it: the pair of languages,
         // who made it, and how big it is — the three the list they chose from showed.
         var size = picked.LineCount > 0 ? $", {picked.LineCount} lines" : "";
+        var author = People.MentionOf(picked.Author, _settings.Current.ApiUser);
+
+        // 🔴 **A choice and a proposal are not announced the same way.** Presenting a pick made by
+        // ranking as "Chosen" is how somebody ends up with a translation they never agreed to — and
+        // the rule behind the proposal is worth naming, because it is a defensible rule rather than
+        // a coin toss. The way to overrule it is named too: the list is one button away.
+        var deliberate = WasChosenDeliberately(report, picked);
 
         lines.Children.Add(new TextBlock
         {
-            Text = $"Chosen: {picked.SourceLanguage} → {picked.TargetLanguage} by "
-                 + $"{People.MentionOf(picked.Author, _settings.Current.ApiUser)}{size}. "
-                 + "Not in the game yet.",
+            Text = deliberate
+                ? $"Chosen: {picked.SourceLanguage} → {picked.TargetLanguage} by {author}{size}. "
+                  + "Not in the game yet."
+                : $"Chosen for you: the best-ranked one in {picked.TargetLanguage ?? "your language"}, "
+                  + $"by {author}{size}. Open the list to pick another.",
             FontSize = 11,
             TextWrapping = TextWrapping.Wrap,
-            Foreground = Brush("StatusInfo"),
+            Foreground = Brush(deliberate ? "StatusInfo" : "TextMuted"),
         });
 
         if (Cost(report) is { } cost)
@@ -4063,50 +4104,57 @@ public partial class MainWindow : Window
 
         foreach (var line in LineageNotes(report)) panel.Children.Add(line);
 
-        // Which one the button at the bottom would bring down, named here rather than only in the
-        // band: somebody scrolling this card is asking exactly that question, and the answer is
-        // held two hundred pixels below where they are looking.
+        // 🔴 **Choosing and applying share a line — the same shape as the other tab, and it was not.**
         //
-        // Silent once a file is in place and matches it — the line above already says what this
-        // game runs, and repeating it as an intention would read as a pending change.
-        if (_takeTranslation
-            && PickTranslation(report) is { } picked
-            && !(report.MatchingOnline is { } current && current.Id == picked.Id))
-        {
-            var deliberate = _preferences.Read(report.Game.Path).TranslationId == picked.Id;
-
-            panel.Children.Add(new TextBlock
-            {
-                Text = deliberate
-                    ? $"Chosen for this game: {picked.SourceLanguage} → {picked.TargetLanguage} by {People.MentionOf(picked.Author, _settings.Current.ApiUser)}."
-                    : $"Setting this game up would take: {picked.SourceLanguage} → {picked.TargetLanguage} "
-                      + $"by {People.MentionOf(picked.Author, _settings.Current.ApiUser)} — the best ranked in your language.",
-                FontSize = 12,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = Brush(deliberate ? "StatusSuccess" : "TextSecondary"),
-                Margin = new Avalonia.Thickness(0, 6, 0, 0),
-            });
-        }
-
-        // One button rather than a list of names: choosing between translations needs what they
-        // are made of, who reviewed them and which language they came FROM — none of which fits
-        // on a line here, and all of which decides the choice.
+        // This card used to read: a sentence naming what would be taken, a button to open the list,
+        // the workbench's six buttons, and THEN the verb that applies the choice. Two halves of one
+        // gesture with a third thing wedged between them — and the verb was a second door into
+        // TakeSelectedTranslationAsync, the one door with no account check on it.
+        //
+        // ⚠ The note goes ABOVE the row: what is waiting has to be readable before the verb that
+        // acts on it. Somebody whose eye lands on the button and has to look elsewhere to learn
+        // what it applies has already been asked to press something unnamed.
         var offered = report.OnlineTranslations.Count;
-        if (offered > 0)
+
+        if (offered == 0)
         {
+            foreach (var control in NothingPublishedYet(report)) panel.Children.Add(control);
+        }
+        else
+        {
+            if (PendingTranslationNote(report) is { } waitingNote) panel.Children.Add(waitingNote);
+
+            // One button rather than a list of names: choosing between translations needs what they
+            // are made of, who reviewed them and which language they came FROM — none of which fits
+            // on a line here, and all of which decides the choice.
             var browse = new Button
             {
                 Content = offered == 1 ? "See the translation" : $"See the {offered} translations",
                 FontSize = 12,
-                Margin = new Avalonia.Thickness(0, 6, 0, 0),
                 HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
             };
+
             browse.Click += async (_, _) => await OpenTranslationsAsync(report);
-            panel.Children.Add(browse);
+
+            var choiceRow = new Grid
+            {
+                ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
+                Margin = new Avalonia.Thickness(0, 6, 0, 0),
+            };
+
+            Grid.SetColumn(browse, 0);
+            choiceRow.Children.Add(browse);
+
+            if (PendingTranslationActions(report) is { } waiting)
+            {
+                Grid.SetColumn(waiting, 2);
+                choiceRow.Children.Add(waiting);
+            }
+
+            panel.Children.Add(choiceRow);
         }
 
         foreach (var control in TranslationWorkbench(report)) panel.Children.Add(control);
-        foreach (var control in TranslationVerb(report)) panel.Children.Add(control);
         foreach (var control in TranslationPlanning(report)) panel.Children.Add(control);
 
         // Counted over everything published, not over the alternatives. Excluding the one already
@@ -5917,7 +5965,12 @@ public partial class MainWindow : Window
         if (report.InstalledLoader is { InstalledByUs: true }
             && ReceiptStore.Read(report.Game.Path) is not null)
         {
-            var remove = new Button { Content = "Uninstall...", IsEnabled = !running };
+            // ⚠ Removing is refused on somebody else's game, and the loader is where that bites
+            // hardest: the receipt naming what we installed sits in the GAME folder, shared by the
+            // whole computer, so this button was perfectly willing to take away what another
+            // account had put there.
+            var remove = new Button { Content = "Uninstall..." };
+            remove.IsEnabled = !running && MaySetUp(report, remove);
 
             remove.Click += async (_, _) => await RunUninstallAsync(report, fromLoaderSection: true);
             loaderButtons.Children.Add(remove);
@@ -5978,6 +6031,46 @@ public partial class MainWindow : Window
 
         return panel;
     }
+
+    /// <summary>
+    /// 🔴 **May this window change how this game is SET UP — its configuration, its in-game key,
+    /// what is installed in it?**
+    ///
+    /// The account rule, asked about the other half of the game folder. It already guarded the
+    /// translation; everything else was open, and the ground is the same: a game's config.json, its
+    /// loader and its plugin are ONE set of files for the whole computer, and the receipt of what
+    /// was installed lives in the game folder rather than here — so the person who set it up is not
+    /// necessarily the person in front of this window. Each Windows account keeps its own Manager
+    /// choices in its own folder; none of them owns the game.
+    ///
+    /// ⚠ **Installing and updating are deliberately NOT refused by this.** Putting our own software
+    /// in place, or a newer build of it, takes nothing away from anybody — and leaving a shared
+    /// machine unable to update the mod because the wrong person is signed in would be a refusal
+    /// nobody benefits from. What such an install must not do is WRITE SETTINGS, which is a
+    /// different switch: <see cref="BuildPlan"/>'s <c>settings</c> parameter, already used by the
+    /// loader button for exactly this reason.
+    ///
+    /// ⚠ It also carries the refusal to the control, because a greyed button with no words is the
+    /// thing this program refuses everywhere else.
+    /// </summary>
+    private bool MaySetUp(GameReport report, Control? explain = null)
+    {
+        var standing = ServerIdentity.For(_settings.Current, report.SiteAccount, BuildInfo.ApiBaseUrl);
+        if (standing.CanWriteLocally) return true;
+
+        if (explain is not null && standing.SetupRefusal is { } why) ToolTip.SetTip(explain, why);
+        return false;
+    }
+
+    /// <summary>
+    /// The same answer as <see cref="MaySetUp"/>, for the one caller that cannot be handed a
+    /// control: the settings form owns its own Apply and is told why rather than shown a button.
+    /// </summary>
+    private string? SetupRefusal(GameReport report) =>
+        ServerIdentity.For(_settings.Current, report.SiteAccount, BuildInfo.ApiBaseUrl) is
+            { CanWriteLocally: false } standing
+            ? standing.SetupRefusal
+            : null;
 
     /// <summary>
     /// The mod itself: its version, what to do about it, and the settings this game carries.
@@ -6043,7 +6136,8 @@ public partial class MainWindow : Window
         if (new UninstallEngine(_platform, _catalog).Available(report.Game) is
             { RemovePlugin: true } or { RemoveLoader: true })
         {
-            var uninstall = new Button { Content = "Uninstall...", IsEnabled = !running };
+            var uninstall = new Button { Content = "Uninstall..." };
+            uninstall.IsEnabled = !running && MaySetUp(report, uninstall);
             uninstall.Click += async (_, _) => await RunUninstallAsync(report);
             buttons.Children.Add(uninstall);
         }
@@ -6068,12 +6162,17 @@ public partial class MainWindow : Window
             // button. The count and the reason belong in the tooltip, which is where somebody
             // looks once the label has told them which button this is.
             var putBack = ScopeMark.Marked(EditSide.Local, $"Restore files ({missing.Count})",
-                                           enabled: !running);
+                                           enabled: false);
 
             ToolTip.SetTip(putBack,
                 $"{missing.Count} file(s) this game had before UnityGameTranslator Manager "
                 + "replaced them are missing — its previous mod loader, most often. This writes "
                 + "them back. Nothing is deleted: anything already in place is left alone.");
+
+            // ⚠ Set AFTER the tooltip above, so a refusal replaces the explanation rather than
+            // being replaced by it. Writing another account's mod loader back into their game is
+            // changing their setup as surely as removing ours would.
+            putBack.IsEnabled = !running && MaySetUp(report, putBack);
 
             putBack.Click += async (_, _) => await RunPutBackAsync(report);
             buttons.Children.Add(putBack);
@@ -6374,6 +6473,10 @@ public partial class MainWindow : Window
                 $"The mod opens its Setup screen the next time {report.Game.Name} starts, and asks "
                 + "its own questions there. Nothing is changed now.");
 
+            // ⚠ It edits this game's configuration — one key, but a shared file, and the person who
+            // meets that wizard next is whoever launches the game, not whoever pressed this.
+            again.IsEnabled = MaySetUp(report, again);
+
             again.Click += async (_, _) =>
             {
                 if (InstalledDescriptor(report) is not { } loader) return;
@@ -6525,7 +6628,8 @@ public partial class MainWindow : Window
 
         var form = new GameModSettingsForm(_platform, _settings.Current, snapshot, stored,
                                            pinned.Language, pinned.Published,
-                                           installed: snapshot.IsConfigured);
+                                           installed: snapshot.IsConfigured,
+                                           refusal: SetupRefusal(report));
 
         // 🔴 **Stored as they are typed, and only where nothing else would store them.** Before the
         // mod is installed there is no Apply — see the note on the form's `installed` — so this is
@@ -6870,9 +6974,13 @@ public partial class MainWindow : Window
                 Content = "Apply Mod defaults to this game",
                 FontSize = 12,
                 HorizontalAlignment = HorizontalAlignment.Left,
-                IsEnabled = !_running.IsRunning(report.Game),
                 Margin = new Avalonia.Thickness(0, 6, 0, 0),
             };
+
+            // ⚠ Mod defaults are this Windows account's answers; the game's configuration is shared
+            // by the whole computer. Writing one into the other on somebody else's game is the
+            // plainest form of the thing this rule exists to stop.
+            apply.IsEnabled = !_running.IsRunning(report.Game) && MaySetUp(report, apply);
 
             apply.Click += async (_, _) => await ApplyDefaultsAsync(report, descriptor, preference);
             body.Children.Add(apply);
@@ -7184,7 +7292,6 @@ public partial class MainWindow : Window
 
             // ⚠ SetLabel, never Content: the button holds its scope marks beside the text.
             ScopeMark.SetLabel(write, pending ? "Apply (1)" : "Apply");
-            write.IsEnabled = pending && !_running.IsRunning(report.Game) && !takesDefault;
 
             ToolTip.SetTip(write, !pending
                 ? "This game already uses that key."
@@ -7193,6 +7300,11 @@ public partial class MainWindow : Window
                     : _running.IsRunning(report.Game)
                         ? $"{report.Game.Name} is running, so its files are locked."
                         : "Writes this key into the game, and remembers it for a later install.");
+
+            // Last, so it has the final word on the tooltip as well as on the state: this writes
+            // into a config.json shared by every account on this computer.
+            var mine = MaySetUp(report, write);
+            write.IsEnabled = pending && !_running.IsRunning(report.Game) && !takesDefault && mine;
         }
 
         // 🔴 **THE REASON — one line, and it has to be TRUE.** It was a paragraph, then it was
@@ -7770,6 +7882,10 @@ public partial class MainWindow : Window
     /// </summary>
     private IEnumerable<OneClickStep> OneClickSteps(GameReport report, GamePreference preference)
     {
+        // 🔴 **Asked once, for the two steps that write into somebody else's game.** Installing is
+        // not among them — see MaySetUp, which says why the line is drawn there.
+        var mayChangeThisGame = MaySetUp(report);
+
         if (report.InstalledLoader is null && report.RecommendedLoader is { } loader)
             yield return new(OneClickAct.InstallLoader, $"install {loader.Display}");
         else if (report.LoaderUpdateOffered)
@@ -7795,7 +7911,13 @@ public partial class MainWindow : Window
         // to write. Left as it was, the one path a first-time player takes wrote nothing anywhere.
         // Same condition as BuildPlan, and it has to stay the same one — this list is the promise
         // and that method is the act.
-        if (_settings.Current.Reviewed
+        //
+        // 🔴 **And never on a game set up under another account, whatever the box says.** The box
+        // answers "should this game follow Mod defaults" — a preference held per Windows account,
+        // about a config.json shared by the whole computer. Ticked by default, it was enough on its
+        // own to rewrite somebody else's language, model and key from this account's answers.
+        if (mayChangeThisGame
+            && _settings.Current.Reviewed
             && (!GameConfig(report).IsConfigured || preference.UsesModDefaults(GameConfig(report)))
             && SettingsWouldChangeAnything(report, preference))
         {
@@ -7812,10 +7934,7 @@ public partial class MainWindow : Window
         // ⚠ Only the translation step is dropped. Installing the loader or the mod puts OUR software
         // in place and takes nothing away from anybody; what must not happen is writing over the
         // work or the settings another user of this computer put there.
-        var mayWriteHere = ServerIdentity.For(_settings.Current, report.SiteAccount,
-                                              BuildInfo.ApiBaseUrl).CanWriteLocally;
-
-        if (!mayWriteHere || !_takeTranslation || PickTranslation(report) is not { } chosen) yield break;
+        if (!mayChangeThisGame || !_takeTranslation || PickTranslation(report) is not { } chosen) yield break;
 
         // Worded by what it would DO, not by what exists. The three are different acts and the
         // person is about to authorise one of them with a single click.
@@ -8035,7 +8154,11 @@ public partial class MainWindow : Window
 
         try
         {
-            var plan = BuildPlan(report, preference, loader: true, plugin: true);
+            // Same switch as the mod's own button, and for the same reason: on a game set up by
+            // another account the loader and the plugin go in, its configuration does not.
+            var plan = BuildPlan(report, preference, loader: true, plugin: true,
+                                 settings: MaySetUp(report));
+
             if (plan is null)
             {
                 Busy(false, "Ready.");
@@ -8918,8 +9041,15 @@ public partial class MainWindow : Window
 
         // The loader still comes along when there is none — a plugin without one loads in no game,
         // and refusing here would mean the mod's own button could not work on a fresh game.
+        //
+        // 🔴 **On somebody else's game the files go in and the settings do not.** Updating the mod
+        // is a service to whoever plays it; rewriting their language, their model and their key
+        // while doing so is not, and it happened silently — an update wrote the whole configuration
+        // from THIS account's answers. `settings: false` is the switch the loader button has used
+        // since the day an "install the loader" wrote a config.json it had no business writing.
         var plan = BuildPlan(report, preference,
-            loader: report.InstalledLoader is null, plugin: true);
+            loader: report.InstalledLoader is null, plugin: true,
+            settings: MaySetUp(report));
 
         await RunInstallAsync(report, new InstallEngine(_platform, _catalog), plan);
     }
@@ -9269,11 +9399,14 @@ public partial class MainWindow : Window
 
             // ⚠ SetLabel, never Content: the button holds its scope marks beside the text.
             ScopeMark.SetLabel(apply, count > 0 ? $"Apply ({count})" : "Apply");
-            apply.IsEnabled = count > 0 && !_running.IsRunning(report.Game);
 
             ToolTip.SetTip(apply, count > 0
                 ? $"Writes these {count} setting(s) into the game."
                 : "Nothing has been changed here.");
+
+            // Last, so the refusal replaces the tooltip above rather than the reverse.
+            var mine = MaySetUp(report, apply);
+            apply.IsEnabled = count > 0 && !_running.IsRunning(report.Game) && mine;
         }
 
         apply.Click += async (_, _) =>
@@ -9331,177 +9464,44 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// What the card offers to do about translations: which one is selected, whether the game is
-    /// running it, and the one button that settles the difference.
+    /// The one thing a card about translations has to say when there are none: that this is exactly
+    /// how the mod is meant to be used, and that a translation gets made by playing.
     ///
-    /// ⚠ The translations window selects; this acts. Taking a file used to happen there too, so
-    /// the same screen meant two things depending on the game behind it and a replacement was
-    /// weighed in two places. Here we can see what the game already carries, which is the only
-    /// place that comparison exists.
+    /// ⚠ **Shared by both tabs**, which had written the same fact twice in two registers. It also
+    /// used to sit at the head of the block that carried the second Apply button — see
+    /// <see cref="TranslationWaiting"/> for why that button is gone: information about what exists
+    /// and the verb that acts on it are two different things, and only one of them may be doubled.
     /// </summary>
-    private IEnumerable<Control> TranslationVerb(GameReport report)
+    private IEnumerable<Control> NothingPublishedYet(GameReport report)
     {
-        // Nothing published for this game. The most important thing this card can say, and it said
-        // nothing at all: somebody was left looking at an empty section with no idea that the mod
-        // is meant to be used exactly like this.
-        if (report.OnlineTranslations.Count == 0)
+        yield return new TextBlock
         {
-            yield return new TextBlock
-            {
-                Text = "No translation has been published for this game yet.",
-                FontSize = 13,
-                FontWeight = FontWeight.SemiBold,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Avalonia.Thickness(0, 6, 0, 0),
-                Foreground = Brush("TextPrimary"),
-            };
+            Text = "No translation has been published for this game yet.",
+            FontSize = 13,
+            FontWeight = FontWeight.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Avalonia.Thickness(0, 6, 0, 0),
+            Foreground = Brush("TextPrimary"),
+        };
 
-            // ⚠ Conditional on purpose. Somebody with a translator set up needs one sentence;
-            // somebody without one needs to know the mod is still usable, or they will conclude
-            // it is not for them and stop here.
-            yield return new TextBlock
-            {
-                Text = TranslationBackendLabel(_settings.Current) is not null
-                    ? "Yours would be the first: play with the mod on and it translates as it "
-                      + "meets text, then you can publish it for everyone else."
-                    : "You can still make one without any translator. The mod captures the game's "
-                      + "text as you play, and its live editor lets you write the lines yourself, "
-                      + "in game, one at a time — that is how a translation is made by hand.",
-                FontSize = 12,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Avalonia.Thickness(0, 2, 0, 0),
-                Foreground = Brush("TextSecondary"),
-            };
-
-            yield break;
-        }
-
-        if (PickTranslation(report) is not { } picked) yield break;
-
-        var preference = _preferences.Read(report.Game.Path);
-        var offer = TranslationOffers.For(report, picked);
-        var author = People.MentionOf(picked.Author, _settings.Current.ApiUser);
-
-        // ⚠ Said whenever nobody chose it. A pick made for somebody, presented as theirs, is how
-        // they end up with a translation they never agreed to — and the rule that made it (best
-        // ranked in your language) is worth naming, because it is a defensible rule rather than
-        // a coin toss.
-        //
-        // 🔴 **Only when this game holds nothing.** "Chosen for you" answers "which one goes in",
-        // which is a question a game with no translation has and a game already running one does
-        // not: there, the file on disk IS the answer, and announcing a pick made by ranking reads
-        // as if the tool were about to swap what is installed. On a game belonging to another
-        // account it was worse still — a choice announced on somebody else's setup.
-        if (preference.TranslationId is null && report.LocalTranslation is null)
+        // ⚠ Conditional on purpose. Somebody with a translator set up needs one sentence;
+        // somebody without one needs to know the mod is still usable, or they will conclude
+        // it is not for them and stop here.
+        yield return new TextBlock
         {
-            yield return new TextBlock
-            {
-                Text = $"Chosen for you: the best-ranked one in {picked.TargetLanguage ?? "your language"}, "
-                     + $"by {author}. Open the list to pick another.",
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Avalonia.Thickness(0, 6, 0, 0),
-                Foreground = Brush("TextMuted"),
-            };
-        }
-
-        // Nothing to do about it: the file here IS this translation, unchanged.
-        if (offer == TranslationOffer.AlreadyInPlace)
-        {
-            yield return new TextBlock
-            {
-                Text = $"This game is running it — the one by {author}, up to date.",
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Avalonia.Thickness(0, 6, 0, 0),
-                Foreground = Brush("StatusSuccess"),
-            };
-
-            yield break;
-        }
-
-        // ⚠ The dependency, stated rather than enforced by a dead button: without the mod there is
-        // nowhere to write. The selection is kept and the one-click carries it out.
-        if (report.InstalledPluginVersion is null)
-        {
-            yield return new TextBlock
-            {
-                Text = $"Selected: the one by {author}. It goes in when the mod is installed — "
-                     + "the button at the bottom does both.",
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Avalonia.Thickness(0, 6, 0, 0),
-                Foreground = Brush("TextMuted"),
-            };
-
-            yield break;
-        }
-
-        var replacing = offer is TranslationOffer.ReplacesWork or TranslationOffer.ReplacesChoice;
-
-        // Said before the button, not only in the dialogue it opens: somebody has to know the game
-        // is not running the translation they picked WITHOUT having to press anything to find out.
-        if (replacing)
-        {
-            yield return new TextBlock
-            {
-                Text = $"This game is not running the one you selected. Yours is by {author}.",
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Avalonia.Thickness(0, 6, 0, 0),
-                Foreground = Brush("StatusWarning"),
-            };
-        }
-
-        // ⚠ **The same act wears the same word on both tabs.** Home says Apply (1) — the norm for
-        // every pending change in this program — so this one cannot say "Replace it with this
-        // one..." for the identical click: somebody who saw both would have no way to tell whether
-        // they are two steps or one.
-        //
-        // The other two labels stay: without a deliberate choice there is nothing "pending" to
-        // apply, and naming the act is then the clearest thing to do.
-        var deliberate = preference.TranslationId == picked.Id;
-
-        var actLabel = offer switch
-            {
-                TranslationOffer.ReplacesWork or TranslationOffer.ReplacesChoice when deliberate
-                    => "Apply (1)",
-                TranslationOffer.ReplacesWork or TranslationOffer.ReplacesChoice
-                    => "Replace it with this one...",
-                _ when deliberate => "Apply (1)",
-                _ when report.LocalTranslation is not null => "Update the translation",
-                _ => "Download this translation",
-            };
-
-        // 🔴 **Taking a translation OVERWRITES this game's file, so it obeys the account rule.**
-        //
-        // The only guard here was "the game is not running". On a game set up under somebody else's
-        // account every control of the workbench above is greyed — Edit, Publish, Merge, Remove —
-        // and this button, which replaces the very same file, stayed live: one click away from
-        // destroying another user's translation, from the tab that offers to help.
-        //
-        // ⚠ Same rule as CanWriteLocally elsewhere: writing the game's own file needs no server,
-        // and that is exactly why it needed guarding. Reported 2026-08-20 on a game belonging to
-        // another account.
-        var standing = ServerIdentity.For(_settings.Current, report.SiteAccount, BuildInfo.ApiBaseUrl);
-        var mayWrite = standing.CanWriteLocally;
-
-        var act = ScopeMark.Marked(EditSide.Local, actLabel,
-                                   mayWrite && !_running.IsRunning(report.Game));
-        act.Classes.Add("primary");
-        act.HorizontalAlignment = HorizontalAlignment.Left;
-        act.Margin = new Avalonia.Thickness(0, 6, 0, 0);
-
-        act.Click += async (_, _) => await TakeSelectedTranslationAsync(report, picked, replacing);
-        yield return act;
-
-        // ⚠ **The refusal is NOT repeated here.** It was, for one build: a greyed button deserves
-        // its reason, and this is a different part of the screen. But both live in the SAME card,
-        // visible at once — so it printed the same sentence twice, inches apart. Repeating an
-        // explanation is right when the eye comes back to it at another moment; it is noise when
-        // the two copies share a frame. The workbench above says it, first, before everything it
-        // governs — this button included.
+            Text = TranslationBackendLabel(_settings.Current) is not null
+                ? "Yours would be the first: play with the mod on and it translates as it "
+                  + "meets text, then you can publish it for everyone else."
+                : "You can still make one without any translator. The mod captures the game's "
+                  + "text as you play, and its live editor lets you write the lines yourself, "
+                  + "in game, one at a time — that is how a translation is made by hand.",
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Avalonia.Thickness(0, 2, 0, 0),
+            Foreground = Brush("TextSecondary"),
+        };
     }
+
 
     /// <summary>
     /// Downloads the selected translation into the game, asking first when something is at stake.

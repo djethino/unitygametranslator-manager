@@ -239,6 +239,26 @@ public sealed class LineagePosition
     public int? LinesAvailable { get; init; }
 
     /// <summary>
+    /// What those lines are: text the Main does not have, text somebody retranslated, and lines it
+    /// already held that somebody read and stood behind. They sum to <see cref="LinesAvailable"/>.
+    ///
+    /// 🔴 **The third is the one a total hides, and often the bulk of the work.** Reading a machine
+    /// line and marking it validated changes no words at all — it is exactly what the site asks
+    /// contributors for, and "38 lines" cannot tell it apart from 38 new sentences. Which of the
+    /// three is waiting is what decides whether a review is worth an evening.
+    ///
+    /// ⚠ Null on a server too old to break the total down. Unknown is not zero: the words come from
+    /// <see cref="Common.Contributions.WhatKindOfWork"/>, which says nothing rather than a zero.
+    /// </summary>
+    public int? LinesNew { get; init; }
+
+    /// <inheritdoc cref="LinesNew"/>
+    public int? LinesReworded { get; init; }
+
+    /// <inheritdoc cref="LinesNew"/>
+    public int? LinesValidated { get; init; }
+
+    /// <summary>
     /// A branch whose Main is gone. Null means unknown, never "the Main is fine": an older site
     /// does not send the field, and silence is not reassurance.
     /// </summary>
@@ -300,8 +320,15 @@ public sealed class LineagePosition
         if (waiting == 0) return "This translation is yours: you are its Main.";
 
         // The socle's words, so this sentence and the mod's card say one thing.
-        return "This translation is yours, and there is work waiting: "
-             + Contributions.WhatIsWaiting(waiting, LinesAvailable);
+        var said = "This translation is yours, and there is work waiting: "
+                 + Contributions.WhatIsWaiting(waiting, LinesAvailable);
+
+        // ⚠ Appended rather than folded into the sentence above: WhatIsWaiting answers "how much",
+        // and this answers "of what". Two questions, and the second is the one that decides whether
+        // to open the review at all — so it must not be buried inside a clause about the first.
+        var kinds = Contributions.WhatKindOfWork(LinesNew, LinesReworded, LinesValidated);
+
+        return kinds.Length == 0 ? said : said + " — " + kinds + ".";
     }
 
     /// <summary>

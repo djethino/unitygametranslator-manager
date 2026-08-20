@@ -173,6 +173,12 @@ public sealed class AccountLineages
                     BranchesWithWork = Number(entry, "branches_with_work"),
                     LinesAvailable = Number(entry, "lines_available"),
 
+                    // What those lines ARE. Null on a server too old to break the total down — the
+                    // screens then show the total alone, exactly as they did before.
+                    LinesNew = Number(entry, "lines_new"),
+                    LinesReworded = Number(entry, "lines_reworded"),
+                    LinesValidated = Number(entry, "lines_validated"),
+
                     MainMissing = Flag(entry, "main_missing"),
                     AcceptsBranches = Flag(entry, "accepts_branches"),
                     BranchFrozen = Flag(entry, "branch_frozen"),

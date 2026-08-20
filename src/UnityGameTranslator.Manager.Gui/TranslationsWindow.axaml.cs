@@ -89,6 +89,20 @@ public sealed class TranslationsWindow : Window
     /// </summary>
     private readonly bool _anyLanguage;
 
+    /// <summary>
+    /// Whether this window may CHOOSE a translation for this game.
+    ///
+    /// 🔴 **Looking is for everybody; choosing is not.** This window is where translations are
+    /// compared — who wrote them, how much is reviewed, which language they came from — and none of
+    /// that needs to be hidden because a game belongs to another user of this computer. What must
+    /// not happen there is a selection: it is the first step of replacing a file somebody else set
+    /// up, and the act it leads to is refused on the game's card anyway.
+    ///
+    /// ⚠ So the window opens for anyone and the Select buttons do not. Greying the way IN would
+    /// have cost the reading as well, for no gain — the decision, not the view, is what writes.
+    /// </summary>
+    private readonly bool _mayChoose;
+
     public TranslationsWindow(GameReport report, LoaderDescriptor loader, SettingsStore settings,
                               AccountLineages lineages, GamePreferences preferences,
                               bool anyLanguage = false)
@@ -99,6 +113,8 @@ public sealed class TranslationsWindow : Window
         _settings = settings;
         _lineages = lineages;
         _preferences = preferences;
+        _mayChoose = ServerIdentity.For(settings.Current, report.SiteAccount,
+                                        BuildInfo.ApiBaseUrl).CanWriteLocally;
 
         Title = $"Translations for {report.Game.Name}";
         Width = 860;
@@ -586,7 +602,8 @@ public sealed class TranslationsWindow : Window
                     : "Select",
             FontSize = 12,
             Classes = { "primary" },
-            IsEnabled = !chosen,
+            // ⚠ See _mayChoose: the window is open to anyone, choosing is not.
+            IsEnabled = !chosen && _mayChoose,
             HorizontalAlignment = HorizontalAlignment.Left,
             Margin = new Thickness(0, 8, 0, 0),
         };
@@ -616,7 +633,8 @@ public sealed class TranslationsWindow : Window
             {
                 Content = branchChosen ? "Your contribution is selected" : "Select your contribution",
                 FontSize = 12,
-                IsEnabled = !branchChosen,
+                // ⚠ Own work or not, selecting it points THIS game at it — the same write.
+                IsEnabled = !branchChosen && _mayChoose,
                 HorizontalAlignment = HorizontalAlignment.Left,
                 Margin = new Thickness(0, 6, 0, 0),
             };

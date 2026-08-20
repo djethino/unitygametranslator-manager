@@ -7802,7 +7802,20 @@ public partial class MainWindow : Window
             yield return new(OneClickAct.ApplySettings, SettingsStepText(report, preference));
         }
 
-        if (!_takeTranslation || PickTranslation(report) is not { } chosen) yield break;
+        // 🔴 **The one-click writes the translation file too, so it obeys the account rule.**
+        //
+        // Every control that replaces this file is greyed on a game set up under another account —
+        // the workbench's six, and the swap button beside the picked translation. This list was the
+        // way round all of them: one click, and somebody else's translation is overwritten from the
+        // bar at the bottom of the window. Same defect as the swap button, one screen further out.
+        //
+        // ⚠ Only the translation step is dropped. Installing the loader or the mod puts OUR software
+        // in place and takes nothing away from anybody; what must not happen is writing over the
+        // work or the settings another user of this computer put there.
+        var mayWriteHere = ServerIdentity.For(_settings.Current, report.SiteAccount,
+                                              BuildInfo.ApiBaseUrl).CanWriteLocally;
+
+        if (!mayWriteHere || !_takeTranslation || PickTranslation(report) is not { } chosen) yield break;
 
         // Worded by what it would DO, not by what exists. The three are different acts and the
         // person is about to authorise one of them with a single click.

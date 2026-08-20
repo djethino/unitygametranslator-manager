@@ -8937,7 +8937,14 @@ public partial class MainWindow : Window
     /// </summary>
     private Posture DeducedPosture(GameReport report, GamePreference preference)
     {
-        var translating = preference.StartTranslation ?? _settings.Current.EnableAi;
+        // 🔴 **The comment above promised the file and the code read the preference.** Everything
+        // it says — a stored answer is a claim about a game somebody may have changed since — was
+        // true of this very line: a game translating on disk was reported as merely "using" a
+        // translation, because nobody had ticked the box in THIS window. Same defect as the
+        // translate-while-playing box below, which that same comment names.
+        var translating = preference.StartTranslation
+                          ?? GameConfig(report).AutoTranslate
+                          ?? _settings.Current.EnableAi;
 
         // Nothing to read and nothing chosen: whatever happens here starts from nothing.
         var hasTranslation = report.LocalTranslation is not null
@@ -9075,12 +9082,30 @@ public partial class MainWindow : Window
             Foreground = Brush("TextMuted"),
         };
 
-        // ⚠ Greyed with no backend rather than hidden: hiding it left the one question this
-        // section exists to answer — will this game actually translate anything — unanswered.
+        // 🔴 **What this game actually does, not what the tool would do to it.**
+        //
+        // It read `preference.StartTranslation ?? settings.EnableAi` — this window's own choice,
+        // then this window's default — and never once looked at the game's config.json. Measured on
+        // 2026-08-20: a game holding `enable_ai: true` showed the box UNTICKED, because nobody had
+        // ever ticked it HERE. Somebody reading that concludes the game translates nothing, and
+        // applying would have switched off what was working.
+        //
+        // ⚠ The middle source is the one that was missing, and the code next to it says so:
+        // GameConfigWriter.Read carries `enable_ai` into the snapshot precisely because "it is
+        // written from the preference and never read back — fine for writing and wrong for
+        // describing". This is a describing screen.
+        //
+        // ⚠ NOT through ModSettingsResolver: enable_ai is deliberately absent from that chain
+        // (GameModOverrides carries "no enable_ai and no game_context", both being per-game
+        // measurements rather than values this tool may be told to write). Resolving it there
+        // would make it a writable setting, which is a different decision from showing it.
+        var inGameTranslates = GameConfig(report).AutoTranslate;
+        var translatesNow = preference.StartTranslation ?? inGameTranslates ?? settings.EnableAi;
+
         var start = new CheckBox
         {
             Content = "Translate while I play",
-            IsChecked = backend is not null && (preference.StartTranslation ?? settings.EnableAi),
+            IsChecked = backend is not null && translatesNow,
             IsEnabled = backend is not null,
             FontSize = 12,
         };
@@ -9089,8 +9114,10 @@ public partial class MainWindow : Window
         // mod settings in the tool that did, and a plain breach of the rule the rest of it keeps:
         // nothing reaches a game until Apply is pressed. It also made the switch below it
         // meaningless, since there was never a moment where an answer was pending.
+        // ⚠ From the same value as the box above: a draft starting elsewhere would report a change
+        // the moment the section is opened, or miss the one somebody makes.
         var draft = new PlanDraft(
-            StartTranslation: preference.StartTranslation ?? settings.EnableAi,
+            StartTranslation: translatesNow,
             GameContext: preference.GameContext ?? InGameContext(report, descriptor));
 
         var applyBar = PlanApplyBar(report, preference, draft, refresh);
@@ -9427,15 +9454,43 @@ public partial class MainWindow : Window
                 _ => "Download this translation",
             };
 
-        // Same act as Apply (1) on the other tab, so it wears the same mark: a file written into
-        // this game, nothing sent anywhere.
-        var act = ScopeMark.Marked(EditSide.Local, actLabel, !_running.IsRunning(report.Game));
+        // 🔴 **Taking a translation OVERWRITES this game's file, so it obeys the account rule.**
+        //
+        // The only guard here was "the game is not running". On a game set up under somebody else's
+        // account every control of the workbench above is greyed — Edit, Publish, Merge, Remove —
+        // and this button, which replaces the very same file, stayed live: one click away from
+        // destroying another user's translation, from the tab that offers to help.
+        //
+        // ⚠ Same rule as CanWriteLocally elsewhere: writing the game's own file needs no server,
+        // and that is exactly why it needed guarding. Reported 2026-08-20 on a game belonging to
+        // another account.
+        var standing = ServerIdentity.For(_settings.Current, report.SiteAccount, BuildInfo.ApiBaseUrl);
+        var mayWrite = standing.CanWriteLocally;
+
+        var act = ScopeMark.Marked(EditSide.Local, actLabel,
+                                   mayWrite && !_running.IsRunning(report.Game));
         act.Classes.Add("primary");
         act.HorizontalAlignment = HorizontalAlignment.Left;
         act.Margin = new Avalonia.Thickness(0, 6, 0, 0);
 
         act.Click += async (_, _) => await TakeSelectedTranslationAsync(report, picked, replacing);
         yield return act;
+
+        // ⚠ A greyed button with no reason is how somebody concludes the tool is broken. The
+        // workbench above says it too, and that repetition is deliberate: this is a different part
+        // of the screen, reached by a different question, and the eye that lands here needs the
+        // answer here.
+        if (!mayWrite)
+        {
+            yield return new TextBlock
+            {
+                Text = Standings.ExplainRefusal(standing.Standing, toServer: false),
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Avalonia.Thickness(0, 4, 0, 0),
+                Foreground = Brush("StatusWarning"),
+            };
+        }
     }
 
     /// <summary>

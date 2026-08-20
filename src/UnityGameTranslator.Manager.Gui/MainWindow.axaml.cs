@@ -2848,7 +2848,13 @@ public partial class MainWindow : Window
         // ⚠ Settled BEFORE the tabs split, and it used to live in the Setup branch alone. The bar
         // reads it, and the bar now exists on Home too: left where it was, a game opened on Home
         // would have been offered the answer computed for whichever game was looked at last.
-        var offer = TranslationOffers.For(report, PickTranslation(report));
+        //
+        // ⚠ **TranslationWaiting, not PickTranslation** — the one place that answers "what would go
+        // into this game and is not there". It is silent once the game runs that very translation,
+        // even with the server ahead: bringing a newer copy of the file already here is the
+        // workbench's act, weighed against what was never uploaded, and an install option that did
+        // it too was a second way to the same write.
+        var offer = TranslationOffers.For(report, TranslationWaiting(report));
         _takeTranslation = TranslationOffers.MayDefaultToYes(offer)
                            && _preferences.Read(report.Game.Path).InstallTranslation;
 
@@ -7666,8 +7672,13 @@ public partial class MainWindow : Window
         // on that list alone: on a game already up to date, holding a translation with unpublished
         // work, every step is absent precisely BECAUSE there is an offer standing — and taking the
         // shortcut here left the box that offers it unreachable.
-        var offered = TranslationOffers.For(report, PickTranslation(report))
-                      is not (TranslationOffer.None or TranslationOffer.AlreadyInPlace);
+        //
+        // ⚠ Read exactly as the box itself is, or the two disagree and the bar says "there is
+        // still something on offer" under a row where no box is drawn — leaving a game that IS
+        // fully set up unable to say so.
+        var offered = MaySetUp(report)
+                      && TranslationOffers.For(report, TranslationWaiting(report))
+                         is not (TranslationOffer.None or TranslationOffer.AlreadyInPlace);
 
         if (steps.Count == 0 && blocked is null && !offered)
         {
@@ -7764,12 +7775,18 @@ public partial class MainWindow : Window
         // Beside the button rather than up in the card: it changes what the button does, and a
         // switch for an action belongs where the action is.
         //
-        // ⚠ Absent when there is nothing for it to do — nothing published to take, or the file
-        // here already IS the one that would be taken. A ticked box that re-downloads the same
-        // bytes reads as an action, and an unticked one reads as something being withheld.
-        var offer = TranslationOffers.For(report, PickTranslation(report));
+        // ⚠ Absent when there is nothing for it to do — nothing published to take, the file here
+        // already IS the one that would be taken, or this game is set up under another account. A
+        // ticked box that re-downloads the same bytes reads as an action, an unticked one reads as
+        // something being withheld, and either of them on somebody else's game offers a write that
+        // every other control on the card refuses.
+        //
+        // 🔴 **Not conditioned on the box's own value**, which would be a trap: unticked, the step
+        // disappears, and a box that hid itself could never be ticked again. It is conditioned on
+        // what exists regardless of the answer.
+        var offer = TranslationOffers.For(report, TranslationWaiting(report));
 
-        if (offer is not (TranslationOffer.None or TranslationOffer.AlreadyInPlace))
+        if (MaySetUp(report) && offer is not (TranslationOffer.None or TranslationOffer.AlreadyInPlace))
         {
             var replaces = offer is TranslationOffer.ReplacesWork or TranslationOffer.ReplacesChoice;
 
@@ -7934,7 +7951,8 @@ public partial class MainWindow : Window
         // ⚠ Only the translation step is dropped. Installing the loader or the mod puts OUR software
         // in place and takes nothing away from anybody; what must not happen is writing over the
         // work or the settings another user of this computer put there.
-        if (!mayChangeThisGame || !_takeTranslation || PickTranslation(report) is not { } chosen) yield break;
+        if (!mayChangeThisGame || !_takeTranslation
+            || TranslationWaiting(report) is not { } chosen) yield break;
 
         // Worded by what it would DO, not by what exists. The three are different acts and the
         // person is about to authorise one of them with a single click.
@@ -8082,7 +8100,11 @@ public partial class MainWindow : Window
         if (WhyNotReady(report) is not null) return;
 
         var preference = _preferences.Read(report.Game.Path);
-        var translation = _takeTranslation ? PickTranslation(report) : null;
+
+        // ⚠ The same reading as the list of steps and the box beside the button. It was
+        // PickTranslation here and TranslationWaiting there, which is how a bar promising three
+        // acts performs four — and the fourth writes a file.
+        var translation = _takeTranslation && MaySetUp(report) ? TranslationWaiting(report) : null;
 
         // 🔴 **A copy for the question, the real thing only once it is answered.** The list below
         // has to name what is pending — a step reading "apply Mod defaults" while two answers wait
@@ -9177,6 +9199,10 @@ public partial class MainWindow : Window
             Margin = new Avalonia.Thickness(0, 4, 0, 0),
         };
 
+        // Same rule as the box above it: this sentence is written into the game's configuration,
+        // so it is read on somebody else's game and not typed into.
+        context.IsEnabled = MaySetUp(report, context);
+
         // ⚠ Read on every keystroke into the DRAFT, and written by nothing here. It used to save
         // itself on LostFocus — no Apply, on a setting that lands in the game's config.json — and
         // then offered a "Save this into the game" button of its own beside it, so the same answer
@@ -9249,9 +9275,16 @@ public partial class MainWindow : Window
         {
             Content = "Translate while I play",
             IsChecked = backend is not null && translatesNow,
-            IsEnabled = backend is not null,
             FontSize = 12,
         };
+
+        // 🔴 **The CONTROL, not only the Apply below it.** Both of these land in this game's
+        // config.json, which the whole computer shares, so on somebody else's game they are read
+        // and not written. Greying the button alone would let somebody tick, type, and then meet a
+        // refusal — the dead end this program refuses everywhere else. Ticked or filled in, they go
+        // on showing what the game holds, which is what somebody came here to find out.
+        var mayChange = MaySetUp(report, start);
+        start.IsEnabled = backend is not null && mayChange;
 
         // 🔴 **Held, not written.** This wrote straight to disk on every click — the only pair of
         // mod settings in the tool that did, and a plain breach of the rule the rest of it keeps:

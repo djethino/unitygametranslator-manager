@@ -342,7 +342,31 @@ public sealed class GameModSettingsForm
             Foreground = Palette.Of("TextSecondary"),
         });
 
-        _host.Children.Add(LanguageRow());
+        // 🔴 **The whole form is read-only on somebody else's game, and it SAYS so.** Greying the
+        // Apply alone would let somebody pick a language, type a key and a model, and only then
+        // meet a refusal — the dead end this program refuses everywhere. Said here rather than only
+        // in the button's tooltip: this is a different card from the one that carries the account
+        // message, and each card answers for what it offers.
+        if (_refusal is { } refusal)
+        {
+            _host.Children.Add(new TextBlock
+            {
+                Text = refusal,
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Palette.Of("StatusWarning"),
+            });
+        }
+
+        // Everything below shows what the game holds and, where it may not be changed, shows it
+        // greyed. Reading somebody else's setup costs nothing; writing it is what is refused.
+        void AddField(Control control)
+        {
+            if (_refusal is not null) control.IsEnabled = false;
+            _host.Children.Add(control);
+        }
+
+        AddField(LanguageRow());
 
         if (_languagePinnedTo is not null)
         {
@@ -364,18 +388,18 @@ public sealed class GameModSettingsForm
             });
         }
 
-        _host.Children.Add(BackendRow());
+        AddField(BackendRow());
 
         _aiCard = AiBlock();
         _apiCard = ApiBlock();
-        _host.Children.Add(_aiCard);
-        _host.Children.Add(_apiCard);
+        AddField(_aiCard);
+        AddField(_apiCard);
 
         _host.Children.Add(Separator());
-        foreach (var control in InGameBlock()) _host.Children.Add(control);
+        foreach (var control in InGameBlock()) AddField(control);
 
         _host.Children.Add(Separator());
-        foreach (var control in UpdatesBlock()) _host.Children.Add(control);
+        foreach (var control in UpdatesBlock()) AddField(control);
 
         _host.Children.Add(ApplyBar());
 

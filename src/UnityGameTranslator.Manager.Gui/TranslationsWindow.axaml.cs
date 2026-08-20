@@ -514,7 +514,10 @@ public sealed class TranslationsWindow : Window
         // Said on the card that carries them, rather than only on the game card: a Main owner
         // scrolling a list of six translations should not have to work out which one has people
         // waiting behind it.
-        if (isYours && (lineage?.BranchesWithWork ?? lineage?.BranchesCount) > 0)
+        // ⚠ `is not null` rather than `lineage?.`: the null-conditional form leaves the compiler
+        // unable to see that Describe() below is safe, and warned about it. The pattern proves it.
+        if (isYours && lineage is not null
+            && (lineage.BranchesWithWork ?? lineage.BranchesCount) > 0)
         {
             body.Children.Add(new TextBlock
             {

@@ -47,8 +47,19 @@
     <DebugType>embedded</DebugType>
   </PropertyGroup>
 
-  <!-- Generate BuildInfo.g.cs so URLs and version live in exactly one place -->
-  <Target Name="GenerateBuildInfo" BeforeTargets="CoreCompile">
+  <!-- Generate BuildInfo.g.cs so URLs and version live in exactly one place.
+
+       🔴 **BeforeTargets="PrepareForBuild", not "CoreCompile".** CoreCompile is SKIPPED when the
+       sources are older than the assembly — so on an up-to-date tree this target never ran, the
+       generated file kept whatever the previous build had put in it, and a build asked to point
+       somewhere else (-p:ApiBaseUrl=…, as prepare-release.ps1 -LocalSite does) silently produced a
+       binary carrying the OLD addresses. It worked whenever something happened to force a
+       recompilation, which is the worst kind of failure: intermittent, and invisible in the log.
+
+       PrepareForBuild runs on every build. WriteOnlyWhenDifferent keeps the incremental build:
+       the file is rewritten only when its content actually changes, and that change is what makes
+       the compiler consider the assembly out of date. -->
+  <Target Name="GenerateBuildInfo" BeforeTargets="PrepareForBuild">
     <PropertyGroup>
       <BuildInfoContent>
 namespace UnityGameTranslator.Manager {
@@ -68,7 +79,8 @@ namespace UnityGameTranslator.Manager {
     </PropertyGroup>
     <WriteLinesToFile File="$(IntermediateOutputPath)BuildInfo.g.cs"
                       Lines="$(BuildInfoContent)"
-                      Overwrite="true" />
+                      Overwrite="true"
+                      WriteOnlyWhenDifferent="true" />
     <ItemGroup>
       <Compile Include="$(IntermediateOutputPath)BuildInfo.g.cs" />
     </ItemGroup>

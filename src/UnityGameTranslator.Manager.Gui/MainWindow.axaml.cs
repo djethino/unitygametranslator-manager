@@ -3931,12 +3931,17 @@ public partial class MainWindow : Window
             // What is waiting, not how many contribute — same rule as Describe() reads.
             var waiting = position.BranchesWithWork ?? position.BranchesCount ?? 0;
 
+            // 🔴 **The colour follows the sentence.** Describe() says one of two things — "this is
+            // yours" or "this is yours, and there is work waiting" — and both came out green.
+            // Green reads as "nothing to do", which is the opposite of the second one: an owner
+            // with contributions to go through was being reassured by the very line telling them
+            // otherwise. The mod had the mirror-image fault, muting the same sentence to grey.
             yield return new TextBlock
             {
                 Text = position.Describe(),
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
-                Foreground = Brush("StatusSuccess"),
+                Foreground = Brush(waiting > 0 ? "StatusWarning" : "StatusSuccess"),
                 Margin = new Avalonia.Thickness(0, 2, 0, 0),
             };
 

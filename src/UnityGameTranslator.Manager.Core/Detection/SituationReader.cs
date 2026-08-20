@@ -229,7 +229,11 @@ public static class SituationReader
         if (branchesWaiting is > 0 and var waiting)
             parts.Add(waiting == 1 ? "1 contribution waiting" : $"{waiting} contributions waiting");
 
-        if (OutOfDate(report) is { } behind) parts.Add($"{behind} update available");
+        // ⚠ Added as it comes: OutOfDate returns the finished sentence. It used to return a bare
+        // subject here and a whole phrase in the un-owned case, and this line appended
+        // " update available" to both — producing "loader update available — not managed by UGT
+        // update available", where the reader could not tell what was even being talked about.
+        if (OutOfDate(report) is { } behind) parts.Add(behind);
 
         return parts.Count > 0 ? string.Join(" · ", parts) : null;
     }
@@ -258,8 +262,13 @@ public static class SituationReader
         // the short one is for the places where space decides — a row in a list, beside a game
         // name that may be forty characters of Chinese. The long one everywhere it fits, and
         // wherever the reader may be meeting the product for the first time.
+        // 🔴 **Every branch returns a FINISHED sentence, and that is the whole fix here.** Three of
+        // them used to return a bare subject ("mod", "loader") for the caller to complete, while
+        // the un-owned case returned a full phrase — and the caller appended "update available" to
+        // whatever it got. The un-owned line therefore ended with it twice, and a reader could no
+        // longer tell whether the mod, the loader or the translation was being described.
         var loader = loaderNewer
-            ? (loaderOurs ? "loader" : "loader update available — not managed by UGT")
+            ? (loaderOurs ? "loader update available" : "loader update available — not managed by UGT")
             : null;
 
         // ⚠ The un-owned case does not fold into "mod and loader": it carries its own instruction,
@@ -270,9 +279,9 @@ public static class SituationReader
 
         return (plugin, loaderNewer) switch
         {
-            (true, true) => "mod and loader",
-            (true, false) => "mod",
-            (false, true) => "loader",
+            (true, true) => "mod and loader update available",
+            (true, false) => "mod update available",
+            (false, true) => "loader update available",
             _ => null,
         };
     }

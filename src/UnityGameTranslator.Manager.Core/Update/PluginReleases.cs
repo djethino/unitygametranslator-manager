@@ -42,6 +42,22 @@ public sealed class PluginReleases
     /// </summary>
     public string? LastError { get; private set; }
 
+    /// <summary>
+    /// The answer already held, WITHOUT asking — null when nobody has asked yet, or when the
+    /// question was asked about another channel.
+    ///
+    /// 🔴 **For the list of games, which is drawn on a thread that must never wait.** Every row
+    /// compares this game's plugin against the same single answer, so the comparison itself is
+    /// free; what is not free is a request, and a row that awaits one would either block the list
+    /// or fire fifty-three of them. The same shape as <see cref="Install.LoaderBuildResolver.Known"/>,
+    /// and for the same reason.
+    ///
+    /// ⚠ Null here means "not known yet", never "up to date". A caller that reads it as the second
+    /// tells somebody their mod is current on the strength of a question nobody asked.
+    /// </summary>
+    public PublishedRelease? Known(ReleaseChannel channel) =>
+        _asked && _answered == channel ? _release : null;
+
     /// <summary>Forces the next call to ask again. Called when the user rescans.</summary>
     public void Forget()
     {

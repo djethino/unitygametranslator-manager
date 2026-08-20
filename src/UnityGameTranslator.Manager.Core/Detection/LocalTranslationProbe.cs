@@ -99,6 +99,51 @@ public static class LocalTranslationProbe
     /// The rule itself is <see cref="ContentHash"/>, shared with the mod and ported from the
     /// website: what comes out is the same string the server issues as file_hash.
     /// </summary>
+    /// <summary>
+    /// The same hash, remembered against the file it was taken from.
+    ///
+    /// 🔴 **So the list of games may ask the question the game's own card asks.** The card knew
+    /// this game's translation was behind the published one and the row beside it said "Ready to
+    /// play", because the row is rebuilt on every lookup that comes back — and paying the parse
+    /// above, per game, per lookup, is what the note above rules out. Remembered, it is paid once
+    /// per file and per change to it.
+    ///
+    /// ⚠ Keyed on the file's stamp AND its length, not on a duration: this file is rewritten by
+    /// the mod while somebody plays, and a cache with a lifetime would answer about a translation
+    /// that has since moved. A write that changed neither the length nor the last-write time is
+    /// not a write NTFS can produce — its stamp is finer than the time it takes to save.
+    /// </summary>
+    public static string? ContentHashOf(string gamePath, LoaderDescriptor descriptor)
+    {
+        var path = Path.Combine(gamePath,
+            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar),
+            TranslationFileName);
+
+        FileInfo file;
+        try
+        {
+            file = new FileInfo(path);
+            if (!file.Exists) return null;
+        }
+        catch (Exception)
+        {
+            // An unreadable path is not a hash and not a crash: the caller reads null as "no
+            // comparison possible", which is exactly what this is.
+            return null;
+        }
+
+        var stamp = (file.LastWriteTimeUtc, file.Length);
+
+        if (_hashes.TryGetValue(path, out var known) && known.Stamp == stamp) return known.Hash;
+
+        var hash = ComputeContentHash(gamePath, descriptor);
+        _hashes[path] = (stamp, hash);
+        return hash;
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<
+        string, ((DateTime Written, long Length) Stamp, string? Hash)> _hashes = new();
+
     public static string? ComputeContentHash(string gamePath, LoaderDescriptor descriptor)
     {
         var path = Path.Combine(gamePath,

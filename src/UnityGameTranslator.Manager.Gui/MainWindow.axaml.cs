@@ -709,6 +709,29 @@ public partial class MainWindow : Window
             mine = _lineages.For(report.LocalTranslation?.Uuid) is not null;
         }
 
+        // 🔴 **The mod's own version, compared against the one answer held for the whole machine.**
+        // The row said "Ready to play" beside a card announcing an update, for the reason given
+        // above: this method builds its own report and never filled this in. Known() asks nobody —
+        // the release was fetched once when the window opened, and comparing two strings per game
+        // is the same "no network, but some thinking" the loader line already does.
+        //
+        // ⚠ Only when the answer is actually held. Null from Known() means the lookup has not come
+        // back yet, and a standing built on it would read as "no newer version" — the one thing it
+        // must never say on the strength of a question nobody asked. RecomputeSituations runs again
+        // when it does come back.
+        //
+        // ⚠ Behind the SAME two settings the full report is, and read the same way — offline or
+        // "do not check for updates" means the card says nothing about a newer build, and a row
+        // that said it anyway would contradict the screen it belongs to.
+        if (_settings.Current.OnlineMode && _settings.Current.CheckContentUpdates
+            && _releases.Known(string.Equals(_settings.Current.Channel, "beta",
+                                             StringComparison.OrdinalIgnoreCase)
+                                   ? ReleaseChannel.Beta
+                                   : ReleaseChannel.Stable) is { Version.Length: > 0 } newest)
+        {
+            report.PluginStanding = new VersionStanding(report.InstalledPluginVersion, newest.Version);
+        }
+
         if (online is not null)
         {
             report.OnlineTranslations = online;
@@ -716,6 +739,27 @@ public partial class MainWindow : Window
             {
                 report.MatchingOnline = online.FirstOrDefault(
                     t => string.Equals(t.Uuid, uuid, StringComparison.OrdinalIgnoreCase));
+            }
+
+            // 🔴 **The same sync verdict the card shows, reached the same way.** SituationReader
+            // has always read report.Sync first — Up to date / Update available / Unpublished
+            // changes / Conflict — and this method left it null, so the four words it exists to
+            // print were unreachable from the list. Every ingredient was already here; only the
+            // hash was missing, and it is the one expensive part.
+            //
+            // ⚠ ContentHashOf, never ComputeContentHash: this runs on every lookup that comes
+            // back, for every game. Remembered against the file's stamp it is paid once per file
+            // and per change to it; unremembered it would parse every translation on the machine
+            // once per answer received.
+            if (report.MatchingOnline is { FileHash.Length: > 0 } published
+                && report.LocalTranslation is { } here
+                && descriptor is not null)
+            {
+                report.Sync = Sync.Decide(
+                    LocalTranslationProbe.ContentHashOf(game.Path, descriptor),
+                    published.FileHash,
+                    here.SourceHash,
+                    here.HasLocalWork ?? true);
             }
         }
 

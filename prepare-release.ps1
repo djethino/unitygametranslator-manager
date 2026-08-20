@@ -10,7 +10,18 @@
 # reads — two independent sources for the same fact, neither of which we have to maintain by hand.
 
 param(
-    [string[]] $Rid = @('win-x64', 'linux-x64')
+    [string[]] $Rid = @('win-x64', 'linux-x64'),
+
+    # 🔴 **Point this build at a development site instead of production.**
+    #
+    # Never the default. The three addresses are compiled in (BuildInfo.g.cs), so a package made
+    # while they point somewhere local reaches nothing on anybody else's machine — and says so only
+    # in a log. Passed as MSBuild properties, so Directory.Build.props is never edited and the next
+    # ordinary run is production again with nothing to remember.
+    #
+    # ⚠ The archive is then named "-local", because the one thing this must not allow is publishing
+    # such a build by mistake. Without the switch, the addresses are CHECKED — see below.
+    [string] $LocalSite
 )
 
 $ErrorActionPreference = 'Stop'
@@ -77,6 +88,57 @@ $Version = ($props.Project.PropertyGroup | Where-Object { $_.Version }).Version
 if (-not $Version) { throw 'No <Version> found in Directory.Build.props' }
 
 Write-Host "=== UnityGameTranslator Manager $Version ===" -ForegroundColor Cyan
+
+# What this build will talk to, decided once and reported.
+#
+# 🔴 **Without -LocalSite, the addresses are CHECKED rather than trusted.** They are compiled into
+# the binary, so a package made while they point at a development site reaches nothing on anybody
+# else's machine — and pointing them there is a normal thing to do while testing. Putting the file
+# back afterwards is a thing to remember, which is why it is verified instead.
+#
+# ⚠ It refuses DEVELOPMENT addresses, not "addresses that are not ours": self-hosting is supported,
+# and somebody's own domain is none of this script's business.
+$urlArgs = @()
+$localSuffix = ''
+
+if ($LocalSite) {
+    $site = $LocalSite.TrimEnd('/')
+    $urlArgs = @(
+        "-p:ApiBaseUrl=$site/api/v1",
+        "-p:WebsiteBaseUrl=$site",
+        "-p:SseBaseUrl=http://127.0.0.1:3000"
+    )
+    # ⚠ In the archive name, so such a build cannot be published by mistake. It is the one failure
+    # a check inside the script cannot catch: by then the file is just a file on disk.
+    $localSuffix = '-local'
+    Write-Host "  [LOCAL] this build will talk to $site" -ForegroundColor Magenta
+    Write-Host "  [LOCAL] archives are named -local and must never be released" -ForegroundColor Magenta
+}
+else {
+    foreach ($urlName in @('ApiBaseUrl', 'WebsiteBaseUrl', 'SseBaseUrl')) {
+        $value = ($props.Project.PropertyGroup | Where-Object { $_.$urlName }).$urlName
+
+        $uri = $null
+        if (-not [Uri]::TryCreate($value, [UriKind]::Absolute, [ref]$uri)) {
+            throw "$urlName is not an absolute URL: $value"
+        }
+
+        # ⚠ NOT $host: PowerShell reserves that name for the shell, and assigning to it throws a
+        # read-only error that reads as a script bug rather than the check doing its job.
+        $urlHost = $uri.Host
+        $isLocal = $uri.IsLoopback `
+            -or $urlHost -eq 'localhost' `
+            -or $urlHost -like '*.test' `
+            -or $urlHost -like '*.local' `
+            -or $urlHost -like '*.localhost' `
+            -or $uri.Scheme -ne 'https'
+
+        if ($isLocal) {
+            throw ("$urlName points at a development address: $value`n" +
+                   "Put Directory.Build.props back, or pass -LocalSite to build against it on purpose.")
+        }
+    }
+}
 
 $project = 'src/UnityGameTranslator.Manager.Gui/UnityGameTranslator.Manager.Gui.csproj'
 $releasesDir = 'releases'
@@ -148,7 +210,7 @@ foreach ($target in $targets) {
     $stagingDir = Join-Path $releasesDir "staging-$rid"
 
     dotnet publish $project -c Release -r $rid --self-contained true `
-        -p:PublishSingleFile=true -o $stagingDir --nologo -v q
+        -p:PublishSingleFile=true -o $stagingDir --nologo -v q @urlArgs
     if ($LASTEXITCODE -ne 0) { throw "Publish failed for $rid" }
 
     # A single-file publish that quietly leaves a second file behind is the failure this checks
@@ -179,7 +241,10 @@ foreach ($target in $targets) {
         Set-Content -Path (Join-Path $stagingDir $shimName) -Value $shimBody -Encoding ascii
     }
 
-    $base = "UnityGameTranslatorManager-v$Version-$rid"
+    # ⚠ $localSuffix is empty for an ordinary build and "-local" for one pointed at a development
+    # site. In the FILENAME, because that is the only place a mistake can still be caught: once the
+    # archive exists, whoever uploads it sees the name and nothing else.
+    $base = "UnityGameTranslatorManager-v$Version-$rid$localSuffix"
     $archiveName = "$base.$($target.Archive)"
     $archivePath = Join-Path $releasesDir $archiveName
 

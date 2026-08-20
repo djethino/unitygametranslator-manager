@@ -5232,6 +5232,42 @@ public partial class MainWindow : Window
             };
         }
 
+        // 🔴 **Why nothing here can be used — FIRST, before anything else on this card.**
+        //
+        // It used to sit under the buttons, and the eye never reached it: the card opened on
+        // "Update available", then a sentence about the published version having moved, then a row
+        // of greyed buttons. Reported by somebody who stopped there, having understood neither the
+        // message nor the greying, and never scrolled to the line that explained both.
+        //
+        // ⚠ The refusal governs everything below it, so it is read before them. Same reasoning as
+        // the two lines it replaced in order: a reason printed after its consequences is a reason
+        // nobody reads.
+        if (!standing.CanWriteLocally)
+        {
+            // ⚠ Said FIRST and louder, because it is the wider refusal: nothing on this card can be
+            // used at all. Leaving only the publishing reason would explain the greyed Publish and
+            // leave somebody wondering why Edit is greyed too.
+            yield return new TextBlock
+            {
+                Text = Standings.ExplainRefusal(standing.Standing, toServer: false),
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Avalonia.Thickness(0, 4, 0, 0),
+                Foreground = Brush("StatusWarning"),
+            };
+        }
+        else if (standing.Reason is { } reason)
+        {
+            yield return new TextBlock
+            {
+                Text = reason,
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Avalonia.Thickness(0, 4, 0, 0),
+                Foreground = Brush(standing.Kind == ServerStandingKind.SignedOut ? "TextMuted" : "StatusWarning"),
+            };
+        }
+
         // Where it stands, in the words the mod uses for the same verdict.
         //
         // ⚠ Null is NOT "everything is fine": no translation published for this game, or a file we
@@ -5517,40 +5553,21 @@ public partial class MainWindow : Window
 
         yield return actions;
 
-        // ⚠ The refusal is stated, never silent. A greyed button with no reason is how somebody
-        // concludes the tool is broken — and here the reason is precise and actionable: this game
-        // belongs to another account.
-        if (!standing.CanWriteLocally)
+        // ⚠ **The account refusals moved to the TOP of this card** — they govern every control
+        // below, and printed here they were read after their own consequences. What stays is the
+        // one explanation that belongs beside the buttons: nothing to send, or nothing yet to send
+        // it from.
+        //
+        // ⚠ **The guard is spelled out because the `else` that carried it is gone.** This used to
+        // be the third arm of an if/else chain, so it could only run when neither account refusal
+        // did. Dropping the condition would stack two reasons on one card and leave somebody
+        // fixing the second while the first still stands.
+        if (standing.CanWriteLocally
+            && standing.Reason is null
+            && (nothingYet ?? nothingToSend) is { } why)
         {
-            // ⚠ Said FIRST and louder, because it is the wider refusal: nothing on this card can be
-            // used at all. Leaving only the publishing reason would explain the greyed Publish and
-            // leave somebody wondering why Edit is greyed too.
-            yield return new TextBlock
-            {
-                Text = Standings.ExplainRefusal(standing.Standing, toServer: false),
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Avalonia.Thickness(0, 4, 0, 0),
-                Foreground = Brush("StatusWarning"),
-            };
-        }
-        else if (standing.Reason is { } reason)
-        {
-            yield return new TextBlock
-            {
-                Text = reason,
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Avalonia.Thickness(0, 4, 0, 0),
-                Foreground = Brush(standing.Kind == ServerStandingKind.SignedOut ? "TextMuted" : "StatusWarning"),
-            };
-        }
-        else if ((nothingYet ?? nothingToSend) is { } why)
-        {
-            // Only when the account COULD have acted: two refusals stacked would leave somebody
-            // fixing the second while the first still stands. ⚠ And the empty file comes FIRST:
-            // it governs two buttons where the sync reason governs one, and a game with no line
-            // cannot be in any sync state worth explaining.
+            // ⚠ The empty file comes FIRST: it governs two buttons where the sync reason governs
+            // one, and a game with no line cannot be in any sync state worth explaining.
             yield return new TextBlock
             {
                 Text = why,

@@ -48,13 +48,54 @@ public static class Http
     public static HttpClient Create(TimeSpan timeout)
     {
         var handler = BuildHandler();
-        var client = handler is null ? new HttpClient() : new HttpClient(handler);
+
+        // 🔴 **Asking for compression and decompressing it are ONE decision, taken here.** This
+        // tool asked for neither, which is why it never broke — but the mod set the header by hand
+        // and left the handler alone, so a server that took the offer answered gzip it could not
+        // read, and every call died in the JSON parser (2026-08-20, see the mod's ApiClient).
+        //
+        // AutomaticDecompression sends `Accept-Encoding` ITSELF and decompresses what comes back,
+        // which is exactly why it is the only correct way to do this: the two halves cannot drift
+        // apart. Nothing must ever add that header by hand on top of it.
+        //
+        // ⚠ Nothing changes today — the site does not compress JSON — and that is the point: the
+        // day it does, this tool follows instead of failing.
+        if (handler is not null)
+        {
+            try { handler.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate; }
+            catch { /* a handler that refuses it still works, uncompressed */ }
+        }
+
+        var client = handler is null ? new HttpClient(DefaultHandler()) : new HttpClient(handler);
 
         client.Timeout = timeout;
         client.DefaultRequestHeaders.UserAgent.ParseAdd(
             $"UnityGameTranslatorManager/{BuildInfo.Version}");
 
         return client;
+    }
+
+    /// <summary>
+    /// The plain handler, carrying decompression and nothing else.
+    /// </summary>
+    /// <remarks>
+    /// ⚠ Proxy settings are deliberately untouched: a <see cref="HttpClientHandler"/> left alone
+    /// uses the system proxy, which is what `new HttpClient()` did here before. The only reason
+    /// this exists is that decompression has to be set on a handler, and "default" mode had none.
+    /// </remarks>
+    private static HttpMessageHandler DefaultHandler()
+    {
+        try
+        {
+            return new HttpClientHandler
+            {
+                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+            };
+        }
+        catch
+        {
+            return new HttpClientHandler();
+        }
     }
 
     /// <summary>

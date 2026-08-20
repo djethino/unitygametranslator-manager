@@ -6256,6 +6256,29 @@ public partial class MainWindow : Window
             Foreground = Brush("TextMuted"),
         };
 
+        // 🔴 **The whole section is read-only on a game set up under another account**, and it says
+        // so once, here, above everything it governs — the three ways, the differences with Mod
+        // defaults, the key, and the form. Each control below is greyed as well: a section whose
+        // radios still move and whose boxes still tick, above an Apply that refuses, is the dead
+        // end this program refuses everywhere.
+        //
+        // ⚠ Said in this card rather than borrowed from the translation card above. They are two
+        // cards answering two questions, and a reader looking at the settings should not have to
+        // have read the other one.
+        var mayChange = MaySetUp(report);
+
+        if (!mayChange && SetupRefusal(report) is { } refusal)
+        {
+            yield return new TextBlock
+            {
+                Text = refusal,
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Avalonia.Thickness(0, 0, 0, 4),
+                Foreground = Brush("StatusWarning"),
+            };
+        }
+
         // ⚠ Only the parts that depend on these controls are rebuilt, never the whole card.
         //
         // Redrawing the section from inside one of its own checkboxes destroys that checkbox while
@@ -6344,6 +6367,11 @@ public partial class MainWindow : Window
         // three products say things: plain, short, and in the fourth language of most readers.
         RadioButton Way(string label, string says, bool chosen, bool enabled, Action pick)
         {
+            // Where this game's settings come from is a decision about this game's config.json, so
+            // it is refused on somebody else's game like everything else in this section — and the
+            // label greys with the control rather than staying lit above a dead radio.
+            enabled = enabled && mayChange;
+
             var text = new StackPanel { Spacing = 1 };
 
             text.Children.Add(new TextBlock
@@ -6369,6 +6397,8 @@ public partial class MainWindow : Window
                 IsEnabled = enabled,
                 FontSize = 12,
             };
+
+            if (!mayChange) MaySetUp(report, button);
 
             // ⚠ Held for the session, never written here: choosing a way decides nothing until
             // something acts on it. It is applied to the preference in memory too, so everything
@@ -7078,6 +7108,10 @@ public partial class MainWindow : Window
                 Margin = new Avalonia.Thickness(0, 12, 0, 0),
             };
 
+            // What it decides is written into this game's config.json by the next install, so it is
+            // refused on somebody else's game like the rest of this section.
+            replace.IsEnabled = MaySetUp(report, replace);
+
             replace.IsCheckedChanged += (_, _) =>
             {
                 preference.ReplaceHotkey = replace.IsChecked == true;
@@ -7200,11 +7234,13 @@ public partial class MainWindow : Window
         // ⚠ Greyed rather than hidden, and never without words. Ticking the box above means "take
         // the key from Mod defaults", which is an answer to this very question — leaving the
         // capture live would offer a third key that would then not be written.
-        editor.Row.IsEnabled = !takesDefault;
-
         ToolTip.SetTip(editor.Row, takesDefault
             ? "Untick the box above to choose a key here instead."
             : "Only keys every game detects the same way can be set from here.");
+
+        // Last, so the account refusal has the final word on both — capturing a key one may not
+        // write is the same dead end as ticking a box one may not apply.
+        editor.Row.IsEnabled = !takesDefault && MaySetUp(report, editor.Row);
 
         yield return row;
         yield return editor.Problem;

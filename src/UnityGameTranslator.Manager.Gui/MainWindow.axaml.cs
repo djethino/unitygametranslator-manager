@@ -3144,7 +3144,9 @@ public partial class MainWindow : Window
         // What Set up would have to do, said here rather than found there. "Up to date" is worth
         // as much as a pending update: it is the answer to "do I need to go and look".
         var pending = new List<string>();
-        if (report.InstalledLoader is null) pending.Add("the loader");
+        // ⚠ Same two words as the rest of this card: "Needs the loader and the mod" left the
+        // reader to work out that the two are different things.
+        if (report.InstalledLoader is null) pending.Add("the mod loader");
         else if (report.LoaderUpdateOffered) pending.Add("a newer loader");
 
         // ⚠ A newer loader we may NOT touch is still worth knowing about, and this tab said
@@ -3160,10 +3162,13 @@ public partial class MainWindow : Window
 
         next.Children.Add(new TextBlock
         {
+            // ⚠ "mod loader", the same two words the line below uses and the same the game list
+            // uses. "The loader" alone assumed the reader knows which loader is meant, and the two
+            // lines of this card were then naming one thing two ways.
             Text = pending.Count == 0
                 ? (loaderTheirs
                     ? "The mod is installed and up to date."
-                    : "The loader and the mod are installed and up to date.")
+                    : "The mod loader and the mod are installed and up to date.")
                 : $"Needs {string.Join(" and ", pending)}.",
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
@@ -3172,11 +3177,21 @@ public partial class MainWindow : Window
 
         if (loaderTheirs && report.LoaderStanding is { } theirs)
         {
+            // 🔴 **Say WHAT this is about, right after a line that said the mod is fine.**
+            //
+            // It opened on the loader's own name — "BepInEx 6 (IL2CPP) 6.0.0-be.755 → …" — under
+            // "The mod is installed and up to date." Anyone who does not already know that BepInEx
+            // is the thing loading mods reads two sentences contradicting each other about the
+            // same object. Naming the category costs two words and removes the whole ambiguity.
+            //
+            // ⚠ "from here" is gone too: a deictic pointing at nothing (this window? this
+            // machine?). The thing that did or did not install it has a name, and it is the same
+            // name the game list uses — see SituationReader, "not managed by UGT".
             next.Children.Add(new TextBlock
             {
-                Text = $"{report.InstalledLoader!.Display} {theirs.Installed} → {theirs.Available} "
-                     + "is out. It was not installed from here, so updating it has to be allowed "
-                     + "first — in Set up.",
+                Text = $"Mod loader — {report.InstalledLoader!.Display} {theirs.Installed} → {theirs.Available} "
+                     + "is out. UnityGameTranslator did not install it, so updating it has to be "
+                     + "allowed first — in Set up.",
                 FontSize = 11,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("StatusInfo"),

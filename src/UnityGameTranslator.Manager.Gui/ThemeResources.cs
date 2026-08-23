@@ -88,6 +88,18 @@ internal static class ThemeResources
         r["QualityCapture"] = Brush(Theme.QualityCapture);
         r["QualityTrack"] = Brush(Theme.QualityTrack);
 
+        // ── Tag chips ─────────────────────────────────────────────────────────────────────────
+        //
+        // ⚠ The 600 ramp, NOT the 500 of the bands above. A band is a wide filled area; a chip is
+        // a letter in white on a square, and 500 behind it is thin. The library holds both and
+        // says why — these keys exist so a screen never has to choose.
+        r["ChipH"] = Brush(Theme.ChipHuman);
+        r["ChipV"] = Brush(Theme.ChipValidated);
+        r["ChipA"] = Brush(Theme.ChipAi);
+        r["ChipS"] = Brush(Theme.ChipKept);
+        r["ChipM"] = Brush(Theme.ChipModUi);
+        r["ChipLetter"] = Brush(Theme.ChipLetter);
+
         // ── Callouts ──────────────────────────────────────────────────────────────────────────
         r["CalloutErrorBg"] = Brush(Theme.CalloutError);
         r["CalloutWarningBg"] = Brush(Theme.CalloutWarning);

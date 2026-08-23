@@ -298,7 +298,11 @@ public sealed class LineagePosition
     /// Who owns the Main, when the caller happens to know: the published entry of this lineage IS
     /// the Main, so a community search already carries the name. Left out rather than guessed.
     /// </param>
-    public string Describe(string? mainOwner = null)
+    /// <param name="withKinds">
+    /// Whether to append what the contributions hold. False for a caller that draws those
+    /// qualities as chips — see <see cref="Kinds"/>.
+    /// </param>
+    public string Describe(string? mainOwner = null, bool withKinds = true)
     {
         if (!IsMain)
         {
@@ -334,10 +338,29 @@ public sealed class LineagePosition
         // there for me", and this answers "how much is there to look at, and what is it". Two
         // questions, and the second decides whether the review gets opened at all — so it must not
         // be buried inside a clause about the first.
+        // ⚠ Left out when the caller is going to DRAW the qualities instead of printing them —
+        // see Kinds below. Everything else about the sentence is unchanged, so a screen that can
+        // only print (a log, a tooltip, the CLI) still gets the whole thing.
+        if (!withKinds) return said;
+
         var kinds = Contributions.WhatKindOfWork(LinesToReview, LinesNew, LinesDiffering);
 
         return kinds.Length == 0 ? said : said + " — " + kinds + ".";
     }
+
+    /// <summary>
+    /// The head of the drawn form: "21 to review", or nothing.
+    ///
+    /// 🔴 **H V A S are coloured chips on the website, and were grey prose here.** They are what
+    /// says whether an evening is worth it — nine lines written by hand is not the proposition
+    /// nine machine lines are — so a screen that can draw takes <see cref="Kinds"/> and this head,
+    /// while anything that can only print keeps the whole sentence. The words and the order stay
+    /// in the socle either way.
+    /// </summary>
+    public string ToReview => Contributions.ToReview(LinesToReview);
+
+    /// <summary>What the contributions hold, in pieces, for a screen that draws them.</summary>
+    public WorkKind[] Kinds => Contributions.KindsOfWork(LinesNew, LinesDiffering);
 
     /// <summary>
     /// Said only when <see cref="MainMissing"/> is true. Null is "we do not know" — an older site

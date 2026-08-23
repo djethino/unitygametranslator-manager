@@ -3989,6 +3989,78 @@ public partial class MainWindow : Window
     /// who downloaded somebody's work owes no explanation for it. Silent, too, while the answer is
     /// unread or the account signed out — the alternative would be a guess printed as a fact.
     /// </summary>
+    /// <summary>
+    /// What the contributions are holding: the group, then a chip per quality.
+    ///
+    /// 🔴 **The same four letters the website draws as coloured squares**, which arrived here as
+    /// grey prose inside a sentence. They are what says whether an evening is worth it — nine
+    /// lines written by hand is not the proposition nine machine lines are.
+    ///
+    /// ⚠ Order, labels and which zeros are left out all come from the socle
+    /// (<see cref="Common.Contributions.KindsOfWork"/>), which composes the printed sentence from
+    /// the very same pieces. This only decides how a piece looks.
+    /// </summary>
+    private IEnumerable<Control> ContributionChips(LineagePosition position)
+    {
+        var kinds = position.Kinds;
+        if (kinds.Length == 0) yield break;
+
+        var row = new WrapPanel { Margin = new Avalonia.Thickness(0, 2, 0, 0) };
+
+        row.Children.Add(new TextBlock
+        {
+            Text = position.ToReview + ":",
+            FontSize = 12,
+            Foreground = Brush("TextMuted"),
+            Margin = new Avalonia.Thickness(0, 0, 6, 0),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        });
+
+        for (int k = 0; k < kinds.Length; k++)
+        {
+            row.Children.Add(new TextBlock
+            {
+                // The separator the sentence uses between groups, so the two read alike.
+                Text = (k > 0 ? "· " : "") + kinds[k].Total + " " + kinds[k].Label,
+                FontSize = 12,
+                Foreground = Brush("TextMuted"),
+                Margin = new Avalonia.Thickness(k > 0 ? 6 : 0, 0, 4, 0),
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            });
+
+            foreach (var piece in kinds[k].Tally.Counted())
+            {
+                row.Children.Add(new Border
+                {
+                    Background = Brush("Chip" + piece.Letter),
+                    // ⚠ Qualified: `Theme` alone resolves to Avalonia's ControlTheme here.
+                    CornerRadius = new Avalonia.CornerRadius(Common.Theme.ChipRadius),
+                    Padding = new Avalonia.Thickness(5, 1, 5, 1),
+                    Margin = new Avalonia.Thickness(0, 0, 3, 0),
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                    Child = new TextBlock
+                    {
+                        Text = piece.Letter,
+                        FontSize = 11,
+                        FontWeight = Avalonia.Media.FontWeight.Bold,
+                        Foreground = Brush("ChipLetter"),
+                    },
+                });
+
+                row.Children.Add(new TextBlock
+                {
+                    Text = piece.Count.ToString(),
+                    FontSize = 12,
+                    Foreground = Brush("TextMuted"),
+                    Margin = new Avalonia.Thickness(0, 0, 6, 0),
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                });
+            }
+        }
+
+        yield return row;
+    }
+
     private IEnumerable<Control> LineageNotes(GameReport report)
     {
         if (report.MyPosition is not { } position)
@@ -4042,14 +4114,19 @@ public partial class MainWindow : Window
             // Green reads as "nothing to do", which is the opposite of the second one: an owner
             // with contributions to go through was being reassured by the very line telling them
             // otherwise. The mod had the mirror-image fault, muting the same sentence to grey.
+            // ⚠ withKinds: false — the qualities are DRAWN just below, as the chips the website
+            // uses, instead of being spelt out in the sentence. Everything else it says is
+            // unchanged, and a caller that can only print still gets the whole thing.
             yield return new TextBlock
             {
-                Text = position.Describe(),
+                Text = position.Describe(withKinds: false),
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush(waiting > 0 ? "StatusWarning" : "StatusSuccess"),
                 Margin = new Avalonia.Thickness(0, 2, 0, 0),
             };
+
+            foreach (var row in ContributionChips(position)) yield return row;
 
             // Reviewing happens on the site — merging a contribution means reading both files side
             // by side, which is a screen, not a line on a card. Offered only when there is

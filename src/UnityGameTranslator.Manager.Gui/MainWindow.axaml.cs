@@ -4011,7 +4011,11 @@ public partial class MainWindow : Window
         {
             Text = position.ToReview + ":",
             FontSize = 12,
-            Foreground = Brush("TextMuted"),
+            // ⚠ White, not the muted grey: the line above is the one asking for something and keeps
+            // the amber, while this one ANSWERS "what is in it". A fact read beside a call to action
+            // must not compete with it — nor look like a footnote. Same choice in the mod's status
+            // card, because it is the same sentence.
+            Foreground = Brush("TextPrimary"),
             Margin = new Avalonia.Thickness(0, 0, 6, 0),
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
         });
@@ -4023,7 +4027,7 @@ public partial class MainWindow : Window
                 // The separator the sentence uses between groups, so the two read alike.
                 Text = (k > 0 ? "· " : "") + kinds[k].Total + " " + kinds[k].Label,
                 FontSize = 12,
-                Foreground = Brush("TextMuted"),
+                Foreground = Brush("TextPrimary"),
                 Margin = new Avalonia.Thickness(k > 0 ? 6 : 0, 0, 4, 0),
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
             });
@@ -4051,7 +4055,7 @@ public partial class MainWindow : Window
                 {
                     Text = piece.Count.ToString(),
                     FontSize = 12,
-                    Foreground = Brush("TextMuted"),
+                    Foreground = Brush("TextPrimary"),
                     Margin = new Avalonia.Thickness(0, 0, 6, 0),
                     VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
                 });

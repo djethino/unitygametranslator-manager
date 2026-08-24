@@ -2178,10 +2178,16 @@ public partial class MainWindow : Window
         // language.
         return Banner(
             "\"Mod defaults\" is set to \"Community translations only\"",
+            // ⚠ **Named in the order they cost.** An AI on your own machine is free if the machine
+            // can run one, and it is what this product is for; writing the lines yourself costs
+            // nothing at all. Google, DeepL and the online models come last and are said to be paid
+            // for by the reader — supported, and not the point. Putting "Captures only" first, as
+            // this did, offered the longest road before the short one.
             "So a game gets a translation only if somebody published one in your language. Other "
-            + "games stay in their own language. To change that, open Mod defaults and pick a "
-            + "translator — or \"Captures only\", which needs no AI and no account: the mod "
-            + "collects the game's text and you write the lines yourself in its editor.",
+            + "games stay in their own language. Open Mod defaults to change that: an AI on your "
+            + "own machine costs nothing if the machine can run one, and \"Captures only\" costs "
+            + "nothing at all — the mod collects the game's text and you write the lines yourself "
+            + "in its editor. Google, DeepL and online AI work too, on your own key.",
             "Open Mod defaults",
             async () => await OpenSettingsAsync(),
             ("See the games on the site",
@@ -3359,9 +3365,12 @@ public partial class MainWindow : Window
 
             empty.Children.Add(new TextBlock
             {
-                Text = "Mod defaults takes translations from the community, and this game has "
-                     + "none. Choose a translator, or choose \"Captures only\" and write the "
-                     + "lines yourself in the mod's editor — both make the set-up worth doing.",
+                // ⚠ Same order as the banner and the picker: what costs nothing first. An AI on
+                // the machine is the short road when the machine allows it; writing the lines
+                // yourself always works.
+                Text = "\"Mod defaults\" is set to \"Community translations only\", and this game "
+                     + "has none. Pick an AI on your own machine — free if it can run one — or "
+                     + "\"Captures only\" and write the lines yourself in the mod's editor.",
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("TextSecondary"),

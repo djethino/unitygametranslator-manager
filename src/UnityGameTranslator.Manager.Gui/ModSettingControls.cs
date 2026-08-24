@@ -105,10 +105,14 @@ public static class ModSettingControls
     /// </summary>
     public static ComboBox BackendPicker(double width)
     {
+        // 🔴 **The order is the product's positioning, not the order they were written.** What
+        // costs nothing comes first — community work, an AI on your own machine, writing the lines
+        // yourself — and what costs the reader money comes last: Google, DeepL and the online
+        // models run on their own key, at their own expense, and are an addition rather than the
+        // point. Nothing here depends on the index; Select matches on the tag.
         var box = new ComboBox { Width = width };
         box.Items.Add(new ComboBoxItem { Content = "Community translations only", Tag = "none" });
         box.Items.Add(new ComboBoxItem { Content = "AI (local or cloud)", Tag = "llm" });
-        box.Items.Add(new ComboBoxItem { Content = "Google / DeepL", Tag = "google" });
 
         // 🔴 **Translating by hand is a CHOICE, and it had no name.** The mod captures the game's
         // text as it meets it and its editor lets somebody write each line — the way every
@@ -120,6 +124,10 @@ public static class ModSettingControls
         // answer is complete; one set up on community work that does not exist is not, and the
         // one-click can now say so instead of installing everything for a result nobody wanted.
         box.Items.Add(new ComboBoxItem { Content = "Captures only (translate by hand)", Tag = "capture" });
+
+        // Last, and that is the whole point of the order above: these are the reader's own keys and
+        // the reader's own money. They work, they are supported, and they are not what this is for.
+        box.Items.Add(new ComboBoxItem { Content = "Google / DeepL (your own key)", Tag = "google" });
         return box;
     }
 

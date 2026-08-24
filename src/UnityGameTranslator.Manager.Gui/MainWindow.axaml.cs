@@ -8610,6 +8610,32 @@ public partial class MainWindow : Window
                 body.Children.Add(warning);
         }
 
+        // 🔴 **What this will NOT do, said before it is agreed to.** Every step above is real work
+        // and each one succeeds — and on a game with nothing published, following Mod defaults
+        // that name no translator, the result is a set-up game showing its own language. Somebody
+        // presses a button called "Set it up", watches four steps go green, plays, and sees
+        // nothing translated: the program kept every promise it listed and none that was heard.
+        //
+        // ⚠ **Not a refusal, and the button stays.** Installing the loader and the mod is exactly
+        // what somebody starting a translation BY HAND needs, which this product invites people to
+        // do — greying it would close the one path it says needs no AI and no account. What was
+        // missing is the outcome, at the moment of committing.
+        //
+        // ⚠ Only when this game will actually follow Mod defaults. A game keeping its own
+        // configuration may name a translator we are not reading here, and warning about somebody
+        // else's settings would be a claim we cannot support.
+        if (report.OnlineTranslations.Count == 0
+            && translation is null
+            && steps.Any(s => s.Act is OneClickAct.ApplySettings)
+            && TranslationBackendLabel(_settings.Current) is null)
+        {
+            body.Children.Add(Callout(
+                "When this is done, nothing will be translated yet. This game has no published "
+                + "translation, and Mod defaults names no translator. The mod will capture the "
+                + "game's text as you play, and you can write the lines yourself in its editor.",
+                "CalloutWarningBg", "StatusWarning"));
+        }
+
         if (!await ConfirmAsync($"Set up {report.Game.Name}?", body, "Set it up")) return;
 
         // ⚠ Read BEFORE anything is written: applying the settings makes this game "configured",

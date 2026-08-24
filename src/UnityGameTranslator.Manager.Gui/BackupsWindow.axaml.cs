@@ -433,15 +433,24 @@ public sealed class BackupsWindow : Window
         {
             // ⚠ The gesture that closes the loop between the two cards: recognise the one worth
             // having before it ages out, and it stops ageing.
+            // ⚠ Two reasons it may be impossible, and both are known BEFORE the click: the slots
+            // are full, or this very copy is already kept. Keeping copies rather than moves now,
+            // so the row stays in the automatic list with its button — and a button that can only
+            // refuse must say so instead of waiting to be pressed.
+            var already = Backups.AlreadyKept(all, entry);
+
             var keep = new Button
             {
                 Content = "Keep",
                 FontSize = 12,
-                IsEnabled = Backups.CanSaveAnother(all),
+                IsEnabled = !already && Backups.CanSaveAnother(all),
             };
 
-            ToolTip.SetTip(keep, Backups.WhyCannotSave(all)
-                                 ?? $"Moves it into {Backups.SavedHeading}, so it stops ageing out.");
+            ToolTip.SetTip(keep, already
+                                 ? Backups.AlreadyKeptHint
+                                 : Backups.WhyCannotSave(all)
+                                   ?? $"Copies it into {Backups.SavedHeading}, so it stops ageing "
+                                      + "out. This one stays where it is.");
 
             keep.Click += async (_, _) =>
                 await ActAsync(() => TranslationBackupStore.Keep(_game.Path, _descriptor, entry.Id),

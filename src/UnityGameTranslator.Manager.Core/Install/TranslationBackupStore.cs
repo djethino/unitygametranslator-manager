@@ -79,6 +79,10 @@ public static class TranslationBackupStore
             Id = id,
             Reason = saved ? BackupReason.Saved : BackupReason.Unknown,
             WithAssets = saved,
+
+            // ⚠ The folder name is the first answer and a reliable one: only Keep and the Backup
+            // button ever produce a `saved-` folder. The description below can only confirm it.
+            Kept = saved,
             At = StampOf(id),
         };
 
@@ -97,6 +101,10 @@ public static class TranslationBackupStore
             {
                 entry.Reason = known;
             }
+
+            // ⚠ Read, and never un-set: the reason above has just overwritten what the folder name
+            // said, and rebuilding "is it kept" from it is the defect this line answers.
+            if (json["kept"]?.GetValue<bool>() == true) entry.Kept = true;
 
             entry.By = json["by"]?.GetValue<string>();
             entry.Label = json["label"]?.GetValue<string>();
@@ -507,6 +515,24 @@ public static class TranslationBackupStore
         }
     }
 
+    /// <summary>
+    /// Duplicate one backup folder, assets included.
+    ///
+    /// ⚠ Recursive because a copy can carry `fonts/` and `images/` — see
+    /// <see cref="Backups.AssetFolders"/>. A flat copy would produce a saved backup that restores
+    /// the lines and silently drops the fonts they were written for.
+    /// </summary>
+    private static void CopyFolder(string source, string destination)
+    {
+        Directory.CreateDirectory(destination);
+
+        foreach (var file in Directory.EnumerateFiles(source))
+            File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), overwrite: true);
+
+        foreach (var folder in Directory.EnumerateDirectories(source))
+            CopyFolder(folder, Path.Combine(destination, Path.GetFileName(folder)));
+    }
+
     public static bool Delete(string gamePath, LoaderDescriptor descriptor, string id)
     {
         try
@@ -573,7 +599,11 @@ public static class TranslationBackupStore
             var destination = Path.Combine(root, Backups.NewId(BackupReason.Saved, StampOf(id)));
             if (Directory.Exists(destination)) return false;
 
-            Directory.Move(directory, destination);
+            // 🔴 **A COPY, never a move.** Keeping one is a decision about a copy of your own; the
+            // automatic rotation is a separate mechanism that has to go on rotating. Moving the
+            // folder took the row out of the automatic list — so deciding to keep a copy made the
+            // list shorter, which reads as having lost one.
+            CopyFolder(directory, destination);
 
             // ⚠ The reason it was taken is kept, not overwritten with "Saved by you": "before
             // installing @Seniorito's translation" is precisely why it is worth keeping.

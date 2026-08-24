@@ -91,13 +91,17 @@ public sealed class QualityBar : Border
 
     public static Control? Legend(TagCounts tags)
     {
+        // ⚠ The words come from the socle, and this key is why it exists. It said "reviewed" for
+        // the band the website and the mod both call "Validated", and "not done yet" for the grey
+        // they both call "Captured" — same bar, same colours, same file, and a reader moving
+        // between two windows had to work out that two words were one band.
         var counts = new (int Count, string Colour, string Label)[]
         {
-            (tags.Human, "QualityHuman", "human"),
-            (tags.Validated, "QualityValidated", "reviewed"),
-            (tags.Ai, "QualityAi", "AI"),
-            (tags.Skipped, "QualityKept", "kept as is"),
-            (tags.Captured, "QualityCapture", "not done yet"),
+            (tags.Human, "QualityHuman", Composition.Name(TagBand.Human)),
+            (tags.Validated, "QualityValidated", Composition.Name(TagBand.Validated)),
+            (tags.Ai, "QualityAi", Composition.Name(TagBand.Machine)),
+            (tags.Skipped, "QualityKept", Composition.Name(TagBand.Skipped)),
+            (tags.Captured, "QualityCapture", Composition.Name(TagBand.Captured)),
         };
 
         var total = counts.Sum(entry => entry.Count);
@@ -136,7 +140,9 @@ public sealed class QualityBar : Border
 
             entry.Children.Add(new TextBlock
             {
-                Text = $"{percent}% {label}",
+                // Name first, share second — the mod's key and the website's both read that way,
+                // and a reader scanning a column of keys scans the names, not the numbers.
+                Text = $"{label} {percent}%",
                 FontSize = 11,
                 Foreground = Brush("TextMuted"),
                 VerticalAlignment = VerticalAlignment.Center,
@@ -149,8 +155,7 @@ public sealed class QualityBar : Border
     }
 
     /// <summary>
-    /// Where the reading stands, in the mod's own words — copied from its TranslationQuality so
-    /// the same file is described identically in the game and here.
+    /// Where the reading stands, in the words the whole ecosystem uses.
     ///
     /// ⚠ A step, never a mark. Every translation starts as machine output because that is how the
     /// mod works; calling that a poor grade tells a newcomer their starting point is worthless.
@@ -161,17 +166,14 @@ public sealed class QualityBar : Border
     /// <summary>
     /// The same words from the stage itself, for callers that already hold one.
     ///
-    /// ⚠ One body, two entry points. Two copies of this mapping would be two chances to call the
-    /// same file "fully reviewed" here and something else three lines lower.
+    /// 🔴 **The mapping is Quality.StageName's, not ours.** This method used to spell the four
+    /// words out, and had drifted back to "Review well under way" — the idiom the socle replaced
+    /// precisely because it is transparent to a native and opaque to everybody else. So the same
+    /// file read one way in the game and another way in this window, which is the exact failure
+    /// the shared library was created to end.
     /// </summary>
-    public static string? StageOf(ReviewStage? stage) => stage switch
-    {
-        ReviewStage.Reviewed => "Fully reviewed",
-        ReviewStage.Advanced => "Review well under way",
-        ReviewStage.Started => "Review started",
-        ReviewStage.Machine => "Machine translation",
-        _ => null,
-    };
+    public static string? StageOf(ReviewStage? stage) =>
+        stage.HasValue ? Quality.StageName(stage.Value) : null;
 
     /// <summary>Through Palette, which will not let an unknown key pass unnoticed.</summary>
     private static IBrush? Brush(string key) => Palette.Of(key);

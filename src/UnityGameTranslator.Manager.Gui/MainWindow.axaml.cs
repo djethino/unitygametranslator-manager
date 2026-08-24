@@ -5890,12 +5890,24 @@ public partial class MainWindow : Window
                 ? _settings.Current.BepInEx6Channel
                 : null;
 
-            var found = await new LoaderBuildResolver()
-                .ResolveAsync(loader, channel, count: 5).ConfigureAwait(true);
-
-            // ⚠ Released here and not in a finally: a run that has been superseded must NOT clear
-            // the flag, or the newer one would be let through a second time.
-            if (mine == generation) asking = null;
+            IReadOnlyList<LoaderBuild> found;
+            try
+            {
+                found = await new LoaderBuildResolver()
+                    .ResolveAsync(loader, channel, count: 5).ConfigureAwait(true);
+            }
+            finally
+            {
+                // 🔴 **In a finally, or a throw locks this loader out for good.** The flag is what
+                // stops a second request; released only on the way through, an exception would
+                // leave it set and every later attempt would short-circuit on a load that is not
+                // running. The expander would then never fill again, with nothing on screen saying
+                // why. ResolveAsync catches its own failures today — this must not depend on that.
+                //
+                // ⚠ Only the run that still owns the generation clears it. A superseded run must
+                // not, or the newer one would be let through a second time.
+                if (mine == generation) asking = null;
+            }
 
             // Somebody asked again while this was in flight — their answer is the one to show.
             if (mine != generation) return;
@@ -5910,12 +5922,16 @@ public partial class MainWindow : Window
             builds.SelectedIndex = 0;
             builds.IsEnabled = found.Count > 1;
 
+            // ⚠ **`loaded` only when the answer came from the publisher.** A pinned fallback means
+            // the source could not be reached; marking that as loaded would freeze the catalogue's
+            // entry in place for the life of the card, and reopening the expander would keep
+            // showing it long after the network came back.
             note.Text = found[0].IsPinnedFallback
                 ? $"Could not reach the place {loader.Display} is published, so only the build "
                   + "recorded in the catalog is available. It may be far behind."
                 : $"From {found[0].SourceLabel}. The newest is used unless another is picked in this list.";
 
-            loaded = true;
+            loaded = !found[0].IsPinnedFallback;
         }
 
         expander.Expanding += async (_, _) =>

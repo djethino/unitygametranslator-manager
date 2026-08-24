@@ -3063,6 +3063,62 @@ public partial class MainWindow : Window
 
             yield return Card(body);
         }
+        else
+        {
+            // 🔴 **The way back, on the tab people actually open.** Everything above lives inside
+            // "this game holds a translation", so removing one took the whole card away — and with
+            // it the only door to the copies that removal had just taken. Set up still showed it,
+            // but nobody goes to Set up to undo something they did here.
+            //
+            // ⚠ Only when there IS something to put back: a door to an empty room is worse than no
+            // door, and with no translation there is nothing to back up either.
+            var loaderId = report.InstalledLoader?.Id ?? report.RecommendedLoader?.Id;
+            var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == loaderId);
+
+            if (descriptor is not null)
+            {
+                var kept = TranslationBackupStore.List(report.Game.Path, descriptor);
+
+                if (kept.Count > 0)
+                {
+                    var standing = ServerIdentity.For(_settings.Current, report.SiteAccount,
+                                                      BuildInfo.ApiBaseUrl);
+
+                    var body = new StackPanel { Spacing = 4 };
+
+                    body.Children.Add(new TextBlock
+                    {
+                        Text = "This game holds no translation.",
+                        FontSize = 13,
+                        FontWeight = FontWeight.SemiBold,
+                        TextWrapping = TextWrapping.Wrap,
+                        Foreground = Brush("TextPrimary"),
+                    });
+
+                    body.Children.Add(new TextBlock
+                    {
+                        Text = kept.Count == 1
+                            ? "One copy is kept — you can put it back."
+                            : $"{kept.Count} copies are kept — you can put one back.",
+                        FontSize = 12,
+                        TextWrapping = TextWrapping.Wrap,
+                        Foreground = Brush("TextSecondary"),
+                    });
+
+                    var row = new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        Spacing = 8,
+                        Margin = new Avalonia.Thickness(0, 6, 0, 0),
+                    };
+
+                    row.Children.Add(BackupsButton(report, descriptor, standing, kept));
+                    body.Children.Add(row);
+
+                    yield return Card(body);
+                }
+            }
+        }
 
         // ── What exists for this game ─────────────────────────────────────────────────────────
         //
@@ -3539,22 +3595,16 @@ public partial class MainWindow : Window
         apply.Click += async (_, _) => await TakeSelectedTranslationAsync(report, picked, replacing);
         row.Children.Add(apply);
 
-        // ⚠ Only beside a real choice. Undo forgets a stored TranslationId, and there is none to
-        // forget behind a proposal — a button that does nothing is worse than no button.
-        if (!deliberate) return row;
-
-        var undo = new Button { Content = "Undo", FontSize = 12 };
-        ToolTip.SetTip(undo, "Forgets this choice. The game keeps whatever it runs now.");
-
-        undo.Click += async (_, _) =>
-        {
-            var current = _preferences.Read(report.Game.Path);
-            current.TranslationId = null;
-            _preferences.Set(report.Game.Path, current);
-            await ShowSelectedAsync();
-        };
-
-        row.Children.Add(undo);
+        // 🔴 **There is no Undo here, and there should not be.** One stood beside Apply and forgot
+        // the stored choice. It read as "put the translation back" and did nothing of the sort —
+        // nothing had been written yet — and its real effect was invisible: with the chosen
+        // translation also the best-ranked, which is the ordinary case, the row redrew identically
+        // and the only thing that changed was the button disappearing.
+        //
+        // ⚠ What it protected is covered without it. Changing one's mind is picking another from
+        // the list, one click away; and with no choice stored the one-click proposing the
+        // best-ranked is what happens anyway, so "forget my choice" was a state nobody needs to
+        // reach by name. Putting a translation BACK is Backups, which acts on files.
         return row;
     }
 

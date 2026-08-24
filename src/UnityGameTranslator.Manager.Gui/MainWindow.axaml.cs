@@ -8961,6 +8961,28 @@ public partial class MainWindow : Window
             };
         }
 
+        // 🔴 **The language switch, said HERE and not asked afterwards.** Taking a translation in
+        // another language IS deciding to play this game in that language — there is no sensible
+        // way to want the file in one language and the lines the mod adds in another. So it is
+        // stated among the consequences of this confirmation, where somebody who chose the wrong
+        // row can still cancel, and it happens with the write.
+        //
+        // ⚠ It replaced a question asked after the file was already written, whose stated reason
+        // was false: it claimed the mod would not use the installed file, and the mod reads the
+        // file whatever the language setting says.
+        if (LanguageSwitchOnTaking(report, taking) is { } switching)
+        {
+            yield return new TextBlock
+            {
+                Text = $"This game is set to {switching.From} and this translation is in "
+                     + $"{switching.To}. It will be set to {switching.To} — this game only, your "
+                     + "default does not move.",
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextSecondary"),
+                FontSize = 12,
+            };
+        }
+
         if (report.MyPosition is not { } position) yield break;
 
         yield return new TextBlock
@@ -10152,80 +10174,66 @@ public partial class MainWindow : Window
 
         await MessageAsync("Translation", message);
 
-        // Asked AFTER the file is in place, because it only matters once it exists — and because
-        // saying no must leave a working translation behind rather than a cancelled operation.
-        await OfferToAlignGameAsync(report, descriptor, picked);
+        // ⚠ Done, not asked. Choosing a translation in another language is choosing to play this
+        // game in it; the confirmation that led here said so among its consequences, which is where
+        // somebody who picked the wrong row could still stop.
+        AlignGameLanguage(report, descriptor, picked);
 
         await ShowSelectedAsync();
     }
 
     /// <summary>
-    /// Points the game at the language of the translation just taken, with permission.
+    /// The language change taking this translation would make, or null when it makes none.
     ///
-    /// 🔴 **What this is NOT about.** It said the mod would "not use the file you just installed",
-    /// and that is false: `target_language` is read in four places in the mod — a log line, the AI
-    /// prompt, the Google language code, the DeepL one — and in none of them to load or serve
-    /// `translations.json`. The file is used whatever the setting says. A question resting on a
-    /// consequence that does not happen is a question nobody can answer.
+    /// 🔴 **A consequence to state, never a question to ask.** This was a dialog put up after the
+    /// file was already written, and its stated reason was false: it claimed the mod would not use
+    /// what had just been installed, when `target_language` is read in four places in the mod — a
+    /// log line, the AI prompt, the Google language code, the DeepL one — and in none of them to
+    /// load or serve the file. The file is used whatever the setting says.
     ///
-    /// What IS true is narrower: lines the mod meets that the file does not hold are translated
-    /// into the configured language. Leave a game on French with an English file and every new
-    /// line arrives in French — one file, two languages, and the mix is what nobody wants.
-    ///
-    /// ⚠ **So it is only asked when something would actually translate.** With community
-    /// translations only, or captures only, nothing new is produced and the setting changes
-    /// nothing observable — asking then is asking about nothing.
-    ///
-    /// ⚠ Asked, never done silently. Somebody running two games in two languages has a reason we
-    /// cannot guess.
-    ///
-    /// ⚠ Writes that ONE key. It used to go through Apply, which carried the backend and the
-    /// update preferences along with it — a language question answered by rewriting the whole
-    /// configuration.
+    /// What is true is that lines the mod meets and the file does not hold are written in the
+    /// configured language, so an English file in a game set to French fills up with French. Nobody
+    /// wants one file in two languages, so there is one sensible answer — and a question with one
+    /// sensible answer is a confirmation of something already decided. Choosing a translation in
+    /// another language IS choosing to play this game in it.
     /// </summary>
-    private async Task OfferToAlignGameAsync(GameReport report, LoaderDescriptor descriptor,
-                                             OnlineTranslation translation)
+    private (string From, string To)? LanguageSwitchOnTaking(GameReport report,
+                                                             OnlineTranslation translation)
     {
         var taken = translation.TargetLanguage;
-        if (string.IsNullOrWhiteSpace(taken)) return;
+        if (string.IsNullOrWhiteSpace(taken)) return null;
+
+        if (InstalledDescriptor(report) is not { } descriptor) return null;
 
         // What the GAME is set to, not what this tool defaults to: they are allowed to differ, and
         // this one is what the mod acts on.
         var configured = LocalTranslationProbe.ReadTargetLanguage(report.Game.Path, descriptor);
 
-        if (configured is null) return;
-        if (string.Equals(configured, taken, StringComparison.OrdinalIgnoreCase)) return;
+        if (string.IsNullOrWhiteSpace(configured)) return null;
+        if (string.Equals(configured, taken, StringComparison.OrdinalIgnoreCase)) return null;
 
-        // ⚠ The GAME's own backend, not this tool's default: the mod acts on what is in that
-        // config. Nothing to translate with means nothing new is produced, so the language this
-        // game aims at has no observable effect and there is nothing to ask about.
-        var backend = GameConfigWriter.InGameValue(report.Game.Path, descriptor,
-                                                   "translation_backend");
+        return (configured, taken);
+    }
 
-        if (string.IsNullOrWhiteSpace(backend) || backend == "none") return;
+    /// <summary>
+    /// Points the game at the language of the translation just taken.
+    ///
+    /// ⚠ Writes that ONE key. It used to go through Apply, which carried the backend and the
+    /// update preferences along with it — a language question answered by rewriting the whole
+    /// configuration.
+    ///
+    /// ⚠ The SOURCE language is deliberately not carried across. That field describes the person
+    /// who made the translation, not the game: nothing here can read what language a game's own
+    /// text is in, and writing a guess would put "translate from English" into every prompt — and,
+    /// under strict_source_language, retire every line judged to be in another language.
+    /// </summary>
+    private void AlignGameLanguage(GameReport report, LoaderDescriptor descriptor,
+                                   OnlineTranslation translation)
+    {
+        if (LanguageSwitchOnTaking(report, translation) is not { } switching) return;
 
-        // ⚠ **Both answers are named, because neither is a cancellation.** The file is already
-        // written by the time this is asked; saying no keeps the game on the language it had and
-        // leaves that file unused. "Cancel" said the opposite — that something was being called
-        // off — and left somebody asking what declining would actually do.
-        var agreed = await ConfirmAsync($"Translate new lines into {taken} too?",
-            $"The translation you just took is in {taken}. This game translates into {configured}, "
-            + $"so every line the mod meets that this file does not have would be written in "
-            + $"{configured} — one file holding both languages."
-            + Environment.NewLine + Environment.NewLine
-            + $"The lines it already has are used either way. Switching changes this game only; "
-            + $"your default stays {Languages.NameOf(_settings.ResolveTargetLanguage())}.",
-            $"Use {taken} for this game",
-            $"Keep {configured}");
-
-        if (!agreed) return;
-
-        // ⚠ The SOURCE language is deliberately not carried across. That field describes the person
-        // who made the translation, not the game: nothing here can read what language a game's own
-        // text is in, and writing a guess would put "translate from English" into every prompt —
-        // and, under strict_source_language, retire every line judged to be in another language.
         new GameConfigWriter().ApplyOne(report.Game.Path, descriptor,
-            GameConfigWriter.TargetLanguageKey, taken, "language");
+            GameConfigWriter.TargetLanguageKey, switching.To, "language");
     }
 
     /// <summary>

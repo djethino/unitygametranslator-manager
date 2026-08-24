@@ -10162,14 +10162,22 @@ public partial class MainWindow : Window
     /// <summary>
     /// Points the game at the language of the translation just taken, with permission.
     ///
-    /// This is the case that actually happens: no translation in your language for a Japanese or
-    /// Chinese game, so you take the English one. Without this the file lands in a game still set
-    /// to French — the mod ignores what was just installed and carries on translating towards a
-    /// language nobody published, and nothing on screen explains why.
+    /// 🔴 **What this is NOT about.** It said the mod would "not use the file you just installed",
+    /// and that is false: `target_language` is read in four places in the mod — a log line, the AI
+    /// prompt, the Google language code, the DeepL one — and in none of them to load or serve
+    /// `translations.json`. The file is used whatever the setting says. A question resting on a
+    /// consequence that does not happen is a question nobody can answer.
     ///
-    /// ⚠ Asked, never done silently. The target language also decides what the mod translates as
-    /// you play, so changing it reaches beyond this file — and somebody running two games in two
-    /// languages has a reason we cannot guess.
+    /// What IS true is narrower: lines the mod meets that the file does not hold are translated
+    /// into the configured language. Leave a game on French with an English file and every new
+    /// line arrives in French — one file, two languages, and the mix is what nobody wants.
+    ///
+    /// ⚠ **So it is only asked when something would actually translate.** With community
+    /// translations only, or captures only, nothing new is produced and the setting changes
+    /// nothing observable — asking then is asking about nothing.
+    ///
+    /// ⚠ Asked, never done silently. Somebody running two games in two languages has a reason we
+    /// cannot guess.
     ///
     /// ⚠ Writes that ONE key. It used to go through Apply, which carried the backend and the
     /// update preferences along with it — a language question answered by rewriting the whole
@@ -10188,17 +10196,25 @@ public partial class MainWindow : Window
         if (configured is null) return;
         if (string.Equals(configured, taken, StringComparison.OrdinalIgnoreCase)) return;
 
+        // ⚠ The GAME's own backend, not this tool's default: the mod acts on what is in that
+        // config. Nothing to translate with means nothing new is produced, so the language this
+        // game aims at has no observable effect and there is nothing to ask about.
+        var backend = GameConfigWriter.InGameValue(report.Game.Path, descriptor,
+                                                   "translation_backend");
+
+        if (string.IsNullOrWhiteSpace(backend) || backend == "none") return;
+
         // ⚠ **Both answers are named, because neither is a cancellation.** The file is already
         // written by the time this is asked; saying no keeps the game on the language it had and
         // leaves that file unused. "Cancel" said the opposite — that something was being called
         // off — and left somebody asking what declining would actually do.
-        var agreed = await ConfirmAsync($"Point the game at {taken}?",
-            $"The translation you just took is in {taken}, and this game is set to {configured}. "
-            + $"Kept on {configured}, the mod goes on working towards {configured} and never uses "
-            + "the file that was just installed."
+        var agreed = await ConfirmAsync($"Translate new lines into {taken} too?",
+            $"The translation you just took is in {taken}. This game translates into {configured}, "
+            + $"so every line the mod meets that this file does not have would be written in "
+            + $"{configured} — one file holding both languages."
             + Environment.NewLine + Environment.NewLine
-            + $"Switching only changes this game. Your default stays "
-            + $"{Languages.NameOf(_settings.ResolveTargetLanguage())}.",
+            + $"The lines it already has are used either way. Switching changes this game only; "
+            + $"your default stays {Languages.NameOf(_settings.ResolveTargetLanguage())}.",
             $"Use {taken} for this game",
             $"Keep {configured}");
 

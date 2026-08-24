@@ -5473,16 +5473,63 @@ public partial class MainWindow : Window
         return button;
     }
 
+    /// <summary>
+    /// The door to this translation's own history — one button, built once.
+    ///
+    /// ⚠ Two callers on purpose: the workbench, and the state where there is no translation at all.
+    /// The second is where somebody needs it most, and it is the one that used to be missing.
+    /// </summary>
+    private Button BackupsButton(GameReport report, LoaderDescriptor descriptor,
+                                 ServerStanding standing,
+                                 IReadOnlyList<BackupEntry>? known = null)
+    {
+        var kept = known ?? TranslationBackupStore.List(report.Game.Path, descriptor);
+
+        var back = ScopeMark.Marked(EditSide.Local, "Backups…", standing.CanWriteLocally);
+
+        ToolTip.SetTip(back, kept.Count == 0
+            ? "Back this translation up before you try something, and come back to it."
+            : $"{Backups.SavedCount(kept)} of your own, "
+              + $"{kept.Count - Backups.SavedCount(kept)} taken automatically.");
+
+        back.Click += async (_, _) => await ShowBackupsAsync(report, descriptor);
+        return back;
+    }
+
     private IEnumerable<Control> TranslationWorkbench(GameReport report, bool heading = true)
     {
-        // Nothing here to work on. The community list above is the whole offer in that case.
-        if (report.LocalTranslation is null) yield break;
-
         var loaderId = report.InstalledLoader?.Id ?? report.RecommendedLoader?.Id;
         var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == loaderId);
         if (descriptor is null) yield break;
 
         var standing = ServerIdentity.For(_settings.Current, report.SiteAccount, BuildInfo.ApiBaseUrl);
+
+        // 🔴 **The way back survives having nothing to work on.** Everything below acts on a
+        // translation, so with none there is nothing to show — except the copies, which is exactly
+        // the state in which somebody needs them: removing the translation is what took the last
+        // one. The whole block used to end here, so the backups taken by that very act became
+        // unreachable, and the only route left was a file manager.
+        //
+        // ⚠ Mirror of the reason written over the Backups button below: the way IN must be visible
+        // before the risk, and the way BACK after it.
+        if (report.LocalTranslation is null)
+        {
+            var left = TranslationBackupStore.List(report.Game.Path, descriptor);
+            if (left.Count == 0) yield break;
+
+            yield return new TextBlock
+            {
+                Text = "This game holds no translation. "
+                       + (left.Count == 1 ? "One copy is kept." : $"{left.Count} copies are kept."),
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Avalonia.Thickness(0, 12, 0, 0),
+                Foreground = Brush("TextSecondary"),
+            };
+
+            yield return BackupsButton(report, descriptor, standing, left);
+            yield break;
+        }
 
         if (heading)
         {
@@ -5802,18 +5849,7 @@ public partial class MainWindow : Window
         //
         // ⚠ The words, the two families and their limits come from Backups, so this window and
         // the mod's own panel describe the same folder identically.
-        if (descriptor is not null)
-        {
-            var kept = TranslationBackupStore.List(report.Game.Path, descriptor);
-
-            var back = ScopeMark.Marked(EditSide.Local, "Backups…", standing.CanWriteLocally);
-            ToolTip.SetTip(back, kept.Count == 0
-                ? "Back this translation up before you try something, and come back to it."
-                : $"{Backups.SavedCount(kept)} of your own, "
-                  + $"{kept.Count - Backups.SavedCount(kept)} taken automatically.");
-            back.Click += async (_, _) => await ShowBackupsAsync(report, descriptor);
-            actions.Children.Add(back);
-        }
+        if (descriptor is not null) actions.Children.Add(BackupsButton(report, descriptor, standing));
 
         yield return actions;
 

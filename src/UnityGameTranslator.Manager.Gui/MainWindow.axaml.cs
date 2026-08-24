@@ -2171,13 +2171,21 @@ public partial class MainWindow : Window
         // ⚠ Still an invitation, not a warning: playing with what people publish is a complete way
         // to use this. What changed is that it now says what it means, names its source, and leads
         // where the answer is given.
+        // 🔴 **The setting, in the words it is written in on its own screen.** A title that
+        // paraphrases makes the reader work out which control it is talking about. Quoting it
+        // — the screen's name, then the value it holds — costs two pairs of quotation marks and
+        // removes the guess, which matters most for the people who read this in their fourth
+        // language.
         return Banner(
-            "Mod defaults takes translations from the community",
-            "A game with a published translation in your language gets it. A game with none stays "
-            + "in its own language — until you choose a translator, or \"Captures only\" to write "
-            + "the lines yourself in the mod's editor. That one needs no AI and no account.",
+            "\"Mod defaults\" is set to \"Community translations only\"",
+            "So a game gets a translation only if somebody published one in your language. Other "
+            + "games stay in their own language. To change that, open Mod defaults and pick a "
+            + "translator — or \"Captures only\", which needs no AI and no account: the mod "
+            + "collects the game's text and you write the lines yourself in its editor.",
             "Open Mod defaults",
-            async () => await OpenSettingsAsync());
+            async () => await OpenSettingsAsync(),
+            ("See the games on the site",
+             () => { OpenUrl(BuildInfo.WebsiteBaseUrl); return Task.CompletedTask; }));
     }
 
     /// <summary>
@@ -2292,7 +2300,14 @@ public partial class MainWindow : Window
     }
 
     /// <summary>One shape for every notice in the strip, so none of them drifts from the others.</summary>
-    private Control Banner(string title, string body, string action, Func<Task> onClick)
+    /// <param name="second">
+    /// A second way out, when the answer genuinely has two — offered beside the first, quieter.
+    ///
+    /// ⚠ Two doors and no more. A banner that grows a row of buttons has stopped being a notice;
+    /// anything further belongs on the screen it leads to.
+    /// </param>
+    private Control Banner(string title, string body, string action, Func<Task> onClick,
+                           (string Label, Func<Task> Click)? second = null)
     {
         var text = new StackPanel { Spacing = 2 };
 
@@ -2324,11 +2339,37 @@ public partial class MainWindow : Window
 
         button.Click += async (_, _) => await onClick();
 
+        // ⚠ The second is outlined, never filled: one filled button per notice, so the eye is told
+        // which way is the answer and which is the detour. Same rule as the game cards.
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        };
+
+        if (second is { } other)
+        {
+            var alternate = new Button
+            {
+                Content = other.Label,
+                FontSize = 12,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            };
+
+            alternate.Click += async (_, _) => await other.Click();
+            buttons.Children.Add(alternate);
+        }
+
+        button.Margin = default;
+        buttons.Children.Add(button);
+        buttons.Margin = new Avalonia.Thickness(14, 0, 0, 0);
+
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         Grid.SetColumn(text, 0);
-        Grid.SetColumn(button, 1);
+        Grid.SetColumn(buttons, 1);
         row.Children.Add(text);
-        row.Children.Add(button);
+        row.Children.Add(buttons);
 
         return OverviewBox(row);
     }
@@ -2528,9 +2569,13 @@ public partial class MainWindow : Window
 
         text.Children.Add(new TextBlock
         {
+            // ⚠ Short, and about the thing rather than about the reader. "You are running a loose
+            // copy, not the installed one" asks somebody to hold two ideas and a negation before
+            // the first comma; "loose" is also a word few non-native readers meet. The sentence
+            // underneath names both copies and both folders, which is where the detail belongs.
             Text = canUpdate
-                ? $"This copy is newer than the one installed ({running} against {installed.Version})"
-                : "You are running a loose copy, not the installed one",
+                ? $"This manager is newer than the installed one ({running} against {installed.Version})"
+                : "This manager is not the installed one",
             FontSize = 13,
             FontWeight = FontWeight.SemiBold,
             Foreground = Brush("TextPrimary"),

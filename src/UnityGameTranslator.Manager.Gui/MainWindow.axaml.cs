@@ -2138,6 +2138,11 @@ public partial class MainWindow : Window
     /// can translate at all depends on having a machine that can run a model, or the patience to
     /// find a free API key, and neither is a thing to lean on people about: someone who plays with
     /// what the community has published is using this exactly as intended.
+    ///
+    /// 🔴 **It states a SETTING, never the reader's activity.** The second banner described what
+    /// somebody was doing — "you are playing with…" — to a person who had just launched a tool and
+    /// was not playing. A banner on the first screen has no idea what anybody is doing; what it can
+    /// say is what Mod defaults holds and what follows from it.
     /// </summary>
     private Control? WhatGoesIntoGames()
     {
@@ -2156,14 +2161,23 @@ public partial class MainWindow : Window
 
         if (settings.TranslationBackend != "none") return null;
 
+        // 🔴 **A SETTING and what follows from it — not a description of the reader.** This opened
+        // with "You are playing with what the community has published", said to somebody who has
+        // just launched a tool and is not playing anything. Nothing named where the fact came from
+        // (Mod defaults), "which is the whole point of it" pointed at nothing, and the consequence
+        // — a game with no community translation stays in its own language — was never stated. So
+        // the one thing worth knowing was learnt later, on a game, by pressing a button.
+        //
+        // ⚠ Still an invitation, not a warning: playing with what people publish is a complete way
+        // to use this. What changed is that it now says what it means, names its source, and leads
+        // where the answer is given.
         return Banner(
-            "You are playing with what the community has published",
-            "Which is the whole point of it, and enough on its own. If you ever want to go the "
-            + "other way, a game with no translation in your language can be started by anyone — "
-            + "the mod captures the lines as you play, and you decide what to do with them. It "
-            + "needs no AI and no account to begin.",
-            "See what people share",
-            () => { OpenUrl(BuildInfo.WebsiteBaseUrl); return Task.CompletedTask; });
+            "Mod defaults takes translations from the community",
+            "A game with a published translation in your language gets it. A game with none stays "
+            + "in its own language — until you choose a translator, or \"Captures only\" to write "
+            + "the lines yourself in the mod's editor. That one needs no AI and no account.",
+            "Open Mod defaults",
+            async () => await OpenSettingsAsync());
     }
 
     /// <summary>

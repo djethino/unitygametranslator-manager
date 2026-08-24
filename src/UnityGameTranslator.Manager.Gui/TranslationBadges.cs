@@ -100,7 +100,14 @@ public static class TranslationBadges
             // The Main's other declaration. A local file carries no such thing, so it is read from
             // the site — this account's own row first, which is the lineage's own answer even when
             // the community search brought nothing back.
-            acceptsContributions: mine?.AcceptsBranches ?? online?.AcceptsBranches));
+            acceptsContributions: mine?.AcceptsBranches ?? online?.AcceptsBranches,
+
+            // Read from the published entry, like the two declarations above: a local file carries
+            // no record of what it was forked from — the mod severs that link on purpose. Silent
+            // offline, which is the ordinary "we do not know" of this whole strip.
+            origin: online?.Origin is { } from
+                ? new Origin(from.Author, from.Lines)
+                : null));
     }
 
     /// <summary>A published translation, in the community list.</summary>
@@ -131,6 +138,13 @@ public static class TranslationBadges
 
             // Part of what a translation IS, and the one thing a would-be contributor has to know
             // before writing a line into it.
-            acceptsContributions: translation.AcceptsBranches));
+            acceptsContributions: translation.AcceptsBranches,
+
+            // Where it came from, when it came from somebody. A fork is a Main in every other
+            // respect, so nothing else in this strip distinguishes one from a translation written
+            // from scratch — and whose work it started from is part of choosing between them.
+            origin: translation.Origin is { } from
+                ? new Origin(from.Author, from.Lines)
+                : null));
     }
 }

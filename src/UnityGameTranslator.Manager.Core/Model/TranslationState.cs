@@ -181,6 +181,18 @@ public sealed class OnlineTranslation
 
     [JsonPropertyName("resources_url")] public string? ResourcesUrl { get; set; }
 
+    /// <summary>
+    /// Which translation this one was forked from, when it was forked from one.
+    ///
+    /// ⚠ Absent on anything nobody forked AND on a server that predates the field — both read as
+    /// "started from nothing", which is what silence says. A present block whose author is null is
+    /// a different thing: a fork whose source account is gone, and the credit still stands.
+    ///
+    /// ⚠ Deliberately not derivable from anything else here. A fork leads its own lineage and is a
+    /// Main in every other respect, which is what makes this the only trace of where it came from.
+    /// </summary>
+    [JsonPropertyName("origin")] public OnlineOrigin? Origin { get; set; }
+
     public override string ToString()
     {
         var langs = $"{SourceLanguage ?? "?"} -> {TargetLanguage ?? "?"}";
@@ -194,6 +206,21 @@ public sealed class OnlineTranslation
 
         return $"{langs} by {Author ?? "unknown"} ({string.Join(", ", details)})";
     }
+}
+
+/// <summary>
+/// Where a fork came from, as the site records it.
+///
+/// ⚠ <see cref="Lines"/> is the snapshot taken at the instant of the fork and never recomputed —
+/// the original keeps growing, so asking again would answer a different question.
+/// </summary>
+public sealed class OnlineOrigin
+{
+    /// <summary>The account it was taken from. Null once that account is gone.</summary>
+    [JsonPropertyName("author")] public string? Author { get; set; }
+
+    /// <summary>How many lines were received. Null on a row written before the column existed.</summary>
+    [JsonPropertyName("lines")] public int? Lines { get; set; }
 }
 
 /// <summary>

@@ -4924,6 +4924,10 @@ public partial class MainWindow : Window
         await RereadAsync(report.Game);
     }
 
+    /// <summary>Lines, counted so no language has to decode a stray s.</summary>
+    private static string Lines(int count) =>
+        count == 1 ? "1 line" : $"{Composition.Amount(count)} lines";
+
     /// <summary>
     /// What this would do to the file in the game, in figures somebody can judge before agreeing.
     ///
@@ -4935,20 +4939,26 @@ public partial class MainWindow : Window
     ///
     /// ⚠ Removals lead when there are any. Taking a line and losing one are not the same news, and
     /// the one that loses work is the one somebody must not have to hunt for in a list.
+    ///
+    /// 🔴 **Four words each, and no subordinate clause.** The replacement first read "13 line(s)
+    /// removed from this file — the published version dropped them and nothing here had changed
+    /// them", which is a paragraph in somebody's fourth language for a fact they can act on in
+    /// three words. Why the publisher dropped them changes nothing about the decision: the decision
+    /// is whether losing thirteen lines is acceptable.
     /// </summary>
     private static string Describe(MergeSummary summary, bool blind)
     {
         var parts = new List<string>();
 
+        // ⚠ "from this game", not "here": the window is about one game, and a deictic is the thing
+        // that stops meaning anything the moment somebody reads it out of order.
         if (summary.RemovedHere > 0)
-            parts.Add($"{summary.RemovedHere} line(s) removed from this file — the published "
-                      + "version dropped them and nothing here had changed them");
+            parts.Add($"{Lines(summary.RemovedHere)} deleted from this game");
 
         if (summary.TakenFromServer > 0)
-            parts.Add($"{summary.TakenFromServer} line(s) taken from the published version");
-
-        if (summary.KeptHere > 0) parts.Add($"{summary.KeptHere} of yours kept");
-        if (summary.Conflicts > 0) parts.Add($"{summary.Conflicts} in conflict");
+            parts.Add($"{Lines(summary.TakenFromServer)} taken from the published version");
+        if (summary.KeptHere > 0) parts.Add($"{Lines(summary.KeptHere)} of yours kept");
+        if (summary.Conflicts > 0) parts.Add($"{Lines(summary.Conflicts)} in conflict");
 
         var text = string.Join(", ", parts) + ".";
 

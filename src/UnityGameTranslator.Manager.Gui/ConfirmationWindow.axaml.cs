@@ -47,8 +47,8 @@ public sealed class ConfirmationWindow : Window
     private bool _secondChosen;
 
     /// <param name="scope">
-    /// Where agreeing to this would WRITE, drawn as the same three-mark cursor every button on the
-    /// page carries.
+    /// Where agreeing to this would WRITE. Drawn by <see cref="ScopeMark.Marked"/> — inside the
+    /// confirming button, exactly as on the page.
     ///
     /// 🔴 **This box is the last screen before the act, and it was the one without the mark.** The
     /// button that opens it says where it writes; the window that commits it said nothing — so the
@@ -130,54 +130,6 @@ public sealed class ConfirmationWindow : Window
             HorizontalAlignment = HorizontalAlignment.Right,
         };
 
-        // ⚠ On the left of the row and outside the buttons, exactly as it sits beside a label on
-        // the page: it qualifies the act, it is not part of the verb. Its own sentence under it,
-        // because this is the one place where somebody has stopped to read.
-        if (scope is { } side)
-        {
-            var mark = ScopeMark.For(side);
-            mark.HorizontalAlignment = HorizontalAlignment.Left;
-            mark.VerticalAlignment = VerticalAlignment.Center;
-
-            var where = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Spacing = 8,
-                HorizontalAlignment = HorizontalAlignment.Left,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-
-            where.Children.Add(mark);
-            where.Children.Add(new TextBlock
-            {
-                Text = EditScope.Effect(side),
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                MaxWidth = 330,
-                VerticalAlignment = VerticalAlignment.Center,
-                Foreground = this.FindResource("TextMuted") as IBrush,
-            });
-
-            buttons.HorizontalAlignment = HorizontalAlignment.Stretch;
-
-            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-            Grid.SetColumn(where, 0);
-            row.Children.Add(where);
-
-            var aimed = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Spacing = 8,
-                HorizontalAlignment = HorizontalAlignment.Right,
-            };
-
-            Grid.SetColumn(aimed, 1);
-            row.Children.Add(aimed);
-
-            layout.Children.Add(row);
-            buttons = aimed;
-        }
-
         if (question)
         {
             // IsCancel and IsDefault both on Cancel: Escape closes it, and so does Enter. The
@@ -190,13 +142,18 @@ public sealed class ConfirmationWindow : Window
         // ⚠ On a statement there is nothing to aim at, so this one IS the default and the escape:
         // making somebody hunt for the way out of a message that only reports something would be
         // the mirror of the rule above, applied where it protects nobody.
-        var go = new Button
-        {
-            Content = confirm,
-            Classes = { "primary" },
-            IsDefault = !question,
-            IsCancel = !question,
-        };
+        //
+        // ⚠ **The mark goes INSIDE this button, through ScopeMark.Marked — the module every other
+        // button in this program uses.** A first attempt put it loose at the left of the row, which
+        // placed it beside Cancel: the one control that writes nothing was the one wearing the sign
+        // saying where the writing goes.
+        var go = scope is { } side
+            ? ScopeMark.Marked(side, confirm)
+            : new Button { Content = confirm };
+
+        go.Classes.Add("primary");
+        go.IsDefault = !question;
+        go.IsCancel = !question;
         go.Click += (_, _) =>
         {
             _confirmed = true;
@@ -206,10 +163,7 @@ public sealed class ConfirmationWindow : Window
         };
 
         buttons.Children.Add(go);
-
-        // ⚠ Only when the scope row did not already take it. Adding a control to a second parent
-        // is an exception in Avalonia, not a move.
-        if (buttons.Parent is null) layout.Children.Add(buttons);
+        layout.Children.Add(buttons);
 
         Content = layout;
     }

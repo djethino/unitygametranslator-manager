@@ -109,6 +109,17 @@ public static class ModSettingControls
         box.Items.Add(new ComboBoxItem { Content = "Community translations only", Tag = "none" });
         box.Items.Add(new ComboBoxItem { Content = "AI (local or cloud)", Tag = "llm" });
         box.Items.Add(new ComboBoxItem { Content = "Google / DeepL", Tag = "google" });
+
+        // 🔴 **Translating by hand is a CHOICE, and it had no name.** The mod captures the game's
+        // text as it meets it and its editor lets somebody write each line — the way every
+        // translation with nobody's machine behind it starts. Until now that was not an option but
+        // the ABSENCE of one: "community translations only" on a game with no community
+        // translation, which reads as a setup that failed rather than a way of working.
+        //
+        // ⚠ It also lets the rest of this program tell the two apart. A game set up under this
+        // answer is complete; one set up on community work that does not exist is not, and the
+        // one-click can now say so instead of installing everything for a result nobody wanted.
+        box.Items.Add(new ComboBoxItem { Content = "Captures only (translate by hand)", Tag = "capture" });
         return box;
     }
 

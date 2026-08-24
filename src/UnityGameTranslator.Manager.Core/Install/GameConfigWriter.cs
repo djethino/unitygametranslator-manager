@@ -369,7 +369,14 @@ public sealed class GameConfigWriter
         // Named in the report either way: "we switched auto-translation off in your game" is
         // precisely the sentence somebody needs to have read before they wonder why nothing is
         // being translated.
-        var startsTranslating = perGame?.StartTranslation ?? settings.EnableAi;
+        // 🔴 **"Captures only" settles this on its own, whatever else was answered.** The whole
+        // point of that choice is a game that collects its text and translates none of it, so
+        // leaving enable_ai to a flag set while another backend was selected would write a setup
+        // contradicting the one thing somebody asked for. It is the only backend that decides this
+        // rather than merely being told about it.
+        var startsTranslating = settings.TranslationBackend == "capture"
+            ? false
+            : perGame?.StartTranslation ?? settings.EnableAi;
         intents.Add(new Intent(null, "enable_ai", startsTranslating,
             startsTranslating ? "auto-translation on" : "auto-translation off",
             AnsweredOnTheCard: true));

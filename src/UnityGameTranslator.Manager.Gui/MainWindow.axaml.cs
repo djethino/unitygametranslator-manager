@@ -3291,7 +3291,7 @@ public partial class MainWindow : Window
 
             empty.Children.Add(new TextBlock
             {
-                Text = "Setting this game up will not translate anything on its own.",
+                Text = "There is nothing to translate this game with yet.",
                 FontSize = 13,
                 FontWeight = FontWeight.SemiBold,
                 TextWrapping = TextWrapping.Wrap,
@@ -3301,9 +3301,8 @@ public partial class MainWindow : Window
             empty.Children.Add(new TextBlock
             {
                 Text = "Mod defaults takes translations from the community, and this game has "
-                     + "none yet. The mod will still capture the game's text as you play, and you "
-                     + "can write the lines yourself in its editor — or set up a translator and "
-                     + "let it take a first pass.",
+                     + "none. Choose a translator, or choose \"Captures only\" and write the "
+                     + "lines yourself in the mod's editor — both make the set-up worth doing.",
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("TextSecondary"),
@@ -8090,6 +8089,26 @@ public partial class MainWindow : Window
         if (!_settings.Current.Reviewed && NeedsModDefaults(report))
             return "Mod defaults comes first.";
 
+        // 🔴 **Nothing to translate with, so nothing to set up for.** Community translations are
+        // the chosen source, this game has none, and no translator is named: the one click would
+        // install the loader, the mod and the settings, every step would succeed, and the game
+        // would run in its own language. Four green ticks and a promise nobody kept.
+        //
+        // ⚠ **This became a refusal the day translating by hand got a NAME.** Greying it before
+        // would have closed the one path this product says needs no AI and no account — somebody
+        // starting a translation themselves needs exactly this install. "Captures only" is that
+        // answer, said out loud, and it reads as a translator here: choose it and the button comes
+        // back.
+        //
+        // ⚠ Only where the defaults are actually used, like the guard above: a game keeping its
+        // own configuration may name a translator this does not read.
+        if (report.OnlineTranslations.Count == 0
+            && NeedsModDefaults(report)
+            && TranslationBackendLabel(_settings.Current) is null)
+        {
+            return "Nothing to translate this game with yet.";
+        }
+
         return null;
     }
 
@@ -8608,32 +8627,6 @@ public partial class MainWindow : Window
         {
             foreach (var warning in ReplacementWarnings(report, local, translation))
                 body.Children.Add(warning);
-        }
-
-        // 🔴 **What this will NOT do, said before it is agreed to.** Every step above is real work
-        // and each one succeeds — and on a game with nothing published, following Mod defaults
-        // that name no translator, the result is a set-up game showing its own language. Somebody
-        // presses a button called "Set it up", watches four steps go green, plays, and sees
-        // nothing translated: the program kept every promise it listed and none that was heard.
-        //
-        // ⚠ **Not a refusal, and the button stays.** Installing the loader and the mod is exactly
-        // what somebody starting a translation BY HAND needs, which this product invites people to
-        // do — greying it would close the one path it says needs no AI and no account. What was
-        // missing is the outcome, at the moment of committing.
-        //
-        // ⚠ Only when this game will actually follow Mod defaults. A game keeping its own
-        // configuration may name a translator we are not reading here, and warning about somebody
-        // else's settings would be a claim we cannot support.
-        if (report.OnlineTranslations.Count == 0
-            && translation is null
-            && steps.Any(s => s.Act is OneClickAct.ApplySettings)
-            && TranslationBackendLabel(_settings.Current) is null)
-        {
-            body.Children.Add(Callout(
-                "When this is done, nothing will be translated yet. This game has no published "
-                + "translation, and Mod defaults names no translator. The mod will capture the "
-                + "game's text as you play, and you can write the lines yourself in its editor.",
-                "CalloutWarningBg", "StatusWarning"));
         }
 
         if (!await ConfirmAsync($"Set up {report.Game.Name}?", body, "Set it up")) return;
@@ -10119,6 +10112,11 @@ public partial class MainWindow : Window
 
             "deepl" when !string.IsNullOrWhiteSpace(settings.DeeplApiKey) =>
                 $"Using DeepL ({(settings.DeeplUseFree ? "free" : "paid")}) with your key",
+
+            // ⚠ Nothing to check: this answer needs no server and no key. It is a complete setup —
+            // the mod captures the text and somebody writes the lines — and saying so is what
+            // stops the rest of this program treating it as "no translator configured".
+            "capture" => "Capturing the game's text for you to translate by hand",
 
             // Everything else — "none", or a backend chosen but left without what it needs — is
             // reported as nothing set up. A key that is missing translates exactly as little as a

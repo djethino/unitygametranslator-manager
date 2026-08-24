@@ -2215,6 +2215,15 @@ public partial class MainWindow : Window
 
         var text = new StackPanel { Spacing = 2 };
 
+        // 🔴 **Silent when there is nothing published AT ALL and nothing started here.** This
+        // banner exists for a gap in ONE language — "translations exist, none in yours" — and the
+        // card below already says "no translation has been published for this game yet" when the
+        // gap is total. Both fired together on an untouched game, so the same fact arrived twice
+        // in two registers, one of them narrower than the truth. The invitation to publish, which
+        // is the other half of this banner, is not affected: it needs lines here to be worth
+        // reading, and that is exactly what `started` tests.
+        if (report.OnlineTranslations.Count == 0 && report.LocalTranslation is null) return null;
+
         // Two propositions, and they are not the same one worded twice. Nothing here yet is an
         // invitation to start; work here that has never left the machine is an invitation to
         // publish — and that second case had no banner at all, because the guard that stopped the
@@ -3134,14 +3143,10 @@ public partial class MainWindow : Window
 
         if (report.OnlineTranslations.Count == 0)
         {
-            question.Children.Add(new TextBlock
-            {
-                Text = "Nothing has been published for this game yet.",
-                FontSize = 13,
-                FontWeight = FontWeight.SemiBold,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = Brush("TextPrimary"),
-            });
+            // ⚠ Said by NothingPublishedYet below, and nowhere else. A heading here read "Nothing
+            // has been published for this game yet" and that method then added "No translation has
+            // been published for this game yet" — one fact, twice, three lines apart, in two
+            // wordings. The card above says it a third time in its own register.
         }
         else
         {
@@ -3263,6 +3268,64 @@ public partial class MainWindow : Window
         }
 
         yield return Card(question);
+
+        // ── What setting this game up would actually produce ──────────────────────────────────
+        //
+        // 🔴 **The one-click was offered with nothing behind it, and said nothing about that.** On
+        // a game with no published translation, with Mod defaults set to take community work and
+        // no translator configured, "OneClick Set Up this Game" installs the loader, the mod and
+        // the defaults — real work, correctly offered — and then the game runs with nothing to
+        // read. The card described what the mod CAN do and never joined the two facts.
+        //
+        // ⚠ **A warning, not an error.** Nothing is wrong and nothing is refused: playing with
+        // what the community publishes is the ordinary way to use this, and the capture and the
+        // in-game editor still work. What changes is what pressing the button will get you, which
+        // is exactly what the warning tone is for elsewhere in this window.
+        //
+        // ⚠ And it carries the way out. Saying "there is nothing to translate with" without the
+        // door to set one up is the dead end this project refuses everywhere else.
+        if (report.OnlineTranslations.Count == 0
+            && TranslationBackendLabel(_settings.Current) is null)
+        {
+            var empty = new StackPanel { Spacing = 4 };
+
+            empty.Children.Add(new TextBlock
+            {
+                Text = "Setting this game up will not translate anything on its own.",
+                FontSize = 13,
+                FontWeight = FontWeight.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextPrimary"),
+            });
+
+            empty.Children.Add(new TextBlock
+            {
+                Text = "Mod defaults takes translations from the community, and this game has "
+                     + "none yet. The mod will still capture the game's text as you play, and you "
+                     + "can write the lines yourself in its editor — or set up a translator and "
+                     + "let it take a first pass.",
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextSecondary"),
+            });
+
+            var open = new Button
+            {
+                Content = "Open Mod defaults",
+                FontSize = 12,
+                Margin = new Avalonia.Thickness(0, 6, 0, 0),
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+            };
+
+            ToolTip.SetTip(open, "Where the translator is chosen — your own AI, Google or DeepL "
+                                 + "with your key. It applies to every game that follows the "
+                                 + "defaults.");
+
+            open.Click += async (_, _) => await OpenSettingsAsync();
+            empty.Children.Add(open);
+
+            yield return Callout(empty, "CalloutWarningBg", "StatusWarning");
+        }
 
         // ── Mine, published, and not the one running here ─────────────────────────────────────
         //

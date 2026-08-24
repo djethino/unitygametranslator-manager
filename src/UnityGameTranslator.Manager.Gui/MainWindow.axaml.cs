@@ -4388,6 +4388,26 @@ public partial class MainWindow : Window
         // not, Main or branch, up to date or not, reviewed or not, and what players made of it.
         yield return TranslationBadges.ForLocal(report, counts);
 
+        // ⚠ **Whose work this is, said out loud and not only in a tooltip.** The strip above can
+        // say "Not yours", and a chip is two words: the name of the person who leads the lineage is
+        // what turns that into something actionable. The mod has shown this line for months; this
+        // screen showed nothing, so a player looking at a game carrying somebody else's translation
+        // had no way to know whose it was without opening the game.
+        //
+        // Only when it IS somebody else's: on your own work there is nobody to credit.
+        if (report.MyPosition is null && report.MatchingOnline?.Author is { Length: > 0 } author)
+        {
+            yield return new TextBlock
+            {
+                Text = "Based on the translation of "
+                     + People.MentionOf(author, _settings.Current.ApiUser),
+                FontSize = 12,
+                Foreground = Palette.Of("TextMuted"),
+                Margin = new Avalonia.Thickness(0, 2, 0, 0),
+                TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+            };
+        }
+
         if (QualityBar.StageOf(counts) is { } stage)
         {
             // The verdict first, the make-up under it: somebody wants to know where this stands

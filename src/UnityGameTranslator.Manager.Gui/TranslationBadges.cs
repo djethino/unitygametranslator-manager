@@ -76,7 +76,16 @@ public static class TranslationBadges
         var online = report.MatchingOnline;
 
         return Strip(Badges.For(
-            publication: Publications.Of(hereOnDisk: true, onTheSite: mine is not null),
+            // 🔴 **Two different questions, and this passed the wrong one.** `onTheSite` asks
+            // whether the LINEAGE is published, by anybody; `mine` answers whether THIS account
+            // holds a row in it — null for the ordinary case of a translation somebody else wrote
+            // and this player downloaded, as MyPosition's own docstring says. So a game carrying
+            // another player's published work was stamped "Never published", and its tip offered
+            // to put it on the site under the reader's name for the first time.
+            publication: Publications.Of(hereOnDisk: true,
+                                         onTheSite: online is not null,
+                                         yours: mine is not null),
+            mainOwner: online?.Author,
             isMain: mine?.IsMain,
             branchesWaiting: mine?.BranchesWithWork ?? mine?.BranchesCount,
             linesAvailable: mine?.LinesAvailable,

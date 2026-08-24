@@ -10188,14 +10188,19 @@ public partial class MainWindow : Window
         if (configured is null) return;
         if (string.Equals(configured, taken, StringComparison.OrdinalIgnoreCase)) return;
 
+        // ⚠ **Both answers are named, because neither is a cancellation.** The file is already
+        // written by the time this is asked; saying no keeps the game on the language it had and
+        // leaves that file unused. "Cancel" said the opposite — that something was being called
+        // off — and left somebody asking what declining would actually do.
         var agreed = await ConfirmAsync($"Point the game at {taken}?",
-            $"This game is set to {configured}, and the translation you just took is in {taken}. "
-            + $"Left as it is, the mod will keep working towards {configured} and will not use the "
-            + "file you just installed."
+            $"The translation you just took is in {taken}, and this game is set to {configured}. "
+            + $"Kept on {configured}, the mod goes on working towards {configured} and never uses "
+            + "the file that was just installed."
             + Environment.NewLine + Environment.NewLine
             + $"Switching only changes this game. Your default stays "
             + $"{Languages.NameOf(_settings.ResolveTargetLanguage())}.",
-            $"Use {taken} for this game");
+            $"Use {taken} for this game",
+            $"Keep {configured}");
 
         if (!agreed) return;
 
@@ -10944,14 +10949,27 @@ public partial class MainWindow : Window
         if (_scanGear is not null) _scanGear.Detail = message;
     }
 
-    private Task<bool> ConfirmAsync(string title, string body, string confirmLabel) =>
-        ConfirmAsync(title, new TextBlock { Text = body, TextWrapping = TextWrapping.Wrap }, confirmLabel);
+    private Task<bool> ConfirmAsync(string title, string body, string confirmLabel,
+                                    string? declineLabel = null) =>
+        ConfirmAsync(title, new TextBlock { Text = body, TextWrapping = TextWrapping.Wrap },
+                     confirmLabel, declineLabel);
 
     /// <summary>
     /// A modal confirmation. Written by hand rather than pulled from a dialog package: one
     /// window type is not worth a dependency that would also have to be kept current.
     /// </summary>
-    private async Task<bool> ConfirmAsync(string title, Control body, string confirmLabel)
+    /// <param name="declineLabel">
+    /// What saying no DOES, when it does something. Null keeps "Cancel", which is right whenever
+    /// declining leaves the world as it was.
+    ///
+    /// 🔴 **It is not always a cancellation.** Asked after a translation is already installed —
+    /// "point the game at English?" — declining does not undo anything: it keeps the game on the
+    /// language it had, and leaves the file that was just written unused. "Cancel" told somebody
+    /// they were calling something off, and the one question they asked out loud was what it would
+    /// actually do.
+    /// </param>
+    private async Task<bool> ConfirmAsync(string title, Control body, string confirmLabel,
+                                          string? declineLabel = null)
     {
         var result = false;
 
@@ -10966,7 +10984,7 @@ public partial class MainWindow : Window
         // it, Enter closes it, and the destructive answer is only ever reached by aiming at it.
         // This dialog had Enter on the confirm button, so the two paths to the same decision
         // disagreed on what a reflex keypress means.
-        var cancel = new Button { Content = "Cancel", IsCancel = true, IsDefault = true };
+        var cancel = new Button { Content = declineLabel ?? "Cancel", IsCancel = true, IsDefault = true };
 
         var buttons = new StackPanel
         {

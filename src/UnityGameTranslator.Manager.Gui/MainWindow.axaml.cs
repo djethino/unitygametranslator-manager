@@ -5858,11 +5858,30 @@ public partial class MainWindow : Window
         // stack, and it also blanked the list for the length of a network call for nothing.
         var generation = 0;
 
+        // 🔴 **Which loader is already being asked about — so we ask ONCE per gesture.**
+        //
+        // Two triggers can fire for a single opening, and each one is a request to a publisher.
+        // GitHub allows sixty an hour per address, unauthenticated: sending two where one answers
+        // spends somebody's quota to draw the same four lines twice. The list-level fix below
+        // (generation) stops the DUPLICATE; this stops the second REQUEST, which is the part that
+        // costs something outside this window.
+        //
+        // ⚠ Same loader only. A different one has to replace what is on screen — see the note on
+        // generation — so it goes through, and the older answer is dropped on its way back.
+        LoaderDescriptor? asking = null;
+
         async Task LoadAsync()
         {
             if (_chosenLoader() is not { } loader) return;
 
+            if (asking is not null
+                && string.Equals(asking.Id, loader.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
             var mine = ++generation;
+            asking = loader;
 
             builds.IsEnabled = false;
             note.Text = $"Asking what {loader.Display} currently offers...";
@@ -5873,6 +5892,10 @@ public partial class MainWindow : Window
 
             var found = await new LoaderBuildResolver()
                 .ResolveAsync(loader, channel, count: 5).ConfigureAwait(true);
+
+            // ⚠ Released here and not in a finally: a run that has been superseded must NOT clear
+            // the flag, or the newer one would be let through a second time.
+            if (mine == generation) asking = null;
 
             // Somebody asked again while this was in flight — their answer is the one to show.
             if (mine != generation) return;

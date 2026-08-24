@@ -3397,7 +3397,14 @@ public partial class MainWindow : Window
         //
         // ⚠ And it carries the way out. Saying "there is nothing to translate with" without the
         // door to set one up is the dead end this project refuses everywhere else.
-        if (report.OnlineTranslations.Count == 0
+        // ⚠ **Only where setting the game up is possible at all.** On a game that cannot take the
+        // mod — a stripped runtime, an anti-cheat, a refusal already stated in red at the top of
+        // this card — Mod defaults changes nothing, and offering it is a second voice saying
+        // something about a game whose answer is already no. This warning is for a game that WOULD
+        // work and has nothing to work with.
+        if (report.Game.IsModdable
+            && report.Blockers.Count == 0
+            && report.OnlineTranslations.Count == 0
             && TranslationBackendLabel(_settings.Current) is null)
         {
             var empty = new StackPanel { Spacing = 4 };

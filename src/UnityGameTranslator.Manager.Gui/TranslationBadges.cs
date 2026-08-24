@@ -1,4 +1,4 @@
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Avalonia.Layout;
 using UnityGameTranslator.Common;
 using UnityGameTranslator.Manager.Core.Model;
@@ -106,7 +106,7 @@ public static class TranslationBadges
             // no record of what it was forked from — the mod severs that link on purpose. Silent
             // offline, which is the ordinary "we do not know" of this whole strip.
             origin: online?.Origin is { } from
-                ? new Origin(from.Author, from.Lines)
+                ? from.ToOrigin()
                 : null));
     }
 
@@ -144,7 +144,7 @@ public static class TranslationBadges
             // respect, so nothing else in this strip distinguishes one from a translation written
             // from scratch — and whose work it started from is part of choosing between them.
             origin: translation.Origin is { } from
-                ? new Origin(from.Author, from.Lines)
+                ? from.ToOrigin()
                 : null));
     }
 }

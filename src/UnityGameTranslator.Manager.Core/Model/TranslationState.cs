@@ -196,9 +196,27 @@ public sealed class OnlineTranslation
     public override string ToString()
     {
         var langs = $"{SourceLanguage ?? "?"} -> {TargetLanguage ?? "?"}";
-        var details = new List<string> { $"{LineCount} lines" };
-        if (Status is not null) details.Add(Status);
-        if (DownloadCount > 0) details.Add($"{DownloadCount} downloads");
+        var details = new List<string> { $"{Composition.Amount(LineCount)} lines" };
+
+        // 🔴 **"finished", never "in_progress".** This printed the server's own enum value, so a
+        // command anybody may paste into a public issue read `in_progress` — a field name, in a
+        // list where every other word is written for a human.
+        //
+        // ⚠ Said only when it is TRUE, like the mod's community list and for the same reason: this
+        // is a list of candidates, still writing is the ordinary state, and stamping it on nine
+        // rows out of ten buries the one that differs.
+        if (string.Equals(Status, "complete", StringComparison.OrdinalIgnoreCase))
+            details.Add("finished");
+
+        // Its author's other declaration, on the same rule: a lineage that takes contributions is
+        // the thing worth spotting, working alone is the ordinary case.
+        if (AcceptsBranches == true) details.Add("accepts contributions");
+
+        // ⚠ As the socle writes it, capital and all. Lowercasing the phrase would lowercase the
+        // account name inside it, and a name is not ours to reshape.
+        if (Origin is { } from) details.Add(Origins.Name(from.ToOrigin()));
+
+        if (DownloadCount > 0) details.Add($"{Composition.Amount(DownloadCount)} downloads");
 
         // The date shown is content_updated_at, never updated_at: a vote or a download bumps
         // updated_at, so it would make an abandoned translation look freshly maintained.
@@ -221,6 +239,14 @@ public sealed class OnlineOrigin
 
     /// <summary>How many lines were received. Null on a row written before the column existed.</summary>
     [JsonPropertyName("lines")] public int? Lines { get; set; }
+
+    /// <summary>
+    /// The socle's form, which is what composes every sentence about it.
+    ///
+    /// ⚠ Here rather than at each call site: this class exists only to receive JSON, and two hand
+    /// -written conversions are two chances to swap the author and the count.
+    /// </summary>
+    public Origin ToOrigin() => new(Author, Lines);
 }
 
 /// <summary>

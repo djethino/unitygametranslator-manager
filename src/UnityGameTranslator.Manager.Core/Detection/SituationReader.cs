@@ -186,7 +186,10 @@ public static class SituationReader
         if (report.MyPosition is { } position)
             parts.Add(position.IsMain ? "your Main" : "your branch (contributor)");
 
-        if (local is { EntryCount: > 0 }) parts.Add($"{local.EntryCount} lines");
+        // ⚠ Grouped, like every other count this program prints. A `report` shows the community
+        // list four lines above this one, so "6,328 lines" and "6334 lines" sat on one screen and
+        // read as two different measurements.
+        if (local is { EntryCount: > 0 }) parts.Add($"{Composition.Amount(local.EntryCount)} lines");
 
         return parts.Count > 0
             ? string.Join(" · ", parts)

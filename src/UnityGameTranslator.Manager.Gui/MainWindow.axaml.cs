@@ -5845,12 +5845,26 @@ public partial class MainWindow : Window
 
         var loaded = false;
 
+        // 🔴 **Which run owns the list.** Two loads could overlap and BOTH filled it: the list was
+        // emptied before the await and filled after, so `Clear · Clear · +4 · +4` left every build
+        // twice, one block after the other. Reported on a BepInEx 5 card, 8 entries for 4 builds.
+        //
+        // ⚠ **A "already running, go away" guard would be wrong here.** Changing the loader while a
+        // request is in flight has to REPLACE it — refusing the second load would leave BepInEx's
+        // builds on screen under MelonLoader's name, which is worse than a duplicate. So the last
+        // caller wins: it takes the number, and any older run drops its answer on the way back.
+        //
+        // ⚠ The list is cleared AFTER the await, not before. Emptying first is what let two runs
+        // stack, and it also blanked the list for the length of a network call for nothing.
+        var generation = 0;
+
         async Task LoadAsync()
         {
             if (_chosenLoader() is not { } loader) return;
 
+            var mine = ++generation;
+
             builds.IsEnabled = false;
-            builds.Items.Clear();
             note.Text = $"Asking what {loader.Display} currently offers...";
 
             var channel = loader.Id.StartsWith("bepinex6", StringComparison.OrdinalIgnoreCase)
@@ -5859,6 +5873,11 @@ public partial class MainWindow : Window
 
             var found = await new LoaderBuildResolver()
                 .ResolveAsync(loader, channel, count: 5).ConfigureAwait(true);
+
+            // Somebody asked again while this was in flight — their answer is the one to show.
+            if (mine != generation) return;
+
+            builds.Items.Clear();
 
             foreach (var build in found)
             {

@@ -2129,9 +2129,26 @@ public sealed class SettingsWindow : Window
     {
         _draft.TargetLanguage = Tag(_language) ?? "auto";
         _draft.TranslationBackend = Tag(_backend) ?? "none";
-        _draft.AiUrl = _aiUrl.Text?.Trim() ?? "";
-        _draft.AiModel = Tag(_aiModel) ?? "";
-        _draft.AiApiKey = string.IsNullOrWhiteSpace(_apiKey.Text) ? null : _apiKey.Text.Trim();
+
+        // 🔴 **A hidden control holds no answer, so it must not be saved as one.** The AI card is
+        // shown only for the AI backend; on any other, its model list is never filled and its
+        // fields sit empty. Writing them anyway ERASED a configured model — somebody who switched
+        // to community translations, closed the window and came back was offered
+        // `AI model: "gemma3:4b" -> ""` as a pending change they had never made, and Apply is the
+        // natural way to leave a settings screen.
+        //
+        // ⚠ Kept rather than cleared, deliberately: switching backend is not abandoning a setup.
+        // Coming back to the AI must find the server and the model that were working.
+        //
+        // ⚠ Same reasoning as the guard on filling _aiUrl from a discovered server, three hundred
+        // lines up. That one stopped the screen from INVENTING an answer; this one stops it from
+        // destroying one.
+        if (Tag(_backend) == "llm")
+        {
+            _draft.AiUrl = _aiUrl.Text?.Trim() ?? "";
+            _draft.AiModel = Tag(_aiModel) ?? "";
+            _draft.AiApiKey = string.IsNullOrWhiteSpace(_apiKey.Text) ? null : _apiKey.Text.Trim();
+        }
 
         // "Google / DeepL" is one choice on screen and two values in the file, exactly as the mod
         // stores it.
@@ -2229,9 +2246,16 @@ public sealed class SettingsWindow : Window
 
         Compare("language", Tag(_language), saved.TargetLanguage);
         Compare("backend", Tag(_backend), saved.TranslationBackend);
-        Compare("AI server", _aiUrl.Text, saved.AiUrl);
-        Compare("AI model", Tag(_aiModel), saved.AiModel);
-        Compare("API key", _apiKey.Text, saved.AiApiKey);
+
+        // ⚠ Counted only while the card that holds them is on screen — see the guard in Save. An
+        // empty field behind a hidden card is not an edit, and counting it announced work nobody
+        // had done on a window nobody had touched.
+        if (Tag(_backend) == "llm")
+        {
+            Compare("AI server", _aiUrl.Text, saved.AiUrl);
+            Compare("AI model", Tag(_aiModel), saved.AiModel);
+            Compare("API key", _apiKey.Text, saved.AiApiKey);
+        }
         Compare("hotkey", _hotkey.Value, saved.SettingsHotkey);
         Compare("updates channel", Tag(_channel), saved.Channel);
 

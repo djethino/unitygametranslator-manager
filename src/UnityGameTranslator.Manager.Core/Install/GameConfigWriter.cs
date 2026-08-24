@@ -357,7 +357,23 @@ public sealed class GameConfigWriter
         // judges to be in another language, and a skipped line is cached "S", which the merge
         // treats as immutable. One wrong guess retires those lines for good.
 
-        intents.Add(new Intent(null, "translation_backend", settings.TranslationBackend, "translation backend"));
+        // 🔴 **"capture" is OURS, and the mod must never see it.** The mod knows llm, google, deepl
+        // and none; an unknown value falls through every branch it has, including the migration
+        // that repairs `enable_ai` on a backend of "none". What "captures only" means in the game
+        // is written on the two lines below: no backend, and the capture worker kept running.
+        var capturesOnly = settings.TranslationBackend == "capture";
+
+        intents.Add(new Intent(null, "translation_backend",
+                               capturesOnly ? "none" : settings.TranslationBackend,
+                               "translation backend"));
+
+        // ⚠ Written either way, exactly like enable_ai beneath it: leaving it set from a previous
+        // answer would have a game keep collecting under a setup that no longer asks it to, and
+        // clearing it by omission would silently drop the one thing "captures only" is.
+        intents.Add(new Intent(null, "capture_keys_only", capturesOnly,
+            capturesOnly ? "capturing the text without translating it"
+                         : "no capture-only mode",
+            AnsweredOnTheCard: true));
 
         // ⚠ Written for EVERY backend, not just the AI one.
         //

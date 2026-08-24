@@ -113,9 +113,18 @@ public sealed class TranslationInstaller
     /// Whose translation is being installed, as a mention. It is what the backup row will read,
     /// and the only thing that makes one row tell itself apart from another.
     /// </param>
+    /// <param name="siteId">
+    /// Which translation on the site this file IS.
+    ///
+    /// 🔴 **The only thing an anonymous session has.** check-uuid sits behind auth.api, so a mod
+    /// with nobody signed in cannot ask what its file is — unless the file says. It records the
+    /// hash and, until now, not this: every translation installed from here landed without an id,
+    /// and the mod then reported a published translation as never published. The person it failed
+    /// for is whoever had no account, which is most people.
+    /// </param>
     public TranslationWriteResult Install(GameInstall game, LoaderDescriptor descriptor,
                                           string json, string? serverHash,
-                                          string? installedFrom = null)
+                                          string? installedFrom = null, int? siteId = null)
     {
         if (WhyNotNow(game) is { } refusal) return new TranslationWriteResult(false, false, refusal);
 
@@ -126,7 +135,7 @@ public sealed class TranslationInstaller
 
         try
         {
-            var prepared = StampSource(json, serverHash);
+            var prepared = StampSource(json, serverHash, siteId);
 
             Directory.CreateDirectory(folder);
 
@@ -411,9 +420,9 @@ public sealed class TranslationInstaller
     /// metadata and possibly keys we have never heard of, and rebuilding it from a model here
     /// would silently drop them.
     /// </summary>
-    private static string StampSource(string json, string? serverHash)
+    private static string StampSource(string json, string? serverHash, int? siteId = null)
     {
-        if (string.IsNullOrWhiteSpace(serverHash)) return json;
+        if (string.IsNullOrWhiteSpace(serverHash) && siteId is null) return json;
 
         var node = JsonNode.Parse(json, documentOptions: new JsonDocumentOptions
         {
@@ -429,7 +438,11 @@ public sealed class TranslationInstaller
             root["_source"] = source;
         }
 
-        source["hash"] = serverHash;
+        if (!string.IsNullOrWhiteSpace(serverHash)) source["hash"] = serverHash;
+
+        // ⚠ Written beside the hash, and it is what lets a mod with nobody signed in ask the
+        // public endpoint whether this translation has moved. See the parameter.
+        if (siteId is > 0) source["site_id"] = siteId.Value;
 
         // Freshly taken from the server, so nothing has been changed locally yet. Leaving a count
         // inherited from whoever uploaded it would make the mod believe the player had edits they

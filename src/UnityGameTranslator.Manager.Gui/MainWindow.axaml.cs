@@ -9017,7 +9017,11 @@ public partial class MainWindow : Window
         var result = new TranslationInstaller(_platform)
             .Install(report.Game, loader, json, translation.FileHash,
                      // Whose work is being put in place — it is what the backup row will read.
-                     People.MentionOf(translation.Author, _settings.Current.ApiUser));
+                     People.MentionOf(translation.Author, _settings.Current.ApiUser),
+
+                     // ⚠ And WHICH translation it is. Without it a mod with nobody signed in has
+                     // no id to ask about, so it can learn nothing about the file this just wrote.
+                     translation.Id);
 
         if (!result.Written)
             return $"The translation could not be written ({result.Failure}). Everything else is in place.";

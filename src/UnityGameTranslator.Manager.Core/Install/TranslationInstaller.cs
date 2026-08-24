@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using UnityGameTranslator.Common;
@@ -8,10 +8,21 @@ using UnityGameTranslator.Manager.Core.Platform;
 
 namespace UnityGameTranslator.Manager.Core.Install;
 
-/// <summary>What happened, and where the previous file went.</summary>
+/// <summary>What happened, and whether something was set aside on the way.</summary>
+/// <param name="KeptPrevious">
+/// There was a translation here and a copy of it was taken before this write.
+///
+/// 🔴 **A fact, not a path — and that is the whole point of the change.** This used to be the file
+/// name inside `removed/`, a second backup mechanism running beside the one with a screen. Every
+/// write produced TWO copies of the same file, the Backups list showed both, and the one from
+/// `removed/` carried no description: it was dated by its own timestamp and labelled "before
+/// something replaced the translation", so two acts read as three rows and one of them behaved
+/// differently when kept. What somebody needs here is not where a loose file landed — it is that
+/// their previous translation is under Backups.
+/// </param>
 public sealed record TranslationWriteResult(
     bool Written,
-    string? BackupPath,
+    bool KeptPrevious,
     string? Failure);
 
 /// <summary>A translation that was set aside when something replaced it.</summary>
@@ -106,7 +117,7 @@ public sealed class TranslationInstaller
                                           string json, string? serverHash,
                                           string? installedFrom = null)
     {
-        if (WhyNotNow(game) is { } refusal) return new TranslationWriteResult(false, null, refusal);
+        if (WhyNotNow(game) is { } refusal) return new TranslationWriteResult(false, false, refusal);
 
         var gamePath = game.Path;
         var folder = Path.Combine(gamePath,
@@ -125,8 +136,10 @@ public sealed class TranslationInstaller
             TranslationBackupStore.TakeAutomatic(gamePath, descriptor, BackupReason.Installed,
                                                  installedFrom);
 
-            string? backup = null;
-            if (File.Exists(target)) backup = MoveAside(target);
+            // ⚠ The copy was taken just above. The file itself is simply overwritten by the
+            // move below — setting it aside as well produced a second, undescribed copy in
+            // `removed/`, which is what put two rows in the Backups list for one act.
+            var kept = File.Exists(target);
 
             // Written beside then moved: a file half-written by a crash or a full disk would take
             // the place of a translation that was working a second earlier.
@@ -162,11 +175,11 @@ public sealed class TranslationInstaller
                 // The translation is in place, which is what was asked for.
             }
 
-            return new TranslationWriteResult(true, backup, null);
+            return new TranslationWriteResult(true, kept, null);
         }
         catch (Exception ex)
         {
-            return new TranslationWriteResult(false, null, $"{ex.GetType().Name}: {ex.Message}");
+            return new TranslationWriteResult(false, false, $"{ex.GetType().Name}: {ex.Message}");
         }
     }
 
@@ -193,7 +206,7 @@ public sealed class TranslationInstaller
                                               string mergedJson, string remoteJson,
                                               string? serverHash, int aheadOfServer)
     {
-        if (WhyNotNow(game) is { } refusal) return new TranslationWriteResult(false, null, refusal);
+        if (WhyNotNow(game) is { } refusal) return new TranslationWriteResult(false, false, refusal);
 
         var folder = Path.Combine(game.Path,
             descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar));
@@ -207,8 +220,10 @@ public sealed class TranslationInstaller
 
             TranslationBackupStore.TakeAutomatic(game.Path, descriptor, BackupReason.Merged);
 
-            string? backup = null;
-            if (File.Exists(target)) backup = MoveAside(target);
+            // ⚠ The copy was taken just above. The file itself is simply overwritten by the
+            // move below — setting it aside as well produced a second, undescribed copy in
+            // `removed/`, which is what put two rows in the Backups list for one act.
+            var kept = File.Exists(target);
 
             var temp = target + ".tmp";
             File.WriteAllText(temp, prepared, new UTF8Encoding(false));
@@ -222,11 +237,11 @@ public sealed class TranslationInstaller
             File.WriteAllText(ancestorTemp, remoteJson, new UTF8Encoding(false));
             File.Move(ancestorTemp, ancestor, overwrite: true);
 
-            return new TranslationWriteResult(true, backup, null);
+            return new TranslationWriteResult(true, kept, null);
         }
         catch (Exception ex)
         {
-            return new TranslationWriteResult(false, null, $"{ex.GetType().Name}: {ex.Message}");
+            return new TranslationWriteResult(false, false, $"{ex.GetType().Name}: {ex.Message}");
         }
     }
 
@@ -286,7 +301,7 @@ public sealed class TranslationInstaller
     public TranslationWriteResult WriteEditedSession(GameInstall game, LoaderDescriptor descriptor,
                                                      string sentJson, string receivedJson)
     {
-        if (WhyNotNow(game) is { } refusal) return new TranslationWriteResult(false, null, refusal);
+        if (WhyNotNow(game) is { } refusal) return new TranslationWriteResult(false, false, refusal);
 
         var gamePath = game.Path;
         var folder = Path.Combine(gamePath,
@@ -301,18 +316,20 @@ public sealed class TranslationInstaller
 
             TranslationBackupStore.TakeAutomatic(gamePath, descriptor, BackupReason.Edited);
 
-            string? backup = null;
-            if (File.Exists(target)) backup = MoveAside(target);
+            // ⚠ The copy was taken just above. The file itself is simply overwritten by the
+            // move below — setting it aside as well produced a second, undescribed copy in
+            // `removed/`, which is what put two rows in the Backups list for one act.
+            var kept = File.Exists(target);
 
             var temp = target + ".tmp";
             File.WriteAllText(temp, prepared, new UTF8Encoding(false));
             File.Move(temp, target, overwrite: true);
 
-            return new TranslationWriteResult(true, backup, null);
+            return new TranslationWriteResult(true, kept, null);
         }
         catch (Exception ex)
         {
-            return new TranslationWriteResult(false, null, $"{ex.GetType().Name}: {ex.Message}");
+            return new TranslationWriteResult(false, false, $"{ex.GetType().Name}: {ex.Message}");
         }
     }
 
@@ -427,60 +444,14 @@ public sealed class TranslationInstaller
     }
 
     /// <summary>
-    /// Moves the current file into the backup folder under a dated name, and returns where.
+    /// How many replaced translations an OLDER version kept in `removed/` before dropping the
+    /// oldest.
     ///
-    /// Dated rather than overwritten: someone who takes two translations in a row to compare them
-    /// would otherwise destroy the first backup with the second, which is exactly when they most
-    /// need both.
-    /// </summary>
-    private static string MoveAside(string target)
-    {
-        var folder = Path.Combine(Path.GetDirectoryName(target)!, BackupFolderName);
-        Directory.CreateDirectory(folder);
-
-        var stamp = DateTimeOffset.Now.ToString("yyyyMMdd-HHmmss");
-        var backup = Path.Combine(folder, $"translations-{stamp}.json");
-
-        var attempt = 1;
-        while (File.Exists(backup))
-            backup = Path.Combine(folder, $"translations-{stamp}-{++attempt}.json");
-
-        File.Move(target, backup);
-        Prune(folder);
-        return backup;
-    }
-
-    /// <summary>
-    /// How many replaced translations are kept before the oldest is dropped.
-    ///
-    /// 🔴 **Bounded, because nothing ever emptied this folder.** Dating each copy is right — the
-    /// reason is written above MoveAside — but "keep them all, for ever" is not a decision anybody
-    /// took, it is what happens when nobody writes the other half. Ten trials of community
-    /// translations left ten files on a player's disk that no screen mentioned and no action could
-    /// reach.
-    ///
-    /// Three: enough to compare two takes and still step back from both, few enough that the
-    /// folder never becomes a thing to manage. ⚠ It also bounds what "Put one back" has to show —
-    /// a list of thirty dated files is not a choice, it is an archive.
+    /// ⚠ Nothing writes that folder any more — see <see cref="TranslationWriteResult"/>. The number
+    /// stays because <see cref="TranslationBackupStore"/> still READS what earlier versions left
+    /// there, and a bound that changed would silently alter what those installs still show.
     /// </summary>
     public const int BackupsKept = 3;
-
-    /// <summary>Drops the oldest copies past <see cref="BackupsKept"/>. Never throws.</summary>
-    private static void Prune(string folder)
-    {
-        try
-        {
-            var stale = Directory.EnumerateFiles(folder, "translations-*.json")
-                                 .OrderByDescending(File.GetLastWriteTimeUtc)
-                                 .Skip(BackupsKept);
-
-            foreach (var old in stale) File.Delete(old);
-        }
-        catch
-        {
-            // Housekeeping. Failing to tidy must never fail the write that was actually asked for.
-        }
-    }
 
     /// <summary>
     /// The replaced translations still on disk, newest first, each described by what it CONTAINS.
@@ -556,11 +527,11 @@ public sealed class TranslationInstaller
     /// </summary>
     public TranslationWriteResult Remove(GameInstall game, LoaderDescriptor descriptor)
     {
-        if (WhyNotNow(game) is { } refusal) return new TranslationWriteResult(false, null, refusal);
+        if (WhyNotNow(game) is { } refusal) return new TranslationWriteResult(false, false, refusal);
 
         var target = TargetPath(game.Path, descriptor);
         if (!File.Exists(target))
-            return new TranslationWriteResult(false, null, "This game holds no translation.");
+            return new TranslationWriteResult(false, false, "This game holds no translation.");
 
         try
         {
@@ -568,7 +539,9 @@ public sealed class TranslationInstaller
             // somebody will look for after realising they removed the wrong thing.
             TranslationBackupStore.TakeAutomatic(game.Path, descriptor, BackupReason.Removed);
 
-            var aside = MoveAside(target);
+            // ⚠ Deleted, not set aside: the copy was taken on the line above and it is the one
+            // with a screen. Moving it as well left a second, undescribed copy in `removed/`.
+            File.Delete(target);
 
             // ⚠ The ancestor goes too. It describes the file that just left, so keeping it would
             // have the mod compare the NEXT translation against a snapshot of a different one —
@@ -577,45 +550,53 @@ public sealed class TranslationInstaller
                                         LocalTranslationProbe.AncestorFileName);
             if (File.Exists(ancestor)) File.Delete(ancestor);
 
-            return new TranslationWriteResult(true, aside, null);
+            return new TranslationWriteResult(true, true, null);
         }
         catch (Exception ex)
         {
-            return new TranslationWriteResult(false, null, ex.Message);
+            return new TranslationWriteResult(false, false, ex.Message);
         }
     }
 
     /// <summary>
-    /// Puts a replaced translation back, setting aside whatever is in its place first.
+    /// Puts back a translation an OLDER version left in `removed/`.
     ///
-    /// ⚠ The current file is moved aside rather than deleted, so a restore taken by mistake is
-    /// itself undoable. That is the whole reason this folder exists, and it would be strange for
-    /// the one action that reads it to be the one that destroys something.
+    /// ⚠ Kept although nothing writes that folder any more: installs made before this still hold
+    /// such files, they are still listed, and the one action that reads them must not be the one
+    /// that cannot act.
+    ///
+    /// ⚠ What is in its place is backed up first, so a restore taken by mistake is itself
+    /// undoable — through the folder that has a screen, rather than by leaving another loose file
+    /// beside the translation.
     /// </summary>
     public static TranslationWriteResult Restore(string gamePath, LoaderDescriptor descriptor,
                                                  string backupPath)
     {
         if (string.IsNullOrWhiteSpace(descriptor.UserDataDir))
-            return new TranslationWriteResult(false, null, "This game has no place for a translation.");
+            return new TranslationWriteResult(false, false, "This game has no place for a translation.");
 
         var target = TargetPath(gamePath, descriptor);
 
         if (!File.Exists(backupPath))
-            return new TranslationWriteResult(false, null, "That copy is no longer on disk.");
+            return new TranslationWriteResult(false, false, "That copy is no longer on disk.");
 
         try
         {
-            string? aside = null;
-            if (File.Exists(target)) aside = MoveAside(target);
+            var kept = File.Exists(target);
+            if (kept)
+            {
+                TranslationBackupStore.TakeAutomatic(gamePath, descriptor, BackupReason.Restored);
+                File.Delete(target);
+            }
 
             File.Copy(backupPath, target, overwrite: false);
             File.Delete(backupPath);
 
-            return new TranslationWriteResult(true, aside, null);
+            return new TranslationWriteResult(true, kept, null);
         }
         catch (Exception ex)
         {
-            return new TranslationWriteResult(false, null, ex.Message);
+            return new TranslationWriteResult(false, false, ex.Message);
         }
     }
 

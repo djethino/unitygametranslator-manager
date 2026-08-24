@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using Avalonia.Interactivity;
@@ -4835,10 +4835,9 @@ public partial class MainWindow : Window
 
             await ConfirmationWindow.TellAsync(this, "Merged",
                 summary
-                + (result.BackupPath is not null
-                    ? $"\n\nYour previous file is in {TranslationInstaller.BackupFolderName}/"
-                      + Path.GetFileName(result.BackupPath) + "."
-                    : ""));
+                // ⚠ Names the place somebody can act from, not a folder on disk: Backups is a
+                // button they have already seen, and it now holds the only copy taken.
+                + (result.KeptPrevious ? "\n\nWhat was here is kept under Backups." : ""));
 
             await RereadAsync(report.Game);
         }
@@ -4916,10 +4915,7 @@ public partial class MainWindow : Window
 
         await ConfirmationWindow.TellAsync(this, "Merged",
             "What you chose in the browser is now the translation in this game."
-            + (result.BackupPath is not null
-                ? $"\n\nYour previous file is in {TranslationInstaller.BackupFolderName}/"
-                  + Path.GetFileName(result.BackupPath) + "."
-                : ""));
+            + (result.KeptPrevious ? "\n\nWhat was here is kept under Backups." : ""));
 
         await RereadAsync(report.Game);
     }
@@ -8730,7 +8726,7 @@ public partial class MainWindow : Window
         // .ugt/removed/translations-20260817.json" is an instruction to open a file manager;
         // "Backups" is a button they have already seen on this card.
         var message = "The translation is in place.";
-        if (result.BackupPath is not null)
+        if (result.KeptPrevious)
             message += " What was here is kept under Backups.";
 
         return message;

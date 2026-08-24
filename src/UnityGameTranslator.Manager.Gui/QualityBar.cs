@@ -95,13 +95,13 @@ public sealed class QualityBar : Border
         // the band the website and the mod both call "Validated", and "not done yet" for the grey
         // they both call "Captured" — same bar, same colours, same file, and a reader moving
         // between two windows had to work out that two words were one band.
-        var counts = new (int Count, string Colour, string Label)[]
+        var counts = new (int Count, string Colour, TagBand Band)[]
         {
-            (tags.Human, "QualityHuman", Composition.Name(TagBand.Human)),
-            (tags.Validated, "QualityValidated", Composition.Name(TagBand.Validated)),
-            (tags.Ai, "QualityAi", Composition.Name(TagBand.Machine)),
-            (tags.Skipped, "QualityKept", Composition.Name(TagBand.Skipped)),
-            (tags.Captured, "QualityCapture", Composition.Name(TagBand.Captured)),
+            (tags.Human, "QualityHuman", TagBand.Human),
+            (tags.Validated, "QualityValidated", TagBand.Validated),
+            (tags.Ai, "QualityAi", TagBand.Machine),
+            (tags.Skipped, "QualityKept", TagBand.Skipped),
+            (tags.Captured, "QualityCapture", TagBand.Captured),
         };
 
         var total = counts.Sum(entry => entry.Count);
@@ -113,7 +113,7 @@ public sealed class QualityBar : Border
 
         for (var i = 0; i < shown.Count; i++)
         {
-            var (count, colour, label) = shown[i];
+            var (count, colour, band) = shown[i];
 
             // The last entry takes what is left rather than its own rounding, which is what keeps
             // the total at exactly 100.
@@ -140,9 +140,10 @@ public sealed class QualityBar : Border
 
             entry.Children.Add(new TextBlock
             {
-                // Name first, share second — the mod's key and the website's both read that way,
-                // and a reader scanning a column of keys scans the names, not the numbers.
-                Text = $"{label} {percent}%",
+                // Name, count, share — composed by the socle so this key reads exactly like the
+                // mod's and the website's. It used to print the share alone, and before the name at
+                // that: a reader scanning a column of keys scans the names, not the numbers.
+                Text = Composition.Entry(band, count, percent),
                 FontSize = 11,
                 Foreground = Brush("TextMuted"),
                 VerticalAlignment = VerticalAlignment.Center,

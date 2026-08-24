@@ -886,7 +886,12 @@ public partial class MainWindow : Window
     /// its plugins go, not where the mod keeps its file. Writing to the wrong one would put a
     /// translation somewhere the mod never looks, and it would read as "the download did nothing".
     /// </summary>
-    private async Task OpenTranslationsAsync(GameReport report, bool anyLanguage = false)
+    /// <param name="openWith">
+    /// The language to open the list on, when a button named one. Null lets the window fall back
+    /// to the language this game runs — see TranslationsWindow._openWith.
+    /// </param>
+    private async Task OpenTranslationsAsync(GameReport report, bool anyLanguage = false,
+                                             string? openWith = null)
     {
         var loaderId = report.InstalledLoader?.Id ?? report.RecommendedLoader?.Id;
         var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == loaderId);
@@ -898,7 +903,7 @@ public partial class MainWindow : Window
         }
 
         var window = new TranslationsWindow(report, descriptor, _settings, _lineages, _preferences,
-                                            anyLanguage);
+                                            anyLanguage, openWith);
         await window.ShowDialog(this);
 
         // Only when something was actually written: re-reading the game on every close would
@@ -3269,16 +3274,59 @@ public partial class MainWindow : Window
                 Margin = new Avalonia.Thickness(0, 6, 0, 0),
             };
 
-            if (inMyLanguage.Count > 0)
+            // 🔴 **The language this game RUNS is a second answer, not a replacement for yours.**
+            // The window opens on the installed translation's language unless told otherwise, so a
+            // game running an English translation opened on English under a button reading "Choose
+            // one in French". Choosing another language for one game is a deliberate act — those
+            // are the ones somebody wants to see again — and it does not cancel the default.
+            //
+            // ⚠ Two buttons only when the two differ, and the game's own comes first: this card is
+            // about this game. When they are the same there is one answer and one button.
+            var loaderHere = report.InstalledLoader?.Id ?? report.RecommendedLoader?.Id;
+            var here = _catalog.Loaders.FirstOrDefault(l => l.Id == loaderHere);
+
+            var gameLanguage = report.MatchingOnline?.TargetLanguage
+                               ?? (here is null
+                                   ? null
+                                   : LocalTranslationProbe.ReadTargetLanguage(report.Game.Path, here));
+
+            var myLanguage = Languages.NameOf(target);
+
+            var elsewhereInGameLanguage = gameLanguage is { Length: > 0 }
+                                          && !Languages.Matches(gameLanguage, target)
+                                          && report.OnlineTranslations.Any(
+                                              t => Languages.Matches(t.TargetLanguage, gameLanguage));
+
+            if (elsewhereInGameLanguage)
             {
-                var mineFirst = new Button
+                var itsOwn = new Button
                 {
-                    Content = $"Choose one in {Languages.NameOf(target)}",
+                    Content = $"Choose one in {gameLanguage}",
                     FontSize = 12,
                     Classes = { bodyLead },
                 };
 
-                mineFirst.Click += async (_, _) => await OpenTranslationsAsync(report);
+                itsOwn.Click += async (_, _) =>
+                    await OpenTranslationsAsync(report, openWith: gameLanguage);
+
+                buttons.Children.Add(itsOwn);
+            }
+
+            if (inMyLanguage.Count > 0)
+            {
+                var mineFirst = new Button
+                {
+                    Content = $"Choose one in {myLanguage}",
+                    FontSize = 12,
+
+                    // Second when this game already runs another language: that one is the state
+                    // in front of the reader, and one filled button per row.
+                    Classes = { elsewhereInGameLanguage ? "" : bodyLead },
+                };
+
+                // ⚠ Named, never left to the window: saying a language on a button and letting the
+                // window pick a different one is the defect this whole block answers.
+                mineFirst.Click += async (_, _) => await OpenTranslationsAsync(report, openWith: myLanguage);
                 buttons.Children.Add(mineFirst);
             }
 

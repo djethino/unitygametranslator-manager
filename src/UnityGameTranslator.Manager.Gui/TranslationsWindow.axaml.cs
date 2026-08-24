@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -90,6 +90,17 @@ public sealed class TranslationsWindow : Window
     private readonly bool _anyLanguage;
 
     /// <summary>
+    /// The language this window was asked to open on, when the caller named one.
+    ///
+    /// 🔴 **Because the button that opens it says a language out loud.** Left to itself this
+    /// window opens on the language of the translation the game RUNS, which is right when nobody
+    /// said otherwise and wrong the moment a button reads "Choose one in French": on a game
+    /// running an English translation it opened on English, under a label promising French. The
+    /// caller now says which, and the window obeys.
+    /// </summary>
+    private readonly string? _openWith;
+
+    /// <summary>
     /// Whether this window may CHOOSE a translation for this game.
     ///
     /// 🔴 **Looking is for everybody; choosing is not.** This window is where translations are
@@ -105,9 +116,10 @@ public sealed class TranslationsWindow : Window
 
     public TranslationsWindow(GameReport report, LoaderDescriptor loader, SettingsStore settings,
                               AccountLineages lineages, GamePreferences preferences,
-                              bool anyLanguage = false)
+                              bool anyLanguage = false, string? openWith = null)
     {
         _anyLanguage = anyLanguage;
+        _openWith = openWith;
         _report = report;
         _loader = loader;
         _settings = settings;
@@ -326,7 +338,8 @@ public sealed class TranslationsWindow : Window
         var installedSource = _report.MatchingOnline?.SourceLanguage;
         var installedTarget = _report.MatchingOnline?.TargetLanguage;
 
-        var target = installedTarget ?? gameTarget
+        // ⚠ What the caller ASKED for wins over what the game runs. See _openWith.
+        var target = _openWith ?? installedTarget ?? gameTarget
                      ?? Languages.NameOf(_settings.ResolveTargetLanguage());
 
         var source = installedSource ?? gameSource;

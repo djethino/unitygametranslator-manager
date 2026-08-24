@@ -2,6 +2,8 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using UnityGameTranslator.Common;
+using static UnityGameTranslator.Common.EditScope;
 
 namespace UnityGameTranslator.Manager.Gui;
 
@@ -44,10 +46,19 @@ public sealed class ConfirmationWindow : Window
 
     private bool _secondChosen;
 
+    /// <param name="scope">
+    /// Where agreeing to this would WRITE, drawn as the same three-mark cursor every button on the
+    /// page carries.
+    ///
+    /// 🔴 **This box is the last screen before the act, and it was the one without the mark.** The
+    /// button that opens it says where it writes; the window that commits it said nothing — so the
+    /// question "am I about to touch the site?" was asked out loud by somebody standing in front of
+    /// a merge. Null on a box that writes nothing, which is most of them.
+    /// </param>
     private ConfirmationWindow(string title, string body, string confirm, bool question = true,
                                string? optionLabel = null, bool optionChecked = false,
                                string? secondLabel = null, bool secondChecked = false,
-                               string? secondHint = null)
+                               string? secondHint = null, EditSide? scope = null)
     {
         Title = title;
         Width = 560;
@@ -119,6 +130,54 @@ public sealed class ConfirmationWindow : Window
             HorizontalAlignment = HorizontalAlignment.Right,
         };
 
+        // ⚠ On the left of the row and outside the buttons, exactly as it sits beside a label on
+        // the page: it qualifies the act, it is not part of the verb. Its own sentence under it,
+        // because this is the one place where somebody has stopped to read.
+        if (scope is { } side)
+        {
+            var mark = ScopeMark.For(side);
+            mark.HorizontalAlignment = HorizontalAlignment.Left;
+            mark.VerticalAlignment = VerticalAlignment.Center;
+
+            var where = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            where.Children.Add(mark);
+            where.Children.Add(new TextBlock
+            {
+                Text = EditScope.Effect(side),
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                MaxWidth = 330,
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = this.FindResource("TextMuted") as IBrush,
+            });
+
+            buttons.HorizontalAlignment = HorizontalAlignment.Stretch;
+
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+            Grid.SetColumn(where, 0);
+            row.Children.Add(where);
+
+            var aimed = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                HorizontalAlignment = HorizontalAlignment.Right,
+            };
+
+            Grid.SetColumn(aimed, 1);
+            row.Children.Add(aimed);
+
+            layout.Children.Add(row);
+            buttons = aimed;
+        }
+
         if (question)
         {
             // IsCancel and IsDefault both on Cancel: Escape closes it, and so does Enter. The
@@ -147,15 +206,19 @@ public sealed class ConfirmationWindow : Window
         };
 
         buttons.Children.Add(go);
-        layout.Children.Add(buttons);
+
+        // ⚠ Only when the scope row did not already take it. Adding a control to a second parent
+        // is an exception in Avalonia, not a move.
+        if (buttons.Parent is null) layout.Children.Add(buttons);
 
         Content = layout;
     }
 
     /// <summary>Shows the question and returns true only when the person aimed at the answer.</summary>
-    public static async Task<bool> AskAsync(Window owner, string title, string body, string confirm)
+    public static async Task<bool> AskAsync(Window owner, string title, string body, string confirm,
+                                            EditSide? scope = null)
     {
-        var window = new ConfirmationWindow(title, body, confirm);
+        var window = new ConfirmationWindow(title, body, confirm, scope: scope);
         await window.ShowDialog(owner);
         return window._confirmed;
     }

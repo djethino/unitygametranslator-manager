@@ -1469,6 +1469,12 @@ public partial class MainWindow : Window
     private async Task RereadAsync(GameInstall game, bool redraw = false)
     {
         var before = _situations.TryGetValue(game.Path, out var was) ? was : null;
+
+        // ⚠ Held before the re-read, because the guard below has to compare them and the two lines
+        // that follow overwrite both.
+        var accountBefore = _accounts.TryGetValue(game.Path, out var had) ? had : null;
+        var mineBefore = _mine.Contains(game.Path);
+
         var (now, mine, account) = await Task.Run(() => ReadSituation(game));
 
         _situations[game.Path] = now;
@@ -1484,9 +1490,18 @@ public partial class MainWindow : Window
         // it reaching this window — a setting changed in the mod, say.
         //
         // ⚠ Unless the caller knows something the game does not say. See the parameter.
+        //
+        // 🔴 **The account and the lineage are part of "said differently".** They were read three
+        // lines up, written into the two dictionaries the row and the card draw from, and then left
+        // out of this comparison — so signing out inside a game changed everything this window
+        // knows and redrew none of it. The corner went on naming the previous account until
+        // somebody clicked the game, which is exactly what was reported: the comment above this
+        // guard says signing in happens inside the game, and the guard ignored it.
         if (!redraw && before is not null && before.Headline == now.Headline
             && before.Pending == now.Pending
-            && before.Detail == now.Detail)
+            && before.Detail == now.Detail
+            && string.Equals(accountBefore, account, StringComparison.Ordinal)
+            && mineBefore == mine)
             return;
 
         if (_rows.TryGetValue(game.Path, out var row) && row.Item.Tag is GameInstall shown)
@@ -4782,9 +4797,22 @@ public partial class MainWindow : Window
                 return;
             }
 
-            if (!await ConfirmationWindow.AskAsync(this, "Merge with the published version?",
+            // 🔴 **Not a merge when there is nothing of yours to settle.** With nothing kept and
+            // nothing in conflict, this is taking the published version — and calling it a merge
+            // asked somebody to arbitrate a disagreement that does not exist. A plain player who
+            // downloaded a community translation and never touched it is the ordinary case, and
+            // the word made an ordinary update read as something that could cost them work.
+            //
+            // ⚠ The scope mark says where it writes, and it says the thing the reader asked out
+            // loud: nothing reaches the site. It is on the button that opened this window and was
+            // missing from the window that commits the act.
+            var takingTheirs = merge.Summary.NothingOfYoursAtStake;
+
+            if (!await ConfirmationWindow.AskAsync(this,
+                    takingTheirs ? "Update from the published version?" : "Merge with the published version?",
                     summary + "\n\nYour current file is kept aside before anything is written.",
-                    "Merge"))
+                    takingTheirs ? "Update" : "Merge",
+                    EditScope.SideAfter(onThisMachine: true, yourPublishedCopy: false)))
             {
                 return;
             }
@@ -4896,13 +4924,30 @@ public partial class MainWindow : Window
         await RereadAsync(report.Game);
     }
 
-    /// <summary>A merge in figures, and the one caveat that changes how they should be read.</summary>
+    /// <summary>
+    /// What this would do to the file in the game, in figures somebody can judge before agreeing.
+    ///
+    /// 🔴 **Every line here is about THIS file, and nothing else belongs.** It used to end with
+    /// "N removed on both sides" — a phrase describing keys that no longer exist anywhere, printed
+    /// for a count that also included real deletions from the file in front of the reader. On the
+    /// case that prompted this, thirteen of somebody's lines were deleted under a sentence saying
+    /// they were already gone from both sides.
+    ///
+    /// ⚠ Removals lead when there are any. Taking a line and losing one are not the same news, and
+    /// the one that loses work is the one somebody must not have to hunt for in a list.
+    /// </summary>
     private static string Describe(MergeSummary summary, bool blind)
     {
         var parts = new List<string>();
-        if (summary.TakenFromServer > 0) parts.Add($"{summary.TakenFromServer} line(s) taken from the published version");
+
+        if (summary.RemovedHere > 0)
+            parts.Add($"{summary.RemovedHere} line(s) removed from this file — the published "
+                      + "version dropped them and nothing here had changed them");
+
+        if (summary.TakenFromServer > 0)
+            parts.Add($"{summary.TakenFromServer} line(s) taken from the published version");
+
         if (summary.KeptHere > 0) parts.Add($"{summary.KeptHere} of yours kept");
-        if (summary.Removed > 0) parts.Add($"{summary.Removed} removed on both sides");
         if (summary.Conflicts > 0) parts.Add($"{summary.Conflicts} in conflict");
 
         var text = string.Join(", ", parts) + ".";

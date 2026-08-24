@@ -1,4 +1,4 @@
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -394,7 +394,8 @@ public sealed class BackupsWindow : Window
                 return;
             }
 
-            Act(() => TranslationBackupStore.Restore(_game.Path, _descriptor, entry.Id));
+            await ActAsync(() => TranslationBackupStore.Restore(_game.Path, _descriptor, entry.Id),
+                           "This backup could not be put back");
         };
 
         verbs.Children.Add(restore);
@@ -423,7 +424,8 @@ public sealed class BackupsWindow : Window
                     return;
                 }
 
-                Act(() => TranslationBackupStore.Delete(_game.Path, _descriptor, entry.Id));
+                await ActAsync(() => TranslationBackupStore.Delete(_game.Path, _descriptor, entry.Id),
+                               "This backup could not be deleted");
             };
             verbs.Children.Add(delete);
         }
@@ -441,8 +443,9 @@ public sealed class BackupsWindow : Window
             ToolTip.SetTip(keep, Backups.WhyCannotSave(all)
                                  ?? $"Moves it into {Backups.SavedHeading}, so it stops ageing out.");
 
-            keep.Click += (_, _) => Act(() =>
-                TranslationBackupStore.Keep(_game.Path, _descriptor, entry.Id));
+            keep.Click += async (_, _) =>
+                await ActAsync(() => TranslationBackupStore.Keep(_game.Path, _descriptor, entry.Id),
+                               "This backup could not be kept");
 
             verbs.Children.Add(keep);
         }
@@ -465,11 +468,33 @@ public sealed class BackupsWindow : Window
         };
     }
 
-    private void Act(Action write)
+    /// <summary>
+    /// Run one of the store's writes and report it when it did not happen.
+    ///
+    /// 🔴 **It used to take an Action, so every one of these returned a bool into nothing.** Keep,
+    /// Delete and Restore can all refuse — a file that has moved, a name already taken, a folder
+    /// that cannot be written — and the window simply redrew, unchanged, with no word. Somebody
+    /// pressed Keep, watched nothing happen, and pressed it on another row to see whether the
+    /// button worked at all. Restore is the one that mattered most: believing a file was put back
+    /// when it was not is how the next act is taken on the wrong file.
+    ///
+    /// ⚠ Touched only on success: it is what tells the caller the game has to be re-read, and a
+    /// write that did not happen has nothing to re-read.
+    /// </summary>
+    private async Task ActAsync(Func<bool> write, string couldNot)
     {
-        write();
-        Touched = true;
+        var done = write();
+        if (done) Touched = true;
+
         Redraw();
+
+        if (!done)
+        {
+            await ConfirmationWindow.TellAsync(this, couldNot,
+                "Nothing was changed. The backup folder may have been moved or written to by "
+                + "something else while this window was open — close it and open it again to see "
+                + "what is actually there.");
+        }
     }
 
     private string? LocalUuid() => LocalTranslationProbe.Read(_game.Path, _descriptor)?.Uuid;

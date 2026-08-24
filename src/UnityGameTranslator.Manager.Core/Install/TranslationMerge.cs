@@ -7,14 +7,35 @@ namespace UnityGameTranslator.Manager.Core.Install;
 /// <summary>What a merge would do, in figures somebody can judge before agreeing to it.</summary>
 /// <param name="TakenFromServer">Lines the published version brings, that nothing here contests.</param>
 /// <param name="KeptHere">Lines of yours the published version does not have, or does not outrank.</param>
-/// <param name="Removed">Lines both sides agree are gone.</param>
+/// <param name="RemovedHere">
+/// Lines this file HAS and the merge would take out of it: the published version dropped them and
+/// nothing here had touched them since, so honouring its deletion means deleting them here.
+///
+/// 🔴 **Counted only when the line is actually in this file.** It used to be every key the shared
+/// rule answered <c>Deleted</c> for — which covers three situations, and two of them change nothing
+/// here at all (a key gone from both sides, a key only the published version had dropped). Those
+/// were reported as "removed on both sides", so a real deletion of somebody's lines was worded as a
+/// no-op. On the file that prompted this it was thirteen lines, and the sentence said they were
+/// already gone everywhere.
+/// </param>
 /// <param name="Conflicts">Lines both sides changed, which nobody can settle without being asked.</param>
-public sealed record MergeSummary(int TakenFromServer, int KeptHere, int Removed, int Conflicts)
+public sealed record MergeSummary(int TakenFromServer, int KeptHere, int RemovedHere, int Conflicts)
 {
     public bool HasConflicts => Conflicts > 0;
 
+    /// <summary>
+    /// Nothing of this file's own is at stake: everything it holds either stays as it is or is
+    /// unaffected. The act is then taking the published version, not settling two versions — and
+    /// calling it a merge asks somebody to arbitrate a disagreement that does not exist.
+    ///
+    /// ⚠ Removals do NOT make it a merge, and they are the reason this is not simply
+    /// <c>KeptHere == 0</c> being read at the call site: they are the published version's decision
+    /// being honoured, not a disagreement. They still have to be SAID — they delete lines here.
+    /// </summary>
+    public bool NothingOfYoursAtStake => KeptHere == 0 && Conflicts == 0;
+
     /// <summary>Nothing to do: the two agree line for line.</summary>
-    public bool Empty => TakenFromServer == 0 && KeptHere == 0 && Removed == 0 && Conflicts == 0;
+    public bool Empty => TakenFromServer == 0 && KeptHere == 0 && RemovedHere == 0 && Conflicts == 0;
 }
 
 /// <summary>
@@ -105,7 +126,11 @@ public sealed class TranslationMerge
                     kept++;
                     break;
                 case MergeReason.Deleted:
-                    removed++;
+                    // ⚠ Only when this file actually holds it. The same verdict covers a key that
+                    // was already gone from both sides and one that only the published version had
+                    // dropped — neither changes anything here, and counting them made a real
+                    // deletion of somebody's lines indistinguishable from a no-op.
+                    if (_local.ContainsKey(key)) removed++;
                     break;
             }
         }

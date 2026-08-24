@@ -178,8 +178,12 @@ public static class SituationReader
         // ⚠ Named from the published entry, not from the local file: a file on disk carries no
         // author. Silent when nothing of this lineage is published — then there is genuinely
         // nobody to name, and inventing "unknown" would be noise on every private translation.
+        // ⚠ **"by", because a bare name does not say what role it plays.** The same card carries a
+        // second name in its corner — the account the GAME is signed in as — and with neither of
+        // them labelled, the two were read as one. One word tells them apart, and it is the word
+        // the mod's own community list has always used for this.
         if (report.MatchingOnline?.Author is { Length: > 0 } author)
-            parts.Add(People.MentionOf(author, signedInAs));
+            parts.Add("by " + People.MentionOf(author, signedInAs));
 
         // The role in the lineage, which the name does NOT give: leading a translation and
         // contributing to one are different powers over the same file.

@@ -1772,6 +1772,28 @@ public partial class MainWindow : Window
             // ordinary. Amber, because it changes what the buttons will do.
             var yours = People.IsYou(account, _settings.Current.ApiUser);
 
+            // 🔴 **A bare name does not say what role it plays.** This corner showed "@somebody"
+            // and the card's own line shows "by @somebody-else" — the account the GAME is signed
+            // in as, and whoever PUBLISHED the translation it runs. Two names, two meanings, one
+            // card, and nothing but a tooltip between them: the project's own author read one as
+            // the other. Its own tiny line rather than "signed in as @x" on one row, because a
+            // long account name would then trim the NAME instead of the label.
+            // Their own stack, spacing 0: a label and its value are one thing, and the corner's
+            // 4px gap between siblings would read as two.
+            var named = new StackPanel
+            {
+                Spacing = 0,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+            };
+
+            named.Children.Add(new TextBlock
+            {
+                Text = "signed in as",
+                FontSize = 9,
+                Foreground = Brush("TextMuted"),
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+            });
+
             var mark = new TextBlock
             {
                 // ⚠ The word "(you)", not the colour, carries the answer — see People.Mention.
@@ -1790,7 +1812,8 @@ public partial class MainWindow : Window
                   + "account this tool is using. Nothing here will write to it: play it and look "
                   + "at it, and sign in inside the game to change that.");
 
-            corner.Children.Add(mark);
+            named.Children.Add(mark);
+            corner.Children.Add(named);
         }
 
         if (play is not null)
@@ -2946,7 +2969,16 @@ public partial class MainWindow : Window
     private IEnumerable<Control> GameHome(GameReport report)
     {
         var target = _settings.ResolveTargetLanguage();
-        var mine = MyTranslationHere(report);
+
+        // 🔴 **Who published what this game runs — named, never "yours".** This read
+        // MyTranslationHere, which answers a deliberately different question: does the account THIS
+        // GAME is signed in as own the translation. True on a game somebody else set up, so the
+        // card said "your own translation" to a reader who has nothing to do with it — a possessive
+        // whose referent is a different person, on a machine that legitimately carries several
+        // people's games. The test the naming rule gives: replace it with a proper noun; if you
+        // cannot say which one to write, the possessive is false. Here we can.
+        var installedBy = report.MatchingOnline?.Author;
+        var mine = People.IsYou(installedBy, _settings.Current.ApiUser);
 
         // ⚠ ONE filled button on screen at a time, and the bar has first claim on it: it is the
         // fixed place, in the same spot on both tabs, and what it runs is the whole job rather
@@ -2973,9 +3005,16 @@ public partial class MainWindow : Window
 
             body.Children.Add(new TextBlock
             {
+                // ⚠ Three answers, not two. Naming the author is what a reader needs before doing
+                // anything here, and it is the one the card never gave: "already has a translation
+                // installed" said nothing about whose it was, so somebody had to open the game to
+                // find out. The last case stays for a translation nobody published — there is
+                // genuinely no name to write.
                 Text = mine
                     ? "This game is running your own translation."
-                    : "This game already has a translation installed.",
+                    : installedBy is { Length: > 0 }
+                        ? $"This game is running {People.Mention(installedBy)}'s translation."
+                        : "This game already has a translation installed.",
                 FontSize = 13,
                 FontWeight = FontWeight.SemiBold,
                 TextWrapping = TextWrapping.Wrap,
@@ -3380,31 +3419,6 @@ public partial class MainWindow : Window
 
         body.Children.Add(take);
         yield return Callout(body, "CalloutInfoBg", "StatusInfo");
-    }
-
-    /// <summary>
-    /// Whether the translation installed here belongs to the account THIS GAME is signed in as.
-    ///
-    /// ⚠ The game's account, never this tool's. One machine can carry several — one game signed in
-    /// as one person, the next as another, a third not signed in at all — and judging with the
-    /// installer's own account would claim somebody else's work as yours. The rule AccountLineages
-    /// already states: a role is read, never inferred from a game and a language.
-    ///
-    /// False whenever anything is missing: no file, no lineage, nobody signed in, or nothing
-    /// published under that lineage. "Unknown" and "not mine" lead to the same restraint, so they
-    /// are answered the same way rather than guessed apart.
-    /// </summary>
-    private bool MyTranslationHere(GameReport report)
-    {
-        if (report.LocalTranslation?.Uuid is not { } uuid) return false;
-
-        var descriptor = InstalledDescriptor(report);
-        var account = GameConfigWriter.InGameValue(report.Game.Path, descriptor, GameConfigWriter.ApiUserKey);
-        if (string.IsNullOrWhiteSpace(account)) return false;
-
-        return report.OnlineTranslations.Any(t =>
-            string.Equals(t.Uuid, uuid, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(t.Author, account, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

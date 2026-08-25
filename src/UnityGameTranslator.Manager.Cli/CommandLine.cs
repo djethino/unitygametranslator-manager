@@ -1647,9 +1647,21 @@ public static class CommandLine
         // game library listing" three lines under a list of every game found, by name — which is
         // the one thing a reader would have checked. A promise wider than the fact is worse than
         // no promise: it is the sentence somebody trusts instead of looking.
-        Console.WriteLine("The block above names the games found on this machine and where they live,");
-        Console.WriteLine("because that is what a diagnosis is about. What it replaces, wherever it");
-        Console.WriteLine("appears, is your account name and your home directory.");
+        // ⚠ And it has to hold on a machine with nothing on it. The wording above described a list
+        // of games under a "games : 0", which is the same fault one size smaller: a sentence that
+        // describes something the reader cannot see. Seen on a clean VM, not imagined.
+        if (games.Count > 0)
+        {
+            Console.WriteLine("The block above names the games found on this machine and where they live,");
+            Console.WriteLine("because that is what a diagnosis is about. What it replaces, wherever it");
+            Console.WriteLine("appears, is your account name and your home directory.");
+        }
+        else
+        {
+            Console.WriteLine("No Unity game was found on this machine, so the block above is just the tool");
+            Console.WriteLine("and the catalogue it reached. It carries no account name and no home directory.");
+        }
+
         Console.WriteLine("Nothing was sent anywhere: copy it into an issue only if you want to.");
 
         await Task.CompletedTask;

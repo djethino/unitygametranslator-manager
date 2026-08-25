@@ -163,8 +163,10 @@ Five repositories, one product — [see it live][live].
 - **[Avalonia](https://github.com/AvaloniaUI/Avalonia)** — cross-platform .NET UI framework
 - **[Inter](https://github.com/rsms/inter)** by Rasmus Andersson — the font the window renders with
 - **[BepInEx](https://github.com/BepInEx/BepInEx)** and **[MelonLoader](https://github.com/LavaGang/MelonLoader)** by LavaGang — the mod loaders this tool installs, downloaded from their own release pages and never redistributed here
+- **[Ollama](https://github.com/ollama/ollama)** — the local model server this tool offers to install, the same way and on the same terms. It is what makes translating for free on your own machine a real option
 
-See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for full license details.
+See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for full license details — including the
+models Ollama downloads, which carry their own terms and are not covered by its licence.
 
 ## License
 

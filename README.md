@@ -143,6 +143,21 @@ src/
 Same shape as the mod: one shared trunk holding all the logic, thin adapters for what genuinely
 differs. The command line is not a lesser version of the interface — it reaches the same engine.
 
+## Related
+
+Five repositories, one product — [see it live][live].
+
+- [UnityGameTranslator][mod] — the mod this tool installs: it translates a game while you play
+- [UnityGameTranslator-website][website] — where translations are shared, reviewed and merged
+- [unitygametranslator-common][common] — the rules the mod and this tool both answer to, written once
+- [unitygametranslator-catalogs][catalogs] — reference data: languages, AI models, mod loaders
+
+[mod]: https://github.com/djethino/UnityGameTranslator
+[website]: https://github.com/djethino/UnityGameTranslator-website
+[common]: https://github.com/djethino/unitygametranslator-common
+[catalogs]: https://github.com/djethino/unitygametranslator-catalogs
+[live]: https://unitygametranslator.asymptomatikgames.com
+
 ## Acknowledgments
 
 - **[Avalonia](https://github.com/AvaloniaUI/Avalonia)** — cross-platform .NET UI framework

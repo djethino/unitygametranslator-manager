@@ -527,26 +527,44 @@ public partial class MainWindow : Window
         ShowOverview();
         Busy(false, "Ready.");
 
-        // 🔴 **Block on the disk, never on the network.** This was awaited HERE, between the scan
-        // and the first paint — one request, ten seconds of patience, holding back a list that had
-        // already been read off the disk and had nothing to learn from it. What the window IS comes
-        // from the machine; what somebody else has to say about it sharpens the rows afterwards,
-        // which is exactly what the two lines below already do.
-        //
-        // ⚠ Nothing lies in the meantime. AccountLineages.Known says whether the answer has
-        // arrived, and every reader already distinguishes "nobody is waiting" from "we have not
-        // asked yet" on it — the reason that property exists at all.
+        WarmInBackground();
+    }
+
+    /// <summary>
+    /// Every answer that comes from somewhere other than this machine, asked after the first paint.
+    ///
+    /// 🔴 **Block on the disk, never on the network.** These were once awaited between the scan and
+    /// the first paint — ten seconds of patience holding back a list already read off the disk and
+    /// with nothing to learn from them. What the window IS comes from the machine; what somebody
+    /// else has to say about it sharpens the rows afterwards.
+    ///
+    /// 🔴 **Every warmer here ends with RecomputeSituations() + RefreshList(), and that is not
+    /// decoration — it is the whole contract.** A row is drawn from what ReadSituation could see at
+    /// the time; an answer arriving later changes nothing on screen unless somebody re-reads. Three
+    /// separate defects have been this exact omission, each found by a person clicking things one
+    /// at a time to make the list tell the truth:
+    ///   · the loader tag that appeared only on a SELECTED game (see WarmLoaderBuildsAsync);
+    ///   · the sync verdict missing from the rows (see ReadSituation);
+    ///   · the mod update nobody was told about until they had clicked every game in the library.
+    ///
+    /// ⚠ **So this list is the place to add a source, and the only one.** A lookup started anywhere
+    /// else is a lookup nobody redraws for — which does not fail, does not log, and shows a stale
+    /// screen to somebody who has no reason to doubt it. Adding a warmer is one line here plus a
+    /// method that ends like its neighbours.
+    ///
+    /// ⚠ Nothing lies in the meantime: each source distinguishes "not asked yet" from "nothing to
+    /// report", which is why those properties exist at all.
+    /// </summary>
+    private void WarmInBackground()
+    {
         _ = FillLineagesAsync();
 
-        // ⚠ **After the window is up, and it redraws when the answer lands.** Asking two
-        // publishers what they currently offer takes a second or two, and nothing on screen needs
-        // it to be usable — so it must not hold the list back. But a card drawn before the answer
-        // arrives shows a loader without its version and would keep showing it until something
-        // else caused a redraw: an interface that is only right if you happen to click twice.
-        // ⚠ Before the loader builds, which measure themselves against it.
+        // ⚠ Before the loader builds, which measure themselves against the catalogue it refreshes.
         _ = RefreshCatalogAsync();
 
         _ = WarmLoaderBuildsAsync();
+
+        _ = WarmPluginReleaseAsync();
 
         StartOnlineSweep();
     }
@@ -3935,6 +3953,46 @@ public partial class MainWindow : Window
         //
         // ⚠ Recompute before refresh: the rows are drawn from _situations, so refreshing without
         // re-reading redraws the same stale answer.
+        RecomputeSituations();
+        RefreshList();
+
+        if (_selected is not null) await ShowSelectedAsync();
+    }
+
+    /// <summary>
+    /// Asks GitHub which mod release is newest, once, and redraws when it answers.
+    ///
+    /// 🔴 **The twin of <see cref="WarmLoaderBuildsAsync"/>, and its absence produced the very
+    /// defect written up there: "an at-a-glance badge you had to click to glance at".** ReadSituation
+    /// fills PluginStanding from PluginReleases.Known, which answers nothing until somebody has
+    /// asked — and the only caller that ever asked was BuildReportAsync, i.e. selecting a game. So
+    /// the list said nothing about any game until each one had been clicked, one by one, and even
+    /// then the other rows stayed quiet because nothing recomputed them afterwards.
+    ///
+    /// ⚠ ScanAsync calls Forget() so that a rescan asks again. Forgetting without re-asking is what
+    /// left Known() empty for the whole session: the question has to be posed here.
+    ///
+    /// ⚠ Behind the same two settings the rows read, or the list would announce something the card
+    /// refuses to.
+    /// </summary>
+    private async Task WarmPluginReleaseAsync()
+    {
+        if (!_settings.Current.OnlineMode || !_settings.Current.CheckContentUpdates) return;
+
+        try
+        {
+            await _releases.LatestAsync(
+                string.Equals(_settings.Current.Channel, "beta", StringComparison.OrdinalIgnoreCase)
+                    ? ReleaseChannel.Beta
+                    : ReleaseChannel.Stable).ConfigureAwait(true);
+        }
+        catch
+        {
+            // A blocked request leaves Known() null, which every reader already treats as "not
+            // known yet" rather than "up to date" — the distinction PluginReleases exists to keep.
+            return;
+        }
+
         RecomputeSituations();
         RefreshList();
 

@@ -156,6 +156,9 @@ internal static class Program
         // Latin, Greek and Cyrillic — around 2 000 glyphs. A Chinese game name is drawn by the
         // system's font fallback, with or without this call. Do not lean on Inter for those, and
         // do not remove a fallback believing it covers them.
+        //
+        // ✅ The fallback does its job: a Chinese game name reads correctly in the list on Windows.
+        // Seen on the user's machine, not deduced — so there is nothing to fix here.
         .WithInterFont()
         .LogToTrace();
 

@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using UnityGameTranslator.Manager.Core.Api;
+using UnityGameTranslator.Manager.Core.Diagnostics;
 using UnityGameTranslator.Manager.Core.Install;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
@@ -10,13 +11,20 @@ namespace UnityGameTranslator.Manager.Core.Ai;
 
 /// <summary>
 /// What we can offer on this machine, and at what cost — decided before anything is downloaded.
+///
+/// ⚠ <paramref name="Tag"/> is part of the offer, and that is the point: the checksum below belongs
+/// to that release and to no other. Between pricing an install and accepting it there is a person
+/// deciding, which can take a day — and Ollama publishes often. Looking the release up a second
+/// time at install would fetch the NEW asset and check it against the OLD digest, refusing with
+/// "checksum mismatch": an accusation of tampering where nothing but a release had happened.
 /// </summary>
 public sealed record OllamaOffer(
     bool CanInstall,
     string? AssetName,
     long? SizeBytes,
     string? Sha256,
-    string? Refusal)
+    string? Refusal,
+    string? Tag = null)
 {
     public string SizeText => SizeBytes is { } bytes
         ? $"{bytes / 1024.0 / 1024 / 1024:F1} GB"
@@ -115,7 +123,7 @@ public sealed class OllamaInstaller
                 + "installer we cannot verify — install it from ollama.com instead.");
         }
 
-        return new OllamaOffer(true, asset, sizes.GetValueOrDefault(asset), sha, null);
+        return new OllamaOffer(true, asset, sizes.GetValueOrDefault(asset), sha, null, tag);
     }
 
     /// <summary>
@@ -126,11 +134,8 @@ public sealed class OllamaInstaller
     /// </summary>
     public async Task<string?> InstallAsync(OllamaOffer offer, CancellationToken ct = default)
     {
-        if (!offer.CanInstall || offer.AssetName is null || offer.Sha256 is null)
+        if (!offer.CanInstall || offer.AssetName is null || offer.Sha256 is null || offer.Tag is null)
             return offer.Refusal ?? "Nothing to install.";
-
-        var release = await LatestReleaseAsync(ct).ConfigureAwait(false);
-        if (release is null) return "Could not reach GitHub.";
 
         var staging = Path.Combine(_platform.UserDataDirectory, "staging");
         Directory.CreateDirectory(staging);
@@ -138,7 +143,8 @@ public sealed class OllamaInstaller
 
         try
         {
-            var url = GitHubAssets.BuildUrl(Repository, release.Value.Tag, offer.AssetName);
+            // The tag the checksum was taken from, never a fresh lookup — see OllamaOffer.
+            var url = GitHubAssets.BuildUrl(Repository, offer.Tag, offer.AssetName);
             await DownloadAsync(url, target, ct).ConfigureAwait(false);
 
             var actual = FileOperations.HashFile(target);
@@ -166,7 +172,10 @@ public sealed class OllamaInstaller
         }
         catch (Exception ex)
         {
-            return $"{ex.GetType().Name}: {ex.Message}";
+            // ⚠ Sanitised: this text is shown to be copied into a public issue, and the staging
+            // folder it will name sits under the user's home. Sanitize.Text is the whole privacy
+            // surface of a tool that collects nothing.
+            return $"{ex.GetType().Name}: {Sanitize.Text(ex.Message)}";
         }
         finally
         {

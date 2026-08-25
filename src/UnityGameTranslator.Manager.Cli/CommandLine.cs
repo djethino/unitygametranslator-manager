@@ -56,6 +56,22 @@ public static class CommandLine
         // games that most need translating.
         try { Console.OutputEncoding = System.Text.Encoding.UTF8; } catch { /* redirected output */ }
 
+        // 🔴 **And that line alone is not enough, which cost a real defect.** Console.OutputEncoding
+        // does not reach a REDIRECTED stream: `diagnose > report.txt` went out in the ANSI code
+        // page, and a five-character Chinese game name was written as five literal "?" — measured,
+        // not feared. Redirecting is the normal way to use `diagnose`, the command whose whole
+        // purpose is to be pasted into an issue, so the one report that most needed reading was
+        // the one that lost its content.
+        //
+        // ⚠ Without a BOM: the text is meant to be pasted, and a leading U+FEFF turns into a
+        // stray glyph in the first word of the report.
+        if (Console.IsOutputRedirected)
+        {
+            var utf8 = new StreamWriter(Console.OpenStandardOutput(),
+                                        new System.Text.UTF8Encoding(false)) { AutoFlush = true };
+            Console.SetOut(utf8);
+        }
+
         var command = args.Length > 0 ? args[0].ToLowerInvariant() : "scan";
         var offline = args.Contains("--offline", StringComparer.OrdinalIgnoreCase);
 
@@ -1631,9 +1647,9 @@ public static class CommandLine
         // game library listing" three lines under a list of every game found, by name — which is
         // the one thing a reader would have checked. A promise wider than the fact is worse than
         // no promise: it is the sentence somebody trusts instead of looking.
-        Console.WriteLine("The block above names the games found on this machine, because that is what");
-        Console.WriteLine("a diagnosis is about. It carries no user name, no home directory and no");
-        Console.WriteLine("install paths — those are replaced before printing.");
+        Console.WriteLine("The block above names the games found on this machine and where they live,");
+        Console.WriteLine("because that is what a diagnosis is about. What it replaces, wherever it");
+        Console.WriteLine("appears, is your account name and your home directory.");
         Console.WriteLine("Nothing was sent anywhere: copy it into an issue only if you want to.");
 
         await Task.CompletedTask;

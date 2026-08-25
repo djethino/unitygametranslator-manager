@@ -1611,7 +1611,7 @@ public static class CommandLine
         Console.WriteLine($"platform : {platform.OsId} / {platform.HostArchitecture}");
         Console.WriteLine($"os       : {Sanitize.Text(Environment.OSVersion.VersionString)}");
         Console.WriteLine($"catalog  : {catalog.Source}, {catalog.Document.Loaders.Count} loaders, built {catalog.Document.GeneratedAt}");
-        if (catalog.Error is not null) Console.WriteLine($"catalog! : {catalog.Error}");
+        if (catalog.Error is not null) Console.WriteLine($"catalog! : {Sanitize.Text(catalog.Error)}");
         Console.WriteLine($"games    : {games.Count}");
         Console.WriteLine();
 
@@ -1627,7 +1627,13 @@ public static class CommandLine
         }
         Console.WriteLine("```");
         Console.WriteLine();
-        Console.WriteLine("The block above holds no user name, no home directory and no game library listing.");
+        // ⚠ Say what it DOES carry, not only what it does not. The previous wording promised "no
+        // game library listing" three lines under a list of every game found, by name — which is
+        // the one thing a reader would have checked. A promise wider than the fact is worse than
+        // no promise: it is the sentence somebody trusts instead of looking.
+        Console.WriteLine("The block above names the games found on this machine, because that is what");
+        Console.WriteLine("a diagnosis is about. It carries no user name, no home directory and no");
+        Console.WriteLine("install paths — those are replaced before printing.");
         Console.WriteLine("Nothing was sent anywhere: copy it into an issue only if you want to.");
 
         await Task.CompletedTask;

@@ -6,8 +6,8 @@ included — without touching anything that was already there.
 
 > **Status: beta**, like the rest of the project. It finds games, installs and removes the mod
 > and its loader, writes your settings into each game and fetches community translations — all of
-> it against real games, not fixtures. What it has not had is a public release: nothing is signed
-> yet, and nobody outside the project has walked the whole interface.
+> it against real games, not fixtures. What it has not had is wear: this is its first public
+> build, nothing is signed yet, and nobody outside the project has walked the whole interface.
 
 ## Why
 
@@ -41,17 +41,20 @@ can: **whether the community has already translated this game**.
 
 ## Install
 
-**There is no download yet.** No release has been published, so the only way to run it today is to
-build it from source — see [Building](#building) below. This section will say otherwise the day
-that changes, rather than promising a file that is not there.
+Download the archive for your system from the
+[releases page](https://github.com/djethino/unitygametranslator-manager/releases), unzip it
+anywhere, and run `UnityGameTranslatorManager.exe`. There is nothing to install: it is a single
+executable, and it offers to install itself properly if you want to keep it around.
 
-When builds are published, it will be a single executable: nothing to install, and it offers to
-install itself properly if you want to keep it around.
+**Windows only for now.** A Linux build can be produced from source, but it has never been run —
+see [Building](#building).
 
-> **Windows SmartScreen will warn you** about that first build: it will not be signed with a paid
-> certificate, and an unknown executable with no reputation is exactly what SmartScreen exists to
-> flag. You will be able to check the download against its published `.sha256`, and the whole
-> source is here.
+> **Windows SmartScreen will warn you.** This build is not signed with a paid certificate, and an
+> unknown executable with no reputation is exactly what SmartScreen exists to flag. Check the
+> download against its published `.sha256` — every release carries one beside the archive — and
+> the whole source is here.
+
+Every release is a **pre-release** for now: you get it by choosing it, not by being notified.
 
 ## Command line
 

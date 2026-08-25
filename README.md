@@ -85,30 +85,23 @@ folder onto it, and you get the window.
 |---|---|
 | Windows | Supported |
 | Linux / SteamOS (Steam Deck) | Supported, including games running through Proton |
-| macOS | Not yet, and for reasons of ours rather than of the loaders — see below |
+| macOS | Not yet — see below |
 
-### Why not macOS
+### macOS
 
-Not because of what can be modded there. That line used to say only Mono games could ever work,
-which conflated two different things and was never checked.
+Nothing about macOS stands in the way: a game there is Mono or IL2CPP like anywhere else, and a
+Windows game running through a translation layer is the same case as Proton on Linux, which is
+supported.
 
-A native macOS game being Mono or IL2CPP only decides which loader could suit it — and if none
-does, the catalog offers none and the game takes the ordinary "no loader fits here" path, with the
-reason, exactly as on the other systems. A Windows game running through a translation layer is a
-Windows game with Windows loaders, which is the same case as Proton on Linux, already supported.
-
-What actually stops us is our own code. There is no macOS adapter: nothing knows where Steam keeps
-its library there, or where this tool should keep its settings. More basic still, a Unity game is
-laid out differently — its data sits in `Game.app/Contents/Resources/Data`, while every probe here
-looks for a `*_Data` folder beside the executable. Our detection would find nothing at all,
-whatever the engine.
-
-Those are jobs, not obstacles. They are simply not done.
+What is missing is on our side — this tool does not yet know where a Mac keeps its games, nor how
+a Unity game is laid out there. It is work, not a wall. If you want it, open an issue: knowing
+somebody is waiting is what moves it up.
 
 ## The loader catalog
 
 Nothing about a mod loader's on-disk layout is hardcoded. It all lives in
-[`catalog/loaders.json`](catalog/loaders.json), which the tool fetches at runtime.
+[`loaders.json`](https://github.com/djethino/unitygametranslator-catalogs/blob/main/loaders.json),
+a public data repository the tool fetches at runtime.
 
 That is deliberate: BepInEx and MelonLoader have both changed their layout more than once, and a
 tool that cannot update itself would break for everyone on the same day. This way, a layout
@@ -127,8 +120,7 @@ dotnet build -c Release
 dotnet run --project src/UnityGameTranslator.Manager.Gui -- scan
 ```
 
-Both faces live in the same project because they live in the same file: `Gui` is the executable,
-`Cli` is a library it links in.
+`Gui` is the executable and `Cli` is a library it links in — one binary, two faces.
 
 ## Project layout
 
@@ -145,8 +137,15 @@ src/
 ```
 
 Same shape as the mod: one shared trunk holding all the logic, thin adapters for what genuinely
-differs. The command line is not a lesser version of the interface — it is how the logic gets
-tested against real game folders.
+differs. The command line is not a lesser version of the interface — it reaches the same engine.
+
+## Acknowledgments
+
+- **[Avalonia](https://github.com/AvaloniaUI/Avalonia)** — cross-platform .NET UI framework
+- **[Inter](https://github.com/rsms/inter)** by Rasmus Andersson — the font the window renders with
+- **[BepInEx](https://github.com/BepInEx/BepInEx)** and **[MelonLoader](https://github.com/LavaGang/MelonLoader)** by LavaGang — the mod loaders this tool installs, downloaded from their own release pages and never redistributed here
+
+See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for full license details.
 
 ## License
 

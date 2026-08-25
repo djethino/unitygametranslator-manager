@@ -54,7 +54,8 @@ see [Supported systems](#supported-systems).
 > download against its published `.sha256` — every release carries one beside the archive — and
 > the whole source is here.
 
-Every release is a **pre-release** for now: you get it by choosing it, not by being notified.
+The whole project is in beta — the mod and the site as much as this tool. That is the state of the
+work, not a separate channel you have to opt into: releases are published normally.
 
 ## Command line
 

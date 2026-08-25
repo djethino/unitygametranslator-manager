@@ -148,8 +148,14 @@ internal static class Program
             ],
         })
 
-        // Inter ships with the app: game names are routinely Chinese, Japanese or Cyrillic, and
-        // a missing glyph turns the list into boxes on exactly the games that need translating.
+        // Inter ships with the app so the window reads the same everywhere, and above all so it
+        // reads at all on Linux: a minimal distribution may carry no suitable font, and there
+        // would be nothing to fall back to.
+        //
+        // ⚠ **It does NOT put CJK on the screen, and this comment used to claim it did.** Inter is
+        // Latin, Greek and Cyrillic — around 2 000 glyphs. A Chinese game name is drawn by the
+        // system's font fallback, with or without this call. Do not lean on Inter for those, and
+        // do not remove a fallback believing it covers them.
         .WithInterFont()
         .LogToTrace();
 

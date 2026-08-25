@@ -20,6 +20,25 @@ Shipped inside the executable so the tool runs without asking the user to instal
 
 Used on Windows to locate Steam and GOG installations.
 
+### Avalonia
+
+- **Source:** https://github.com/AvaloniaUI/Avalonia
+- **License:** MIT
+- **Copyright:** The AvaloniaUI Project
+
+The interface framework, with its Fluent theme. Shipped inside the executable.
+
+### Inter
+
+- **Source:** https://github.com/rsms/inter
+- **License:** SIL Open Font License 1.1
+- **Copyright:** Rasmus Andersson — "Inter" is a Reserved Font Name
+
+The font the window renders with, shipped inside the executable through the
+`Avalonia.Fonts.Inter` package (MIT). It travels with the tool so the interface reads the same on
+every machine, and so it reads at all on a system carrying no suitable font of its own. It covers
+Latin, Greek and Cyrillic; anything outside that is drawn by the system's own fonts.
+
 ## Downloaded, never redistributed
 
 The tool downloads these from their official release pages, at the user's request, and verifies

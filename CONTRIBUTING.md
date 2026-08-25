@@ -8,13 +8,14 @@ By submitting a pull request or contribution, you agree that:
 
 1. **You own the rights** to the code you are contributing, or have permission to contribute it.
 
-2. **You grant us a perpetual, worldwide, non-exclusive, royalty-free license** to use, modify, and distribute your contribution under:
-   - The AGPL-3.0 license (for the open source version)
-   - Any commercial license we may offer
+2. **You grant us a perpetual, worldwide, non-exclusive, royalty-free license** to use, modify, and
+   distribute your contribution under the AGPL-3.0 license, and under any other licence this
+   project may later be released under.
 
-3. **You understand** that your contribution may be used in both the open source and commercial versions of UnityGameTranslator.
+3. **You understand** that your contribution becomes part of a project released under AGPL-3.0.
 
-This allows us to maintain the dual licensing model while keeping the project sustainable.
+The second point is what lets the project change licence later without having to track down every
+past contributor — a practical necessity, not a plan.
 
 ## How to Contribute
 

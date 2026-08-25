@@ -46,8 +46,8 @@ Download the archive for your system from the
 anywhere, and run `UnityGameTranslatorManager.exe`. There is nothing to install: it is a single
 executable, and it offers to install itself properly if you want to keep it around.
 
-**Windows only for now.** A Linux build can be produced from source, but it has never been run —
-see [Building](#building).
+**Windows only for now.** Linux is written for but has never been run, so no build is published —
+see [Supported systems](#supported-systems).
 
 > **Windows SmartScreen will warn you.** This build is not signed with a paid certificate, and an
 > unknown executable with no reputation is exactly what SmartScreen exists to flag. Check the
@@ -83,15 +83,18 @@ folder onto it, and you get the window.
 
 | System | Status |
 |---|---|
-| Windows | Supported |
-| Linux / SteamOS (Steam Deck) | Supported, including games running through Proton |
+| Windows | Supported — this is what the published build is |
+| Linux / SteamOS (Steam Deck) | **Written for, never run.** No build is published: the code handles Proton and the Deck, but some of its paths are known to be wrong and nobody has started it once. A later release |
 | macOS | Not yet — see below |
+
+⚠ The Linux line used to read "Supported". It was not: it described what the code was written to
+do, which is not the same claim, and somebody on a Deck would have found that out the hard way.
 
 ### macOS
 
 Nothing about macOS stands in the way: a game there is Mono or IL2CPP like anywhere else, and a
-Windows game running through a translation layer is the same case as Proton on Linux, which is
-supported.
+Windows game running through a translation layer is the same case as Proton on Linux, which the
+code already handles.
 
 What is missing is on our side — this tool does not yet know where a Mac keeps its games, nor how
 a Unity game is laid out there. It is work, not a wall. If you want it, open an issue: knowing

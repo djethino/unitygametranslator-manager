@@ -157,8 +157,8 @@ internal static class Program
         // system's font fallback, with or without this call. Do not lean on Inter for those, and
         // do not remove a fallback believing it covers them.
         //
-        // ✅ The fallback does its job: a Chinese game name reads correctly in the list on Windows.
-        // Seen on the user's machine, not deduced — so there is nothing to fix here.
+        // ✅ And the fallback does its job: watched on Windows, a game named in Chinese reads
+        // correctly in the list. Nothing to fix here — do not go bundling a CJK font.
         .WithInterFont()
         .LogToTrace();
 
@@ -171,7 +171,7 @@ internal static class Program
     /// afterwards) and it does not work on Windows 11: when the console host is Windows Terminal,
     /// GetConsoleWindow returns a hidden stand-in of the pseudo-console, not the window a person
     /// can see, so hiding it hides nothing and an empty terminal stays on screen for the whole
-    /// session. Measured on the user's machine, not deduced.
+    /// session. Measured on Windows 11 with Windows Terminal, not deduced.
     ///
     /// So the window face gets no console ever, and the command line face attaches to the one it
     /// was launched from.

@@ -3475,6 +3475,16 @@ public partial class MainWindow : Window
         // PendingTranslationActions.
 
         // ── The one thing to do next ──────────────────────────────────────────────────────────
+        //
+        // ⚠ **Nothing is next on a game that cannot take the mod.** The refusal is already stated
+        // in red at the top of this card; following it with "Needs the mod loader and the mod." and
+        // a lit "Set this game up" is a task list for work this program has just said it will not
+        // do — the same fault as the warning above, and it reads as a program contradicting itself.
+        //
+        // ⚠ Nobody is stranded by its absence: the tab strip is above, and Set up is where a
+        // verdict that can be overridden is argued (see ModdabilityProbe.CanBeOverridden).
+        if (!report.Game.IsModdable || report.Blockers.Count > 0) yield break;
+
         var next = new StackPanel { Spacing = 6 };
         var installed = report.InstalledPluginVersion is not null;
 

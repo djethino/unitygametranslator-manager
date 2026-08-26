@@ -136,7 +136,7 @@
     <!-- Status bar -->
     <Border Grid.Row="2" Padding="16,8" Background="{DynamicResource SurfaceBar}"
             BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,1,0,0">
-      <Grid ColumnDefinitions="*,Auto">
+      <Grid ColumnDefinitions="*,Auto,Auto">
         <TextBlock x:Name="StatusText" Grid.Column="0" VerticalAlignment="Center"
                    FontSize="12" Text="Ready." TextTrimming="CharacterEllipsis"
                    Foreground="{DynamicResource TextSecondary}" />
@@ -147,6 +147,17 @@
         <ProgressBar x:Name="BusyBar" Grid.Column="1" Width="160" Height="4"
                      Foreground="{DynamicResource Accent}"
                      IsIndeterminate="False" IsVisible="False" />
+
+        <!-- Whether this tool is allowed to ask anybody anything.
+             Standing, and last: the progress bar comes and goes, so anchoring this at the right
+             edge means it never shifts under the eye when work starts. Filled by
+             MainWindow.RefreshOnlineIndicator, which also writes the reason into the tooltip. -->
+        <StackPanel Grid.Column="2" x:Name="OnlineIndicator" Orientation="Horizontal"
+                    Spacing="6" VerticalAlignment="Center" Margin="16,0,0,0">
+          <Ellipse x:Name="OnlineDot" Width="8" Height="8" VerticalAlignment="Center" />
+          <TextBlock x:Name="OnlineLabel" VerticalAlignment="Center" FontSize="12"
+                     Foreground="{DynamicResource TextSecondary}" />
+        </StackPanel>
       </Grid>
     </Border>
   </Grid>

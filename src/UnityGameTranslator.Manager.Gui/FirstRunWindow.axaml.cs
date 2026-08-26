@@ -75,7 +75,8 @@ public sealed class FirstRunWindow : Window
             // somebody looking for it later recognises what they are looking at.
             Text = "Offline, everything else still works: it finds your games, installs the mod and "
                  + "manages what is already on this machine. You can change this at any time under "
-                 + "\"Use the community catalog\" in the tool's settings.",
+                 + "\"Look things up online\" in the tool's settings, and the status bar says which "
+                 + "one you are in.",
             FontSize = 11,
             TextWrapping = TextWrapping.Wrap,
             Foreground = this.FindResource("TextMuted") as IBrush,

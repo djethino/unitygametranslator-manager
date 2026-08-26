@@ -294,6 +294,10 @@ public partial class MainWindow : Window
             // be asked about something already done.
             await AskAboutGoingOnlineAsync();
 
+            // After the answer, before the scan: the first thing drawn is already right, rather
+            // than a bar that says one thing and corrects itself once the list arrives.
+            RefreshOnlineIndicator();
+
             await ScanAsync();
 
             // After the scan, never before: the games are what someone opened the tool for, and a
@@ -617,6 +621,48 @@ public partial class MainWindow : Window
         settings.OnlineAsked = true;
         settings.OnlineMode = online;
         _settings.Save(settings);
+    }
+
+    /// <summary>
+    /// Says, permanently, whether this tool may ask anybody anything.
+    ///
+    /// 🔴 **A program that decides on its own whether to reach the network owes an answer to
+    /// "which one am I in?" without being asked.** Nothing said it: the switch was three clicks
+    /// away in a settings window, under a name that spoke of catalogues, and a library showing no
+    /// community translations looked identical whether nobody had published any or this tool had
+    /// simply never asked.
+    ///
+    /// ### The colours are the ones the notices use, and grey is not a downgrade
+    ///
+    /// ⚠ **Offline by choice is NOT red.** Red means nothing here can work; offline, everything
+    /// except lookups still does — games are found, the mod installs, what is on this machine is
+    /// managed. Painting a legitimate choice as a fault is how a colour scheme stops being read.
+    /// Amber is kept for the one case that is genuinely unresolved: the question was closed rather
+    /// than answered, so the tool is offline by default and not by decision.
+    /// </summary>
+    private void RefreshOnlineIndicator()
+    {
+        var settings = _settings.Current;
+
+        var (label, colour, why) = !settings.OnlineAsked
+            ? ("Offline", "StatusWarning",
+               "Nobody has answered yet whether this tool may look things up, so it is not. "
+               + "The question comes back next launch, or answer it now under \"Look things up "
+               + "online\" in the tool's settings.")
+            : settings.OnlineMode
+                ? ("Online", "StatusSuccess",
+                   "This tool asks the site whether a translation exists for the games found here, "
+                   + "sending their names or Steam ids, and checks which loaders and versions have "
+                   + "been published. Turn it off under \"Look things up online\" in the tool's "
+                   + "settings.")
+                : ("Offline", "StatusNeutral",
+                   "This tool asks nobody anything. It still finds your games, installs the mod and "
+                   + "manages what is already on this machine. Turn it on under \"Look things up "
+                   + "online\" in the tool's settings.");
+
+        OnlineLabel.Text = label;
+        OnlineDot.Fill = Brush(colour);
+        ToolTip.SetTip(OnlineIndicator, why);
     }
 
     private void WarmInBackground()
@@ -1169,6 +1215,10 @@ public partial class MainWindow : Window
         // Redrawn whatever was saved: signing in and out both happen in that window, and the
         // header would otherwise keep claiming the opposite until the next launch.
         ShowAccount();
+
+        // Same reason, for the switch that window carries: leaving the status bar on its previous
+        // answer would have it contradict the box somebody has just ticked.
+        RefreshOnlineIndicator();
 
         // The roles belong to whoever was signed in. Keeping them after a sign-out would leave a
         // card claiming "you are the Main here" to nobody in particular, and after a switch of

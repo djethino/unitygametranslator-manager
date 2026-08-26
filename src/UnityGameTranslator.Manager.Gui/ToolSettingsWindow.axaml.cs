@@ -421,13 +421,27 @@ public sealed class ToolSettingsWindow : Window
             test.IsEnabled = true;
         };
 
-        _online = new CheckBox { Content = "Use the community catalog", IsChecked = _draft.OnlineMode };
+        // ⚠ Named for what it governs, which is not a catalogue. It was "Use the community
+        // catalog" and it decides far more than that: whether the site is asked about translations
+        // for the games found here, whether the account's own lineages are fetched, which mod
+        // loaders and versions have been published, and whether this tool looks for its own
+        // updates. Somebody turning off "the community catalog" was turning off the internet, and
+        // somebody looking for the internet switch had no reason to open this one.
+        //
+        // ⚠ The words are the ones the first-run window uses on its button, deliberately: that is
+        // where most people meet this question, and this is where they come back to change it.
+        _online = new CheckBox { Content = "Look things up online", IsChecked = _draft.OnlineMode };
 
         var panel = new StackPanel { Spacing = 10 };
         panel.Children.Add(_online);
         panel.Children.Add(Note(
-            "Off means this tool never asks the site anything. It does not stop the mod from doing "
-            + "so — that switch is under Mod defaults.", "TextMuted"));
+            "On, this tool asks the site whether a translation exists for the games found here, "
+            + "sending their names or Steam ids, and checks which loaders and versions have been "
+            + "published. Off, it never asks anyone anything: it still finds your games, installs "
+            + "the mod and manages what is already on this machine.", "TextMuted"));
+        panel.Children.Add(Note(
+            "It does not stop the mod from going online — that switch is under Mod defaults.",
+            "TextMuted"));
         panel.Children.Add(Row("Connection", _proxyMode, test));
         panel.Children.Add(_proxyFields);
         panel.Children.Add(_proxyInGames);
@@ -1057,7 +1071,7 @@ public sealed class ToolSettingsWindow : Window
         Compare("preferred loader on IL2CPP", Blank(Tag(_preferIl2cpp)), saved.PreferredLoaderIl2cpp);
 
         if ((_proxyInGames.IsChecked == true) != saved.ProxyInGames) changes.Add("proxy in games");
-        if ((_online.IsChecked == true) != saved.OnlineMode) changes.Add("community catalog");
+        if ((_online.IsChecked == true) != saved.OnlineMode) changes.Add("look things up online");
         if ((_checkToolUpdates.IsChecked == true) != saved.CheckToolUpdates)
             changes.Add("look for updates to UGT Manager");
         if ((_checkContentUpdates.IsChecked == true) != saved.CheckContentUpdates)

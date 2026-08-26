@@ -73,16 +73,18 @@ public static class CommandLine
         }
 
         var command = args.Length > 0 ? args[0].ToLowerInvariant() : "scan";
-        var offline = args.Contains("--offline", StringComparer.OrdinalIgnoreCase);
 
         try
         {
             return command switch
             {
-                "scan" => await ScanAsync(args, offline),
-                "report" => await ReportAsync(args, offline),
-                "catalog" => await CatalogAsync(offline),
-                "diagnose" => await DiagnoseAsync(offline),
+                // ⚠ Resolved per command rather than once above: ResolveOffline explains itself on
+                // a first run, and `help` printing a notice about network calls it is not about to
+                // make is noise. Only these four ask anybody anything.
+                "scan" => await ScanAsync(args, ResolveOffline(args)),
+                "report" => await ReportAsync(args, ResolveOffline(args)),
+                "catalog" => await CatalogAsync(ResolveOffline(args)),
+                "diagnose" => await DiagnoseAsync(ResolveOffline(args)),
                 "install" or "update" => await InstallAsync(args),
                 "uninstall" => await UninstallAsync(args),
                 "restore" => await RestoreAsync(args),
@@ -128,6 +130,10 @@ public static class CommandLine
               help                         This text
 
             --offline skips every network call (catalog and community translations).
+            --online  allows this tool to look things up, and remembers the answer. It asks the
+                      site whether a translation exists for the games found here, sending their
+                      names or Steam ids. Until it is answered — here or in the window — this
+                      tool stays offline. Finding games on this machine never needs it.
             --all also lists games that cannot be modded, with the reason.
             --beta uses pre-release plugin builds.
             --runtime mono|il2cpp   tell us what we could not read
@@ -146,6 +152,52 @@ public static class CommandLine
         Console.Error.WriteLine($"Unknown command: {command}");
         Help();
         return 1;
+    }
+
+    /// <summary>
+    /// Whether this run may ask anybody anything — three reasons it may not, and only one of them
+    /// used to be read.
+    ///
+    /// 🔴 **The CLI honoured neither the switch nor the question.** `--offline` was the whole of
+    /// it, so somebody who had turned "Use the community catalog" off in the window still had every
+    /// command go online, and a first run went online before anyone had been asked. The window was
+    /// fixed on 2026-08-26; this is the same tool, reading the same settings file, and it must give
+    /// the same answer.
+    ///
+    /// ⚠ **`--online` writes the answer, and that is deliberate.** A window cannot be shown on a
+    /// machine with no desktop, and typing it is as explicit an answer as clicking a button — more
+    /// so, since it has to be looked up first. It is the same act, in the form this face has.
+    /// </summary>
+    private static bool ResolveOffline(string[] args)
+    {
+        if (args.Contains("--offline", StringComparer.OrdinalIgnoreCase)) return true;
+
+        var store = new SettingsStore(PlatformFactory.Create());
+
+        if (args.Contains("--online", StringComparer.OrdinalIgnoreCase))
+        {
+            var settings = store.Current;
+            settings.OnlineAsked = true;
+            settings.OnlineMode = true;
+            store.Save(settings);
+            return false;
+        }
+
+        if (!store.Current.OnlineAsked)
+        {
+            // Said rather than silently obeyed: a command that quietly returns less than it could
+            // reads as a broken lookup, and the way out is not guessable.
+            Console.WriteLine("Staying offline: nobody has been asked yet whether this tool may "
+                              + "look things up.");
+            Console.WriteLine("It searches for games on this machine either way. Online, it asks "
+                              + "the site whether a translation exists for the games it finds, "
+                              + "sending their names or Steam ids.");
+            Console.WriteLine("Open the window once to answer, or pass --online to allow it here.");
+            Console.WriteLine();
+            return true;
+        }
+
+        return !store.Current.OnlineMode;
     }
 
     private static async Task<int> ScanAsync(string[] args, bool offline)

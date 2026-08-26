@@ -289,6 +289,11 @@ public partial class MainWindow : Window
 
         Loaded += async (_, _) =>
         {
+            // 🔴 Before the scan and before anything is asked of anybody. The scan itself sends
+            // nothing, but the window that follows it does, and a question asked afterwards would
+            // be asked about something already done.
+            await AskAboutGoingOnlineAsync();
+
             await ScanAsync();
 
             // After the scan, never before: the games are what someone opened the tool for, and a
@@ -590,8 +595,38 @@ public partial class MainWindow : Window
     /// ⚠ Nothing lies in the meantime: each source distinguishes "not asked yet" from "nothing to
     /// report", which is why those properties exist at all.
     /// </summary>
+    /// <summary>
+    /// Puts the question once, on the first launch that has never had an answer.
+    ///
+    /// ⚠ Awaited, and it is the only thing on this path that is: everything else about the first
+    /// paint exists to avoid making somebody wait. But the answer decides whether the calls that
+    /// follow may happen at all, so there is nothing to overlap it with.
+    ///
+    /// ⚠ A window closed without choosing leaves the flag false and writes nothing — so the tool
+    /// stays offline for this session and asks again next time. Dismissing a question is not
+    /// answering it.
+    /// </summary>
+    private async Task AskAboutGoingOnlineAsync()
+    {
+        if (_settings.Current.OnlineAsked) return;
+
+        var answer = await FirstRunWindow.AskAsync(this);
+        if (answer is not { } online) return;
+
+        var settings = _settings.Current;
+        settings.OnlineAsked = true;
+        settings.OnlineMode = online;
+        _settings.Save(settings);
+    }
+
     private void WarmInBackground()
     {
+        // 🔴 The gate, and it belongs here rather than in each warmer. Every source below already
+        // refuses when OnlineMode is off; none of them knows the difference between "answered no"
+        // and "never asked", and the second must behave like the first until somebody has said
+        // otherwise — including when the question was closed rather than answered.
+        if (!_settings.Current.OnlineAsked) return;
+
         _ = FillLineagesAsync();
 
         // ⚠ Before the loader builds, which measure themselves against the catalogue it refreshes.
@@ -611,9 +646,29 @@ public partial class MainWindow : Window
     /// The filter "My translations" and the count of contributions waiting both read it, and both
     /// already know how to say "not asked yet" rather than "none".
     /// </summary>
+    /// <summary>
+    /// The token to ask the site with — none when this tool is not allowed to ask anything.
+    ///
+    /// 🔴 **The lineage lookup was the one network call that ignored the switch.** Every other
+    /// warmer opens with `if (!OnlineMode) return`; this one went straight to `/me/translations`,
+    /// so somebody signed in who had turned the community catalog OFF still had their account
+    /// queried at every launch. The settings screen says in as many words that off means this tool
+    /// never asks the site anything, and it was not true.
+    ///
+    /// ⚠ Written as one named property rather than a guard copied into the three call sites — the
+    /// warmer, the sign-in/out refresh and the game card. Three copies is three places to forget,
+    /// and forgetting is exactly what happened here.
+    ///
+    /// ⚠ Passing null rather than skipping the call: EnsureAsync(null) clears the index, which is
+    /// the honest state — "we do not know whose these are" — where leaving a previous answer in
+    /// place would keep claiming roles read before the switch was turned off.
+    /// </summary>
+    private string? ApiTokenForLookups =>
+        _settings.Current.OnlineMode ? _settings.Current.ApiToken : null;
+
     private async Task FillLineagesAsync()
     {
-        await _lineages.EnsureAsync(_settings.Current.ApiToken);
+        await _lineages.EnsureAsync(ApiTokenForLookups);
 
         // Redrawn because the answer changes what a row says — the same reason the loader builds
         // redraw, and the same shape.
@@ -1119,7 +1174,7 @@ public partial class MainWindow : Window
         // card claiming "you are the Main here" to nobody in particular, and after a switch of
         // account it would claim it for the wrong person.
         _lineages.Forget();
-        await _lineages.EnsureAsync(_settings.Current.ApiToken);
+        await _lineages.EnsureAsync(ApiTokenForLookups);
 
         // "My translations" appears on signing in and goes away on signing out, so the bar has to
         // be rebuilt — and the list with it, since what belongs to whom has just changed.
@@ -2238,7 +2293,11 @@ public partial class MainWindow : Window
                 + "shortcut. Until you have been through it once, each game is set up with what "
                 + "this program guessed.",
                 "Open Mod defaults",
-                async () => await OpenSettingsAsync());
+                async () => await OpenSettingsAsync(),
+                // Amber: nothing is broken and every game can still be set up — but each one is
+                // being set up from a guess, and the one-click path stays off until this is
+                // answered. A decision is waiting, which is exactly what this colour means here.
+                tone: Tone.Warning);
         }
 
         if (settings.TranslationBackend != "none") return null;
@@ -2273,7 +2332,12 @@ public partial class MainWindow : Window
             "Open Mod defaults",
             async () => await OpenSettingsAsync(),
             ("See the games on the site",
-             () => { OpenUrl(BuildInfo.WebsiteBaseUrl); return Task.CompletedTask; }));
+             () => { OpenUrl(BuildInfo.WebsiteBaseUrl); return Task.CompletedTask; }),
+            // Blue, and deliberately not amber: this is a setting doing what it was set to do.
+            // What it changes is which games come out translated, so it belongs beside the list it
+            // explains — but nothing here is wrong, and painting a valid choice as a problem is how
+            // a colour scheme stops being read.
+            tone: Tone.Info);
     }
 
     /// <summary>
@@ -2395,7 +2459,8 @@ public partial class MainWindow : Window
     /// anything further belongs on the screen it leads to.
     /// </param>
     private Control Banner(string title, string body, string action, Func<Task> onClick,
-                           (string Label, Func<Task> Click)? second = null)
+                           (string Label, Func<Task> Click)? second = null,
+                           Tone tone = Tone.Neutral)
     {
         var text = new StackPanel { Spacing = 2 };
 
@@ -2459,7 +2524,7 @@ public partial class MainWindow : Window
         row.Children.Add(text);
         row.Children.Add(buttons);
 
-        return OverviewBox(row);
+        return OverviewBox(row, tone);
     }
 
     /// <summary>
@@ -2529,11 +2594,21 @@ public partial class MainWindow : Window
     /// One helper rather than the same six properties written twice: they sit one above the other,
     /// so any drift between them is visible at a glance — which is exactly the kind of difference
     /// nobody notices while writing it and everybody notices on screen.
+    ///
+    /// 🔴 **The tone is what makes this a notice rather than a card.** Every block in this strip was
+    /// painted `SurfaceCard` over `BorderSubtle` — the dress of an ordinary card — so a question
+    /// waiting for an answer looked exactly like a section of the page it interrupts. The default
+    /// stays neutral, because some of these really are plain rows of information.
+    ///
+    /// ⚠ The colour goes all the way round here, where a callout carries a rule down its left side.
+    /// That is not drift: a banner is a band across the top of the page and a callout is a note in
+    /// the margin between cards, and an outlined rectangle sitting inside another outlined
+    /// rectangle reads as a dialog — which is the reason the callouts have no outline to begin with.
     /// </summary>
-    private Control OverviewBox(Control child) => new Border
+    private Control OverviewBox(Control child, Tone tone = Tone.Neutral) => new Border
     {
-        Background = Brush("SurfaceCard"),
-        BorderBrush = Brush("BorderSubtle"),
+        Background = Brush(Tones.BannerBackground(tone)),
+        BorderBrush = Brush(Tones.Edge(tone)),
         BorderThickness = new Avalonia.Thickness(1),
         CornerRadius = new Avalonia.CornerRadius(8),
         Padding = new Avalonia.Thickness(14, 12),
@@ -2621,7 +2696,10 @@ public partial class MainWindow : Window
         row.Children.Add(text);
         row.Children.Add(keep);
 
-        return OverviewBox(row);
+        // Blue: an offer, and one that costs nothing to decline — the body says so itself. Amber
+        // would claim something is wrong with running the downloaded file, which is a perfectly
+        // good way to use this program.
+        return OverviewBox(row, Tone.Info);
     }
 
     /// <summary>
@@ -2727,7 +2805,13 @@ public partial class MainWindow : Window
         row.Children.Add(text);
         row.Children.Add(action);
 
-        return OverviewBox(row);
+        // Amber: everything works, and that is the trap. Settings changed here, and updates made
+        // here, land on the copy about to be closed rather than on the one in the menu — the plainest
+        // case of "it works, but not the way it looks".
+        //
+        // ⚠ The same fact about the MOD — installed twice, and the loader picks one — is amber in
+        // DuplicatePluginNotice. One fact, one colour, whichever product is saying it.
+        return OverviewBox(row, Tone.Warning);
     }
 
     /// <summary>
@@ -2785,7 +2869,9 @@ public partial class MainWindow : Window
         row.Children.Add(text);
         row.Children.Add(repair);
 
-        return OverviewBox(row);
+        // Amber and not red: the program runs, the games are untouched, and one button puts the
+        // missing pieces back. Red is for what nothing on the screen can fix.
+        return OverviewBox(row, Tone.Warning);
     }
 
     /// <summary>
@@ -2975,7 +3061,7 @@ public partial class MainWindow : Window
         //
         // A failure is recorded rather than raised: not knowing one's role costs a line on a card,
         // and must never stand between someone and installing the mod.
-        var lineages = _lineages.EnsureAsync(_settings.Current.ApiToken);
+        var lineages = _lineages.EnsureAsync(ApiTokenForLookups);
         var building = _inventory.BuildReportAsync(game);
 
         await Task.WhenAll(lineages, building);
@@ -3081,7 +3167,7 @@ public partial class MainWindow : Window
         // came for, and hiding it behind a tab would let Home offer a translation for a game that
         // can never run one.
         foreach (var blocker in report.Blockers)
-            DetailPanel.Children.Add(Callout(blocker, "CalloutErrorBg", "StatusError"));
+            DetailPanel.Children.Add(Callout(blocker, Tone.Error));
 
         // ⚠ Settled BEFORE the tabs split, and it used to live in the Setup branch alone. The bar
         // reads it, and the bar now exists on Home too: left where it was, a game opened on Home
@@ -3118,7 +3204,7 @@ public partial class MainWindow : Window
         DetailPanel.Children.Add(Card(Facts(report)));
 
         foreach (var warning in report.Warnings)
-            DetailPanel.Children.Add(Callout(warning, "CalloutWarningBg", "StatusWarning"));
+            DetailPanel.Children.Add(Callout(warning, Tone.Warning));
 
         // Three cards for three subjects, where there used to be one called "Actions".
         //
@@ -3526,7 +3612,7 @@ public partial class MainWindow : Window
             open.Click += async (_, _) => await OpenSettingsAsync();
             empty.Children.Add(open);
 
-            yield return Callout(empty, "CalloutWarningBg", "StatusWarning");
+            yield return Callout(empty, Tone.Warning);
         }
 
         // ── Mine, published, and not the one running here ─────────────────────────────────────
@@ -3764,7 +3850,7 @@ public partial class MainWindow : Window
         };
 
         body.Children.Add(take);
-        yield return Callout(body, "CalloutInfoBg", "StatusInfo");
+        yield return Callout(body, Tone.Info);
     }
 
     /// <summary>
@@ -7573,7 +7659,7 @@ public partial class MainWindow : Window
             yield return Callout(
                 "This game has no configuration yet. One will be created, from "
                 + (ticked ? "Mod defaults." : "this game's own settings."),
-                "CalloutInfoBg", "StatusInfo");
+                Tone.Info);
             yield break;
         }
 
@@ -7695,11 +7781,11 @@ public partial class MainWindow : Window
         // "set this game up from Mod defaults" — applying them is the thing that was asked for, so
         // it is ordinary. Unticked means "do not use Mod defaults here": pushing them in anyway is
         // the act to think twice about, and it is the one that was painted as routine.
-        var (background, edge) = ticked
-            ? ("CalloutInfoBg", "StatusInfo")          // asked for: Mod defaults belong here
-            : ("CalloutWarningBg", "StatusWarning");   // refused: applying goes against the box
+        var tone = ticked
+            ? Tone.Info        // asked for: Mod defaults belong here
+            : Tone.Warning;    // refused: applying goes against the box
 
-        var notice = Callout(body, background, edge);
+        var notice = Callout(body, tone);
         ((Border)notice).Margin = new Avalonia.Thickness(0, 8, 0, 0);
         yield return notice;
     }
@@ -7821,8 +7907,8 @@ public partial class MainWindow : Window
             // Same rule as the block above: orange only when something somebody chose is about to
             // be replaced.
             var reported = difference.Writes
-                ? Callout(state, "CalloutWarningBg", "StatusWarning")
-                : Callout(state, "CalloutInfoBg", "StatusInfo");
+                ? Callout(state, Tone.Warning)
+                : Callout(state, Tone.Info);
 
             ((Border)reported).Margin = new Avalonia.Thickness(0, 6, 0, 0);
             yield return reported;
@@ -9527,7 +9613,7 @@ public partial class MainWindow : Window
         };
 
         body.Children.Add(fix);
-        yield return Callout(body, "CalloutWarningBg", "StatusWarning");
+        yield return Callout(body, Tone.Warning);
     }
 
     /// <summary>
@@ -9733,7 +9819,7 @@ public partial class MainWindow : Window
         open.Click += (_, _) => Shell.OpenFolder(parent);
         body.Children.Add(open);
 
-        yield return Callout(body, "CalloutWarningBg", "StatusWarning");
+        yield return Callout(body, Tone.Warning);
     }
 
     /// <summary>
@@ -11297,14 +11383,14 @@ public partial class MainWindow : Window
     /// A message that needs to stand out, tinted rather than shouted: the hue laid over the base
     /// surface, with a coloured edge. A flat saturated block would fight the rest of the window.
     /// </summary>
-    private static Control Callout(string text, string backgroundKey, string edgeKey) =>
+    private static Control Callout(string text, Tone tone) =>
         Callout(new TextBlock
         {
             Text = text,
             TextWrapping = TextWrapping.Wrap,
             FontSize = 12,
             Foreground = Brush("TextPrimary"),
-        }, backgroundKey, edgeKey);
+        }, tone);
 
     /// <summary>
     /// The same notice, around something richer than a sentence — a list, a button, both.
@@ -11315,10 +11401,10 @@ public partial class MainWindow : Window
     /// look like a section. A notice is recognised by its edge before it is read; three edges mean
     /// nothing is recognised at all.
     /// </summary>
-    private static Control Callout(Control content, string backgroundKey, string edgeKey) => new Border
+    private static Control Callout(Control content, Tone tone) => new Border
     {
-        Background = Brush(backgroundKey),
-        BorderBrush = Brush(edgeKey),
+        Background = Brush(Tones.CalloutBackground(tone)),
+        BorderBrush = Brush(Tones.Edge(tone)),
 
         // The left rule, not a box: it reads as a margin note against the cards it sits between,
         // and an outlined rectangle inside another outlined rectangle reads as a dialog.

@@ -177,6 +177,24 @@ public sealed class InstallerSettings
     [JsonPropertyName("online_mode")] public bool OnlineMode { get; set; } = true;
 
     /// <summary>
+    /// Whether anybody has ever been asked whether this tool may go online.
+    ///
+    /// 🔴 **Separate from OnlineMode, because "not asked yet" and "answered no" are different
+    /// states and only one of them is ours to assume.** Until 2026-08-26 the first launch scanned
+    /// the machine and then sent the list of games found to the site — before any window had asked
+    /// anything. The mod has asked since its first version: its wizard puts the same question
+    /// second, before the language and before the AI. The Manager sees a whole library where the
+    /// mod sees one game, and it was the one not asking.
+    ///
+    /// ⚠ Defaults to false, so an installation that predates this flag asks once at the next
+    /// launch. That is not a regression to smooth over: those people were never asked either.
+    ///
+    /// ⚠ OnlineMode keeps its own default of true. The answer written here is what decides, and
+    /// nothing goes out before it exists — see MainWindow's first-run gate.
+    /// </summary>
+    [JsonPropertyName("online_asked")] public bool OnlineAsked { get; set; }
+
+    /// <summary>
     /// The in-game hotkey. Part of the settings because the mod's first-run wizard asks for it,
     /// and we can only skip that wizard honestly once every one of its questions is answered.
     /// </summary>

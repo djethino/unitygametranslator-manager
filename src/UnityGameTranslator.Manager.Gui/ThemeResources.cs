@@ -111,6 +111,24 @@ internal static class ThemeResources
         // site speak too. Same green, same surface, simply held a little stronger.
         r["CalloutSuccessHoverBg"] = Brush(Theme.StatusSuccess.Over(Theme.SurfaceDeep, 0.30));
 
+        // ── Banners ───────────────────────────────────────────────────────────────────────────
+        // The strip at the top of the overview. The same status colours as the callouts, at the
+        // same strength, over SurfaceCard rather than SurfaceDeep — and that is the whole reason
+        // these keys exist rather than reusing the four above.
+        //
+        // ⚠ A banner is a raised block on SurfaceBase, the darkest thing in this window. Tint it on
+        // the deep surface and it drops to within a shade of the page behind it: coloured, and less
+        // visible than the plain card it replaced. The colour has to be added to the elevation the
+        // banner already has, not substituted for it.
+        //
+        // Computed here for the reason given just above: which statuses exist is a shared language,
+        // which surface a banner sits on is this window's own business.
+        const double bannerTint = 0.16;
+        r["BannerErrorBg"] = Brush(Theme.StatusError.Over(Theme.SurfaceCard, bannerTint));
+        r["BannerWarningBg"] = Brush(Theme.StatusWarning.Over(Theme.SurfaceCard, bannerTint));
+        r["BannerInfoBg"] = Brush(Theme.StatusInfo.Over(Theme.SurfaceCard, bannerTint));
+        r["BannerSuccessBg"] = Brush(Theme.StatusSuccess.Over(Theme.SurfaceCard, bannerTint));
+
         ApplyFluentOverrides(r);
     }
 

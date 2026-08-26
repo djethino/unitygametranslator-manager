@@ -5572,6 +5572,32 @@ public partial class MainWindow : Window
             return;
         }
 
+        // 🔴 **The two remaining ways this lineage ends, refused here rather than by the server.**
+        // Both were shown as a note on the card and neither stopped the send: somebody read the
+        // warning, worked anyway, pressed publish and watched an upload run to be told no. The
+        // note is worth nothing if the door it describes stays open.
+        //
+        // ⚠ Two messages, one wall. Which of them applies decides whether the translation they
+        // were building on is still published — the first thing anybody asks next.
+        if (lineage.MainMissing == true)
+        {
+            await ConfirmationWindow.TellAsync(this, "There is nothing left to contribute to",
+                "The translation this contributes to has been removed by its author.\n\nYour lines "
+                + "are safe, and your copy is now the only one. Publish it as your own version on "
+                + "the UGT Website to carry on.");
+            return;
+        }
+
+        if (lineage.MainAbandoned == true)
+        {
+            await ConfirmationWindow.TellAsync(this, "Nobody can review this contribution",
+                "The account that owned the translation you contribute to has been deleted, so no "
+                + "contribution will ever be read.\n\nThe translation itself is still published and "
+                + "still works. Your lines are safe: publish them as your own version on the UGT "
+                + "Website to carry on.");
+            return;
+        }
+
         // ⚠ Starts on what the SERVER holds for our own row — not on MatchingOnline, which is the
         // lineage's public translation and belongs to somebody else whenever we are a branch.
         var alreadyComplete = string.Equals(lineage.Status, "complete",

@@ -58,12 +58,22 @@ public enum PublishOutcome
 /// A branch on a Main that has since closed. Nothing can be done with it as a branch any more —
 /// not publishing, not even describing it — and the way on is to publish it as its own translation.
 /// </param>
+/// <param name="MainMissing">
+/// A branch whose Main has been removed by its author. Same wall as <paramref name="BranchFrozen"/>
+/// and a different sentence: what they were building on is not published any more, so their copy is
+/// the only one left.
+/// </param>
+/// <param name="MainAbandoned">
+/// A branch whose Main is still published and whose owner erased their account. Nobody will ever
+/// read a contribution to it — and unlike the two above, nothing about the lineage looks wrong.
+/// </param>
 public sealed record LineageStanding(PublishOutcome Outcome, string? MainOwner,
                                      int? BranchesCount, string? ServerFileHash,
                                      bool OnABranch = false, string? Notes = null,
                                      string? ResourcesUrl = null, string? Status = null,
                                      int? RowId = null, bool? AcceptsBranches = null,
-                                     bool BranchFrozen = false)
+                                     bool BranchFrozen = false,
+                                     bool? MainMissing = null, bool? MainAbandoned = null)
 {
     /// <summary>Whether this account has a row here at all — the thing details can be edited on.</summary>
     public bool HasARowOfItsOwn => Outcome == PublishOutcome.UpdateMine;
@@ -194,14 +204,26 @@ public sealed class TranslationPublisher
                         ? row
                         : null,
                     AcceptsBranches: Flag(root, "accepts_branches"),
-                    BranchFrozen: Flag(root, "branch_frozen") == true);
+                    BranchFrozen: Flag(root, "branch_frozen") == true,
+
+                    // Read here so the publish path can refuse before sending, the way it already
+                    // does for a frozen branch. Null on a server that predates them, and null is
+                    // "not asked" — never "the Main is fine".
+                    MainMissing: Flag(root, "main_missing"),
+                    MainAbandoned: Flag(root, "main_abandoned"));
             }
 
             // Somebody else's lineage: we would be contributing to it — if they take contributions.
             if (exists && root.TryGetProperty("main", out var main) && main.ValueKind == JsonValueKind.Object)
                 return new LineageStanding(PublishOutcome.ContributeToTheirs, Text(main, "uploader"),
                                            null, null,
-                                           AcceptsBranches: Flag(root, "accepts_branches"));
+                                           AcceptsBranches: Flag(root, "accepts_branches"),
+
+                                           // ⚠ Here too, and not only on our own row: somebody
+                                           // holding this file and about to contribute for the
+                                           // first time meets the same wall, and meets it before
+                                           // the work rather than after.
+                                           MainAbandoned: Flag(root, "main_abandoned"));
 
             // Exists without either shape: unknown to us, and inventing a reading would be worse
             // than saying so.

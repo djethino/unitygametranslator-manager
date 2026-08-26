@@ -1023,9 +1023,13 @@ public sealed class SettingsWindow : Window
         // A server with nothing loaded is the state a fresh Ollama is left in, and the one that
         // reads as "it worked" while translating nothing. Offering a model here is the difference
         // between an engine and an engine with fuel.
+        //
+        // ⚠ An empty LM Studio lands here too, and the offer has to be honest with it: the table
+        // still helps — it says which models are worth loading — but only Ollama can be asked to
+        // fetch one.
         if (server.Models.Count == 0)
         {
-            _ = OfferModelAsync(server.Url);
+            _ = OfferEmptyServerAsync(server.Url);
             return;
         }
 
@@ -1074,8 +1078,14 @@ public sealed class SettingsWindow : Window
 
         var noneTested = !installed.Any(model => ModelNotesProvider.For(_modelNotes, model) is not null);
 
+        // 🔴 Asked of THIS server, every time, because this method is reached from an address
+        // somebody typed as well as from one we discovered — and a saved address can be LM Studio,
+        // a machine on the network, or a paid online provider. Every one of them used to be shown
+        // a Download button that could only fail.
+        var canDownload = await new OllamaModelPuller(serverUrl).CanDownloadAsync();
+
         await OfferModelAsync(serverUrl, alreadyHasModels: true, noneOfTheirsTested: noneTested,
-                              startExpanded: noneTested);
+                              startExpanded: noneTested, canDownload: canDownload);
     }
 
     /// <summary>
@@ -1246,8 +1256,25 @@ public sealed class SettingsWindow : Window
     /// Open when there is nothing else to go on — an empty server, or nothing of theirs we have
     /// ever run. Closed when it is merely a comparison, which is most visits.
     /// </param>
+    /// <summary>
+    /// The offer for a server that answered but holds nothing, whatever server it is.
+    ///
+    /// Split from the discovery branch so the download question is asked there too: an empty
+    /// LM Studio used to be handed the same Download buttons as an empty Ollama.
+    /// </summary>
+    private async Task OfferEmptyServerAsync(string serverUrl) =>
+        await OfferModelAsync(serverUrl,
+            canDownload: await new OllamaModelPuller(serverUrl).CanDownloadAsync());
+
+    /// <param name="canDownload">
+    /// Whether this server can fetch a model. Defaults to true because the callers that omit it
+    /// are the Ollama paths — an install we just performed, or a server we just started — where
+    /// the answer is known without asking. Everything reached from a server somebody else set up
+    /// passes the answer in.
+    /// </param>
     private async Task OfferModelAsync(string serverUrl, bool alreadyHasModels = false,
-                                       bool noneOfTheirsTested = false, bool startExpanded = true)
+                                       bool noneOfTheirsTested = false, bool startExpanded = true,
+                                       bool canDownload = true)
     {
         _ollamaPanel.Children.Clear();
         _ollamaPanel.IsVisible = true;
@@ -1327,7 +1354,20 @@ public sealed class SettingsWindow : Window
 
         var progress = Note("", "TextMuted");
 
-        content.Children.Add(ModelTable(candidates, vram, serverUrl, progress));
+        // 🔴 Where these names come from, said once, above the table — and only where it changes
+        // what the reader can do. On Ollama the names ARE the download, so naming them would be
+        // noise; anywhere else they are a shopping list to take elsewhere, and a table of models
+        // with no way to get them reads as a broken screen unless it says why.
+        if (!canDownload)
+        {
+            content.Children.Add(Note(
+                "These are Ollama model names, and fetching one is something only Ollama does. "
+                + "The figures hold on any server — install the model the way yours installs "
+                + "models, and it will show up in the list above.",
+                "TextMuted"));
+        }
+
+        content.Children.Add(ModelTable(candidates, vram, serverUrl, progress, canDownload));
         content.Children.Add(progress);
 
         // An expander rather than a block dropped on the screen: it opens where it is relevant and
@@ -1366,8 +1406,15 @@ public sealed class SettingsWindow : Window
     /// the lowest measured figure among models that never missed. A mark on every row would be a
     /// mark on none.
     /// </summary>
+    /// <param name="canDownload">
+    /// Whether this server can be asked to fetch a model — see
+    /// <see cref="OllamaModelPuller.CanDownloadAsync"/>. False leaves every row exactly as it is,
+    /// figures included, and takes only the button away: what a model held and how many
+    /// instructions it followed are facts about the MODEL, true on any server, and someone running
+    /// LM Studio is entitled to them. Only the one-click fetch is Ollama's.
+    /// </param>
     private Control ModelTable(IReadOnlyList<ModelNote> candidates, long? vram,
-                               string serverUrl, TextBlock progress)
+                               string serverUrl, TextBlock progress, bool canDownload)
     {
         var grid = new Grid
         {
@@ -1494,24 +1541,31 @@ public sealed class SettingsWindow : Window
                     + "still works.", "StatusWarning"));
             }
 
-            var take = new Button
+            // 🔴 Absent rather than greyed on a server that cannot fetch. A disabled button says
+            // "not now"; there is no now — this server will never be able to, and the sentence
+            // above the table has already said where the names come from. The rule everywhere else
+            // in this program: a verb that cannot act does not appear.
+            if (canDownload)
             {
-                Content = "Download",
-                FontSize = 11,
-                Padding = new Thickness(10, 3),
-                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
-                Margin = new Thickness(0, 4, 0, 0),
-                Classes = { "primary" },
-            };
+                var take = new Button
+                {
+                    Content = "Download",
+                    FontSize = 11,
+                    Padding = new Thickness(10, 3),
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+                    Margin = new Thickness(0, 4, 0, 0),
+                    Classes = { "primary" },
+                };
 
-            take.Click += async (_, _) =>
-            {
-                take.IsEnabled = false;
-                await PullModelAsync(serverUrl, candidate.Pull!, progress);
-                take.IsEnabled = true;
-            };
+                take.Click += async (_, _) =>
+                {
+                    take.IsEnabled = false;
+                    await PullModelAsync(serverUrl, candidate.Pull!, progress);
+                    take.IsEnabled = true;
+                };
 
-            details.Children.Add(take);
+                details.Children.Add(take);
+            }
             Put(details, line, 0, span: 5);
             line++;
         }

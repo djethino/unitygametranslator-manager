@@ -360,6 +360,38 @@ public partial class MainWindow : Window
             result = new SelfUpdateCheck(SelfUpdateState.CheckFailed, null, ex.Message);
         }
 
+        ShowUpdateNotice(result);
+    }
+
+    /// <summary>
+    /// Puts the toolbar notice in step with an answer about tool updates — whichever answer, and
+    /// from wherever it came.
+    ///
+    /// 🔴 **Written from the STATE, not from the event.** It used to be a switch inside the startup
+    /// check, and "up to date" did nothing at all — which is fine the first time, when the slot is
+    /// empty, and wrong every time after: a failure notice put there at launch survived a later
+    /// check that succeeded, and stayed for the whole session. So this method clears as
+    /// deliberately as it writes.
+    ///
+    /// The same shape of defect this project keeps meeting — see the Settings window's LastCheck,
+    /// which is what lets the answer travel back here at all.
+    /// </summary>
+    /// <summary>
+    /// The most recent answer about this tool's own updates, from wherever it came — the check at
+    /// startup, or a "Check now" pressed in the Settings window.
+    ///
+    /// 🔴 Kept because TWO screens render from it and neither owned it: the toolbar notice, written
+    /// once at launch, and the Updates card in Settings, which was handed whatever the caller
+    /// happened to hold. Both went stale after a re-check, in opposite ways — one kept saying the
+    /// check had failed, the other showed nothing at all.
+    /// </summary>
+    private SelfUpdateCheck? _lastToolCheck;
+
+    private void ShowUpdateNotice(SelfUpdateCheck result)
+    {
+        // One place records it, and it is the one place every answer passes through.
+        _lastToolCheck = result;
+
         switch (result.State)
         {
             case SelfUpdateState.Available when result.Offer is not null:
@@ -369,6 +401,9 @@ public partial class MainWindow : Window
                 break;
 
             case SelfUpdateState.UpToDate:
+                // Nothing to say, and saying nothing means REMOVING whatever was there. An empty
+                // slot is the honest rendering of "this tool is current".
+                UpdateSlot.Content = null;
                 break;
 
             default:
@@ -1049,8 +1084,32 @@ public partial class MainWindow : Window
 
     private async Task OpenToolSettingsAsync(SelfUpdateCheck? found = null)
     {
-        var window = new ToolSettingsWindow(_platform, _settings, found, _catalog);
+        // 🔴 **The LATEST answer, not the one this door was opened with.**
+        //
+        // `found` is whatever the caller had: the startup result for the toolbar notice, and
+        // nothing at all for the Settings button beside it. Both go stale the moment somebody
+        // presses "Check now" inside — so closing that window and opening it again showed either
+        // an empty Updates card or the answer from launch, and the person had to ask a third time
+        // to be told what they had just been told twice.
+        //
+        // Same defect as the notice below, one door further in, and the same cure: keep the state,
+        // render from it.
+        var window = new ToolSettingsWindow(_platform, _settings, found ?? _lastToolCheck, _catalog);
         await window.ShowDialog(this);
+
+        // 🔴 **The update notice is RECONCILED from the last answer, not left where startup put it.**
+        //
+        // It is written once by LookForToolUpdateAsync, from a check that may have failed — and a
+        // failure there is common by design: a firewall, an antivirus or a company proxy produces
+        // exactly it. Someone who then opens this window, presses "Check now" and is told the tool
+        // is up to date used to go back to a main window still saying "Couldn't check for updates",
+        // for the rest of the session, with nothing left on screen that could correct it.
+        //
+        // ⚠ The answer is carried out of that window rather than fetched again: asking GitHub a
+        // second time would spend a request to learn what we already know — and would fail on its
+        // own for the very people this repairs.
+        if (window.LastCheck is { } rechecked) ShowUpdateNotice(rechecked);
+
 
         // Redrawn whatever was saved: signing in and out both happen in that window, and the
         // header would otherwise keep claiming the opposite until the next launch.
@@ -10205,6 +10264,16 @@ public partial class MainWindow : Window
             Margin = new Avalonia.Thickness(0, 6, 0, 0),
             Foreground = Brush("TextPrimary"),
         };
+
+        // 🔴 **Silent on a game nothing can be installed into.** The absence of a translation is
+        // still true there and worth stating — but the invitation that follows is not: it asks
+        // somebody to "play with the mod on" on a game where, three inches above, a red card has
+        // just explained that no mod loader can start. Two sentences of the same card contradicting
+        // each other, and the one that reads as a promise is the false one.
+        //
+        // ⚠ The heading stays: a refused game with no translation and a refused game with one are
+        // different situations, and this is the only line that tells them apart.
+        if (!report.Game.IsModdable) yield break;
 
         // ⚠ Conditional on purpose. Somebody with a translator set up needs one sentence;
         // somebody without one needs to know the mod is still usable, or they will conclude

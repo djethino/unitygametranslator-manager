@@ -72,6 +72,22 @@ public sealed class ToolSettingsWindow : Window
 
     public bool Saved { get; private set; }
 
+    /// <summary>
+    /// The most recent answer about tool updates, or null when nothing was asked here.
+    ///
+    /// 🔴 **Exists so the notice in the main window can be RECONCILED rather than left as it was.**
+    /// That notice is written once, at startup, from a check that may have failed; pressing "Check
+    /// now" here and succeeding changed nothing on it, so "Couldn't check for updates" stayed on
+    /// screen for the rest of the session — over a machine that had since been told it is up to
+    /// date. The recurring shape of that defect in this project: coding the transition instead of
+    /// reconciling from the state.
+    ///
+    /// ⚠ Carried out rather than re-fetched. Asking GitHub a second time when this window closes
+    /// would spend a request to learn what it already knows, and would fail on its own for anyone
+    /// behind the firewall this whole screen exists to work around.
+    /// </summary>
+    public SelfUpdateCheck? LastCheck { get; private set; }
+
     public ToolSettingsWindow(IPlatform platform, SettingsStore store,
                               SelfUpdateCheck? known = null,
                               LoaderCatalogDocument? catalog = null)
@@ -683,8 +699,17 @@ public sealed class ToolSettingsWindow : Window
         return Card("Updates", null, panel);
     }
 
+    /// <summary>
+    /// Puts a check result on screen — and records it, so the window that opened this one can put
+    /// its own notice back in step when this closes. See <see cref="LastCheck"/>.
+    /// </summary>
     private void ShowResult(SelfUpdateCheck result)
     {
+        // ⚠ Recorded before anything is drawn, so it holds even if a branch below returns early.
+        // ⚠ And recorded here rather than in CheckForUpdateAsync, because this is the one place
+        // every path goes through — the button, and the result handed in by the main window.
+        LastCheck = result;
+
         switch (result.State)
         {
             case SelfUpdateState.Available when result.Offer is not null:

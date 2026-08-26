@@ -3457,7 +3457,10 @@ public partial class MainWindow : Window
             foreach (var control in NothingPublishedYet(report)) question.Children.Add(control);
         }
 
-        yield return Card(question);
+        // ⚠ No card when there is nothing to put in one. On a refused game with nothing published,
+        // everything above declines to speak — and a Card() around an empty panel is not nothing,
+        // it is a bordered box with a blank inside, which reads as a defect rather than as silence.
+        if (question.Children.Count > 0) yield return Card(question);
 
         // ── What setting this game up would actually produce ──────────────────────────────────
         //
@@ -10255,6 +10258,21 @@ public partial class MainWindow : Window
     /// </summary>
     private IEnumerable<Control> NothingPublishedYet(GameReport report)
     {
+        // 🔴 **Nothing at all when no translation for this game can ever exist — heading included.**
+        //
+        // "No translation has been published for this game yet" carries a *yet*: it describes a
+        // waiting room. Against a stripped runtime, encrypted store binaries or a game that is not
+        // Unity, there is none — nobody will ever run the mod there, so nobody will ever capture
+        // the text, and the absence is already explained in full by the red card above.
+        //
+        // 🔴 **The test is ModCouldRun, NOT IsModdable, and the difference is the whole point.**
+        // An anti-cheat is a warning, not a wall: the mod works, we simply refuse to be the one
+        // that installs it, because the banned account would be the player's. Somebody may install
+        // it by hand and publish a translation, and this card must be able to show it. Same for a
+        // runtime or architecture we failed to read. Cutting on `IsModdable` silenced all six
+        // refusals alike and made three of them read as impossible.
+        if (!report.Game.ModCouldRun) yield break;
+
         yield return new TextBlock
         {
             Text = "No translation has been published for this game yet.",
@@ -10265,15 +10283,23 @@ public partial class MainWindow : Window
             Foreground = Brush("TextPrimary"),
         };
 
-        // 🔴 **Silent on a game nothing can be installed into.** The absence of a translation is
-        // still true there and worth stating — but the invitation that follows is not: it asks
-        // somebody to "play with the mod on" on a game where, three inches above, a red card has
-        // just explained that no mod loader can start. Two sentences of the same card contradicting
-        // each other, and the one that reads as a promise is the false one.
-        //
-        // ⚠ The heading stays: a refused game with no translation and a refused game with one are
-        // different situations, and this is the only line that tells them apart.
-        if (!report.Game.IsModdable) yield break;
+        // ⚠ On a game we refuse but the mod could still run on, the reservation comes BEFORE the
+        // invitation, never after. Both sentences below start "play with the mod on" — true once
+        // it is installed, and the button beside this card will not install it. Promising first
+        // and withdrawing afterwards is the contradiction this whole card was fixed for.
+        if (!report.Game.IsModdable)
+        {
+            yield return new TextBlock
+            {
+                Text = "The Manager will not set this game up — the card above says why. "
+                     + "Install the mod yourself and its translation is managed from here "
+                     + "like any other.",
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Avalonia.Thickness(0, 2, 0, 0),
+                Foreground = Brush("StatusWarning"),
+            };
+        }
 
         // ⚠ Conditional on purpose. Somebody with a translator set up needs one sentence;
         // somebody without one needs to know the mod is still usable, or they will conclude

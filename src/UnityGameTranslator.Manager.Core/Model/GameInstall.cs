@@ -146,5 +146,42 @@ public sealed class GameInstall
 
     public bool IsModdable => Verdict == ModdabilityVerdict.Ok;
 
+    /// <summary>
+    /// Whether the mod could ever run on this game — by any route, including one this tool
+    /// declines to take for you.
+    ///
+    /// 🔴 **Not the same question as <see cref="IsModdable"/>, and confusing the two writes
+    /// falsehoods on screen.** `IsModdable` answers *will this tool set it up*. This answers
+    /// *can a translation for this game exist at all*, which is what anything about published
+    /// translations has to be judged against.
+    ///
+    /// Three of the refusals are warnings, not walls. An anti-cheat does not stop the mod from
+    /// working — it stops us from recommending it, because the account that gets banned is the
+    /// player's; somebody may well install it by hand and accept that, and their translation is
+    /// as real as any other. An unreadable runtime or architecture is our probe failing, not the
+    /// game refusing, and `--runtime` / `--arch` exist precisely to override it.
+    ///
+    /// The other three are walls: a stripped runtime library no loader can start against,
+    /// encrypted binaries under a locked-down ACL, and a game that is not Unity at all.
+    ///
+    /// ⚠ **NOT a duplicate of <see cref="Detection.ModdabilityProbe.CanBeOverridden"/>, and merging
+    /// the two would break both.** That one asks *will this tool try anyway if you insist*, and the
+    /// answers cross over precisely on the cases that matter:
+    ///
+    /// <list type="bullet">
+    /// <item>`AntiCheat` — overridable: NO (we never install into one, whoever asks) ·
+    ///       could run: YES (the mod works; it is the ban we will not risk on someone's behalf)</item>
+    /// <item>`StrippedRuntime` — overridable: YES (trying is reversible and costs minutes) ·
+    ///       could run: NO (three loaders and a runtime swap were tried; it is the game)</item>
+    /// </list>
+    ///
+    /// Three questions, not two: *will we set it up* (IsModdable), *will we try if pushed*
+    /// (CanBeOverridden), *can a translation for this game exist* (here).
+    /// </summary>
+    public bool ModCouldRun => Verdict is ModdabilityVerdict.Ok
+                                       or ModdabilityVerdict.AntiCheat
+                                       or ModdabilityVerdict.RuntimeUnknown
+                                       or ModdabilityVerdict.ArchitectureUnknown;
+
     public override string ToString() => $"{Name} [{Runtime}, {UnityVersion ?? "unknown Unity"}]";
 }

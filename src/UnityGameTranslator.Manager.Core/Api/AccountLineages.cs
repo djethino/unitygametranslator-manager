@@ -181,6 +181,7 @@ public sealed class AccountLineages
                     LinesDiffering = Waiting(entry) is { } d ? Tally(d, "differing") : default,
 
                     MainMissing = Flag(entry, "main_missing"),
+                    MainAbandoned = Flag(entry, "main_abandoned"),
                     AcceptsBranches = Flag(entry, "accepts_branches"),
                     BranchFrozen = Flag(entry, "branch_frozen"),
                     SiteId = Number(entry, "id") ?? 0,

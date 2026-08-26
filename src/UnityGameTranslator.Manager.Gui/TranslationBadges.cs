@@ -90,6 +90,10 @@ public static class TranslationBadges
             branchesWaiting: mine?.BranchesWithWork ?? mine?.BranchesCount,
             linesAvailable: mine?.LinesAvailable,
             mainMissing: mine?.MainMissing == true,
+
+            // The other way this lineage loses its head: the Main is still published, its owner is
+            // erased. Badges ignores it when mainMissing is set — gone is the whole story.
+            mainAbandoned: mine?.MainAbandoned == true,
             sync: report.Sync,
             stage: counts.Stage,
             completeness: counts.Completeness,

@@ -233,6 +233,15 @@ public static class SituationReader
         if (report.MyPosition is { BranchFrozen: true })
             parts.Add("contribution frozen — the Main is closed");
 
+        // Same rank and the same reason: work that can no longer be sent, with nothing on this
+        // machine to show for it. Two lines rather than one because the way out differs — a closed
+        // Main is somebody's decision that may be reversed, an erased account never will be.
+        else if (report.MyPosition is { MainMissing: true })
+            parts.Add("contribution stranded — the Main was removed");
+
+        else if (report.MyPosition is { MainAbandoned: true })
+            parts.Add("contribution stranded — the Main's account is gone");
+
         if (branchesWaiting is > 0 and var waiting)
             parts.Add(waiting == 1 ? "1 contribution waiting" : $"{waiting} contributions waiting");
 

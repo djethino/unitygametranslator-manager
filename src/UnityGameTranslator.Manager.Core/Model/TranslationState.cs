@@ -325,6 +325,16 @@ public sealed class LineagePosition
     public bool? MainMissing { get; init; }
 
     /// <summary>
+    /// A branch whose Main is still published and whose owner erased their account.
+    ///
+    /// Ends where MainMissing ends — nobody will ever merge this — and is harder to notice: the
+    /// Main is still listed, still downloadable, and still says it takes contributions. Kept as its
+    /// own field because what a reader must understand differs: here the translation stays, and
+    /// stays good to use.
+    /// </summary>
+    public bool? MainAbandoned { get; init; }
+
+    /// <summary>
     /// Whether this lineage takes contributions: this account's own answer on a Main, its Main's
     /// answer on a branch. Null on a site that predates the question — and null is not "no".
     /// </summary>

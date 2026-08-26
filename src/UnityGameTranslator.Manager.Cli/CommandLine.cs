@@ -130,10 +130,10 @@ public static class CommandLine
               help                         This text
 
             --offline skips every network call (catalog and community translations).
-            --online  allows this tool to look things up, and remembers the answer. It asks the
-                      site whether a translation exists for the games found here, sending their
-                      names or Steam ids. Until it is answered — here or in the window — this
-                      tool stays offline. Finding games on this machine never needs it.
+            --online  lets this tool use the internet, and remembers the answer. It asks the site
+                      whether a translation exists for the games found here, sending their names
+                      or Steam ids. Until this is answered — here or in the window — the tool
+                      works offline. Finding games on this machine never needs it.
             --all also lists games that cannot be modded, with the reason.
             --beta uses pre-release plugin builds.
             --runtime mono|il2cpp   tell us what we could not read
@@ -187,8 +187,8 @@ public static class CommandLine
         {
             // Said rather than silently obeyed: a command that quietly returns less than it could
             // reads as a broken lookup, and the way out is not guessable.
-            Console.WriteLine("Staying offline: nobody has been asked yet whether this tool may "
-                              + "look things up.");
+            Console.WriteLine("Working offline: nobody has been asked yet whether this tool may "
+                              + "use the internet.");
             Console.WriteLine("It searches for games on this machine either way. Online, it asks "
                               + "the site whether a translation exists for the games it finds, "
                               + "sending their names or Steam ids.");

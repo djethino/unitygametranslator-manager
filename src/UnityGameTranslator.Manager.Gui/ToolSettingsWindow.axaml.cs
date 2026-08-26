@@ -428,9 +428,16 @@ public sealed class ToolSettingsWindow : Window
         // updates. Somebody turning off "the community catalog" was turning off the internet, and
         // somebody looking for the internet switch had no reason to open this one.
         //
-        // ⚠ The words are the ones the first-run window uses on its button, deliberately: that is
-        // where most people meet this question, and this is where they come back to change it.
-        _online = new CheckBox { Content = "Look things up online", IsChecked = _draft.OnlineMode };
+        // 🔴 **"Work online", because "Work offline" is what every program has called this for
+        // thirty years** — mail clients, browsers, word processors. Nobody has to be taught it, and
+        // `online`/`offline` are borrowed as-is into most languages, which matters when nothing
+        // here is translated.
+        //
+        // ⚠ A first attempt said "Look things up online". That is a PHRASAL VERB, and this
+        // interface is read in a fourth language: it was unreadable, and it broke the plain-English
+        // rule while trying to be plain. The status bar says Online/Offline, this box says Work
+        // online, the first-run window offers Work online or Stay offline — one word for one thing.
+        _online = new CheckBox { Content = "Work online", IsChecked = _draft.OnlineMode };
 
         var panel = new StackPanel { Spacing = 10 };
         panel.Children.Add(_online);
@@ -1071,7 +1078,7 @@ public sealed class ToolSettingsWindow : Window
         Compare("preferred loader on IL2CPP", Blank(Tag(_preferIl2cpp)), saved.PreferredLoaderIl2cpp);
 
         if ((_proxyInGames.IsChecked == true) != saved.ProxyInGames) changes.Add("proxy in games");
-        if ((_online.IsChecked == true) != saved.OnlineMode) changes.Add("look things up online");
+        if ((_online.IsChecked == true) != saved.OnlineMode) changes.Add("work online");
         if ((_checkToolUpdates.IsChecked == true) != saved.CheckToolUpdates)
             changes.Add("look for updates to UGT Manager");
         if ((_checkContentUpdates.IsChecked == true) != saved.CheckContentUpdates)

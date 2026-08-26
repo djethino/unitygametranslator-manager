@@ -15,7 +15,7 @@ namespace UnityGameTranslator.Manager.Gui;
 ///
 /// ⚠ **Not a licence, and not a consent form.** Nothing here is signed and nothing is accepted:
 /// the program is free software and using it agrees to nothing. This asks one question — may it
-/// look things up — and states plainly what happens either way.
+/// use the internet — and states plainly what happens either way.
 ///
 /// ### Why the two answers are equals
 ///
@@ -50,23 +50,22 @@ public sealed class FirstRunWindow : Window
 
         var layout = new StackPanel { Spacing = 14, Margin = new Thickness(24) };
 
-        layout.Children.Add(Heading("Before this program looks for anything"));
+        layout.Children.Add(Heading("Before this program starts"));
 
         // ⚠ The two halves are separated on purpose, and in this order: what stays here, then what
         // leaves. Somebody worried about a tool that reads their machine gets their answer in the
         // first line instead of hunting for it under a heading about the internet.
         layout.Children.Add(Section(
             "On this machine",
-            "It looks for Unity games where launchers keep them — Steam, Epic, GOG, and folders you "
+            "It finds Unity games in the folders used by Steam, Epic and GOG, and in folders you "
             + "add yourself. It does not search your disks, and it reads nothing outside those "
             + "folders."));
 
         layout.Children.Add(Section(
             "On the internet, if you allow it",
-            "It asks the site whether a translation exists for the games it found, sending their "
-            + "names or Steam ids. It also checks which mod loaders and versions have been "
-            + "published. Nothing else leaves this machine, and it never sends what is inside your "
-            + "games."));
+            "It asks the site if a translation exists for the games it found, sending their names "
+            + "or Steam ids. It also checks which mod loaders and versions have been published. "
+            + "Nothing else leaves this machine, and it never sends what is inside your games."));
 
         layout.Children.Add(new TextBlock
         {
@@ -74,9 +73,9 @@ public sealed class FirstRunWindow : Window
             // The wording is the one the switch itself carries under Tool settings > Network, so
             // somebody looking for it later recognises what they are looking at.
             Text = "Offline, everything else still works: it finds your games, installs the mod and "
-                 + "manages what is already on this machine. You can change this at any time under "
-                 + "\"Look things up online\" in the tool's settings, and the status bar says which "
-                 + "one you are in.",
+                 + "manages what is already on this machine. You can change this at any time with "
+                 + "\"Work online\" in the tool's settings, and the bar at the bottom of the window "
+                 + "always says which one you are in.",
             FontSize = 11,
             TextWrapping = TextWrapping.Wrap,
             Foreground = this.FindResource("TextMuted") as IBrush,
@@ -85,10 +84,14 @@ public sealed class FirstRunWindow : Window
         var offline = new Button { Content = "Stay offline" };
         offline.Click += (_, _) => Answer(false);
 
-        // ⚠ Primary, and it is the honest emphasis rather than a nudge: looking translations up is
+        // ⚠ Primary, and it is the honest emphasis rather than a nudge: finding translations is
         // what somebody installed this for. The other answer sits beside it at the same size, and
         // the paragraph above says what it costs — which is little.
-        var online = new Button { Content = "Look things up", Classes = { "primary" }, IsDefault = true };
+        //
+        // 🔴 The verb is the one every program has used for thirty years. A first attempt said
+        // "Look things up": a phrasal verb, on a button read in a fourth language, which is the
+        // plain-English rule broken in the act of trying to follow it.
+        var online = new Button { Content = "Work online", Classes = { "primary" }, IsDefault = true };
         online.Click += (_, _) => Answer(true);
 
         var buttons = new StackPanel

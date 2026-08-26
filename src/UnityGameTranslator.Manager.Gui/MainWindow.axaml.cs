@@ -646,19 +646,18 @@ public partial class MainWindow : Window
 
         var (label, colour, why) = !settings.OnlineAsked
             ? ("Offline", "StatusWarning",
-               "Nobody has answered yet whether this tool may look things up, so it is not. "
-               + "The question comes back next launch, or answer it now under \"Look things up "
-               + "online\" in the tool's settings.")
+               "Nobody has answered yet whether this tool may use the internet, so it does not. "
+               + "The question comes back at the next launch, or answer it now with \"Work online\" "
+               + "in the tool's settings.")
             : settings.OnlineMode
                 ? ("Online", "StatusSuccess",
                    "This tool asks the site whether a translation exists for the games found here, "
                    + "sending their names or Steam ids, and checks which loaders and versions have "
-                   + "been published. Turn it off under \"Look things up online\" in the tool's "
-                   + "settings.")
+                   + "been published. Turn it off with \"Work online\" in the tool's settings.")
                 : ("Offline", "StatusNeutral",
                    "This tool asks nobody anything. It still finds your games, installs the mod and "
-                   + "manages what is already on this machine. Turn it on under \"Look things up "
-                   + "online\" in the tool's settings.");
+                   + "manages what is already on this machine. Turn it on with \"Work online\" in "
+                   + "the tool's settings.");
 
         OnlineLabel.Text = label;
         OnlineDot.Fill = Brush(colour);

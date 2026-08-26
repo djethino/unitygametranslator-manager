@@ -5555,10 +5555,14 @@ public partial class MainWindow : Window
         // field, and null means "not asked" — behaving as a no there would invent a decision.
         if (contributing && lineage.AcceptsBranches == false)
         {
+            // ⚠ **Sent to the mod, not to the website.** Forking is something the mod does — it is
+            // where the file lives and where the button is — and this tool has no such action of
+            // its own. Four messages here used to point at the site, which is a place a fork can
+            // also be made from but not the one anybody reaches for.
             await ConfirmationWindow.TellAsync(this, "This translation is solo work",
                 $"{People.MentionOf(lineage.MainOwner, standing.SignedInAs)} works alone on this one and does not take "
-                + "contributions.\n\nYour lines are safe. Publish your own version of it instead "
-                + "— open it on the UGT Website and choose to publish yours.");
+                + "contributions.\n\nYour lines are safe. Open the game and use Fork in the mod to "
+                + "publish your own version of it.");
             return;
         }
 
@@ -5567,8 +5571,8 @@ public partial class MainWindow : Window
         {
             await ConfirmationWindow.TellAsync(this, "This contribution is frozen",
                 "The translation you contribute to no longer accepts contributions, so this can "
-                + "no longer be sent or described.\n\nYour lines are safe. Turn it into your own "
-                + "version on the UGT Website to carry on.");
+                + "no longer be sent.\n\nYour lines are safe. Open the game and use Fork in the mod "
+                + "to carry on with them.");
             return;
         }
 
@@ -5583,8 +5587,8 @@ public partial class MainWindow : Window
         {
             await ConfirmationWindow.TellAsync(this, "There is nothing left to contribute to",
                 "The translation this contributes to has been removed by its author.\n\nYour lines "
-                + "are safe, and your copy is now the only one. Publish it as your own version on "
-                + "the UGT Website to carry on.");
+                + "are safe, and your copy is now the only one. Open the game and use Fork in the "
+                + "mod to publish it as your own version.");
             return;
         }
 
@@ -5593,8 +5597,8 @@ public partial class MainWindow : Window
             await ConfirmationWindow.TellAsync(this, "Nobody can review this contribution",
                 "The account that owned the translation you contribute to has been deleted, so no "
                 + "contribution will ever be read.\n\nThe translation itself is still published and "
-                + "still works. Your lines are safe: publish them as your own version on the UGT "
-                + "Website to carry on.");
+                + "still works. Your lines are safe: open the game and use Fork in the mod to "
+                + "publish them as your own version.");
             return;
         }
 
@@ -5731,8 +5735,8 @@ public partial class MainWindow : Window
         {
             await ConfirmationWindow.TellAsync(this, "This contribution is frozen",
                 "The translation you contribute to no longer accepts contributions, so this can "
-                + "no longer be sent or described.\n\nYour lines are safe. Turn it into your own "
-                + "version on the UGT Website to carry on.");
+                + "no longer be sent or described.\n\nYour lines are safe. Open the game and use "
+                + "Fork in the mod to carry on with them.");
             return;
         }
 

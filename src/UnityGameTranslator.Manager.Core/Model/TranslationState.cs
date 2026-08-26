@@ -430,9 +430,15 @@ public sealed class LineagePosition
     /// does not send the field — and reading silence as reassurance would be the one mistake that
     /// matters here.
     /// </summary>
+    /// <remarks>
+    /// ⚠ **Rewritten on 2026-08-27, because the sentence had become false.** It used to end with
+    /// "publishing it would give this translation a head again" — true while the next upload into a
+    /// headless lineage silently took it over. That is refused now: an orphaned branch cannot
+    /// publish at all, and the way on is a fork, which starts a lineage of its own.
+    /// </remarks>
     public const string OrphanNote =
-        "The Main it contributed to is gone. Your work is untouched, but nobody upstream is "
-        + "reviewing it any more — publishing it would give this translation a head again.";
+        "The Main it contributed to is gone. Your work is untouched, but it can no longer be sent "
+        + "anywhere — open the game and use Fork in the mod to carry on with it.";
 }
 
 /// <summary>Everything we know about a game, gathered in one place for display and decisions.</summary>

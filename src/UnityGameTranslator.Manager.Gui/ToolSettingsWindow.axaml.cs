@@ -233,6 +233,34 @@ public sealed class ToolSettingsWindow : Window
             _accountPanel.Children.Add(Note($"Signed in as {settings.ApiUser ?? "your account"}.",
                 "StatusSuccess"));
 
+            // 🔴 The code this access carries on the account's "Linked devices" page. That page
+            // names every line "#QKADJN" and offers to rename the machine it belongs to — while the
+            // code appeared in no program of ours, so it asked somebody to name a machine nothing
+            // let them identify. Reported from production on 2026-08-27.
+            //
+            // ⚠ Asked for, never stored: it belongs to the token, the site is what knows it, and a
+            // copy in the settings would be one more thing able to go stale.
+            //
+            // ⚠ The row is added when the answer lands, so an unreachable site costs nothing but
+            // the absence of a line — never a window that waits.
+            var accessToken = settings.ApiToken;
+            if (!string.IsNullOrWhiteSpace(accessToken))
+            {
+                var codeRow = Note("", "TextMuted");
+                codeRow.IsVisible = false;
+                _accountPanel.Children.Add(codeRow);
+
+                _ = Dispatcher.UIThread.InvokeAsync(async () =>
+                {
+                    var code = await new DeviceFlowClient().AccessCodeAsync(accessToken).ConfigureAwait(true);
+
+                    if (string.IsNullOrEmpty(code)) return;
+
+                    codeRow.Text = $"This access is #{code} on Linked devices.";
+                    codeRow.IsVisible = true;
+                });
+            }
+
             var signOut = new Button { Content = "Sign out", FontSize = 12 };
             var signOutNote = Note("Signing out hands this tool's access back to the site.", "TextMuted");
 

@@ -226,4 +226,48 @@ public sealed class DeviceFlowClient
             return false;
         }
     }
+
+    /// <summary>
+    /// The short code the site names THIS access by, or null when it cannot be asked.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 **Without it, "Linked devices" is an impasse.** That page names every line "#QKADJN" and
+    /// offers to rename the machine it belongs to — while the code appeared in no program of ours,
+    /// so somebody was asked to name a machine nothing let them identify, and to choose between
+    /// accesses they could not tell apart. Reported from production on 2026-08-27.
+    ///
+    /// ⚠ Retroactive: the code has been stored against this token since it was issued, so an
+    /// installation linked months ago becomes identifiable as soon as this is asked.
+    ///
+    /// ⚠ Not a secret and not a credential. No endpoint accepts it as input — which is what keeps
+    /// six characters from becoming an enumeration surface — and whoever can read this answer
+    /// already holds the token, which is the strong one.
+    /// </remarks>
+    public async Task<string?> AccessCodeAsync(string token, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(token)) return null;
+
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"{BuildInfo.ApiBaseUrl}/me");
+            request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
+
+            using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode) return null;
+
+            using var document = JsonDocument.Parse(
+                await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+
+            return document.RootElement.TryGetProperty("access_code", out var code)
+                ? code.GetString()
+                : null;
+        }
+        catch
+        {
+            // An unreachable site is an ordinary answer here: the row simply shows no code rather
+            // than a code that might be wrong.
+            return null;
+        }
+    }
 }

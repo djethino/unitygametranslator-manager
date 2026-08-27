@@ -45,6 +45,17 @@ public static class Http
     /// </summary>
     public static ProxySettings Proxy { get; set; } = ProxySettings.Default;
 
+    /// <summary>
+    /// The number this machine drew once, sent so the site can group this account's accesses by
+    /// machine. Null until startup sets it, and null for good when it could not be written.
+    ///
+    /// ⚠ Set here rather than passed to every caller, for the same reason as the proxy: nine
+    /// classes build calls, and a value that has to be remembered at each of them is a value that
+    /// will be missing from some. See <see cref="Settings.MachineIdentity"/> for what it is — and
+    /// above all for what it is NOT: nothing about this machine is measured.
+    /// </summary>
+    public static string? DeviceId { get; set; }
+
     public static HttpClient Create(TimeSpan timeout)
     {
         var handler = BuildHandler();
@@ -71,6 +82,14 @@ public static class Http
         client.Timeout = timeout;
         client.DefaultRequestHeaders.UserAgent.ParseAdd(
             $"UnityGameTranslatorManager/{BuildInfo.Version}");
+
+        // Which machine is calling — a drawn number, never a measurement. Put on every client made
+        // here so no caller has to remember it; the site salts it per account before storing it, so
+        // the same machine under two accounts leaves two unrelated values.
+        if (Settings.MachineIdentity.IsWellFormed(DeviceId))
+        {
+            client.DefaultRequestHeaders.TryAddWithoutValidation("X-UGT-Device", DeviceId);
+        }
 
         return client;
     }

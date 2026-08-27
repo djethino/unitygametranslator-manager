@@ -27,6 +27,12 @@ public sealed class SettingsStore
         _platform = platform;
         _path = Path.Combine(platform.UserDataDirectory, InstallerSettings.FileName);
         Current = Load();
+
+        // Drawn on the first run and read on every one after, here because this is the first thing
+        // built that knows where this machine's data lives — and because a client made before it is
+        // a call that does not say which machine it comes from. See MachineIdentity: it is a random
+        // number, and deliberately not anything measured about the machine.
+        Net.Http.DeviceId = MachineIdentity.ReadOrCreate(platform);
     }
 
     public InstallerSettings Current { get; private set; }

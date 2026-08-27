@@ -94,6 +94,12 @@ public static class TranslationBadges
             // The other way this lineage loses its head: the Main is still published, its owner is
             // erased. Badges ignores it when mainMissing is set — gone is the whole story.
             mainAbandoned: mine?.MainAbandoned == true,
+
+            // 🔴 The third way this road ends, and the card said it NOWHERE. The tool knew — it
+            // refuses the send with a window explaining it — but only at the moment of publishing,
+            // after the work. This strip is the game page's only surface, so a state it does not
+            // carry is a state nobody meets until they are turned away.
+            branchFrozen: mine?.BranchFrozen == true,
             sync: report.Sync,
             stage: counts.Stage,
             completeness: counts.Completeness,

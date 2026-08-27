@@ -48,6 +48,16 @@ public sealed class AccountLineages
     /// </summary>
     public bool Known => _index is not null;
 
+    /// <summary>
+    /// The site refused the token outright — revoked from the account, or expired.
+    ///
+    /// ⚠ A flag rather than a message to match on: the reason is written for a person to read and
+    /// will be reworded one day, while what the caller has to do never changes. Until this existed
+    /// the refusal was recorded in <see cref="LastError"/> and read by nobody, so the tool went on
+    /// showing "Signed in as…" with a credential the site had already thrown away.
+    /// </summary>
+    public bool TokenRefused { get; private set; }
+
     /// <summary>Reads the account's translations once, then answers from memory.</summary>
     public async Task EnsureAsync(string? apiToken, CancellationToken ct = default)
     {
@@ -57,12 +67,14 @@ public sealed class AccountLineages
             _index = null;
             _fetchedFor = null;
             LastError = null;
+            TokenRefused = false;
             return;
         }
 
         if (_index is not null && _fetchedFor == apiToken) return;
 
         LastError = null;
+        TokenRefused = false;
 
         try
         {
@@ -77,6 +89,7 @@ public sealed class AccountLineages
             if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             {
                 LastError = "The site no longer accepts this token. Signing in again will fix it.";
+                TokenRefused = true;
                 return;
             }
 

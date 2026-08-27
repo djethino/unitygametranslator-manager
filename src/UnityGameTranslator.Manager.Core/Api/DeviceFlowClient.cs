@@ -193,4 +193,37 @@ public sealed class DeviceFlowClient
                 return null;
         }
     }
+
+    /// <summary>
+    /// Hands this tool's access back to the site. False when the site could not be reached — the
+    /// caller signs out locally regardless and says so.
+    /// </summary>
+    /// <remarks>
+    /// ⚠ Cuts nothing but this installation's own token, which is the point of it being separate
+    /// from the mod's (see the note on this class). Without this call the access simply stays in
+    /// the account's list, and the site cannot tell a forgotten token from a quiet one.
+    ///
+    /// ⚠ The token is passed in rather than read from settings, because signing out clears those
+    /// first: what is stored locally must never wait on a network call.
+    /// </remarks>
+    public async Task<bool> RevokeAsync(string token, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(token)) return true;
+
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Delete, $"{BuildInfo.ApiBaseUrl}/auth/token");
+            request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
+
+            using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+
+            // Already gone is the outcome we wanted, not a failure.
+            return response.IsSuccessStatusCode
+                || response.StatusCode == System.Net.HttpStatusCode.NotFound;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 }

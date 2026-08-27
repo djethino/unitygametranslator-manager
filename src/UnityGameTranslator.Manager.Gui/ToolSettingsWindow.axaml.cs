@@ -234,22 +234,41 @@ public sealed class ToolSettingsWindow : Window
                 "StatusSuccess"));
 
             var signOut = new Button { Content = "Sign out", FontSize = 12 };
-            signOut.Click += (_, _) =>
+            var signOutNote = Note("Signing out hands this tool's access back to the site.", "TextMuted");
+
+            signOut.Click += async (_, _) =>
             {
-                // Local only, and said as such: revoking the token server-side would also cut off
-                // anything else using it, and that decision belongs on the site.
+                // ⚠ This used to be local only, on the belief that revoking would "also cut off
+                // anything else using it". It would not: the device flow gives this installation
+                // its own token, deliberately separate from the mod's — the note on
+                // DeviceFlowClient says so. Forgetting it here only left a line on the account that
+                // nobody could identify, for ever.
+                //
+                // 🔴 Local first. Signing out cannot be made to wait on the site being up, or a
+                // machine somebody is trying to leave stays signed in because the network is down.
+                var token = settings.ApiToken;
+
                 settings.ApiToken = null;
                 settings.ApiUser = null;
                 settings.ApiTokenServer = null;
                 _store.Save(settings);
                 Saved = true;
                 ShowAccount();
+
+                if (string.IsNullOrWhiteSpace(token)) return;
+
+                if (!await new DeviceFlowClient().RevokeAsync(token).ConfigureAwait(true))
+                {
+                    // Said, not swallowed: the access is still live and the only way to cut it now
+                    // is from the site.
+                    _accountPanel.Children.Add(Note(
+                        "Signed out here, but the site could not be reached. Cut this access from "
+                        + "Linked devices on your account.", "StatusWarning"));
+                }
             };
 
             _accountPanel.Children.Add(signOut);
-            _accountPanel.Children.Add(Note(
-                "Signing out here forgets the token on this machine. To cut it off everywhere, "
-                + "revoke it from your account on the site.", "TextMuted"));
+            _accountPanel.Children.Add(signOutNote);
             return;
         }
 

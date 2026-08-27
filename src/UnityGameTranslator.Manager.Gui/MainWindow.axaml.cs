@@ -715,6 +715,21 @@ public partial class MainWindow : Window
     {
         await _lineages.EnsureAsync(ApiTokenForLookups);
 
+        // 🔴 The site refused the token: it was revoked from the account, or it expired. Keeping it
+        // would leave this tool claiming to be signed in with a credential that no longer opens
+        // anything — and the person who cut it from their account would see nothing change here.
+        //
+        // ⚠ Forgotten locally and not handed back: there is nothing left to revoke, and asking
+        // would only tell a site that has already decided.
+        if (_lineages.TokenRefused)
+        {
+            var settings = _settings.Current;
+            settings.ApiToken = null;
+            settings.ApiUser = null;
+            settings.ApiTokenServer = null;
+            _settings.Save(settings);
+        }
+
         // Redrawn because the answer changes what a row says — the same reason the loader builds
         // redraw, and the same shape.
         BuildFilterBar();

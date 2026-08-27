@@ -77,21 +77,54 @@ public static class Http
             catch { /* a handler that refuses it still works, uncompressed */ }
         }
 
-        var client = handler is null ? new HttpClient(DefaultHandler()) : new HttpClient(handler);
+        // 🔴 **The machine header is added when the request LEAVES, never when the client is made.**
+        //
+        // It was a default header at first, and that was a real defect, found in production on
+        // 2026-08-27: `MainWindow` holds `AccountLineages` as a FIELD INITIALISER, so its client is
+        // built while the window is being constructed — before the line further down that creates
+        // the SettingsStore and therefore before DeviceId exists. That one client carries every
+        // authenticated call, so the Manager's own access was the one thing that never declared its
+        // machine, and it sat in the "not named" heap looking exactly like a failure of the whole
+        // idea.
+        //
+        // ⚠ Reordering the fields would have worked and would have been wrong: the next long-lived
+        // client somebody adds brings the bug straight back, silently. Reading the value at send
+        // time makes the order stop mattering.
+        //
+        // ⚠ Same shape as the note on Proxy above ("clients created afterwards"), which is exactly
+        // the trap this avoids: a value snapshotted at construction is a value that can be missing
+        // from precisely the client that matters.
+        var client = new HttpClient(new DeviceHeader(handler ?? DefaultHandler()));
 
         client.Timeout = timeout;
         client.DefaultRequestHeaders.UserAgent.ParseAdd(
             $"UnityGameTranslatorManager/{BuildInfo.Version}");
 
-        // Which machine is calling — a drawn number, never a measurement. Put on every client made
-        // here so no caller has to remember it; the site salts it per account before storing it, so
-        // the same machine under two accounts leaves two unrelated values.
-        if (Settings.MachineIdentity.IsWellFormed(DeviceId))
-        {
-            client.DefaultRequestHeaders.TryAddWithoutValidation("X-UGT-Device", DeviceId);
-        }
-
         return client;
+    }
+
+    /// <summary>
+    /// Puts the machine identifier on each request as it goes out.
+    /// </summary>
+    /// <remarks>
+    /// ⚠ Per request, never per client — see the note where this is wired in. And it never replaces
+    /// a header a caller set itself: a caller that says something specific about a request knows
+    /// more than this does.
+    /// </remarks>
+    private sealed class DeviceHeader(HttpMessageHandler inner) : DelegatingHandler(inner)
+    {
+        internal const string Name = "X-UGT-Device";
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (Settings.MachineIdentity.IsWellFormed(DeviceId) && !request.Headers.Contains(Name))
+            {
+                request.Headers.TryAddWithoutValidation(Name, DeviceId);
+            }
+
+            return base.SendAsync(request, cancellationToken);
+        }
     }
 
     /// <summary>

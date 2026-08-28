@@ -112,13 +112,14 @@ public sealed class GameConfigWriter
     public const string ApiUserKey = "api_user";
 
     /// <summary>
-    /// Where this game's config.json lives. One composition, because three callers needing the
-    /// same path is exactly how two of them end up disagreeing about it.
+    /// Where this game's config.json lives, or null when the catalogue would put it outside the
+    /// game (<see cref="UserDataInventory.DataFolder"/>). One composition, because three callers
+    /// needing the same path is exactly how two of them end up disagreeing about it.
     /// </summary>
-    private static string ConfigPath(string gamePath, LoaderDescriptor descriptor) =>
-        Path.Combine(gamePath,
-            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar),
-            LocalTranslationProbe.ConfigFileName);
+    private static string? ConfigPath(string gamePath, LoaderDescriptor descriptor) =>
+        UserDataInventory.DataFolder(gamePath, descriptor) is { } folder
+            ? Path.Combine(folder, LocalTranslationProbe.ConfigFileName)
+            : null;
 
     /// <summary>
     /// What this game carries right now under one of our own keys, or null when there is nothing
@@ -138,7 +139,7 @@ public sealed class GameConfigWriter
         if (descriptor is null) return null;
 
         var path = ConfigPath(gamePath, descriptor);
-        if (!File.Exists(path)) return null;
+        if (path is null || !File.Exists(path)) return null;
 
         try
         {
@@ -178,7 +179,7 @@ public sealed class GameConfigWriter
         if (descriptor is null) return GameConfigSnapshot.Unknown;
 
         var path = ConfigPath(gamePath, descriptor);
-        if (!File.Exists(path)) return GameConfigSnapshot.Unknown;
+        if (path is null || !File.Exists(path)) return GameConfigSnapshot.Unknown;
 
         try
         {
@@ -544,9 +545,12 @@ public sealed class GameConfigWriter
                                    InstallerSettings settings, string targetLanguage,
                                    bool skipWizard = true, GamePreference? perGame = null)
     {
-        var folder = Path.Combine(gamePath,
-            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar));
-        var path = ConfigPath(gamePath, descriptor);
+        var folder = UserDataInventory.DataFolder(gamePath, descriptor);
+        if (folder is null)
+            return new ConfigWriteResult(false, Array.Empty<string>(), false,
+                UserDataInventory.OutsideGameRefusal);
+
+        var path = Path.Combine(folder, LocalTranslationProbe.ConfigFileName);
 
         try
         {
@@ -600,9 +604,12 @@ public sealed class GameConfigWriter
     public ConfigWriteResult ApplyOne(string gamePath, LoaderDescriptor descriptor,
                                       string key, string? value, string label)
     {
-        var folder = Path.Combine(gamePath,
-            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar));
-        var path = ConfigPath(gamePath, descriptor);
+        var folder = UserDataInventory.DataFolder(gamePath, descriptor);
+        if (folder is null)
+            return new ConfigWriteResult(false, Array.Empty<string>(), false,
+                UserDataInventory.OutsideGameRefusal);
+
+        var path = Path.Combine(folder, LocalTranslationProbe.ConfigFileName);
 
         try
         {
@@ -659,7 +666,7 @@ public sealed class GameConfigWriter
     {
         var path = ConfigPath(gamePath, descriptor);
 
-        if (!File.Exists(path)) return Array.Empty<ConfigDifference>();
+        if (path is null || !File.Exists(path)) return Array.Empty<ConfigDifference>();
 
         JsonObject root;
         try

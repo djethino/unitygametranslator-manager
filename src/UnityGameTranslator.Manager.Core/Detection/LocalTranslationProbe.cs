@@ -1,4 +1,5 @@
 ﻿using System.Text.Json;
+using UnityGameTranslator.Manager.Core.Install;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Common;
 
@@ -40,10 +41,9 @@ public static class LocalTranslationProbe
     public static (string? Source, string? Target) ReadLanguages(string gamePath,
                                                                  LoaderDescriptor descriptor)
     {
-        var path = Path.Combine(gamePath,
-            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar), ConfigFileName);
+        var path = DataFile(gamePath, descriptor, ConfigFileName);
 
-        if (!File.Exists(path)) return (null, null);
+        if (path is null || !File.Exists(path)) return (null, null);
 
         try
         {
@@ -115,9 +115,8 @@ public static class LocalTranslationProbe
     /// </summary>
     public static string? ContentHashOf(string gamePath, LoaderDescriptor descriptor)
     {
-        var path = Path.Combine(gamePath,
-            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar),
-            TranslationFileName);
+        var path = DataFile(gamePath, descriptor, TranslationFileName);
+        if (path is null) return null;
 
         FileInfo file;
         try
@@ -146,11 +145,9 @@ public static class LocalTranslationProbe
 
     public static string? ComputeContentHash(string gamePath, LoaderDescriptor descriptor)
     {
-        var path = Path.Combine(gamePath,
-            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar),
-            TranslationFileName);
+        var path = DataFile(gamePath, descriptor, TranslationFileName);
 
-        if (!File.Exists(path)) return null;
+        if (path is null || !File.Exists(path)) return null;
 
         try
         {
@@ -240,7 +237,8 @@ public static class LocalTranslationProbe
     /// </summary>
     public static int? CountChangedSinceAncestor(string gamePath, LoaderDescriptor descriptor)
     {
-        var folder = Path.Combine(gamePath, descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar));
+        var folder = UserDataInventory.DataFolder(gamePath, descriptor);
+        if (folder is null) return null;
 
         var ancestor = ReadLines(Path.Combine(folder, AncestorFileName));
         if (ancestor is null) return null;
@@ -314,10 +312,9 @@ public static class LocalTranslationProbe
     public static (string? User, string? Server) ReadSiteAccount(string gamePath,
                                                                  LoaderDescriptor descriptor)
     {
-        var path = Path.Combine(gamePath,
-            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar), ConfigFileName);
+        var path = DataFile(gamePath, descriptor, ConfigFileName);
 
-        if (!File.Exists(path)) return (null, null);
+        if (path is null || !File.Exists(path)) return (null, null);
 
         try
         {
@@ -358,11 +355,9 @@ public static class LocalTranslationProbe
 
     public static LocalTranslation? Read(string gamePath, LoaderDescriptor descriptor)
     {
-        var path = Path.Combine(gamePath,
-            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar),
-            TranslationFileName);
+        var path = DataFile(gamePath, descriptor, TranslationFileName);
 
-        if (!File.Exists(path)) return null;
+        if (path is null || !File.Exists(path)) return null;
 
         try
         {
@@ -601,7 +596,15 @@ public static class LocalTranslationProbe
         FindInstalledPlugin(gamePath, descriptor)?.Version;
 
     public static bool HasConfig(string gamePath, LoaderDescriptor descriptor) =>
-        File.Exists(Path.Combine(gamePath,
-            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar),
-            ConfigFileName));
+        DataFile(gamePath, descriptor, ConfigFileName) is { } path && File.Exists(path);
+
+    /// <summary>
+    /// One of the mod's files in this game, composed through the guard — or null when the
+    /// catalogue's `userdata_dir` would leave the game (<see cref="UserDataInventory.DataFolder"/>).
+    /// A null reads as "no such file", which for a reader is exactly what it is.
+    /// </summary>
+    private static string? DataFile(string gamePath, LoaderDescriptor descriptor, string fileName) =>
+        UserDataInventory.DataFolder(gamePath, descriptor) is { } folder
+            ? Path.Combine(folder, fileName)
+            : null;
 }

@@ -203,6 +203,10 @@ else {
     New-Item -ItemType Directory -Path $releasesDir | Out-Null
 }
 
+# A remote string must not become a path outside the game. The compiler cannot see it; this can.
+& "$PSScriptRoot/check-path-guard.ps1"
+if ($LASTEXITCODE -ne 0) { throw "check-path-guard.ps1 refused the build" }
+
 foreach ($target in $targets) {
     $rid = $target.Rid
     Write-Host "`nPublishing $rid..." -ForegroundColor Yellow

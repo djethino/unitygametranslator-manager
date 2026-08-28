@@ -98,9 +98,14 @@ public sealed class EditSessionRunner
         }
 
         var gamePath = game.Path;
-        var path = Path.Combine(gamePath,
-            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar),
-            LocalTranslationProbe.TranslationFileName);
+        var folder = UserDataInventory.DataFolder(gamePath, descriptor);
+        if (folder is null)
+        {
+            LastError = UserDataInventory.OutsideGameRefusal;
+            return null;
+        }
+
+        var path = Path.Combine(folder, LocalTranslationProbe.TranslationFileName);
 
         if (!File.Exists(path))
         {
@@ -230,15 +235,17 @@ public sealed class EditSessionRunner
     public async Task TakeOverAsync(GameInstall game, LoaderDescriptor descriptor, string modKey,
                                     CancellationToken ct = default)
     {
-        var path = Path.Combine(game.Path,
-            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar),
-            LocalTranslationProbe.TranslationFileName);
+        // A refused folder is not a reason to leave the session open: the write below refuses on
+        // its own, and closing still drains what the browser saved into the site's own copy.
+        var path = UserDataInventory.DataFolder(game.Path, descriptor) is { } folder
+            ? Path.Combine(folder, LocalTranslationProbe.TranslationFileName)
+            : null;
 
         var received = await _client.FetchAsync(modKey, ct).ConfigureAwait(false);
 
         if (received is not null)
         {
-            var onDisk = File.Exists(path) ? File.ReadAllText(path) : "{}";
+            var onDisk = path is not null && File.Exists(path) ? File.ReadAllText(path) : "{}";
             _installer.WriteEditedSession(game, descriptor, onDisk, received);
         }
 
@@ -256,9 +263,10 @@ public sealed class EditSessionRunner
     /// </summary>
     public bool Resume(GameInstall game, LoaderDescriptor descriptor, string modKey)
     {
-        var path = Path.Combine(game.Path,
-            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar),
-            LocalTranslationProbe.TranslationFileName);
+        var folder = UserDataInventory.DataFolder(game.Path, descriptor);
+        if (folder is null) return false;
+
+        var path = Path.Combine(folder, LocalTranslationProbe.TranslationFileName);
 
         if (!File.Exists(path)) return false;
 

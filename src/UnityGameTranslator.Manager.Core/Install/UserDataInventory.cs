@@ -36,28 +36,50 @@ public sealed record UserDataGroup(string Label, string Consequence, IReadOnlyLi
 public static class UserDataInventory
 {
     /// <summary>
-    /// Where the mod keeps its own files for this game, or null when there is none.
+    /// The folder the mod's data belongs in for this game, whether or not it exists yet — or null
+    /// when the catalogue's `userdata_dir` would leave the game.
     ///
-    /// 🔴 **Resolved through the guard, and this is the choke point for it.** `userdata_dir` comes
-    /// from the FETCHED catalog — GitHub, then the site mirror, then a cache — so it is a remote
-    /// string, and `Path.Combine(gamePath, "../somewhere")` resolves happily outside the game the
-    /// user chose. Everything that reads or DELETES the mod's data comes through here: this method,
-    /// <see cref="Scan"/>, the backups store and the uninstall. One check here covers them all.
+    /// 🔴 **Every path composed from `userdata_dir` starts here, readers and writers alike.**
+    /// `userdata_dir` comes from the FETCHED catalog — GitHub, then the site mirror, then a cache —
+    /// so it is a remote string, and `Path.Combine(gamePath, "../somewhere")` resolves happily
+    /// outside the game the user chose. <see cref="FolderFor"/> was the choke point for the
+    /// inventory, the backups and the uninstall — while six other classes composed the same path
+    /// themselves, so "Apply Mod defaults" and "Take translation" would have written, and "Remove
+    /// translation" deleted, wherever a fetched catalogue pointed. The guard held at the border
+    /// and not in the middle. Found by the audit of 2026-08-27; `check-path-guard.ps1` refuses a
+    /// build that composes the path anywhere but here.
     ///
-    /// ⚠ It used to combine without checking, and the per-file guard downstream only verified that
-    /// a file sat inside this folder — which says nothing when the folder itself is elsewhere.
-    /// Demonstrated: with a catalog naming "../ESCAPED", an uninstall deleted the config and the
-    /// fonts from a folder outside the game.
+    /// ⚠ Existence is deliberately NOT checked: writers create the folder. <see cref="FolderFor"/>
+    /// is this plus the existence test, for callers that only ever read what is there.
     ///
     /// ⚠ An empty `userdata_dir` is refused too, deliberately. It would resolve to the game root,
     /// and then "the mod's data" would be the whole game.
     /// </summary>
+    public static string? DataFolder(string gamePath, LoaderDescriptor descriptor) =>
+        new FileOperations(gamePath).TryResolveInsideGame(descriptor.UserDataDir, out var folder)
+            ? folder
+            : null;
+
+    /// <summary>
+    /// What a screen says when <see cref="DataFolder"/> refused. Names the cause — the catalogue,
+    /// not the game — because the person can do nothing about the game folder they chose.
+    /// </summary>
+    public const string OutsideGameRefusal =
+        "The loader catalogue places this game's mod data outside the game folder. Nothing was touched.";
+
+    /// <summary>
+    /// Where the mod keeps its own files for this game, or null when there is none.
+    ///
+    /// ⚠ It used to combine without checking, and the per-file guard downstream only verified that
+    /// a file sat inside this folder — which says nothing when the folder itself is elsewhere.
+    /// Demonstrated: with a catalog naming "../ESCAPED", an uninstall deleted the config and the
+    /// fonts from a folder outside the game. The check now lives in <see cref="DataFolder"/>.
+    /// </summary>
     public static string? FolderFor(string gamePath, LoaderDescriptor descriptor)
     {
-        if (!new FileOperations(gamePath).TryResolveInsideGame(descriptor.UserDataDir, out var folder))
-            return null;
+        var folder = DataFolder(gamePath, descriptor);
 
-        return Directory.Exists(folder) ? folder : null;
+        return folder is not null && Directory.Exists(folder) ? folder : null;
     }
 
     public static IReadOnlyList<UserDataGroup> Scan(string gamePath, LoaderDescriptor descriptor)

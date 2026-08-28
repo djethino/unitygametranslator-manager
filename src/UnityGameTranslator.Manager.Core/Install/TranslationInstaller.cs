@@ -129,8 +129,10 @@ public sealed class TranslationInstaller
         if (WhyNotNow(game) is { } refusal) return new TranslationWriteResult(false, false, refusal);
 
         var gamePath = game.Path;
-        var folder = Path.Combine(gamePath,
-            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar));
+        var folder = UserDataInventory.DataFolder(gamePath, descriptor);
+        if (folder is null)
+            return new TranslationWriteResult(false, false, UserDataInventory.OutsideGameRefusal);
+
         var target = Path.Combine(folder, LocalTranslationProbe.TranslationFileName);
 
         try
@@ -217,8 +219,10 @@ public sealed class TranslationInstaller
     {
         if (WhyNotNow(game) is { } refusal) return new TranslationWriteResult(false, false, refusal);
 
-        var folder = Path.Combine(game.Path,
-            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar));
+        var folder = UserDataInventory.DataFolder(game.Path, descriptor);
+        if (folder is null)
+            return new TranslationWriteResult(false, false, UserDataInventory.OutsideGameRefusal);
+
         var target = Path.Combine(folder, LocalTranslationProbe.TranslationFileName);
 
         try
@@ -313,8 +317,10 @@ public sealed class TranslationInstaller
         if (WhyNotNow(game) is { } refusal) return new TranslationWriteResult(false, false, refusal);
 
         var gamePath = game.Path;
-        var folder = Path.Combine(gamePath,
-            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar));
+        var folder = UserDataInventory.DataFolder(gamePath, descriptor);
+        if (folder is null)
+            return new TranslationWriteResult(false, false, UserDataInventory.OutsideGameRefusal);
+
         var target = Path.Combine(folder, LocalTranslationProbe.TranslationFileName);
 
         try
@@ -496,18 +502,16 @@ public sealed class TranslationInstaller
         return found.OrderByDescending(b => b.Replaced).ToList();
     }
 
-    private static string? BackupFolder(string gamePath, LoaderDescriptor descriptor)
-    {
-        if (string.IsNullOrWhiteSpace(descriptor.UserDataDir)) return null;
+    private static string? BackupFolder(string gamePath, LoaderDescriptor descriptor) =>
+        UserDataInventory.DataFolder(gamePath, descriptor) is { } folder
+            ? Path.Combine(folder, BackupFolderName)
+            : null;
 
-        return Path.Combine(gamePath,
-            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar), BackupFolderName);
-    }
-
-    private static string TargetPath(string gamePath, LoaderDescriptor descriptor) =>
-        Path.Combine(gamePath,
-            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar),
-            LocalTranslationProbe.TranslationFileName);
+    /// <summary>The translation file, or null when the catalogue would put it outside the game.</summary>
+    private static string? TargetPath(string gamePath, LoaderDescriptor descriptor) =>
+        UserDataInventory.DataFolder(gamePath, descriptor) is { } folder
+            ? Path.Combine(folder, LocalTranslationProbe.TranslationFileName)
+            : null;
 
     /// <summary>The lineage a set-aside file belongs to, so a screen can say whether it is ours.</summary>
     private static string? UuidIn(string path)
@@ -543,6 +547,8 @@ public sealed class TranslationInstaller
         if (WhyNotNow(game) is { } refusal) return new TranslationWriteResult(false, false, refusal);
 
         var target = TargetPath(game.Path, descriptor);
+        if (target is null)
+            return new TranslationWriteResult(false, false, UserDataInventory.OutsideGameRefusal);
         if (!File.Exists(target))
             return new TranslationWriteResult(false, false, "This game holds no translation.");
 
@@ -585,10 +591,9 @@ public sealed class TranslationInstaller
     public static TranslationWriteResult Restore(string gamePath, LoaderDescriptor descriptor,
                                                  string backupPath)
     {
-        if (string.IsNullOrWhiteSpace(descriptor.UserDataDir))
-            return new TranslationWriteResult(false, false, "This game has no place for a translation.");
-
         var target = TargetPath(gamePath, descriptor);
+        if (target is null)
+            return new TranslationWriteResult(false, false, UserDataInventory.OutsideGameRefusal);
 
         if (!File.Exists(backupPath))
             return new TranslationWriteResult(false, false, "That copy is no longer on disk.");

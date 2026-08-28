@@ -443,8 +443,13 @@ public sealed class InstallEngine
         // translations live, which no install may touch.
         foreach (var stray in plan.StrayPluginDirectories)
         {
-            var directory = Path.Combine(plan.Game.Path,
-                stray.Replace('/', Path.DirectorySeparatorChar));
+            // Through the guard like every path the catalogue names: a stray is another loader's
+            // plugin_dir, and this is the one delete an install performs.
+            if (!files.TryResolveInsideGame(stray, out var directory))
+            {
+                Status?.Invoke($"Ignored a plugin location outside the game: {stray}.");
+                continue;
+            }
 
             var copy = Path.Combine(directory, LocalTranslationProbe.PluginAssemblyName);
 

@@ -1728,9 +1728,10 @@ public partial class MainWindow : Window
             var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == detected?.Id);
             if (descriptor is null) return default;
 
-            var path = System.IO.Path.Combine(game.Path,
-                descriptor.UserDataDir.Replace('/', System.IO.Path.DirectorySeparatorChar),
-                "translations.json");
+            var folder = UserDataInventory.DataFolder(game.Path, descriptor);
+            if (folder is null) return default;
+
+            var path = System.IO.Path.Combine(folder, LocalTranslationProbe.TranslationFileName);
 
             return File.Exists(path) ? File.GetLastWriteTimeUtc(path) : default;
         }
@@ -4342,16 +4343,17 @@ public partial class MainWindow : Window
 
         if (descriptor is not null)
         {
-            var pluginDir = System.IO.Path.Combine(game.Path,
-                descriptor.PluginDir.Replace('/', System.IO.Path.DirectorySeparatorChar));
+            // Normalised like DataFolder is, so the two compare as paths and not as spellings.
+            var pluginDir = System.IO.Path.GetFullPath(System.IO.Path.Combine(game.Path,
+                descriptor.PluginDir.Replace('/', System.IO.Path.DirectorySeparatorChar)));
 
-            var dataDir = System.IO.Path.Combine(game.Path,
-                descriptor.UserDataDir.Replace('/', System.IO.Path.DirectorySeparatorChar));
+            var dataDir = UserDataInventory.DataFolder(game.Path, descriptor);
 
             if (System.IO.Directory.Exists(pluginDir)) text.Children.Add(FolderRow(pluginDir, "the mod"));
 
             // Only when it is genuinely another place.
-            if (!string.Equals(pluginDir, dataDir, StringComparison.OrdinalIgnoreCase)
+            if (dataDir is not null
+                && !string.Equals(pluginDir, dataDir, StringComparison.OrdinalIgnoreCase)
                 && System.IO.Directory.Exists(dataDir))
             {
                 text.Children.Add(FolderRow(dataDir, "its settings and translation"));
@@ -5239,8 +5241,13 @@ public partial class MainWindow : Window
                 return;
             }
 
-            var folder = Path.Combine(report.Game.Path,
-                descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar));
+            var folder = UserDataInventory.DataFolder(report.Game.Path, descriptor);
+            if (folder is null)
+            {
+                await ConfirmationWindow.TellAsync(this, "Could not read this game's translation",
+                    UserDataInventory.OutsideGameRefusal);
+                return;
+            }
 
             var localPath = Path.Combine(folder, LocalTranslationProbe.TranslationFileName);
             var ancestorPath = Path.Combine(folder, LocalTranslationProbe.AncestorFileName);
@@ -5508,9 +5515,15 @@ public partial class MainWindow : Window
         var token = _settings.Current.ApiToken;
         if (string.IsNullOrWhiteSpace(token)) return;
 
-        var path = Path.Combine(report.Game.Path,
-            descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar),
-            LocalTranslationProbe.TranslationFileName);
+        var folder = UserDataInventory.DataFolder(report.Game.Path, descriptor);
+        if (folder is null)
+        {
+            await ConfirmationWindow.TellAsync(this, "The file could not be read",
+                UserDataInventory.OutsideGameRefusal);
+            return;
+        }
+
+        var path = Path.Combine(folder, LocalTranslationProbe.TranslationFileName);
 
         string content;
         try

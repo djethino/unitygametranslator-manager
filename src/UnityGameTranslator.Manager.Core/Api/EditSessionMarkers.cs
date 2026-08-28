@@ -1,6 +1,7 @@
 using System.Text.Json;
 using UnityGameTranslator.Common;
 using UnityGameTranslator.Manager.Core.Detection;
+using UnityGameTranslator.Manager.Core.Install;
 using UnityGameTranslator.Manager.Core.Model;
 
 namespace UnityGameTranslator.Manager.Core.Api;
@@ -58,15 +59,19 @@ public static class EditSessionMarkers
     /// one file. And the uninstall sweep files anything starting with the translation's name under
     /// "Translation", so this is removed with the data it belongs to without a list to maintain.
     /// </summary>
-    public static string PathFor(string gamePath, LoaderDescriptor descriptor) =>
-        Path.Combine(gamePath,
-                     descriptor.UserDataDir.Replace('/', Path.DirectorySeparatorChar),
-                     LocalTranslationProbe.TranslationFileName + EditSessions.MarkerSuffix);
+    ///
+    /// Null when the catalogue would put it outside the game — see
+    /// <see cref="UserDataInventory.DataFolder"/>.
+    public static string? PathFor(string gamePath, LoaderDescriptor descriptor) =>
+        UserDataInventory.DataFolder(gamePath, descriptor) is { } folder
+            ? Path.Combine(folder, LocalTranslationProbe.TranslationFileName + EditSessions.MarkerSuffix)
+            : null;
 
     /// <summary>The marker for this game, or null when there is none.</summary>
     public static EditSessionMarker? Read(string gamePath, LoaderDescriptor descriptor)
     {
         var path = PathFor(gamePath, descriptor);
+        if (path is null) return null;
 
         try
         {
@@ -113,6 +118,7 @@ public static class EditSessionMarkers
     public static string? Write(string gamePath, LoaderDescriptor descriptor, string modKey)
     {
         var path = PathFor(gamePath, descriptor);
+        if (path is null) return UserDataInventory.OutsideGameRefusal;
 
         try
         {
@@ -143,7 +149,7 @@ public static class EditSessionMarkers
         try
         {
             var path = PathFor(gamePath, descriptor);
-            if (File.Exists(path)) File.Delete(path);
+            if (path is not null && File.Exists(path)) File.Delete(path);
         }
         catch
         {

@@ -34,8 +34,10 @@ can: **whether the community has already translated this game**.
 
 - Manage other people's mods — this is not a mod manager
 - Host anything: every download comes from the official source, checksum verified
-- Collect anything: no telemetry, no analytics, no identifier of any kind sent anywhere. If
-  something goes wrong, `diagnose` prints a report *you* choose to share
+- Collect anything: no telemetry, no analytics. The one identifier that ever leaves is a random
+  number drawn on first run, sent to our own site with your account so your games can be grouped
+  by machine — never to anyone else, and never on an anonymous call. If something goes wrong,
+  `diagnose` prints a report *you* choose to share
 - Require an account: finding, downloading and installing translations is anonymous. Signing in
   exists, and is only ever needed to publish your own — the tool is complete without it
 

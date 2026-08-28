@@ -115,15 +115,53 @@ public static class Http
     {
         internal const string Name = "X-UGT-Device";
 
+        /// <summary>
+        /// The one host the identifier is for. Compiled in, so a build pointed at a local site
+        /// sends it there and nowhere else.
+        /// </summary>
+        private static readonly string? SiteHost =
+            Uri.TryCreate(BuildInfo.ApiBaseUrl, UriKind.Absolute, out var site) ? site.Host : null;
+
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            if (Settings.MachineIdentity.IsWellFormed(DeviceId) && !request.Headers.Contains(Name))
+            if (ReadsTheHeader(request)
+                && Settings.MachineIdentity.IsWellFormed(DeviceId)
+                && !request.Headers.Contains(Name))
             {
                 request.Headers.TryAddWithoutValidation(Name, DeviceId);
             }
 
             return base.SendAsync(request, cancellationToken);
+        }
+
+        /// <summary>
+        /// Whether whoever answers this request will read the identifier at all.
+        ///
+        /// 🔴 **Our site, and only the calls where it looks.** This handler sits in the one
+        /// factory every client comes from — the catalogue on GitHub, the loader builds, the key
+        /// tests at Google and DeepL, the Ollama installer, whatever AI server somebody typed in —
+        /// and for a day it put the identifier on all of them. A random number that says nothing
+        /// about the machine still says "the same machine as last time", and handing that to four
+        /// third parties is the tracking the README promises does not happen. Found by the audit
+        /// of 2026-08-27.
+        ///
+        /// The site reads the header in exactly two places: beside a bearer token, where it groups
+        /// this account's accesses, and on `POST /auth/device`, the one anonymous call that has to
+        /// name the machine so the per-game cap can act. An anonymous search does not need it, so
+        /// it does not get it: somebody who never signed in stays a stranger from one launch to
+        /// the next, which is the whole point of not signing in.
+        ///
+        /// ⚠ Default headers are merged into the request before it reaches a handler, so a token
+        /// set on the client is visible here.
+        /// </summary>
+        private static bool ReadsTheHeader(HttpRequestMessage request)
+        {
+            if (SiteHost is null || request.RequestUri is not { } uri) return false;
+            if (!string.Equals(uri.Host, SiteHost, StringComparison.OrdinalIgnoreCase)) return false;
+
+            return request.Headers.Authorization is not null
+                || uri.AbsolutePath.EndsWith("/auth/device", StringComparison.Ordinal);
         }
     }
 

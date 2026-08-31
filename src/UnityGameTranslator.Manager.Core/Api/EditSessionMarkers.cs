@@ -80,14 +80,10 @@ public static class EditSessionMarkers
             using var document = JsonDocument.Parse(File.ReadAllText(path));
             var root = document.RootElement;
 
-            var holder =
-                string.Equals(Text(root, EditSessions.MarkerHolderField),
-                              EditSessions.EditSessionHolder.Manager.ToString(),
-                              StringComparison.OrdinalIgnoreCase)
-                    ? EditSessions.EditSessionHolder.Manager
-                    // Absent on a marker the mod wrote before the field existed, and the mod was
-                    // the only writer then — so that is the honest reading, not a guess.
-                    : EditSessions.EditSessionHolder.Game;
+            // ⚠ Read through the socle, not compared here. The mod had the same three lines, and
+            // the request that opens a session would have made a third copy — see ParseHolder for
+            // why absent, misspelt or planted all read as the game.
+            var holder = EditSessions.ParseHolder(Text(root, EditSessions.MarkerHolderField));
 
             DateTimeOffset? opened = null;
             if (DateTimeOffset.TryParse(Text(root, EditSessions.MarkerOpenedField), out var parsed))
@@ -130,7 +126,7 @@ public static class EditSessionMarkers
             writer.WriteStartObject();
             writer.WriteString(EditSessions.MarkerKeyField, Secrets.Protect(modKey));
             writer.WriteString(EditSessions.MarkerHolderField,
-                               EditSessions.EditSessionHolder.Manager.ToString());
+                               EditSessions.Serialize(EditSessions.EditSessionHolder.Manager));
             writer.WriteString(EditSessions.MarkerOpenedField,
                                DateTimeOffset.UtcNow.ToString("o"));
             writer.WriteEndObject();

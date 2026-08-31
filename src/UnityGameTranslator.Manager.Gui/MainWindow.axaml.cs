@@ -243,6 +243,12 @@ public partial class MainWindow : Window
 
         AdornToolbar();
 
+        // 🔴 A window closed while a browser editor is open used to leave that session running.
+        // The follower lives in a detached task, so the process exiting simply took it — the site
+        // kept the session for its whole inactivity window, the page still open on it went on
+        // accepting saves, and nothing on this machine was ever going to fetch them.
+        Closing += OnClosingWithEditorOpen;
+
         // ⚠ Nothing to manage until the machine has been read once: the folder list is read by the
         // inventory, and the inventory does not exist until the first scan has run. Pressing this
         // during the opening sweep — several seconds, with the window fully up — went straight into
@@ -5149,6 +5155,41 @@ public partial class MainWindow : Window
             }
         });
     }
+
+    /// <summary>
+    /// Close the browser session before letting the window go.
+    ///
+    /// 🔴 **The wait is not politeness, it is the drain.** CloseAsync fetches what the browser
+    /// saved and writes it into the game BEFORE deleting the session — saves made since the last
+    /// tick exist in the session and nowhere else. Letting the window close immediately would
+    /// destroy work the site told somebody was saved, which is the exact defect that drain was
+    /// written to fix.
+    ///
+    /// ⚠ Bounded, and it closes either way. A follower that died without tidying up must not be
+    /// able to hold a window open; the session then expires on the site on its own, which is the
+    /// same outcome a crash already has.
+    ///
+    /// ⚠ Not a substitute for <see cref="EditSessionRunner.Resume"/>: a kill or a power cut never
+    /// reaches this handler, and picking the session back up at the next start is what covers
+    /// those.
+    /// </summary>
+    private async void OnClosingWithEditorOpen(object? sender, WindowClosingEventArgs e)
+    {
+        if (_editSession is null || _closingForReal) return;
+
+        e.Cancel = true;
+
+        await StopLocalEditorAsync();
+
+        for (var waited = 0; waited < 30 && _editSession is not null; waited++)
+            await Task.Delay(100);
+
+        _closingForReal = true;
+        Close();
+    }
+
+    /// <summary>Set once the editor has been given its chance to drain, so Close() goes through.</summary>
+    private bool _closingForReal;
 
     /// <summary>
     /// Stop following, and close the session on the site.

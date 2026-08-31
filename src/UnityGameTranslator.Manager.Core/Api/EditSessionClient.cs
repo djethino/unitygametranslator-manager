@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using UnityGameTranslator.Common;
 using UnityGameTranslator.Manager.Core.Net;
 
 namespace UnityGameTranslator.Manager.Core.Api;
@@ -112,6 +113,12 @@ public sealed class EditSessionClient
                 WriteOptional(writer, "target_language", targetLanguage);
                 writer.WriteBoolean("ai_available", aiAvailable);
                 WriteOptional(writer, "ai_model", aiModel);
+                // 🔴 Who the editor page is talking to. Without it the site assumed the mod — the
+                // only caller when the feature was written — and told somebody editing a CLOSED
+                // game that the game was disconnected and to restart it, which is precisely what
+                // this session forbids. Spelled by the socle, like the marker beside the file.
+                writer.WriteString(EditSessions.HolderField,
+                                   EditSessions.Serialize(EditSessions.EditSessionHolder.Manager));
                 writer.WriteEndObject();
             }
 
@@ -171,14 +178,27 @@ public sealed class EditSessionClient
     /// </summary>
     public bool SessionGone { get; private set; }
 
-    public async Task<EditSessionState?> PollAsync(string modKey, CancellationToken ct = default)
+    /// <param name="following">
+    /// True when this call is the beat of a session we are APPLYING — it tells the site somebody
+    /// is at the other end, so the editor page can show a live link.
+    ///
+    /// 🔴 **False when merely inspecting**, and the difference is not cosmetic. This same call is
+    /// how a session opened by the OTHER product is checked before offering to take it over. Were
+    /// presence claimed on every poll, asking whether an abandoned session is finally dead would
+    /// revive it, and the page would show a holder that is gone as connected — the very defect
+    /// this parameter exists to remove. Asking is not being present; the site says so in its own
+    /// comment on that route.
+    /// </param>
+    public async Task<EditSessionState?> PollAsync(string modKey, bool following = false,
+                                                   CancellationToken ct = default)
     {
         LastError = null;
         SessionGone = false;
 
         try
         {
-            var url = $"{BuildInfo.ApiBaseUrl}/edit-session/{Uri.EscapeDataString(modKey)}/state";
+            var url = $"{BuildInfo.ApiBaseUrl}/edit-session/{Uri.EscapeDataString(modKey)}/state"
+                    + (following ? "?following=1" : string.Empty);
             using var response = await _http.GetAsync(url, ct).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)

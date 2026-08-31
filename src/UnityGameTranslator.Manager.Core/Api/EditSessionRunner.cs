@@ -200,7 +200,10 @@ public sealed class EditSessionRunner
                 null, Ours: false);
         }
 
-        var state = await _client.PollAsync(marker.ModKey!, ct).ConfigureAwait(false);
+        // ⚠ NOT as a follower: this is a question about somebody else's session, and claiming
+        // presence here would make an abandoned session look alive to the page still open on it.
+        var state = await _client.PollAsync(marker.ModKey!, following: false, ct)
+            .ConfigureAwait(false);
 
         // ⚠ Gone is the ONLY reading that clears a marker. A network hiccup answers null too, and
         // treating that as "nobody is editing" would open a second session over a live one — the
@@ -307,7 +310,11 @@ public sealed class EditSessionRunner
             {
                 await Task.Delay(PollInterval, ct).ConfigureAwait(false);
 
-                var state = await _client.PollAsync(session.ModKey, ct).ConfigureAwait(false);
+                // ⚠ As a FOLLOWER: this beat is what tells the site somebody is applying, so the
+                // editor page can show a live link instead of announcing that nothing reaches the
+                // game. It costs nothing extra — the request was already being made.
+                var state = await _client.PollAsync(session.ModKey, following: true, ct)
+                    .ConfigureAwait(false);
 
                 if (state is null)
                 {
@@ -323,7 +330,36 @@ public sealed class EditSessionRunner
                     continue;
                 }
 
-                if (lastHash is not null && state.ContentHash is not null && state.ContentHash != lastHash)
+                // 🔴 **What the site is holding that never reached this machine.** The hash below
+                // only catches a save made while we were WATCHING; the first tick has nothing to
+                // compare against, so a save made before we started — the window was closed, the
+                // process was killed, and the session picked back up — became the baseline and was
+                // silently never written. The page went on showing it as owed to the game for the
+                // rest of the session.
+                //
+                // ⚠ This asks the state instead of following the transition, which is the same
+                // correction made elsewhere in this project: pending_changes IS the question, and
+                // the site answers it directly. A fresh session reports zero, so nothing is
+                // fetched for nothing.
+                //
+                // It is the polling equivalent of what the mod gets for free: its SSE stream
+                // replays the last save on every reconnection.
+                if (lastHash is null && state.PendingChanges > 0)
+                {
+                    if (await ApplyAsync(session.ModKey, ct).ConfigureAwait(false))
+                    {
+                        applied++;
+                        progress?.Report(new EditSessionProgress(EditSessionStage.Applied,
+                            "Changes saved in the browser while this was away were written into "
+                            + "the game.", applied));
+                    }
+                    else
+                    {
+                        progress?.Report(new EditSessionProgress(EditSessionStage.Failed,
+                            LastError ?? "The changes could not be written.", applied));
+                    }
+                }
+                else if (lastHash is not null && state.ContentHash is not null && state.ContentHash != lastHash)
                 {
                     var written = await ApplyAsync(session.ModKey, ct).ConfigureAwait(false);
                     if (written)

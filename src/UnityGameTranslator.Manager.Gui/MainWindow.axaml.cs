@@ -158,9 +158,21 @@ public partial class MainWindow : Window
     ///
     /// It is a fact about the GAME, not about this tool: somebody signs in from inside the mod,
     /// per game, and with twenty games installed there is otherwise no way to know which of them
-    /// can publish. ⚠ Only the name is ever held — see LocalTranslationProbe.ReadSiteAccount.
+    /// can publish.
+    ///
+    /// 🔴 **The SERVER is held with the name, and dropping it was the defect.** This used to keep
+    /// the name alone — "only the name is ever held", said as though it were obvious — so the card
+    /// compared that name with this tool's own and wrote "(you)" whenever the two matched. Two
+    /// sites can carry the same user name and mean two different people, which is precisely why
+    /// <see cref="ServerIdentity"/> checks the server FIRST. The card, holding half the fact, could
+    /// not: a game linked on one instance and a tool pointed at another agreed on screen, in green,
+    /// with a tooltip promising it "can publish" — while every tab refused every act.
+    ///
+    /// ⚠ The pair is what makes that impossible to write again: there is no bare name here to
+    /// compare, so a comparison by name does not compile. That is the guard, not this comment —
+    /// the previous one said the right thing and was read past.
     /// </summary>
-    private readonly Dictionary<string, string> _accounts =
+    private readonly Dictionary<string, (string? User, string? Server)> _accounts =
         new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
@@ -809,7 +821,7 @@ public partial class MainWindow : Window
             var (situation, mine, account) = ReadSituation(game);
             _situations[game.Path] = situation;
             if (mine) _mine.Add(game.Path);
-            if (account is not null) _accounts[game.Path] = account;
+            if (account.User is not null) _accounts[game.Path] = account;
         }
     }
 
@@ -827,7 +839,8 @@ public partial class MainWindow : Window
     /// down where doing so is safe. Reaching into that set from here was a race with a full
     /// recompute — rare, and the kind that corrupts a collection rather than failing cleanly.
     /// </summary>
-    private (GameSituationInfo Situation, bool Mine, string? Account) ReadSituation(GameInstall game)
+    private (GameSituationInfo Situation, bool Mine, (string? User, string? Server) Account)
+        ReadSituation(GameInstall game)
     {
         var language = _settings.ResolveTargetLanguage();
         var online = _online.Peek(game);
@@ -836,7 +849,7 @@ public partial class MainWindow : Window
 
         var detected = LoaderProbe.Detect(game.Path, _catalog);
         var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == detected?.Id);
-        string? account = null;
+        (string? User, string? Server) account = default;
 
         // 🔴 **The row builds its OWN report, so anything it wants must be filled in here.** That
         // is why a newer loader appeared on the game's page and nowhere in the list: BuildReportAsync
@@ -876,7 +889,10 @@ public partial class MainWindow : Window
 
             // Read while we are in this game's folder anyway. ⚠ The token is never touched — the
             // mod clears the name along with it, so the name answers the question on its own.
-            account = LocalTranslationProbe.ReadSiteAccount(game.Path, descriptor).User;
+            // ⚠ Both halves. The server used to be dropped here, and the card that reads this
+            // then had no way of telling "the same name on this site" from "the same name on
+            // another one" — see _accounts.
+            account = LocalTranslationProbe.ReadSiteAccount(game.Path, descriptor);
 
             // Noted while the file is open anyway. Asked again at filter time it would mean
             // re-reading a translation from disk on every keystroke in the search box.
@@ -1679,7 +1695,7 @@ public partial class MainWindow : Window
 
         // ⚠ Held before the re-read, because the guard below has to compare them and the two lines
         // that follow overwrite both.
-        var accountBefore = _accounts.TryGetValue(game.Path, out var had) ? had : null;
+        var accountBefore = _accounts.TryGetValue(game.Path, out var had) ? had : default;
         var mineBefore = _mine.Contains(game.Path);
 
         var (now, mine, account) = await Task.Run(() => ReadSituation(game));
@@ -1689,7 +1705,7 @@ public partial class MainWindow : Window
 
         // Signing in happens INSIDE the game, so this is one of the few things that can change
         // while somebody plays — which is exactly when this re-read runs.
-        if (account is not null) _accounts[game.Path] = account;
+        if (account.User is not null) _accounts[game.Path] = account;
         else _accounts.Remove(game.Path);
         _watchedStamps[game.Path] = TranslationFileStamp(game);
 
@@ -1707,7 +1723,7 @@ public partial class MainWindow : Window
         if (!redraw && before is not null && before.Headline == now.Headline
             && before.Pending == now.Pending
             && before.Detail == now.Detail
-            && string.Equals(accountBefore, account, StringComparison.Ordinal)
+            && accountBefore == account
             && mineBefore == mine)
             return;
 
@@ -1964,7 +1980,7 @@ public partial class MainWindow : Window
         _accounts.TryGetValue(game.Path, out var account);
 
         var play = PlayButton(game, small: true);
-        if (account is null && play is null) return content;
+        if (account.User is null && play is null) return content;
 
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
 
@@ -1981,7 +1997,7 @@ public partial class MainWindow : Window
             Margin = new Avalonia.Thickness(8, 1, 0, 0),
         };
 
-        if (account is not null)
+        if (account.User is not null)
         {
             // 🔴 **Green said "you" on somebody else's account.** This mark was StatusSuccess
             // whoever the account was, and green is what the rest of this window uses for "good,
@@ -1993,7 +2009,24 @@ public partial class MainWindow : Window
             //
             // ⚠ Not red either: nothing is wrong. Somebody else's game on a shared computer is
             // ordinary. Amber, because it changes what the buttons will do.
-            var yours = People.IsYou(account, _settings.Current.ApiUser);
+            // 🔴 **Asked of the authority, never recomputed here.** This line read
+            // `People.IsYou(account, _settings.Current.ApiUser)` — a comparison of NAMES — while
+            // every tab of the same card asks ServerIdentity, which compares the SERVER first. A
+            // game linked on one instance under "@name", with this tool pointed at another where
+            // the account is also called "@name", therefore read "(you)" in green here and was
+            // refused every act three clicks away. One fact, two calculations, opposite answers,
+            // in one screen.
+            //
+            // ⚠ The refusal was right and nothing could be written — the guard is on the act. What
+            // broke was the only thing an indicator is for: an indicator that contradicts itself is
+            // not believed when it finally tells the truth.
+            var standing = ServerIdentity.For(_settings.Current, account, BuildInfo.ApiBaseUrl);
+            var yours = standing.Kind is ServerStandingKind.Mine;
+
+            // ⚠ Named, never a possessive: a name from another site is factually another person,
+            // whatever it spells. See the naming rule — replace it with a proper noun, and if you
+            // cannot say which one to write, do not write one.
+            var elsewhere = standing.Kind is ServerStandingKind.OtherServer;
 
             // 🔴 **A bare name does not say what role it plays.** This corner showed "@somebody"
             // and the card's own line shows "by @somebody-else" — the account the GAME is signed
@@ -2020,7 +2053,11 @@ public partial class MainWindow : Window
             var mark = new TextBlock
             {
                 // ⚠ The word "(you)", not the colour, carries the answer — see People.Mention.
-                Text = People.Mention(account, yours),
+                // On another site the name is followed by where it lives, because the name alone
+                // would be read as the person at the keyboard.
+                Text = elsewhere
+                    ? People.Mention(account.User) + " — another site"
+                    : People.Mention(account.User, yours),
                 FontSize = 10,
                 Foreground = Brush(yours ? "StatusSuccess" : "StatusWarning"),
                 HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
@@ -2028,10 +2065,18 @@ public partial class MainWindow : Window
                 TextTrimming = TextTrimming.CharacterEllipsis,
             };
 
-            ToolTip.SetTip(mark, yours
-                ? $"This game is signed in to the site as {People.Mention(account, true)} — the "
+            // ⚠ Three states, three sentences, and the middle one is the one that used to be
+            // missing: a name that matches on another site is NOT the person at the keyboard, and
+            // saying "not as the account this tool is using" about an identical spelling would
+            // read as a bug rather than as a fact.
+            ToolTip.SetTip(mark, elsewhere
+                ? $"This game is signed in to a different site, as {People.Mention(account.User)}. "
+                  + "That is another site's account even when the name is spelled the same, so it "
+                  + "is not the one this tool is using. Nothing here will write to it."
+                : yours
+                ? $"This game is signed in to the site as {People.Mention(account.User, true)} — the "
                   + "account this tool is using. It can publish and contribute from inside the game."
-                : $"This game is signed in to the site as {People.Mention(account)}, not as the "
+                : $"This game is signed in to the site as {People.Mention(account.User)}, not as the "
                   + "account this tool is using. Nothing here will write to it: play it and look "
                   + "at it, and sign in inside the game to change that.");
 

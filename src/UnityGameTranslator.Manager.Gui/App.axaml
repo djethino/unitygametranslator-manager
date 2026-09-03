@@ -283,6 +283,96 @@
       <Setter Property="BorderBrush" Value="{DynamicResource AccentSoft}" />
     </Style>
     <!--
+      MOVEMENT — the whole of it, in one place.
+
+      The rule it follows: motion may only confirm something the person just did, or soften a change
+      they did not ask for. It never announces, never decorates, and never delays. Everything here is
+      between 90 and 160 ms — below about 200 ms a change reads as a response, above it as a wait —
+      and eased OUT, so it starts at once and settles rather than accelerating into place.
+
+      ⚠ **Colour and transform only.** Nothing here animates a size, a position in the layout, or a
+      visibility: those reflow the panel around them, which is how a list ends up moving under the
+      pointer that is reaching for it. A press SCALES — it does not resize.
+
+      ⚠ **No entry animation on the rows.** They are rebuilt as answers arrive from the site, several
+      times in the first seconds; anything that played on arrival would flicker down the whole list
+      for no event the reader caused.
+    -->
+    <Style Selector="Button">
+      <!-- Named so the pressed state below has something to return to. Without it the first press
+           has no start value and jumps. -->
+      <Setter Property="RenderTransform" Value="none" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <TransformOperationsTransition Property="RenderTransform"
+                                         Duration="0:0:0.10" Easing="CubicEaseOut" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Button:pressed">
+      <!-- The tap. Small enough to be felt rather than watched: at 0.97 the edge moves about a
+           pixel and a half on an ordinary button, which is the whole point. -->
+      <Setter Property="RenderTransform" Value="scale(0.97)" />
+    </Style>
+
+    <Style Selector="Button /template/ ContentPresenter">
+      <Setter Property="Transitions">
+        <Transitions>
+          <BrushTransition Property="Background" Duration="0:0:0.12" Easing="CubicEaseOut" />
+          <BrushTransition Property="BorderBrush" Duration="0:0:0.12" Easing="CubicEaseOut" />
+          <BrushTransition Property="Foreground" Duration="0:0:0.12" Easing="CubicEaseOut" />
+        </Transitions>
+      </Setter>
+    </Style>
+
+    <!-- The rail's mark slides colour rather than blinking to it, so switching page reads as one
+         movement with the page that follows. -->
+    <Style Selector="Button.tab /template/ ContentPresenter">
+      <Setter Property="Transitions">
+        <Transitions>
+          <BrushTransition Property="BorderBrush" Duration="0:0:0.16" Easing="CubicEaseOut" />
+          <BrushTransition Property="Foreground" Duration="0:0:0.16" Easing="CubicEaseOut" />
+        </Transitions>
+      </Setter>
+    </Style>
+
+    <!-- A row lights under the pointer instead of switching. The card is the thing being pointed
+         at, so this is the one place the movement is worth its cost on a long list. -->
+    <Style Selector="ListBox.cards > ListBoxItem /template/ ContentPresenter">
+      <Setter Property="Transitions">
+        <Transitions>
+          <BrushTransition Property="Background" Duration="0:0:0.12" Easing="CubicEaseOut" />
+          <BrushTransition Property="BorderBrush" Duration="0:0:0.12" Easing="CubicEaseOut" />
+        </Transitions>
+      </Setter>
+    </Style>
+
+    <Style Selector="TextBox, ComboBox">
+      <Setter Property="Transitions">
+        <Transitions>
+          <BrushTransition Property="BorderBrush" Duration="0:0:0.12" Easing="CubicEaseOut" />
+        </Transitions>
+      </Setter>
+    </Style>
+
+    <!--
+      A PAGE ARRIVING — see MainWindow.ShowTabBody, which sets the two values this returns from.
+
+      The page fades up and rises the last few pixels, which is what makes a tab switch read as one
+      thing replacing another rather than as a screen redrawing. 8 pixels: enough to give the change
+      a direction, too little to be watched.
+    -->
+    <Style Selector="StackPanel#DetailPanel">
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.14" Easing="CubicEaseOut" />
+          <TransformOperationsTransition Property="RenderTransform"
+                                         Duration="0:0:0.16" Easing="CubicEaseOut" />
+        </Transitions>
+      </Setter>
+    </Style>
+
+    <!--
       DISABLED, FOR EVERY BUTTON, AND DECLARED LAST ON PURPOSE.
 
       At comparable specificity Avalonia applies the last matching style, so this is what keeps a

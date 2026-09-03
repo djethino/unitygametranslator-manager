@@ -4,6 +4,7 @@ using Avalonia.Controls.Templates;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.Transformation;
 using Avalonia.Threading;
 using UnityGameTranslator.Manager.Core.Api;
 using UnityGameTranslator.Manager.Core.Catalog;
@@ -3397,6 +3398,25 @@ public partial class MainWindow : Window
             DetailPanel.Children.Add(control);
 
         DetailScroll.Offset = default;
+
+        // The page arrives rather than appearing — see the movement section in App.axaml, which
+        // holds the durations. Set to the "from" values here and returned to rest on the next
+        // frame, which is what makes the transitions run at all: a value assigned and read back in
+        // the same pass never changed as far as the animator is concerned.
+        //
+        // ⚠ Posted at Render, not Loaded: Loaded waits for a layout pass that a panel full of cards
+        // does not finish for tens of milliseconds, and the page would sit invisible until it did.
+        // ⚠ TransformOperations, never a TranslateTransform: TransformOperationsTransition can only
+        // interpolate between the former, and handed the latter it does nothing — no error, no
+        // warning, just a page that appears instead of arriving.
+        DetailPanel.Opacity = 0;
+        DetailPanel.RenderTransform = TransformOperations.Parse("translateY(8px)");
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            DetailPanel.Opacity = 1;
+            DetailPanel.RenderTransform = TransformOperations.Parse("none");
+        }, DispatcherPriority.Render);
     }
 
     /// <summary>

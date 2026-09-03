@@ -8350,6 +8350,32 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// Whether anything answered on this card is still waiting to be written.
+    ///
+    /// ⚠ The three held drafts, and nothing else: what has been APPLIED is in the game's file and
+    /// is not "waiting" — undoing it would mean writing something else, which is a different act
+    /// with a different button.
+    /// </summary>
+    private bool PendingAnswers(GameReport report) =>
+        _pendingMod.ContainsKey(report.Game.Path)
+        || _pendingPlan.ContainsKey(report.Game.Path)
+        || _pendingWay.ContainsKey(report.Game.Path);
+
+    /// <summary>
+    /// Drops them all, in one gesture.
+    ///
+    /// ⚠ Held drafts only. The stored preference is left exactly as it is: it holds what was
+    /// decided earlier and applied, and a button called Undo must not reach further back than the
+    /// answers it is showing.
+    /// </summary>
+    private void ForgetPendingAnswers(GameReport report)
+    {
+        _pendingMod.Remove(report.Game.Path);
+        _pendingPlan.Remove(report.Game.Path);
+        _pendingWay.Remove(report.Game.Path);
+    }
+
+    /// <summary>
     /// Whether writing this game's configuration is part of the job.
     ///
     /// 🔴 **ONE answer, for the list that promises the step and the plan that performs it.** The
@@ -8364,7 +8390,19 @@ public partial class MainWindow : Window
 
         // Answers of its own are written whatever the box says — the Reviewed guard is about not
         // deciding FOR somebody, and a game they answered themselves is not that.
+        //
+        // ⚠ **All of them, not just the settings form.** "Translate while I play" and "what is this
+        // game about" are answered in their own block and land in their own fields; testing only
+        // `Mod` left those two out, so changing them lit their own Apply and nothing else. The
+        // hotkey is the same kind of answer, asked in a third block again.
+        //
+        // ⚠ Saying "there is material" is not saying "there is work": these fields survive being
+        // written, unlike Mod. SettingsWouldChangeAnything is what compares them with the file, so
+        // an answer already in place produces no step.
         if (preference.Mod is { IsEmpty: false }) return true;
+        if (preference.StartTranslation is not null) return true;
+        if (!string.IsNullOrWhiteSpace(preference.GameContext)) return true;
+        if (preference.ReplaceHotkey) return true;
 
         return _settings.Current.Reviewed
                && (!config.IsConfigured || preference.UsesModDefaults(config));
@@ -8921,6 +8959,36 @@ public partial class MainWindow : Window
         };
 
         go.Click += async (_, _) => await RunOneClickAsync(report);
+
+        // 🔴 **The way back, beside the way forward.** Every block on this card offers Undo next to
+        // its own Apply; the bar, which gathers what all of them are waiting to write, offered only
+        // the going. Somebody who changed three things across three blocks and thought better of it
+        // had to find each block and undo it there — and the blocks are folded away by default.
+        //
+        // ⚠ Present only while something is waiting, like the counters it mirrors: a control that
+        // can undo nothing is not reassurance, it is furniture.
+        //
+        // ⚠ "Undo", the word this program already uses beside a pending change — never "Cancel",
+        // which in a window means "close without doing anything" and would be read as leaving.
+        if (PendingAnswers(report))
+        {
+            var undo = new Button { Content = "Undo", MinWidth = 90 };
+
+            ToolTip.SetTip(undo, "Forgets the answers given on this card and not yet applied. "
+                                 + "Nothing already written into the game is touched.");
+
+            undo.Click += async (_, _) =>
+            {
+                ForgetPendingAnswers(report);
+
+                // The whole card: these answers are shown by the blocks that hold them, not only
+                // by this bar. Safe here — unlike inside a form, nobody is typing in the bar.
+                await ShowSelectedAsync();
+            };
+
+            right.Children.Add(undo);
+        }
+
         right.Children.Add(go);
 
         // After the set-up button, not before it: the order on this bar is the order of the two
@@ -10608,6 +10676,9 @@ public partial class MainWindow : Window
             preference.GameContext = draft.Context;
             _preferences.Set(report.Game.Path, preference);
 
+            // In the file now, so the held copy has nothing left to say.
+            _pendingPlan.Remove(report.Game.Path);
+
             await ApplyOwnSettingsAsync(report, preference);
             refresh();
         };
@@ -10625,9 +10696,20 @@ public partial class MainWindow : Window
             },
             Refresh = Redraw,
 
-            // Apply stores these, together with the write into the game, because that is one
-            // decision taken at one moment.
-            Record = () => { },
+            // 🔴 **Held here too, and it was not.** The reasoning was that Apply stores these
+            // together with the write, as one decision — true of STORING, and this does not store:
+            // it hands them to the window, which keeps them in memory and writes nothing. The
+            // silence meant "translate while I play" and "what is this game about" reached no other
+            // control: their own Apply lit up while the one-click said the game was fully set up.
+            // Exactly the defect the settings form had, in the block beside it.
+            Record = () =>
+            {
+                _pendingPlan[report.Game.Path] = (draft.Start, draft.Context);
+
+                // The bar only — it has its own container, so it can be redrawn while somebody is
+                // still typing in the description box beside it.
+                ShowActionBar(report);
+            },
         };
     }
 

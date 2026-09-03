@@ -6,7 +6,6 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media.Transformation;
 using Avalonia.Threading;
-using Avalonia.VisualTree;
 
 namespace UnityGameTranslator.Manager.Gui;
 
@@ -28,6 +27,28 @@ namespace UnityGameTranslator.Manager.Gui;
 /// </summary>
 public static class ScrollBounce
 {
+    /// <summary>
+    /// Set by a style on every ScrollViewer in the application — see App.axaml.
+    ///
+    /// 🔴 **A property rather than a call, because calling it is something a window can forget.**
+    /// It was attached by hand in the main window, and the eight other windows that scroll had
+    /// nothing: the give was a property of one screen instead of a property of scrolling. A style
+    /// reaches every scroller there is and every one added later, including the ones built inside
+    /// a ListBox's or a ComboBox's own template, which no call site can reach at all.
+    /// </summary>
+    public static readonly AttachedProperty<bool> GiveProperty =
+        AvaloniaProperty.RegisterAttached<ScrollViewer, bool>("Give", typeof(ScrollBounce));
+
+    public static void SetGive(ScrollViewer scroll, bool value) => scroll.SetValue(GiveProperty, value);
+
+    public static bool GetGive(ScrollViewer scroll) => scroll.GetValue(GiveProperty);
+
+    static ScrollBounce() =>
+        GiveProperty.Changed.AddClassHandler<ScrollViewer>((scroll, e) =>
+        {
+            if (e.NewValue is true) Attach(scroll);
+        });
+
     /// <summary>How far the content leans. Eight pixels is felt; more is watched.</summary>
     private const double Give = 8;
 
@@ -57,15 +78,19 @@ public static class ScrollBounce
                           RoutingStrategies.Bubble, handledEventsToo: true);
     }
 
-    /// <summary>The same, for a list that builds its own scroller inside its template.</summary>
-    public static void AttachTo(Control list)
+    /// <summary>
+    /// Leans a scroller that has been pushed past its end by something other than the wheel event
+    /// it listens for.
+    ///
+    /// 🔴 **A dropdown needs this, and cannot use the handler above.** Inside a Popup on Windows the
+    /// wheel never reaches the scroller at all (Avalonia#16646, see SearchPicker), so the list is
+    /// scrolled by hand from the top level — and a give that waits for an event which never arrives
+    /// is a give that never plays. The one place that knows the list did not move is the one doing
+    /// the moving, so it says so.
+    /// </summary>
+    public static void Nudge(ScrollViewer scroll, bool upward)
     {
-        // ⚠ After it is on screen: a template that has not been applied has no ScrollViewer to
-        // find, and looking too early finds nothing and reports nothing.
-        list.AttachedToVisualTree += (_, _) =>
-            Dispatcher.UIThread.Post(
-                () => Attach(list.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault()),
-                DispatcherPriority.Loaded);
+        if (scroll.Content is Control content) Lean(content, upward ? Give : -Give);
     }
 
     private static void Consider(ScrollViewer scroll, PointerWheelEventArgs e)

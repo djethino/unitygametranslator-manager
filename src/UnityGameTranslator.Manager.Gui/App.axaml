@@ -1,5 +1,6 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ugt="using:UnityGameTranslator.Manager.Gui"
              x:Class="UnityGameTranslator.Manager.Gui.App"
              RequestedThemeVariant="Dark">
 
@@ -353,6 +354,21 @@
           <BrushTransition Property="BorderBrush" Duration="0:0:0.12" Easing="CubicEaseOut" />
         </Transitions>
       </Setter>
+    </Style>
+
+    <!--
+      THE GIVE AT THE END OF A SCROLL, ON EVERY SCROLLER IN THE PROGRAM.
+
+      🔴 **Declared here rather than called per window, and that is the whole point.** It was hooked
+      up by hand in the main window, and the eight other windows that scroll had nothing — so the
+      give was a property of one screen instead of a property of scrolling. A style reaches every
+      scroller there is, every one added later, and the ones built inside a ListBox's or a
+      ComboBox's own template, which no call site can reach at all.
+
+      See ScrollBounce for what it does and why it leans the CONTENT rather than the scroller.
+    -->
+    <Style Selector="ScrollViewer">
+      <Setter Property="ugt:ScrollBounce.Give" Value="True" />
     </Style>
 
     <!--

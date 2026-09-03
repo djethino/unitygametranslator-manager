@@ -305,10 +305,9 @@ public partial class MainWindow : Window
         BuildLanguageBox();
         BuildFilterBar();
 
-        // The give at the end of a scroll, on the two things long enough to have an end worth
-        // reaching — the card being read, and the library. See ScrollBounce.
-        ScrollBounce.Attach(DetailScroll);
-        ScrollBounce.AttachTo(GameList);
+        // ⚠ The give at the end of a scroll is NOT hooked up here any more: it is declared once, on
+        // every ScrollViewer in the program, by a style in App.axaml. Two lines here were two
+        // windows out of nine that had it.
 
         Loaded += async (_, _) =>
         {

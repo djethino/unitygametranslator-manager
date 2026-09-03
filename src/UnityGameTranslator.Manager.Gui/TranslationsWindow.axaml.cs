@@ -447,6 +447,12 @@ public sealed class TranslationsWindow : Window
         }
 
         ShowTranslations(found);
+
+        // ⚠ Here and not in ShowTranslations, which also serves Redraw: choosing a card rebuilds
+        // every card so the mark can move, and the SAME translations coming back is not content
+        // being replaced. A search or a language filter is — the motion says what a tab switch and
+        // the game list's filter say, and it must not say it when nothing changed. See Motion.
+        Motion.Arrive(_list);
     }
 
     /// <summary>

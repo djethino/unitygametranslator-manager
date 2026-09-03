@@ -139,9 +139,9 @@ public sealed class SearchPicker : UserControl
             Child = _shell,
         };
 
-        // The same give the rest of the window has at the end of a scroll.
-        ScrollBounce.Attach(_scroll);
-
+        // ⚠ No ScrollBounce.Attach here: the give is declared on every ScrollViewer by a style, and
+        // in this one it is played from OnWheelWhileOpen instead — the wheel never reaches the
+        // scroller inside a popup, so a handler waiting on it would never fire.
         _popup.Closed += OnClosed;
 
         _face.Click += (_, _) => Open();
@@ -255,9 +255,16 @@ public sealed class SearchPicker : UserControl
         var reach = Math.Max(0, _scroll.Extent.Height - _scroll.Viewport.Height);
         if (reach <= 0) return;
 
-        var moved = Math.Clamp(_scroll.Offset.Y - e.Delta.Y * 3 * RowHeight, 0, reach);
+        var before = _scroll.Offset.Y;
+        var moved = Math.Clamp(before - e.Delta.Y * 3 * RowHeight, 0, reach);
 
         _scroll.Offset = new Vector(_scroll.Offset.X, moved);
+
+        // ⚠ The same give the rest of the program has at the end of a scroll, played from here
+        // because it cannot be played from where it listens: the wheel never reaches inside a popup,
+        // which is why this method exists at all. Nothing moved means the end was already reached.
+        if (Math.Abs(moved - before) < 0.5) ScrollBounce.Nudge(_scroll, e.Delta.Y > 0);
+
         e.Handled = true;
     }
 

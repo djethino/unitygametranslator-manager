@@ -8949,8 +8949,23 @@ public partial class MainWindow : Window
         // answers "should this game follow Mod defaults" — a preference held per Windows account,
         // about a config.json shared by the whole computer. Ticked by default, it was enough on its
         // own to rewrite somebody else's language, model and key from this account's answers.
+        // 🔴 **Restored after being removed, and the removal is worth recording.** The condition
+        // was dropped so that a game answering for itself would also get its settings written by
+        // the one-click. That is a real gap — but this step is not the way to fill it, and the
+        // proof is one comment above `Differences`: that list compares against **Mod defaults,
+        // always**, deliberately, so that the button under it can say what it writes. Widening the
+        // step made a list that only ever speaks of Mod defaults drive a step on a game that had
+        // explicitly refused them: "apply Mod defaults (1 change)" appeared under "set it up here",
+        // offering to write a value nobody had asked for.
+        //
+        // ⚠ The gap is real and is NOT closed here: a game's own answers are a different brick,
+        // written by the form's own Apply. Giving the one-click a step of its own for them needs a
+        // second comparison — against the per-game resolution rather than against Mod defaults —
+        // which is exactly what the comment above `Differences` warns must not be conflated with
+        // this one. See TODO.md.
         if (mayChangeThisGame
             && _settings.Current.Reviewed
+            && (!GameConfig(report).IsConfigured || preference.UsesModDefaults(GameConfig(report)))
             && SettingsWouldChangeAnything(report, preference))
         {
             yield return new(OneClickAct.ApplySettings, SettingsStepText(report, preference));

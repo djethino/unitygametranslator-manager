@@ -515,10 +515,7 @@ public partial class MainWindow : Window
         _catalog = fresh.Document;
         BuildInventory();
 
-        RecomputeSituations();
-        RefreshList();
-
-        if (_selected is not null) await ShowSelectedAsync();
+        await RepublishAsync();
     }
 
     private async Task ScanAsync()
@@ -590,8 +587,11 @@ public partial class MainWindow : Window
             : $"{_games.Count} Unity games found, {blocked} that cannot be modded";
 
         BuildFilterBar();
-        RecomputeSituations();
-        RefreshList();
+        RepublishRows();
+
+        // ⚠ The overview rather than RepublishAsync, and deliberately: a rescan lands on the
+        // summary. Restoring a card for whatever happened to be selected before would answer a
+        // question nobody asked, on a list that has just been rebuilt from the drives.
         ShowOverview();
         Busy(false, "Ready.");
 
@@ -606,19 +606,24 @@ public partial class MainWindow : Window
     /// with nothing to learn from them. What the window IS comes from the machine; what somebody
     /// else has to say about it sharpens the rows afterwards.
     ///
-    /// 🔴 **Every warmer here ends with RecomputeSituations() + RefreshList(), and that is not
-    /// decoration — it is the whole contract.** A row is drawn from what ReadSituation could see at
-    /// the time; an answer arriving later changes nothing on screen unless somebody re-reads. Three
-    /// separate defects have been this exact omission, each found by a person clicking things one
-    /// at a time to make the list tell the truth:
+    /// 🔴 **Every warmer here ends with <see cref="RepublishAsync"/>, and that is the whole
+    /// contract.** A row is drawn from what was known when it was drawn; an answer arriving later
+    /// changes nothing on screen unless somebody republishes. Three separate defects have been this
+    /// exact omission, each found by a person clicking things one at a time to make the list tell
+    /// the truth:
     ///   · the loader tag that appeared only on a SELECTED game (see WarmLoaderBuildsAsync);
-    ///   · the sync verdict missing from the rows (see ReadSituation);
+    ///   · the sync verdict missing from the rows;
     ///   · the mod update nobody was told about until they had clicked every game in the library.
     ///
+    /// ⚠ **It used to be two calls to make in the right order, written here as a rule.** A rule in
+    /// a comment is obeyed by whoever reads it, and thirteen places had to: some did one of the two,
+    /// some left the card out. One call now does the whole thing, and doing it twice costs a redraw
+    /// and breaks nothing.
+    ///
     /// ⚠ **So this list is the place to add a source, and the only one.** A lookup started anywhere
-    /// else is a lookup nobody redraws for — which does not fail, does not log, and shows a stale
-    /// screen to somebody who has no reason to doubt it. Adding a warmer is one line here plus a
-    /// method that ends like its neighbours.
+    /// else is a lookup nobody republishes for — which does not fail, does not log, and shows a
+    /// stale screen to somebody who has no reason to doubt it. Adding a warmer is one line here plus
+    /// a method that ends like its neighbours.
     ///
     /// ⚠ Nothing lies in the meantime: each source distinguishes "not asked yet" from "nothing to
     /// report", which is why those properties exist at all.
@@ -757,10 +762,7 @@ public partial class MainWindow : Window
         // Redrawn because the answer changes what a row says — the same reason the loader builds
         // redraw, and the same shape.
         BuildFilterBar();
-        RecomputeSituations();
-        RefreshList();
-
-        if (_selected is not null) await ShowSelectedAsync();
+        await RepublishAsync();
     }
 
     /// <summary>
@@ -794,14 +796,7 @@ public partial class MainWindow : Window
                 var progress = done;
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
-                    RecomputeSituations();
-
-                    // Contents only while a sweep is running. A lookup changes what we know about
-                    // a game, never whether it exists — except under a filter, where learning
-                    // something can move a game in or out of the visible set, and then the list
-                    // genuinely has to be rebuilt.
-                    if (_lens == Lens.All) RefreshRowContents();
-                    else RefreshList();
+                    RepublishRows();
 
                     Status($"Checking community translations... {progress}/{ids.Count}");
                 });
@@ -813,8 +808,60 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// Makes the whole window say what is currently known. **The one way to do that.**
+    ///
+    /// 🔴 **It replaces a sequence copied by hand into thirteen places.** The rule was written down
+    /// — "every warmer ends with RecomputeSituations() and RefreshList()" — and a written rule is
+    /// obeyed by whoever reads it. Some sites did one of the two, some forgot the card, and the
+    /// comment that stated the rule also listed three defects that were this exact omission: a
+    /// loader tag, a sync verdict and a mod update, each of them a fact this window held and did not
+    /// show until somebody clicked every game in their library.
+    ///
+    /// ⚠ **Reconciles from the state; it is not a transition.** Whatever changed and wherever it
+    /// came from, this makes the screen match what is known now — so a source that answers late has
+    /// exactly one thing to call, and calling it twice costs a redraw and breaks nothing.
+    ///
+    /// ⚠ The filter bar is deliberately NOT here: it answers which LENSES exist, which changes when
+    /// somebody signs in or a game starts, not when an answer arrives about a game. Its three
+    /// callers say so themselves.
+    /// </summary>
+    private async Task RepublishAsync()
+    {
+        RepublishRows();
+
+        // Whatever is on the right, which is the overview when no game is selected. The card was
+        // the half most often forgotten by the hand-written version, and the overview was never
+        // refreshed by any of them.
+        await ShowWhateverIsOnTheRightAsync();
+    }
+
+    /// <summary>
+    /// The same reconciliation, stopping short of the card.
+    ///
+    /// ⚠ **One caller, and it has a reason rather than an excuse**: the community sweep answers
+    /// once per game, so up to forty times in a few seconds. Rebuilding the card that often would
+    /// throw away a loader picked in a dropdown while somebody was looking at it — the same reason
+    /// the running-games clock only redraws the card when the game it is about has started or
+    /// stopped.
+    /// </summary>
+    private void RepublishRows()
+    {
+        RecomputeSituations();
+
+        // Contents rather than a rebuild wherever membership cannot move — which is everywhere
+        // except under a filter, where learning something about a game can put it in or out of the
+        // visible set. Rebuilding drops the selection and restores it, and doing that on every
+        // answer is what used to make the list flash.
+        if (_lens == Lens.All) RefreshRowContents();
+        else RefreshList();
+    }
+
+    /// <summary>
     /// Rebuilds every row's situation from what is currently known. Cheap: it reads the caches,
     /// it does not go looking again.
+    ///
+    /// ⚠ Call <see cref="RepublishAsync"/> instead unless you are one of the two methods above:
+    /// this only refreshes what is REMEMBERED, and nothing on screen changes until somebody redraws.
     /// </summary>
     private void RecomputeSituations()
     {
@@ -901,9 +948,7 @@ public partial class MainWindow : Window
         if (!window.Saved) return;
 
         SyncLanguageBox();
-        RecomputeSituations();
-        RefreshList();
-        await ShowWhateverIsOnTheRightAsync();
+        await RepublishAsync();
     }
 
     /// <summary>
@@ -1011,9 +1056,7 @@ public partial class MainWindow : Window
         // rescan for nothing each time somebody just looked.
         if (!window.Changed) return;
 
-        RecomputeSituations();
-        RefreshList();
-        await ShowSelectedAsync();
+        await RepublishAsync();
     }
 
     /// <summary>
@@ -1178,14 +1221,12 @@ public partial class MainWindow : Window
         if (_lens == Lens.Mine && !_settings.Current.SignedIn) _lens = Lens.All;
 
         BuildFilterBar();
-        RecomputeSituations();
-        RefreshList();
 
-        // The strip above the summary answers questions about this program — where it lives, which
-        // channel it follows — and every one of them can have changed in that window. Redrawn even
-        // when nothing was saved: installing or removing the tool happens immediately, with no
-        // Apply of its own.
-        await ShowWhateverIsOnTheRightAsync();
+        // ⚠ The strip above the summary answers questions about this program — where it lives,
+        // which channel it follows — and every one of them can have changed in that window. Redrawn
+        // even when nothing was saved: installing or removing the tool happens immediately, with no
+        // Apply of its own. RepublishAsync covers it, since it refreshes whatever is on the right.
+        await RepublishAsync();
 
         if (!window.Saved) return;
 
@@ -1267,9 +1308,7 @@ public partial class MainWindow : Window
             //
             // Same call as OpenSettingsAsync, and for the same reason: this changes the same
             // setting that window changes, so it cannot redraw less than that window does.
-            RecomputeSituations();
-            RefreshList();
-            _ = ShowWhateverIsOnTheRightAsync();
+            _ = RepublishAsync();
         };
     }
 
@@ -4189,10 +4228,7 @@ public partial class MainWindow : Window
         //
         // ⚠ Recompute before refresh: the rows are drawn from _situations, so refreshing without
         // re-reading redraws the same stale answer.
-        RecomputeSituations();
-        RefreshList();
-
-        if (_selected is not null) await ShowSelectedAsync();
+        await RepublishAsync();
     }
 
     /// <summary>
@@ -4229,10 +4265,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        RecomputeSituations();
-        RefreshList();
-
-        if (_selected is not null) await ShowSelectedAsync();
+        await RepublishAsync();
     }
 
     /// <summary>Which half of a game's card is showing. Home first, always — see TabStrip.</summary>
@@ -7497,9 +7530,7 @@ public partial class MainWindow : Window
                     + "check it over — nothing in this game was changed.");
 
                 SyncLanguageBox();
-                RecomputeSituations();
-                RefreshList();
-                await ShowSelectedAsync();
+                await RepublishAsync();
             };
 
             acts.Children.Add(seed);
@@ -11025,9 +11056,7 @@ public partial class MainWindow : Window
         report.Game.VerdictOverridden = false;
         report.Game.OverriddenVerdict = null;
 
-        RecomputeSituations();
-        RefreshList();
-        await ShowSelectedAsync();
+        await RepublishAsync();
     }
 
     private async Task OverrideVerdictAsync(GameReport report)
@@ -11054,9 +11083,7 @@ public partial class MainWindow : Window
         _inventory.Overrides.Set(report.Game.Path, new GameOverride { IgnoreVerdict = true });
         _inventory.Overrides.Apply(report.Game);
 
-        RecomputeSituations();
-        RefreshList();
-        await ShowSelectedAsync();
+        await RepublishAsync();
     }
 
     private async Task RunInstallAsync(GameReport report, InstallEngine engine, InstallPlan? plan)

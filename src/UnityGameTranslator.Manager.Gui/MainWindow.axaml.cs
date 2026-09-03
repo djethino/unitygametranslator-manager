@@ -9086,6 +9086,21 @@ public partial class MainWindow : Window
             if (picked is not null) return picked;
         }
 
+        // 🔴 **Ranking one for somebody only happens when they have NOTHING.** Below this line the
+        // choice is nobody's — it is the first community translation matching the target language —
+        // and it was being made on a game that already holds work in progress. A translation
+        // started locally and never uploaded has no `MatchingOnline`, so nothing downstream saw it:
+        // the card offered a stranger's file, and the one-click listed replacing it as a step.
+        //
+        // ⚠ "Nothing" means nothing AT ALL, including a purely local file nobody else has ever
+        // seen. That is the whole point: unpublished work is the case with the most to lose and the
+        // least to show for itself.
+        //
+        // ⚠ Above this line is untouched, and must stay so: a translation somebody NAMED is their
+        // decision, and it keeps being honoured whatever is on disk. What is refused here is
+        // choosing on their behalf.
+        if (report.LocalTranslation is not null) return null;
+
         var target = _settings.ResolveTargetLanguage();
 
         return report.OnlineTranslations

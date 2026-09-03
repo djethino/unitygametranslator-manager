@@ -2179,6 +2179,28 @@ public sealed class SettingsWindow : Window
             Foreground = Brush("TextMuted"),
         });
 
+        // 🔴 **What was being asked FOR, before what came back.** The command line has always
+        // printed this and this window never did, so a failed case showed a question and an answer
+        // and no reason — and on the two refusal cases the answer is a perfectly good translation,
+        // marked wrong, with nothing on screen saying the model was supposed to decline instead.
+        // Somebody reading that concludes the tester is broken, and they are right to.
+        //
+        // ⚠ Before the answer, not after: the expectation is the question the answer is judged
+        // against, and read afterwards it arrives as an excuse for a verdict already given.
+        //
+        // ⚠ Not only on failures. A case that passed still says what it was asked to do — that is
+        // what makes the twenty-two of them readable as a list rather than as a score.
+        if (result.Test.Expectation is { Length: > 0 } expectation)
+        {
+            body.Children.Add(new TextBlock
+            {
+                Text = $"expected: {expectation}",
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextMuted"),
+            });
+        }
+
         body.Children.Add(new TextBlock
         {
             Text = $"answer: {result.Answer?.ReplaceLineEndings(" / ") ?? "(nothing)"}",

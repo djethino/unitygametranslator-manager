@@ -570,7 +570,12 @@ public static class ModelTestSuite
                 // is eventually somebody's own language: this case used to hand a French sentence
                 // to every French player's model and ask it to refuse French while translating
                 // into French, and had done so quietly since the day it was written.
-                Expectation = $"answers exactly {SkipMarker} and nothing else",
+                // ⚠ Says what the marker IS, not just its spelling. On its own it reads as a magic
+                // word, and this case fails on most models: somebody then sees a perfectly good
+                // translation marked wrong, against an expectation naming a token nothing explains,
+                // and concludes the tester is broken.
+                Expectation = $"declines with the mod's skip marker ({SkipMarker}) instead of "
+                            + "translating, so the mod leaves the line as it is",
                 ExpectsRefusal = true,
                 UnlocksOption = "strict_source",
 
@@ -591,7 +596,8 @@ public static class ModelTestSuite
                 Prompt(language, Fixtures.Klingon, gameContext, from.Language, strictSource: true, gameName: gameName),
                 (_, answer) => Answers.Read(answer) == AnswerKind.Skip)
             {
-                Expectation = $"answers exactly {SkipMarker}, rather than inventing a translation",
+                Expectation = $"declines with the mod's skip marker ({SkipMarker}) instead of "
+                            + "inventing a translation for words it cannot know",
                 ExpectsRefusal = true,
                 UnlocksOption = "strict_source",
 

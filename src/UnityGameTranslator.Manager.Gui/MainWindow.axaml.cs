@@ -1058,13 +1058,17 @@ public partial class MainWindow : Window
             return;
         }
 
-        var window = new TranslationsWindow(report, descriptor, _settings, _lineages, _preferences,
-                                            anyLanguage, openWith);
+        var window = new TranslationsWindow(report, descriptor, _settings, _lineages,
+                                            ChosenTranslation(report.Game.Path), anyLanguage, openWith);
         await window.ShowDialog(this);
 
-        // Only when something was actually written: re-reading the game on every close would
-        // rescan for nothing each time somebody just looked.
+        // Only when a choice was actually made: re-reading the game on every close would rescan for
+        // nothing each time somebody just looked.
         if (!window.Changed) return;
+
+        // ⚠ Held, not saved. The window used to write it to disk itself, which is how a choice
+        // outlived the session that made it — see _pendingTranslation.
+        if (window.ChosenTranslation is { } picked) _pendingTranslation[report.Game.Path] = picked;
 
         await RepublishAsync();
     }
@@ -3316,8 +3320,14 @@ public partial class MainWindow : Window
         // workbench's act, weighed against what was never uploaded, and an install option that did
         // it too was a second way to the same write.
         var offer = TranslationOffers.For(report, TranslationWaiting(report));
+
+        // ⚠ **Naming one IS asking for it**, so a pending choice ticks the box whatever the stored
+        // answer says. The translations window used to obtain this by writing InstallTranslation to
+        // disk as it selected — which then stayed true for every later launch, on a game where
+        // nobody had asked for anything.
         _takeTranslation = TranslationOffers.MayDefaultToYes(offer)
-                           && _preferences.Read(report.Game.Path).InstallTranslation;
+                           && (ChosenTranslation(report.Game.Path) is not null
+                               || _preferences.Read(report.Game.Path).InstallTranslation);
 
         foreach (var control in PageFor(_gameTab).Body(report))
             DetailPanel.Children.Add(control);
@@ -3968,9 +3978,10 @@ public partial class MainWindow : Window
                 return;
             }
 
-            var preference = _preferences.Read(report.Game.Path);
-            preference.TranslationId = mine[0].Id;
-            _preferences.Set(report.Game.Path, preference);
+            // ⚠ Held for the session like any other answer given before an act — see
+            // _pendingTranslation. Written to disk it would go on asking to be restored long after
+            // it had been, on every launch.
+            _pendingTranslation[report.Game.Path] = mine[0].Id;
 
             // Selected, then acted on through the same path as any other translation — including
             // the warnings, because putting mine back still replaces what is there.
@@ -4006,28 +4017,20 @@ public partial class MainWindow : Window
     /// act — "Download what changed online…", which weighs the merge and carries its own scope mark.
     /// Offering it here as well put two buttons three inches apart doing one thing.
     /// </summary>
-    private OnlineTranslation? TranslationWaiting(GameReport report)
-    {
-        var chosenId = _preferences.Read(report.Game.Path).TranslationId;
-
-        // The named one first, including when it is this game's own Main — which is not in the
-        // list of alternatives. Failing that, the pick the one-click reads, so the card and the
-        // bar at the bottom cannot describe different intentions.
-        var picked = chosenId is { } id
-            ? report.OnlineTranslations.FirstOrDefault(t => t.Id == id)
-              ?? (report.MatchingOnline is { } main && main.Id == id ? main : null)
-            : PickTranslation(report);
-
-        if (picked is null) return null;
-
-        // ⚠ This covers AlreadyInPlace and more: the same lineage with the server ahead reports
-        // FreeToTake, and that is precisely the case the workbench owns.
-        return report.MatchingOnline is { } here && here.Id == picked.Id ? null : picked;
-    }
+    /// ⚠ The rule itself lives in <see cref="TranslationChoice"/>, where it can be checked. What
+    /// belongs here is only where its three answers come FROM — and getting that wrong is what the
+    /// separation is for: the intention is held for the session, the installed id is read off disk,
+    /// and the two used to be the same field.
+    private OnlineTranslation? TranslationWaiting(GameReport report) =>
+        TranslationChoice.Waiting(
+            report,
+            _settings.ResolveTargetLanguage(),
+            chosen: ChosenTranslation(report.Game.Path),
+            installed: _preferences.Read(report.Game.Path).InstalledTranslationId);
 
     /// <summary>Whether the waiting translation was named by somebody, rather than ranked for them.</summary>
     private bool WasChosenDeliberately(GameReport report, OnlineTranslation picked) =>
-        _preferences.Read(report.Game.Path).TranslationId == picked.Id;
+        ChosenTranslation(report.Game.Path) == picked.Id;
 
     /// <summary>
     /// Apply and Undo, for the right-hand side of the line where translations are chosen.
@@ -8408,7 +8411,8 @@ public partial class MainWindow : Window
     private bool PendingAnswers(GameReport report) =>
         _pendingMod.ContainsKey(report.Game.Path)
         || _pendingPlan.ContainsKey(report.Game.Path)
-        || _pendingWay.ContainsKey(report.Game.Path);
+        || _pendingWay.ContainsKey(report.Game.Path)
+        || _pendingTranslation.ContainsKey(report.Game.Path);
 
     /// <summary>
     /// Drops them all, in one gesture.
@@ -8422,6 +8426,7 @@ public partial class MainWindow : Window
         _pendingMod.Remove(report.Game.Path);
         _pendingPlan.Remove(report.Game.Path);
         _pendingWay.Remove(report.Game.Path);
+        _pendingTranslation.Remove(report.Game.Path);
     }
 
     /// <summary>
@@ -9268,53 +9273,13 @@ public partial class MainWindow : Window
     /// <summary>
     /// Which translation one click would take, or null when it would take none.
     ///
-    /// The rules, in order, and each of them is a decision rather than a convenience:
-    ///  · what the person already chose wins — a pick made in the translations window is an
-    ///    answer, and quietly preferring our own would make that window advisory;
-    ///  · otherwise the FIRST one published in their language, in the order the SERVER sent. That
-    ///    order is Translation::ranking_score, which normalises by the best score of the game and
-    ///    already leaves branches out. Re-sorting here would produce a different best from the
-    ///    website's for the same data, and neither could be called wrong;
-    ///  · a file already in the game does NOT stop the pick, because a newer version of that very
-    ///    translation is worth taking. What it does is turn the step into a replacement, which is
-    ///    asked about.
+    /// ⚠ The rule is <see cref="TranslationChoice.Pick"/>; this only says where its answers come
+    /// from. The choice is the PENDING one — the stored id says which translation this game was set
+    /// up WITH, and reading that as a request re-offered it for ever.
     /// </summary>
-    private OnlineTranslation? PickTranslation(GameReport report)
-    {
-        if (report.OnlineTranslations.Count == 0) return null;
-
-        var preference = _preferences.Read(report.Game.Path);
-
-        if (preference.TranslationId is { } chosen)
-        {
-            var picked = report.OnlineTranslations.FirstOrDefault(t => t.Id == chosen);
-
-            // Gone from the catalogue — taken down, or made private. Falling through to the
-            // ranking rather than failing: the person asked for a translation, and the one they
-            // named no longer being there is not a reason to leave them without one.
-            if (picked is not null) return picked;
-        }
-
-        // 🔴 **Ranking one for somebody only happens when they have NOTHING.** Below this line the
-        // choice is nobody's — it is the first community translation matching the target language —
-        // and it was being made on a game that already holds work in progress. A translation
-        // started locally and never uploaded has no `MatchingOnline`, so nothing downstream saw it:
-        // the card offered a stranger's file, and the one-click listed replacing it as a step.
-        //
-        // ⚠ "Nothing" means nothing AT ALL, including a purely local file nobody else has ever
-        // seen. That is the whole point: unpublished work is the case with the most to lose and the
-        // least to show for itself.
-        //
-        // ⚠ Above this line is untouched, and must stay so: a translation somebody NAMED is their
-        // decision, and it keeps being honoured whatever is on disk. What is refused here is
-        // choosing on their behalf.
-        if (report.LocalTranslation is not null) return null;
-
-        var target = _settings.ResolveTargetLanguage();
-
-        return report.OnlineTranslations
-            .FirstOrDefault(t => Languages.Matches(t.TargetLanguage, target));
-    }
+    private OnlineTranslation? PickTranslation(GameReport report) =>
+        TranslationChoice.Pick(report, _settings.ResolveTargetLanguage(),
+                               ChosenTranslation(report.Game.Path));
 
     /// <summary>
     /// Does everything this game still needs, in one go, asking only where something is at stake.
@@ -9673,9 +9638,15 @@ public partial class MainWindow : Window
 
         // Remembered so the card can say which one this game runs, and so a later one-click does
         // not silently pick a different translation than the one already in place.
-        var preference = _preferences.Read(report.Game.Path);
-        preference.TranslationId = translation.Id;
-        _preferences.Set(report.Game.Path, preference);
+        //
+        // ⚠ Written HERE and nowhere else: this is the only moment the file is actually in the
+        // game, which is what the field states. Choosing one is a separate, pending answer — see
+        // _pendingTranslation.
+        SaveAnswer(report.Game.Path, stored => stored.InstalledTranslationId = translation.Id);
+
+        // The intention has been carried out, so it stops being pending. Cleared on success only:
+        // a failed install leaves the choice standing, which is what somebody would expect.
+        _pendingTranslation.Remove(report.Game.Path);
 
         // ⚠ Names the place somebody can act from, not a folder on disk. "It is in
         // .ugt/removed/translations-20260817.json" is an instruction to open a file manager;
@@ -9708,6 +9679,34 @@ public partial class MainWindow : Window
     /// <summary>The same, for the two answers the plan block holds.</summary>
     private readonly Dictionary<string, (bool Start, string? Context)> _pendingPlan =
         new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The community translation named for a game and not yet applied, by game path.
+    ///
+    /// 🔴 **It was written to disk on the click, and that is the defect this replaces.** Choosing a
+    /// card in the translations window saved the id into game-preferences.json immediately — no
+    /// Apply, nothing on screen saying a choice was waiting, and it survived the program closing.
+    /// So a translation looked at one evening went on being offered weeks later, over work done in
+    /// the game since; and because the stored field also meant "the one installed here", a game
+    /// whose local file had diverged was told to install the translation it already had.
+    ///
+    /// ⚠ Same rule as every other answer given before an act: held for the session, promoted by
+    /// whatever carries it out — <see cref="TakeTranslationAsync"/>, which writes
+    /// <see cref="GamePreference.InstalledTranslationId"/> only once the file is actually in place.
+    /// A failed install therefore keeps the choice, which is what somebody would expect.
+    /// </summary>
+    private readonly Dictionary<string, int> _pendingTranslation =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The translation somebody named for this game and has not applied — never what is installed.
+    ///
+    /// ⚠ The two are different questions and used to share one field. What is IN the game is read
+    /// from the game (`report.MatchingOnline`, the local file's lineage) or, once installed by us,
+    /// from <see cref="GamePreference.InstalledTranslationId"/>.
+    /// </summary>
+    private int? ChosenTranslation(string gamePath) =>
+        _pendingTranslation.TryGetValue(gamePath, out var id) ? id : null;
 
     /// <summary>
     /// The way chosen for a game — Mod defaults, the mod's Setup, or its own settings — before

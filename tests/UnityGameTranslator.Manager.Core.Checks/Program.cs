@@ -25,6 +25,8 @@ internal static class Program
         SituationChecks.SituationsAGameCanBeIn();
         SituationChecks.WhatASecondLineSays();
         StandingChecks.WhereThisAccountStands();
+        TranslationChoiceChecks.WhichTranslationAGameWouldGet();
+        TranslationChoiceChecks.WhenNothingIsWaiting();
 
         Console.WriteLine();
         if (_failures == 0)

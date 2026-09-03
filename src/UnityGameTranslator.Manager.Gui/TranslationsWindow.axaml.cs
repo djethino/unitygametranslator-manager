@@ -67,19 +67,24 @@ public sealed class TranslationsWindow : Window
     /// <summary>Everything published for this game, whatever the languages. Feeds the pickers.</summary>
     private IReadOnlyList<OnlineTranslation> _everything = Array.Empty<OnlineTranslation>();
 
-    /// <summary>True when something was written, so the caller can refresh the game card.</summary>
+    /// <summary>True when a choice was made here, so the caller can refresh the game card.</summary>
     public bool Changed { get; private set; }
 
     /// <summary>
-    /// Where a choice made here is remembered — which is all this window does with it.
+    /// The translation chosen here — read by the caller when this window closes, and nowhere else.
     ///
-    /// ⚠ Nothing is written into a game from here, and that is the rule rather than a limitation
-    /// of the moment. Choosing needs the translations side by side; acting needs what the game
-    /// already carries, which only its card knows. This window used to do both, so the same button
-    /// meant "select" or "download now" depending on the state of the game behind it, and a
-    /// replacement was weighed in two places with two sets of warnings.
+    /// 🔴 **This window writes NOTHING, and it used to say so while writing.** Its own note below
+    /// promised that choosing is separate from acting; the selection nevertheless went straight into
+    /// game-preferences.json, on disk, the instant a card was clicked. It therefore survived the
+    /// program closing, with nothing on any screen saying a choice was still waiting — so a
+    /// translation looked at one evening was still being offered weeks later, over work done in the
+    /// game since.
+    ///
+    /// ⚠ Choosing needs the translations side by side; acting needs what the game already carries,
+    /// which only its card knows. So the choice goes back to the card as a pending answer and is
+    /// written by the act that carries it out, like every other answer in this program.
     /// </summary>
-    private readonly GamePreferences _preferences;
+    public int? ChosenTranslation { get; private set; }
 
     /// <summary>
     /// Opened with every language shown, rather than filtered on the one this game uses.
@@ -114,8 +119,13 @@ public sealed class TranslationsWindow : Window
     /// </summary>
     private readonly bool _mayChoose;
 
+    /// <param name="chosen">
+    /// What is already pending for this game, so reopening the list shows it as selected. Null when
+    /// nothing has been chosen — including on a game already carrying a translation, since "which
+    /// one is in the game" is read from the game itself (see the `installed` line in Card).
+    /// </param>
     public TranslationsWindow(GameReport report, LoaderDescriptor loader, SettingsStore settings,
-                              AccountLineages lineages, GamePreferences preferences,
+                              AccountLineages lineages, int? chosen = null,
                               bool anyLanguage = false, string? openWith = null)
     {
         _anyLanguage = anyLanguage;
@@ -124,7 +134,7 @@ public sealed class TranslationsWindow : Window
         _loader = loader;
         _settings = settings;
         _lineages = lineages;
-        _preferences = preferences;
+        ChosenTranslation = chosen;
         _mayChoose = ServerIdentity.For(settings.Current, report.SiteAccount,
                                         BuildInfo.ApiBaseUrl).CanWriteLocally;
 
@@ -595,7 +605,7 @@ public sealed class TranslationsWindow : Window
         // One rule now: choosing is done where translations can be compared, acting is done on the
         // game's card next to everything else that acts. The card is also the only place that can
         // weigh a replacement against what the game already carries.
-        var selectedId = _preferences.Read(_report.Game.Path).TranslationId;
+        var selectedId = ChosenTranslation;
         var chosen = selectedId == translation.Id;
 
         // 🔴 **Two things can be taken from a lineage you contribute to, and only one was offered.**
@@ -730,14 +740,15 @@ public sealed class TranslationsWindow : Window
     /// No confirmation, and none is owed: nothing on disk changes, and choosing another card
     /// undoes it. The moment something IS at stake — a file already in the game — is the moment
     /// the one-click asks, with the file in front of it to describe.
+    ///
+    /// 🔴 **"Writes nothing" is now true.** This method used to say exactly that and then save the
+    /// choice into game-preferences.json — so it outlived the session it was made in, invisibly.
+    /// The caller reads <see cref="Chosen"/> when this window closes and holds it as a pending
+    /// answer, which Apply promotes and Undo drops.
     /// </summary>
     private void Select(int translationId, TextBlock outcome, string message)
     {
-        var preference = _preferences.Read(_report.Game.Path);
-        preference.TranslationId = translationId;
-        preference.InstallTranslation = true;
-        _preferences.Set(_report.Game.Path, preference);
-
+        ChosenTranslation = translationId;
         Changed = true;
 
         Show(outcome, message, "StatusSuccess");

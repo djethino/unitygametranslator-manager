@@ -113,14 +113,26 @@ public sealed class GamePreference
     [JsonPropertyName("replace_hotkey")] public bool ReplaceHotkey { get; set; }
 
     /// <summary>
-    /// The community translation the user picked for this game, by site id.
+    /// The community translation this game **was set up with**, by site id. A FACT, past tense.
     ///
-    /// Remembered because it can be chosen before there is anywhere to put it: with no loader
-    /// installed there is no folder to write into, so choosing and installing are two moments.
+    /// 🔴 **It used to mean two things, and that shipped a defect.** One field answered both "which
+    /// one is in this game" — written by a successful install — and "which one somebody picked and
+    /// has not applied yet" — written the instant a card was clicked in the translations window, to
+    /// disk, with no Apply and no way to see it afterwards. Every reader assumed the second, so a
+    /// choice made in one session went on offering itself for ever, and a game whose local file had
+    /// since diverged was told to install the translation it already had.
+    ///
+    /// ⚠ **Only a successful install writes this** (TakeTranslationAsync). The intention lives in
+    /// MainWindow._pendingTranslation, is held for the session, and is promoted by the act — like
+    /// every other answer given before something is done.
+    ///
     /// ⚠ The id, never the file: what was published may have moved on by the time it is fetched,
     /// and fetching is what tells us.
+    ///
+    /// ⚠ The JSON name stays `translation_id`: the meaning kept is the one the field already had on
+    /// disk after an install, so nothing needs migrating and older entries stay true.
     /// </summary>
-    [JsonPropertyName("translation_id")] public int? TranslationId { get; set; }
+    [JsonPropertyName("translation_id")] public int? InstalledTranslationId { get; set; }
 
     /// <summary>
     /// Whether the one-click also brings a translation down.
@@ -176,7 +188,7 @@ public sealed class GamePreference
         StartTranslation = StartTranslation,
         GameContext = GameContext,
         ReplaceHotkey = ReplaceHotkey,
-        TranslationId = TranslationId,
+        InstalledTranslationId = InstalledTranslationId,
         InstallTranslation = InstallTranslation,
         AdoptLoader = AdoptLoader,
         LetWizardAsk = LetWizardAsk,

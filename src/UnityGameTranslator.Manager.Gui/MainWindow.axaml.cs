@@ -852,7 +852,17 @@ public partial class MainWindow : Window
         // except under a filter, where learning something about a game can put it in or out of the
         // visible set. Rebuilding drops the selection and restores it, and doing that on every
         // answer is what used to make the list flash.
-        if (_lens == Lens.All) RefreshRowContents();
+        //
+        // 🔴 **And only when there are rows to update at all.** RefreshRowContents walks the rows
+        // the list already holds: it can change what one SAYS, never bring one into being. With
+        // none it walks nothing, builds nothing, and says nothing about it.
+        //
+        // ⚠ That is not a hypothetical — it shipped. A scan clears the rows and then asks for this,
+        // so the first paint showed an EMPTY list under a subtitle reading "58 Unity games found",
+        // and clicking any lens filled it, because a lens is the one case that rebuilds. The old
+        // code was safe by accident: this choice lived in the community sweep, which only ever runs
+        // once a list exists.
+        if (_lens == Lens.All && _rows.Count > 0) RefreshRowContents();
         else RefreshList();
     }
 

@@ -117,10 +117,13 @@ internal static class TranslationChoiceChecks
             TranslationChoice.Waiting(Report(Local(), online), "fr", chosen: null, installed: 12) is null,
             "the one we installed is not re-offered", "even once the local file has diverged");
 
-        // ⚠ And it holds when somebody names it again: it is still already there.
+        // 🔴 **But naming it again IS honoured, and refusing that was a defect of its own.** With no
+        // lineage in common the workbench has nothing to offer either, so somebody deciding to go
+        // back to the published version over their own edits met silence and no way forward — the
+        // one thing this interface must never do. What is refused is choosing on their behalf.
         Program.Check(
-            TranslationChoice.Waiting(Report(Local(), online), "fr", chosen: 12, installed: 12) is null,
-            "naming what is already installed offers nothing", "there is nothing to bring");
+            TranslationChoice.Waiting(Report(Local(), online), "fr", chosen: 12, installed: 12)?.Id == 12,
+            "naming what is installed is still honoured", "a decision, not a proposal");
 
         // ⚠ But a DIFFERENT one, named deliberately, is still offered — the guard is about this
         // translation, not about the game having one.
@@ -136,5 +139,12 @@ internal static class TranslationChoiceChecks
         Program.Check(
             TranslationChoice.Waiting(Report(null, online), "fr", chosen: null, installed: 12)?.Id == 12,
             "a stale id on an empty game withholds nothing", "nothing is installed if nothing is there");
+
+        // ⚠ On a game holding local work, what refuses a proposal is the WORK, not the installed id
+        // — so the answer is the same whichever translation was installed. Pinned because these two
+        // guards overlap on the case that matters and could each be mistaken for the other.
+        Program.Check(
+            TranslationChoice.Waiting(Report(Local(), online), "fr", chosen: null, installed: 99) is null,
+            "local work refuses a proposal on its own", "whatever was installed before");
     }
 }

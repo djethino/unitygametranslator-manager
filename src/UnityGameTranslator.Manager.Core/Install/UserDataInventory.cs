@@ -89,6 +89,7 @@ public static class UserDataInventory
 
         var translation = new List<UserDataItem>();
         var setAside = new List<UserDataItem>();
+        var modInterface = new List<UserDataItem>();
         var configuration = new List<UserDataItem>();
         var fonts = new List<UserDataItem>();
         var images = new List<UserDataItem>();
@@ -112,6 +113,13 @@ public static class UserDataInventory
 
             if (top.StartsWith(LocalTranslationProbe.TranslationFileName, StringComparison.OrdinalIgnoreCase))
                 translation.Add(item);
+            // 🔴 Its own group, beside the translation and not inside it. The two are not the same
+            // work: one is this game's text, the other is the mod's own window translated once.
+            // Grouped with the translation, ticking "remove my translation" would take a pass of
+            // the translator nobody asked about; filed as unrecognised, it sits under "judge them
+            // yourself" beside a consequence written for stray files.
+            else if (Common.ModUi.IsOurs(top))
+                modInterface.Add(item);
             // 🔴 Its own group, not "Other files". These are TRANSLATIONS — replaced earlier and
             // kept so Restore local can bring one back. Filed as unrecognised, they sat under a
             // label that says "judge them yourself" beside a consequence written for stray files,
@@ -144,6 +152,13 @@ public static class UserDataInventory
             "Earlier versions of this game's translation, taken when something replaced them and "
             + $"whenever you asked. {Common.Backups.ScreenTitle} restores one; deleting them ends "
             + "that.");
+
+        // After the translation and its history, before the settings: it IS translated work, just
+        // not this game's. Redoing it costs another pass of the translator, which is worth saying
+        // and is not the same as losing lines that exist nowhere else.
+        Add(groups, "Mod interface", modInterface,
+            "The mod's own window, translated into your language. Removing it means translating "
+            + "it again the next time you turn that option on.");
 
         Add(groups, "Settings", configuration,
             "Your language, translator and sign-in for this game. The mod asks again from scratch.");
@@ -188,6 +203,10 @@ public static class UserDataInventory
                 continue;
 
             var ours = name.StartsWith(LocalTranslationProbe.TranslationFileName, StringComparison.OrdinalIgnoreCase)
+                       // The mod's own interface, translated once for this game. Left behind by a
+                       // repair, it would sit in the shared plugins folder while the mod started
+                       // over from nothing two folders away.
+                       || Common.ModUi.IsOurs(name)
                        || string.Equals(name, LocalTranslationProbe.ConfigFileName, StringComparison.OrdinalIgnoreCase)
                        || string.Equals(name, "fonts", StringComparison.OrdinalIgnoreCase)
                        || string.Equals(name, "images", StringComparison.OrdinalIgnoreCase);

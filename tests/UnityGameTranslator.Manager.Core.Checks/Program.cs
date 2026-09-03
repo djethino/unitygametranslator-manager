@@ -29,6 +29,7 @@ internal static class Program
         TranslationChoiceChecks.WhenNothingIsWaiting();
         ModelOrderChecks.HowModelsAreRanked();
         ModelOrderChecks.WhichRowsCarryAMark();
+        UserDataChecks.WhichFilesAreTheModsInterface();
 
         Console.WriteLine();
         if (_failures == 0)

@@ -1441,10 +1441,15 @@ public sealed class SettingsWindow : Window
     /// exercise — the one thing a reader in this screen is trying to avoid. Columns line up, so
     /// "half the memory for the same result" is seen rather than worked out.
     ///
-    /// Two rows carry a mark, and only two: what this project develops against, and the smallest
-    /// that got everything right every time. Both are facts, not opinions — the second is simply
-    /// the lowest measured figure among models that never missed. A mark on every row would be a
-    /// mark on none.
+    /// Two rows carry a mark, and only two: what this project develops against, and the lightest
+    /// that followed everything. Both are facts, not opinions, and each answers a question somebody
+    /// arrives with — "what do you run yourselves" and "I have a small card". A mark on every row
+    /// would be a mark on none, which is what the previous one had quietly become: its condition
+    /// was met by nine rows out of ten.
+    ///
+    /// ⚠ The marks are INFORMATIVE, not green. Green reads as approval, and neither claim is one:
+    /// the reference is a 16 GB model most readers should not start with, and the lightest needed
+    /// four retries out of twenty. The amber in the columns is where a cost is stated.
     /// </summary>
     /// <param name="canDownload">
     /// Whether this server can be asked to fetch a model — see
@@ -1502,7 +1507,7 @@ public sealed class SettingsWindow : Window
         foreach (var candidate in candidates)
         {
             var fits = ModelNotesProvider.Fits(candidate, vram);
-            var standout = ModelNotesProvider.Standout(candidate);
+            var standout = ModelNotesProvider.Standout(candidate, candidates);
             var measured = candidate.Measured;
 
             grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
@@ -1519,7 +1524,7 @@ public sealed class SettingsWindow : Window
                 Text = candidate.Pull,
                 FontSize = 13,
                 FontWeight = standout is null ? FontWeight.Normal : FontWeight.SemiBold,
-                Foreground = Brush(standout is null ? "TextPrimary" : "StatusSuccess"),
+                Foreground = Brush("TextPrimary"),
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
             });
 
@@ -1527,7 +1532,7 @@ public sealed class SettingsWindow : Window
             {
                 name.Children.Add(new Border
                 {
-                    Background = Brush("CalloutSuccessBg"),
+                    Background = Brush("CalloutInfoBg"),
                     CornerRadius = new CornerRadius(3),
                     Padding = new Thickness(6, 1),
                     VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
@@ -1535,7 +1540,7 @@ public sealed class SettingsWindow : Window
                     {
                         Text = standout,
                         FontSize = 10,
-                        Foreground = Brush("StatusSuccess"),
+                        Foreground = Brush("StatusInfo"),
                     },
                 });
             }
@@ -1598,8 +1603,19 @@ public sealed class SettingsWindow : Window
 
             // Amber as soon as there is one: it is not a failure — the line came out right — but it
             // is the same line paid for twice, and that is what the reader is weighing.
-            Put(Figure(measured is { Retried: { } tries, Lines: { } all } ? $"{tries}/{all}" : "—",
-                       measured?.Retried > 0 ? "StatusWarning" : "TextSecondary"), line, 5);
+            //
+            // 🔴 A line the model never got right is shown HERE, in red, and not left to be inferred
+            // from the suite column. It is the first thing the order sorts on, and text left in its
+            // original language while somebody plays is not the same kind of cost as a wait. Both
+            // figures are out of the same twenty lines, which is why they share a cell rather than
+            // needing an eighth column.
+            var retries = measured is { Retried: { } tries, Lines: { } all } ? $"{tries}/{all}" : "—";
+            if (measured?.Refused is { } lost && lost > 0) retries += $" · {lost} failed";
+
+            Put(Figure(retries,
+                       measured?.Refused > 0 ? "StatusError"
+                       : measured?.Retried > 0 ? "StatusWarning"
+                       : "TextSecondary"), line, 5);
 
             Put(Figure(measured is { Suite: { } suite, SuiteOf: { } of } ? $"{suite}/{of}" : "—",
                        measured is { Suite: { } s, SuiteOf: { } o } && s < o ? "StatusWarning" : "TextSecondary"),

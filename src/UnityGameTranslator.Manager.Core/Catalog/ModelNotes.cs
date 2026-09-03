@@ -100,6 +100,11 @@ public sealed class ModelMeasurements
     ///
     /// Retries are deliberately not counted here: needing one is a cost, not a fault, and the mod
     /// exists to absorb exactly that. What disqualifies is a line the model never got right.
+    ///
+    /// ⚠ This is NOT a distinction, and treating it as one is how the table stopped helping anyone
+    /// decide. Nine of the ten measured models pass it — models improved, the bar did not move —
+    /// so the badge it used to carry sat on nine rows out of ten. It is a floor: what it separates
+    /// is a model worth listing from one that leaves text untranslated.
     /// </summary>
     [JsonIgnore]
     public bool Flawless => Suite is { } suite && SuiteOf is { } of && suite == of
@@ -301,15 +306,33 @@ public sealed class ModelNotesProvider
     ///
     /// 🔸 THE SAME ORDER IS APPLIED BY THE WEBSITE — `App\Services\ModelCatalog::installable()` in
     /// the website repository. Change one, change the other. The two cannot share code (PHP and C#,
-    /// and the shared library takes no JSON parser), so the rule is written twice on purpose:
+    /// and the shared library takes no JSON parser), so the rule is written twice on purpose. It is
+    /// a ladder of thresholds, compared in this order, and each rung is a cost paid while playing:
     ///
-    ///   what fits this card · the reference model · instructions followed, most first ·
-    ///   video memory, least first · languages claimed, most first
+    ///   what fits this card (Manager only) · measured at all · gave up on no line ·
+    ///   followed every instruction · never had to be asked twice · video memory held, least first ·
+    ///   the strict-source option · the wait before the first line, shortest first
     ///
     /// The first key is the ONLY legitimate difference between the two: a web page has no idea what
     /// card the reader owns, so it simply never demotes anything. Everything after it must match —
     /// the same catalogue presented in two orders by two of our own tools is a bug the reader
     /// experiences as one of them being wrong.
+    ///
+    /// ⚠ THRESHOLDS, not a weighted score, and that is the decision. A score would let a tenth of a
+    /// second of loading buy back a line the model refuses to translate, and the two are not the
+    /// same kind of thing: one is a wait, the other is text left in English on screen. So each rung
+    /// is asked as a yes-or-no, and memory only decides between models that answered alike.
+    ///
+    /// ⚠ Retries are a THRESHOLD too, never a count. Four retries out of twenty and five is not a
+    /// difference anybody can act on, and ranking on it would put a 7.8 GB model above a 2.8 GB one
+    /// over a single line. Above the threshold, what decides is the memory left for the game.
+    ///
+    /// 🔴 The reference model is NOT forced first any more. It is what this project develops
+    /// against — a fact about us, not a measurement — and it carries a mark saying exactly that.
+    /// Ranking it first put a 16 GB model at the top of a table people read to find one that fits.
+    ///
+    /// ⚠ Languages claimed no longer breaks ties. It is the publisher's claim, unverified, and the
+    /// catalogue's own rule is that nothing here is ordered by language.
     /// </summary>
     public static IReadOnlyList<ModelNote> Installable(ModelNotesDocument? document,
                                                        long? videoMemoryBytes)
@@ -340,38 +363,75 @@ public sealed class ModelNotesProvider
 
         return offerable
             .OrderBy(note => Fits(note) ? 0 : 1)
-            .ThenBy(note => note.IsReference ? 0 : 1)
-            .ThenByDescending(Followed)
-            .ThenBy(note => note.MinVramGb ?? double.MaxValue)
-            .ThenByDescending(note => note.Languages?.Supported ?? 0)
+            .ThenBy(note => note.Measured is null ? 1 : 0)
+            .ThenBy(note => note.Measured?.Refused > 0 ? 1 : 0)
+            .ThenBy(note => Incomplete(note) ? 1 : 0)
+            .ThenBy(note => note.Measured?.Retried > 0 ? 1 : 0)
+            .ThenBy(Held)
+            .ThenBy(note => note.Measured?.StrictSource == true ? 0 : 1)
+            .ThenBy(note => note.Measured?.LoadSeconds ?? double.MaxValue)
             .ToList();
     }
 
-    /// <summary>
-    /// How much of the instruction suite a model followed, as a proportion, or -1 when it was
-    /// never measured — which sorts it after everything that was, since an unknown score is not a
-    /// zero but is no reason to lead with it either.
-    ///
-    /// A proportion rather than the "flawless or not" flag this used to sort on: that flag put
-    /// 14 out of 15 and 9 out of 15 on the same footing, which is a difference a reader can see in
-    /// the same table.
-    /// </summary>
-    private static double Followed(ModelNote note) =>
-        note.Measured is { Suite: { } suite, SuiteOf: { } outOf } && outOf > 0
-            ? (double)suite / outOf
-            : -1.0;
+    /// <summary>Left at least one instruction of the suite unfollowed.</summary>
+    private static bool Incomplete(ModelNote note) =>
+        note.Measured is { Suite: { } suite, SuiteOf: { } outOf } && suite < outOf;
 
     /// <summary>
-    /// Why an entry is shown first, in the words the reader gets. Null for everything else —
-    /// a badge on every row is a badge on none.
+    /// The memory a model actually held, in GB — what is left for the game while it runs.
     ///
-    /// "Missed nothing" is a statement about a suite of fifteen sentences and four repetitions of
-    /// one line, not a certificate. It is worded as a past observation for that reason.
+    /// ⚠ The MEASURED figure, never <see cref="ModelNote.MinVramGb"/>. That one is rounded up to
+    /// real card sizes, so four models holding 1.7, 2.8, 3.1 and 3.1 GB all read "4 GB" and sorted
+    /// as equals — collapsing the very difference this rung exists to expose. The rounded figure
+    /// answers "will it fit"; only the measured one answers "how much is left".
+    ///
+    /// Falls back to the requirement when nothing was measured, then to the end of the list.
     /// </summary>
-    public static string? Standout(ModelNote note) =>
-        note.IsReference ? "What we develop against"
-        : note.Measured is { Flawless: true } ? "Missed nothing"
-        : null;
+    private static double Held(ModelNote note) =>
+        note.Measured?.VramGb ?? note.MinVramGb ?? double.MaxValue;
+
+    /// <summary>
+    /// The mark beside a model, in the words the reader gets, or null — which is the answer for
+    /// most rows, and has to be: a mark on every row is a mark on none.
+    ///
+    /// Two of them, and each answers a DIFFERENT question a reader arrives with:
+    ///
+    ///   "what do you run yourselves?"  → the reference model
+    ///   "I have a small card"          → the lightest that missed nothing
+    ///
+    /// 🔴 The mark this replaces — "Missed nothing", on anything flawless — answered neither, and
+    /// by 2026-09 it landed on nine rows out of ten. It had not changed; the models had. A mark
+    /// whose condition the whole field eventually meets stops being a mark, silently, and nothing
+    /// about the code says so.
+    ///
+    /// ⚠ The second mark says LIGHTEST, not best: the model it lands on today needed four retries
+    /// out of twenty, and its retry column says so in amber right beside the mark. The mark points,
+    /// the columns qualify. Neither is allowed to say the other's part.
+    /// </summary>
+    /// <param name="among">
+    /// The rows being shown, because "lightest" is a fact about a list and not about a model. Pass
+    /// the very list on screen: a mark computed over one set and displayed beside another names a
+    /// row the reader cannot see.
+    /// </param>
+    public static string? Standout(ModelNote note, IEnumerable<ModelNote> among)
+    {
+        if (note.IsReference) return "Used in development";
+
+        // Compared over EVERY row including the reference, and only awarded to a row that is not
+        // it. If the reference ever were the lightest, the honest outcome is that nothing else
+        // carries this mark — handing it to the second lightest would name the wrong model.
+        var lightest = Lightest(among);
+
+        return lightest is not null && lightest.Pull == note.Pull
+            ? "Lightest that missed nothing"
+            : null;
+    }
+
+    /// <summary>The smallest measured footprint among models that gave up on nothing, or null.</summary>
+    private static ModelNote? Lightest(IEnumerable<ModelNote> among) =>
+        among.Where(note => note.Measured is { Flawless: true, VramGb: not null })
+             .OrderBy(note => note.Measured!.VramGb!.Value)
+             .FirstOrDefault();
 
     /// <summary>Whether this model fits the card, or null when the card size is unknown.</summary>
     public static bool? Fits(ModelNote note, long? videoMemoryBytes)

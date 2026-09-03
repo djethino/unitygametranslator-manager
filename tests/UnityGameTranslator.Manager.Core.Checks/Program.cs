@@ -27,6 +27,8 @@ internal static class Program
         StandingChecks.WhereThisAccountStands();
         TranslationChoiceChecks.WhichTranslationAGameWouldGet();
         TranslationChoiceChecks.WhenNothingIsWaiting();
+        ModelOrderChecks.HowModelsAreRanked();
+        ModelOrderChecks.WhichRowsCarryAMark();
 
         Console.WriteLine();
         if (_failures == 0)

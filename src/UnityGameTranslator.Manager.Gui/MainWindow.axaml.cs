@@ -3286,7 +3286,7 @@ public partial class MainWindow : Window
         // ⚠ Directly under the name. Placed after the technical card, the tabs sat below a screenful
         // of paths and engine versions — somebody had to scroll to discover the card even had two
         // halves, which is the same as not having them.
-        DetailPanel.Children.Add(TabStrip(report));
+        DetailPanel.Children.Add(TabStrip());
 
         if (BeTheFirstBanner(report) is { } invitation) DetailPanel.Children.Add(invitation);
 
@@ -3309,29 +3309,32 @@ public partial class MainWindow : Window
         _takeTranslation = TranslationOffers.MayDefaultToYes(offer)
                            && _preferences.Read(report.Game.Path).InstallTranslation;
 
-        if (_gameTab == GameTab.Home)
-        {
-            foreach (var control in GameHome(report)) DetailPanel.Children.Add(control);
+        foreach (var control in PageFor(_gameTab).Body(report))
+            DetailPanel.Children.Add(control);
 
-            // ⚠ The bar belongs to BOTH tabs, where it used to be hidden here on the argument that
-            // Home offers one way forward at a time. What settles it is Play: wanting to start the
-            // game has nothing to do with which tab is open, and Home — the "where does this game
-            // stand" tab — is exactly where it was missing. A bar that appears and disappears
-            // between tabs also changes the height of the content on every switch.
-            //
-            // The competition that argument feared is real, and it is answered in GameHome: while
-            // this bar has something to do, the buttons in the body drop to the outlined register.
-            ShowActionBar(report);
-            return;
-        }
+        // ⚠ The bar belongs to EVERY tab, where it used to be written into each branch — and was
+        // for a while missing from Home, on the argument that Home offers one way forward at a
+        // time. What settles it is Play: wanting to start the game has nothing to do with which tab
+        // is open. A bar that appears and disappears between tabs also changes the height of the
+        // content on every switch.
+        //
+        // The competition that argument feared is real, and it is answered in GameHome: while this
+        // bar has something to do, the buttons in the body drop to the outlined register.
+        ShowActionBar(report);
+    }
 
+    /// <summary>
+    /// The Set up half: what this game is made of, and the three things that can be installed in it.
+    /// </summary>
+    private IEnumerable<Control> GameSetup(GameReport report)
+    {
         // ⚠ Paths, engine version, architecture: the technical answer, and it opens the SET UP
         // half rather than the card. It was the first thing on every game — before knowing whether
         // a translation even existed — which is the wrong first question for almost everybody.
-        DetailPanel.Children.Add(Card(Facts(report)));
+        yield return Card(Facts(report));
 
         foreach (var warning in report.Warnings)
-            DetailPanel.Children.Add(Callout(warning, Tone.Warning));
+            yield return Callout(warning, Tone.Warning);
 
         // Three cards for three subjects, where there used to be one called "Actions".
         //
@@ -3339,11 +3342,9 @@ public partial class MainWindow : Window
         // installed by separate steps; folding them into one block meant their versions could not
         // both be shown, and the single button had to pretend they moved together. Each card now
         // carries its own version, its own verb, and nothing that belongs to the other.
-        DetailPanel.Children.Add(Card(LoaderSection(report)));
-        DetailPanel.Children.Add(Card(ModSection(report)));
-        DetailPanel.Children.Add(Card(Translations(report)));
-
-        ShowActionBar(report);
+        yield return Card(LoaderSection(report));
+        yield return Card(ModSection(report));
+        yield return Card(Translations(report));
     }
 
     /// <summary>
@@ -4268,10 +4269,44 @@ public partial class MainWindow : Window
         await RepublishAsync();
     }
 
-    /// <summary>Which half of a game's card is showing. Home first, always — see TabStrip.</summary>
+    /// <summary>Which page of a game's card is showing. Home first, always — see TabStrip.</summary>
     private enum GameTab { Home, Setup }
 
     private GameTab _gameTab = GameTab.Home;
+
+    /// <summary>
+    /// One page of a game's card: what the tab is called, and what it puts on the panel.
+    /// </summary>
+    /// <param name="Body">
+    /// Yields the controls, and adds none itself — so a page cannot quietly touch the panel around
+    /// it, and the frame (header, tabs, blockers, the action bar) stays the same on every one.
+    /// </param>
+    private sealed record GameTabPage(GameTab Tab, string Label,
+                                      Func<GameReport, IEnumerable<Control>> Body);
+
+    /// <summary>
+    /// The pages, in the order they are offered. **Adding one is adding a line here.**
+    ///
+    /// 🔴 Written as a list because more are coming, and because the two that exist were spelled out
+    /// in four places: the enum, the array the strip walked, a ternary picking the label, and an
+    /// `if` in RenderReport choosing the body. Four places is four chances for a third page to be
+    /// half-added — offered by the strip and drawing nothing, or drawing something no tab reaches.
+    ///
+    /// ⚠ Order is reading order, and Home stays first: it answers "where does this game stand",
+    /// which is what somebody clicking a game came to find out. Set up is what they do next.
+    /// </summary>
+    private IReadOnlyList<GameTabPage> GameTabs => new[]
+    {
+        new GameTabPage(GameTab.Home, "This game", GameHome),
+        new GameTabPage(GameTab.Setup, "Set up", GameSetup),
+    };
+
+    /// <summary>
+    /// The page for a tab — the first one when the tab is not among them, which is what makes an
+    /// enum value with no page a wrong-looking screen rather than an empty one.
+    /// </summary>
+    private GameTabPage PageFor(GameTab tab) =>
+        GameTabs.FirstOrDefault(page => page.Tab == tab) ?? GameTabs[0];
 
     /// <summary>
     /// Which folded blocks of the current card are open.
@@ -4303,32 +4338,33 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// The two tabs, and the only place that switches between them.
+    /// The tabs, and the only place that switches between them.
     ///
     /// ⚠ Reset to Home on every game, deliberately: the tab is a place in ONE game's card, not a
     /// preference about the tool. Carrying "Set up" across a click in the list would drop somebody
     /// into the machinery of a game they have not yet looked at.
+    ///
+    /// ⚠ Walks <see cref="GameTabs"/> and names nothing itself. A strip that spelled its own tabs
+    /// out could offer one that draws nothing, or leave out one that draws.
     /// </summary>
-    private Control TabStrip(GameReport report)
+    private Control TabStrip()
     {
         var strip = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
 
-        foreach (var tab in new[] { GameTab.Home, GameTab.Setup })
+        foreach (var page in GameTabs)
         {
-            var active = tab == _gameTab;
-
             var button = new Button
             {
-                Content = tab == GameTab.Home ? "This game" : "Set up",
+                Content = page.Label,
                 FontSize = 12,
 
-                // The active tab wears the section colour; the other stays plain. No "quiet"
+                // The active tab wears the section colour; the others stay plain. No "quiet"
                 // class is invented here — App.axaml has no such style, and naming one that does
                 // not exist styles nothing while looking deliberate.
-                Classes = { active ? "primary" : "" },
+                Classes = { page.Tab == _gameTab ? "primary" : "" },
             };
 
-            var chosen = tab;
+            var chosen = page.Tab;
             button.Click += async (_, _) =>
             {
                 if (_gameTab == chosen) return;

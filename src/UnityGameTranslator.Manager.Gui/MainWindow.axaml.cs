@@ -2213,6 +2213,16 @@ public partial class MainWindow : Window
     private void ClearDetail()
     {
         DetailPanel.Children.Clear();
+
+        // ⚠ The frame goes with it, and its row collapses. Left behind, the overview and the
+        // scanning gear would draw under a previous game's name and tabs.
+        CardHead.Children.Clear();
+        CardHead.IsVisible = false;
+
+        // ⚠ And the report it was drawn from: a tab click reads it, and one held past the card
+        // would redraw a page about a game nobody is looking at.
+        _shownReport = null;
+
         _scanGear = null;
     }
 
@@ -3259,10 +3269,21 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>
+    /// The card last drawn, so switching tabs can redraw a page without building a report again.
+    ///
+    /// ⚠ Cleared with the card — see <see cref="ClearDetail"/>. Held beyond it, a tab click on the
+    /// overview, or after a game was forgotten, would redraw a page about a game nobody is looking
+    /// at.
+    /// </summary>
+    private GameReport? _shownReport;
+
     private void RenderReport(GameReport report)
     {
         var game = report.Game;
         ClearDetail();
+
+        _shownReport = report;
 
         // Back to filling the panel from the top: a report is a document, and a centred document
         // that grows past the viewport starts scrolled to its middle.
@@ -3275,8 +3296,15 @@ public partial class MainWindow : Window
         // height back rather than keeping an empty band.
         OverviewTop.IsVisible = false;
 
-        DetailPanel.Children.Add(BackToOverview(report));
-        DetailPanel.Children.Add(Header(report));
+        // 🔴 **Everything from here to the rail is the FRAME, and it does not scroll.** It is what
+        // both tabs share and neither owns: the way back, the game's name, a notice true of the
+        // whole card, and the tabs themselves. Kept in the scroller it went out of view three
+        // screens into "Set up" — leaving nothing on screen to say which tab one was in, or to
+        // offer the other — and it was thrown away and rebuilt on every tab click.
+        CardHead.IsVisible = true;
+
+        CardHead.Children.Add(BackToOverview(report));
+        CardHead.Children.Add(Header(report));
 
         // 🔴 **Above the tabs, and the same banner the overview shows.** Nothing can be set up in
         // any game until this is answered, and the only place saying so was the band at the very
@@ -3295,20 +3323,21 @@ public partial class MainWindow : Window
         // decided — above a OneClick that is lit and ready. On the overview it stays unconditional:
         // there it is a fact about the tool, not a refusal about one game.
         if (!_settings.Current.Reviewed && NeedsModDefaults(report))
-            DetailPanel.Children.Add(WhatGoesIntoGames()!);
+            CardHead.Children.Add(WhatGoesIntoGames()!);
 
-        // ⚠ Directly under the name. Placed after the technical card, the tabs sat below a screenful
-        // of paths and engine versions — somebody had to scroll to discover the card even had two
-        // halves, which is the same as not having them.
-        DetailPanel.Children.Add(TabStrip());
-
-        if (BeTheFirstBanner(report) is { } invitation) DetailPanel.Children.Add(invitation);
+        if (BeTheFirstBanner(report) is { } invitation) CardHead.Children.Add(invitation);
 
         // A blocker belongs to both halves: "this game cannot be modded" IS the answer somebody
         // came for, and hiding it behind a tab would let Home offer a translation for a game that
         // can never run one.
         foreach (var blocker in report.Blockers)
-            DetailPanel.Children.Add(Callout(blocker, Tone.Error));
+            CardHead.Children.Add(Callout(blocker, Tone.Error));
+
+        // ⚠ **Last in the frame, and that is the whole point of a rail.** It is the line the pages
+        // hang from, so nothing of the frame may come between it and the page it introduces.
+        // Placed after the technical card once, the tabs sat below a screenful of paths and engine
+        // versions — somebody had to scroll to discover the card even had two halves.
+        CardHead.Children.Add(TabStrip());
 
         // ⚠ Settled BEFORE the tabs split, and it used to live in the Setup branch alone. The bar
         // reads it, and the bar now exists on Home too: left where it was, a game opened on Home
@@ -3329,8 +3358,7 @@ public partial class MainWindow : Window
                            && (ChosenTranslation(report.Game.Path) is not null
                                || _preferences.Read(report.Game.Path).InstallTranslation);
 
-        foreach (var control in PageFor(_gameTab).Body(report))
-            DetailPanel.Children.Add(control);
+        ShowTabBody(report);
 
         // ⚠ The bar belongs to EVERY tab, where it used to be written into each branch — and was
         // for a while missing from Home, on the argument that Home offers one way forward at a
@@ -3341,6 +3369,34 @@ public partial class MainWindow : Window
         // The competition that argument feared is real, and it is answered in GameHome: while this
         // bar has something to do, the buttons in the body drop to the outlined register.
         ShowActionBar(report);
+    }
+
+    /// <summary>
+    /// Puts one page into the scroller, and nothing else.
+    ///
+    /// 🔴 **This is what a tab click costs now, and it used to cost a rebuilt card.** Switching
+    /// tabs called ShowSelectedAsync, which asks the site for a fresh report and then draws the
+    /// whole thing again — so a change concerning only what sits under the rail threw away the
+    /// name, the banner and the rail itself, after a network round trip. The frame is untouched
+    /// here: it belongs to the game, not to the page.
+    ///
+    /// ⚠ Back to the top, deliberately. Another page is another document, and landing half way down
+    /// it because that is where the previous one was left is the tool remembering something nobody
+    /// asked it to. The offset is only ever restored for a redraw of the SAME page — see
+    /// ShowSelectedAsync.
+    ///
+    /// ⚠ _takeTranslation is NOT recomputed here: it is the answer somebody may have ticked, and
+    /// working out the safe default again on a tab click would untick it under their hand. It is
+    /// settled in RenderReport and nowhere else, which is what its own note says.
+    /// </summary>
+    private void ShowTabBody(GameReport report)
+    {
+        DetailPanel.Children.Clear();
+
+        foreach (var control in PageFor(_gameTab).Body(report))
+            DetailPanel.Children.Add(control);
+
+        DetailScroll.Offset = default;
     }
 
     /// <summary>
@@ -4381,11 +4437,22 @@ public partial class MainWindow : Window
             button.Classes.Set("selected", page.Tab == _gameTab);
 
             var chosen = page.Tab;
-            button.Click += async (_, _) =>
+            button.Click += (_, _) =>
             {
                 if (_gameTab == chosen) return;
                 _gameTab = chosen;
-                await ShowSelectedAsync();
+
+                // The mark moves on the buttons already on screen, exactly as the filter chips do.
+                // Rebuilding the strip would replace the control under the pointer that just
+                // pressed it, which loses its hover.
+                foreach (var other in strip.Children.OfType<Button>())
+                    other.Classes.Set("selected", ReferenceEquals(other, button));
+
+                // 🔴 **Only the page, and no report is built.** This awaited ShowSelectedAsync,
+                // which asks the site for a fresh report before drawing the whole card again — a
+                // network round trip and a full rebuild to change what sits under the rail. What is
+                // on screen was drawn from a report we still hold.
+                if (_shownReport is { } shown) ShowTabBody(shown);
             };
 
             strip.Children.Add(button);
@@ -4394,11 +4461,12 @@ public partial class MainWindow : Window
         // The rail the open tab's mark sits on. It is what turns two underlined words into a set of
         // places: without it the mark reads as decoration on one item rather than as a position
         // among several.
+        // ⚠ No bottom margin: the page below brings its own top margin, and adding one here would
+        // push the rail away from the page it introduces — which is the one thing it must touch.
         return new Border
         {
             BorderBrush = Brush("BorderSubtle"),
             BorderThickness = new Avalonia.Thickness(0, 0, 0, 1),
-            Margin = new Avalonia.Thickness(0, 0, 0, 6),
             Child = strip,
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
         };

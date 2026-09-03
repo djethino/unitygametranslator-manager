@@ -98,8 +98,24 @@
         the middle of the panel, where it reads as the main event rather than as a note. Pinned in
         its own row it spans the panel, aligns with the content below, and stays out of the way.
       -->
-      <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto">
+      <Grid Grid.Column="1" RowDefinitions="Auto,Auto,*,Auto">
         <StackPanel Grid.Row="0" x:Name="OverviewTop" Margin="20,16,24,0" Spacing="8"
+                    IsVisible="False" />
+
+        <!--
+          A GAME'S FRAME: its name, where it lives, and the tabs. Fixed, above the scroller.
+
+          🔴 **It used to scroll with the tab's contents, and to be rebuilt on every tab click.**
+          Two things went wrong at once. Switching tabs threw the whole card away and built it
+          again — name, banner and rail included — after a fresh report that makes a network call,
+          so the view jumped for a change that concerns only what is below the rail. And the rail
+          itself scrolled away: three screens into "Set up" there was nothing on screen saying
+          which tab one was in, or offering the other.
+
+          What belongs here is what both tabs share and neither owns. Everything a page puts on
+          screen goes in the scroller below, so a page is a page and the frame stays put.
+        -->
+        <StackPanel Grid.Row="1" x:Name="CardHead" Margin="20,16,24,0" Spacing="14"
                     IsVisible="False" />
 
         <!--
@@ -111,7 +127,7 @@
           for something that could not be done yet, and it made a scan in progress look like a tool
           waiting for its user.
         -->
-        <ScrollViewer Grid.Row="1" x:Name="DetailScroll">
+        <ScrollViewer Grid.Row="2" x:Name="DetailScroll">
           <StackPanel x:Name="DetailPanel" Margin="20,16,24,24" Spacing="14" />
         </ScrollViewer>
 
@@ -129,7 +145,7 @@
           Empty for the overview and for a game with nothing to do, and the row collapses with it —
           an empty band at the bottom of the panel reads as something failing to load.
         -->
-        <ContentControl Grid.Row="2" x:Name="ActionBar" IsVisible="False" />
+        <ContentControl Grid.Row="3" x:Name="ActionBar" IsVisible="False" />
       </Grid>
     </Grid>
 

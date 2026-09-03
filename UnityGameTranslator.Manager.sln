@@ -11,6 +11,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UnityGameTranslator.Manager
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UnityGameTranslator.Manager.Gui", "src\UnityGameTranslator.Manager.Gui\UnityGameTranslator.Manager.Gui.csproj", "{3AE433A7-12B7-4BD6-96FE-AEC1EABABA9C}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UnityGameTranslator.Manager.Core.Checks", "tests\UnityGameTranslator.Manager.Core.Checks\UnityGameTranslator.Manager.Core.Checks.csproj", "{D8B14A24-6DCF-4DF9-97E2-973B2A663A0D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -57,6 +61,18 @@ Global
 		{3AE433A7-12B7-4BD6-96FE-AEC1EABABA9C}.Release|x64.Build.0 = Release|Any CPU
 		{3AE433A7-12B7-4BD6-96FE-AEC1EABABA9C}.Release|x86.ActiveCfg = Release|Any CPU
 		{3AE433A7-12B7-4BD6-96FE-AEC1EABABA9C}.Release|x86.Build.0 = Release|Any CPU
+		{D8B14A24-6DCF-4DF9-97E2-973B2A663A0D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D8B14A24-6DCF-4DF9-97E2-973B2A663A0D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D8B14A24-6DCF-4DF9-97E2-973B2A663A0D}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{D8B14A24-6DCF-4DF9-97E2-973B2A663A0D}.Debug|x64.Build.0 = Debug|Any CPU
+		{D8B14A24-6DCF-4DF9-97E2-973B2A663A0D}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{D8B14A24-6DCF-4DF9-97E2-973B2A663A0D}.Debug|x86.Build.0 = Debug|Any CPU
+		{D8B14A24-6DCF-4DF9-97E2-973B2A663A0D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D8B14A24-6DCF-4DF9-97E2-973B2A663A0D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D8B14A24-6DCF-4DF9-97E2-973B2A663A0D}.Release|x64.ActiveCfg = Release|Any CPU
+		{D8B14A24-6DCF-4DF9-97E2-973B2A663A0D}.Release|x64.Build.0 = Release|Any CPU
+		{D8B14A24-6DCF-4DF9-97E2-973B2A663A0D}.Release|x86.ActiveCfg = Release|Any CPU
+		{D8B14A24-6DCF-4DF9-97E2-973B2A663A0D}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -65,5 +81,6 @@ Global
 		{6D36B79A-775D-4711-89F6-A2BEE73BE87C} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{5AD0E33D-1A97-4116-B653-CC53958C65F0} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{3AE433A7-12B7-4BD6-96FE-AEC1EABABA9C} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{D8B14A24-6DCF-4DF9-97E2-973B2A663A0D} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal

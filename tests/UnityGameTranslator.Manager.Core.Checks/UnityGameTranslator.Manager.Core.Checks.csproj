@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+
+    <!--
+      ⚠ Never packaged and never shipped: this is run from a developer's machine and from
+      verify-manager.ps1. It reads Core directly, which is the whole point — the rules it checks
+      must be reachable without a window.
+    -->
+    <IsPublishable>false</IsPublishable>
+  </PropertyGroup>
+
+  <!--
+    ⚠ No test framework, and that is deliberate — the same protocol the mod's Core.Checks and the
+    socle's Common.Checks follow. THIRD_PARTY_LICENSES.md says what this product depends on and
+    adding a runner here would make that list wrong for a binary nobody receives. So this prints
+    its own results and exits non-zero; `dotnet run` is the whole protocol.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="../../src/UnityGameTranslator.Manager.Core/UnityGameTranslator.Manager.Core.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -146,16 +146,17 @@ public sealed class SearchPicker : UserControl
 
         _face.Click += (_, _) => Open();
 
-        // ⚠ Filtering rebuilds the rows, so the selection in the list is meaningless afterwards —
-        // this listens for a CLICK on a row instead, and reads what was clicked.
-        _list.SelectionChanged += (_, _) =>
-        {
-            if (!_popup.IsOpen || _list.SelectedItem is not { } row) return;
+        // 🔴 **Highlighting a row is not choosing it, and confusing the two breaks the keyboard.**
+        // This listened to SelectionChanged, which fires as soon as a row is merely highlighted —
+        // so pressing Down to walk into the list picked the first entry and shut the list on the
+        // spot, and every arrow key after that would have chosen too. A row is committed by a click
+        // on it or by Enter, and by nothing else.
+        _list.PointerReleased += (_, _) => Commit();
 
-            _selected = row;
-            ShowFace();
-            _popup.IsOpen = false;
-            SelectionChanged?.Invoke(this, EventArgs.Empty);
+        _list.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter) { Commit(); e.Handled = true; }
+            else if (e.Key == Key.Escape) { _popup.IsOpen = false; e.Handled = true; }
         };
 
         _search.TextChanged += (_, _) => Refill();
@@ -188,7 +189,16 @@ public sealed class SearchPicker : UserControl
             }
         };
 
-        Content = _face;
+        // 🔴 **The popup goes IN the tree, beside the face — it is not enough to point it at one.**
+        // A Popup with no parent still opens, and everything inside it is invisible: styles and
+        // resources reach a control through its tree, so a TextBox and a ListBox hanging off
+        // nothing get no ControlTheme, and a control with no template draws nothing and measures
+        // zero. What was left on screen was the Border, which paints itself — an empty box, exactly
+        // the size of nothing.
+        //
+        // ⚠ A Popup in a Panel takes no room: it is not laid out inline. Being there is only about
+        // what it inherits.
+        Content = new Panel { Children = { _face, _popup } };
     }
 
     private void Open()
@@ -215,6 +225,11 @@ public sealed class SearchPicker : UserControl
         // by the time it passes here.
         if (TopLevel.GetTopLevel(this) is { } top)
         {
+            // ⚠ Taken off first: a click on the face while the list is already open dismisses it
+            // and reopens in one gesture, and a second copy of this handler would scroll twice as
+            // far per notch for the rest of the session.
+            top.RemoveHandler(InputElement.PointerWheelChangedEvent, OnWheelWhileOpen);
+
             top.AddHandler(InputElement.PointerWheelChangedEvent, OnWheelWhileOpen,
                            RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
         }
@@ -281,6 +296,22 @@ public sealed class SearchPicker : UserControl
         // scrolling to nothing reads as the search having failed.
         if (needle.Length == 0 && _selected is not null && rows.Contains(_selected))
             _list.ScrollIntoView(_selected);
+    }
+
+    /// <summary>
+    /// Takes the highlighted row as the answer, closes, and says so.
+    ///
+    /// ⚠ Silent when nothing is highlighted: a click on the padding around the rows, or Enter with
+    /// the list merely focused, must not close on an answer nobody gave.
+    /// </summary>
+    private void Commit()
+    {
+        if (!_popup.IsOpen || _list.SelectedItem is not { } row) return;
+
+        _selected = row;
+        ShowFace();
+        _popup.IsOpen = false;
+        SelectionChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private string Reads(object item) => TextOf?.Invoke(item) ?? item.ToString() ?? "";

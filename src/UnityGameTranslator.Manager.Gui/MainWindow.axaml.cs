@@ -4,7 +4,6 @@ using Avalonia.Controls.Templates;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Media.Transformation;
 using Avalonia.Threading;
 using UnityGameTranslator.Manager.Core.Api;
 using UnityGameTranslator.Manager.Core.Catalog;
@@ -1379,7 +1378,15 @@ public partial class MainWindow : Window
                 _lens = value;
                 foreach (var other in FilterBar.Children.OfType<Button>())
                     other.Classes.Set("selected", ReferenceEquals(other, button));
+
                 RefreshList();
+
+                // ⚠ **Here and not inside RefreshList.** The same method rebuilds the list on every
+                // keystroke in the search box and on every answer the site brings back; playing
+                // this there would strobe while somebody types and twitch on its own for the first
+                // few seconds. A lens is a change SOMEBODY ASKED FOR, which is the whole condition
+                // for moving at all — see Motion.
+                Motion.Arrive(GameList);
             };
             FilterBar.Children.Add(button);
         }
@@ -3390,24 +3397,10 @@ public partial class MainWindow : Window
 
         DetailScroll.Offset = default;
 
-        // The page arrives rather than appearing — see the movement section in App.axaml, which
-        // holds the durations. Set to the "from" values here and returned to rest on the next
-        // frame, which is what makes the transitions run at all: a value assigned and read back in
-        // the same pass never changed as far as the animator is concerned.
-        //
-        // ⚠ Posted at Render, not Loaded: Loaded waits for a layout pass that a panel full of cards
-        // does not finish for tens of milliseconds, and the page would sit invisible until it did.
-        // ⚠ TransformOperations, never a TranslateTransform: TransformOperationsTransition can only
-        // interpolate between the former, and handed the latter it does nothing — no error, no
-        // warning, just a page that appears instead of arriving.
-        DetailPanel.Opacity = 0;
-        DetailPanel.RenderTransform = TransformOperations.Parse("translateY(8px)");
-
-        Dispatcher.UIThread.Post(() =>
-        {
-            DetailPanel.Opacity = 1;
-            DetailPanel.RenderTransform = TransformOperations.Parse("none");
-        }, DispatcherPriority.Render);
+        // The page arrives rather than appearing — the same motion the game list plays when its
+        // filter changes, because it says the same thing: what you were looking at has been
+        // replaced. See Motion.Arrive, which holds the durations and the reasoning.
+        Motion.Arrive(DetailPanel);
     }
 
     /// <summary>

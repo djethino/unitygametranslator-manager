@@ -356,21 +356,11 @@
     </Style>
 
     <!--
-      A PAGE ARRIVING — see MainWindow.ShowTabBody, which sets the two values this returns from.
-
-      The page fades up and rises the last few pixels, which is what makes a tab switch read as one
-      thing replacing another rather than as a screen redrawing. 8 pixels: enough to give the change
-      a direction, too little to be watched.
+      ⚠ **Content that has been replaced arrives, and that motion lives in Motion.cs, not here.**
+      It is played on a panel and on a list — two different controls, one meaning — so it belongs
+      where both can reach it. Declared as a style for one of them, the other would have had a
+      second copy of the same durations, free to drift.
     -->
-    <Style Selector="StackPanel#DetailPanel">
-      <Setter Property="Transitions">
-        <Transitions>
-          <DoubleTransition Property="Opacity" Duration="0:0:0.14" Easing="CubicEaseOut" />
-          <TransformOperationsTransition Property="RenderTransform"
-                                         Duration="0:0:0.16" Easing="CubicEaseOut" />
-        </Transitions>
-      </Setter>
-    </Style>
 
     <!--
       DISABLED, FOR EVERY BUTTON, AND DECLARED LAST ON PURPOSE.

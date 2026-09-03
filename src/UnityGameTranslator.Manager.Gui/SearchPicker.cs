@@ -36,6 +36,7 @@ public sealed class SearchPicker : UserControl
     private readonly TextBox _search;
     private readonly ListBox _list = new();
     private readonly ScrollViewer _scroll;
+    private readonly Border _shell;
     private readonly System.Collections.ObjectModel.ObservableCollection<object> _items = new();
 
     /// <summary>Everything on offer. Filled like a ComboBox's, and filtered by what is typed.</summary>
@@ -103,10 +104,13 @@ public sealed class SearchPicker : UserControl
         // OnWheelWhileOpen — and doing that needs a scroller we hold a reference to. Left on the
         // list, the one doing the scrolling would be the one Avalonia builds inside its template,
         // which nothing here can reach.
+        // ⚠ **Hidden, never Disabled.** Disabled does not merely hide the bar: it constrains the
+        // content to the viewport's width. Inside a popup that sizes itself to its content that is
+        // a circle with one solution — zero — and the list opened as an empty square in the corner.
         _scroll = new ScrollViewer
         {
             MaxHeight = 260,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             Content = _list,
         };
@@ -116,20 +120,23 @@ public sealed class SearchPicker : UserControl
         panel.Children.Add(_search);
         panel.Children.Add(_scroll);
 
+        // Held, because its width is set when the list opens: a dropdown is at least as wide as the
+        // box it drops from, which is what every one of them has done for thirty years.
+        _shell = new Border
+        {
+            Background = Palette.Of("SurfaceCard"),
+            BorderBrush = Palette.Of("BorderStrong"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Child = panel,
+        };
+
         _popup = new Popup
         {
             PlacementTarget = _face,
             Placement = PlacementMode.BottomEdgeAlignedLeft,
             IsLightDismissEnabled = true,
-
-            Child = new Border
-            {
-                Background = Palette.Of("SurfaceCard"),
-                BorderBrush = Palette.Of("BorderStrong"),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(8),
-                Child = panel,
-            },
+            Child = _shell,
         };
 
         // The same give the rest of the window has at the end of a scroll.
@@ -188,6 +195,12 @@ public sealed class SearchPicker : UserControl
     {
         _search.Text = "";
         Refill();
+
+        // ⚠ As wide as the box it drops from, and read at the moment it opens rather than fixed
+        // once: the pickers are given their width by whoever builds the screen, and a settings
+        // window that resizes gives them another.
+        var wide = double.IsNaN(Width) ? Bounds.Width : Width;
+        if (wide > 0) _shell.MinWidth = wide;
 
         _popup.IsOpen = true;
 

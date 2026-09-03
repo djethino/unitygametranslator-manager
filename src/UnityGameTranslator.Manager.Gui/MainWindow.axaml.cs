@@ -8662,9 +8662,19 @@ public partial class MainWindow : Window
             return;
         }
 
-        // ⚠ Pending answers included: this bar DESCRIBES what the one-click would do, and it read
-        // the stored preference while the act itself read the pending ones too.
-        var preference = EffectivePreference(report);
+        // 🔴 **Two objects, and conflating them cost somebody their answers.** This method both
+        // DESCRIBES what the one-click would do and WRITES one field further down
+        // (`InstallTranslation`, saved on the spot). Reading a copy for the description and then
+        // saving that copy put a snapshot taken before the person's last change back over the
+        // stored preference: ticking "set it up here" was undone by the next redraw, silently.
+        //
+        // So: the live object to write, a copy to describe. They are not interchangeable, and the
+        // one that goes to Set must be the one Read handed back.
+        var preference = _preferences.Read(report.Game.Path);
+
+        // ⚠ Pending answers included: the bar describes what the one-click would do, and running it
+        // reads the pending ones too. Describing an act and performing it must read the same thing.
+        var described = EffectivePreference(report);
         var blocked = WhyNotReady(report);
 
         var body = new StackPanel { Spacing = 8 };
@@ -8672,7 +8682,7 @@ public partial class MainWindow : Window
         // What it is about to do, listed before it does it. The same courtesy the install
         // confirmation already extends — here it is permanent, so the button never has to be
         // pressed to find out what it means.
-        var steps = OneClickSteps(report, preference).ToList();
+        var steps = OneClickSteps(report, described).ToList();
 
         // ⚠ An unticked box makes the step list empty, so "nothing left to do" cannot be decided
         // on that list alone: on a game already up to date, holding a translation with unpublished

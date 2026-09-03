@@ -40,7 +40,22 @@ public sealed class GameInventory
         _apiToken = apiToken;
         Folders = new CustomFolders(platform);
         Overrides = new GameOverrides(platform);
+        _settings = new Settings.SettingsStore(platform).Current;
     }
+
+    /// <summary>
+    /// This machine's settings, read once when the inventory is built.
+    ///
+    /// 🔴 **It used to be read inside <see cref="ResolveDescriptor"/>, on every call.** Constructing
+    /// a SettingsStore deserialises a file and stamps the device id — negligible while only a game's
+    /// card built reports, and quadratic once the game LIST started building one per game every time
+    /// a community lookup came back. Forty games and forty answers is sixteen hundred reports, each
+    /// reading that file, on the interface thread.
+    ///
+    /// ⚠ Read once per inventory, and the inventory is rebuilt whenever the settings change — that
+    /// is what BuildInventory is for, and it is already how Channel and BepInEx6Channel behave.
+    /// </summary>
+    private readonly InstallerSettings _settings;
 
     /// <summary>What the user told us about games we could not read on our own.</summary>
     public GameOverrides Overrides { get; } = null!;
@@ -65,6 +80,27 @@ public sealed class GameInventory
     /// Shared on purpose: one lookup answers for every game on the machine.
     /// </summary>
     public PluginReleases? Releases { get; set; }
+
+    /// <summary>
+    /// What the community lookup has already answered, for reports built without asking again.
+    ///
+    /// 🔴 **This is what let the second report builder go.** The game list used to build its own
+    /// GameReport — nine fields out of twenty-three — because the real one had no way to answer
+    /// about the community without making a request per game, and a list of forty games cannot make
+    /// forty requests every time a row is redrawn. So the list grew a parallel builder that read
+    /// this cache directly, and every field added to the real one afterwards had to be copied into
+    /// it by hand. Three defects were that copy being forgotten: a loader tag, the sync verdict, and
+    /// the mod update, each visible on a game's card and on no row.
+    ///
+    /// ⚠ Set by whoever owns the session — the window — and left null everywhere else. That is the
+    /// point rather than an omission: the CLI must keep answering exactly as it does today, so
+    /// `--offline` there still means a report that says nothing about the community rather than one
+    /// quietly served from a file on disk.
+    ///
+    /// ⚠ Peeked, never refreshed from here. Filling it is the sweep's business; this only reads
+    /// what already arrived.
+    /// </summary>
+    public OnlineCatalogCache? Online { get; set; }
 
     /// <summary>
     /// Which channel the version comparison is made against. It is a setting about the person,
@@ -151,11 +187,30 @@ public sealed class GameInventory
     }
 
     /// <summary>
-    /// Everything known about one game: installed loader, local translation, online catalog,
-    /// what we would install and why, and what stands in the way.
+    /// Everything known about one game WITHOUT asking anybody: the loader on disk, the local
+    /// translation, what we would install and why, what stands in the way — and whatever the
+    /// community lookup has already answered, when a cache was handed to <see cref="Online"/>.
+    ///
+    /// 🔴 **There is ONE report builder, and this is it.** The game list used to have its own,
+    /// filling nine of this report's twenty-three fields, because a row cannot make a request per
+    /// game and the real builder had no other way to answer about the community. Everything added
+    /// here afterwards had to be copied into that one by hand — and three defects were that copy
+    /// being forgotten, each one a fact the card showed and no row could:
+    ///   · a newer loader, visible only on the selected game;
+    ///   · the sync verdict, missing from every row;
+    ///   · a mod update nobody heard about until they had clicked every game in their library.
+    ///
+    /// A fourth was worse than a copy forgotten: <see cref="GameReport.MyPosition"/> was never
+    /// filled at all, so "contribution frozen", "the Main was removed" and "the Main's account is
+    /// gone" had no path to a row — <see cref="SituationReader"/> reads them and the list could
+    /// never produce them.
+    ///
+    /// ⚠ **Synchronous on purpose.** Not a convenience: it is what makes "the list may ask exactly
+    /// what the card asks" true without a second code path. Everything here is a file read or a
+    /// dictionary lookup, and the one expensive part — the content hash — is remembered against the
+    /// file's stamp (see LocalTranslationProbe.ContentHashOf).
     /// </summary>
-    public async Task<GameReport> BuildReportAsync(GameInstall game, bool offline = false,
-                                                   CancellationToken ct = default)
+    public GameReport BuildReport(GameInstall game)
     {
         var report = new GameReport { Game = game };
 
@@ -197,7 +252,7 @@ public sealed class GameInventory
 
             report.SiteAccount = LocalTranslationProbe.ReadSiteAccount(game.Path, descriptor);
             report.LoaderStanding = ReadLoaderStanding(report);
-            report.PluginStanding = await ReadPluginStandingAsync(report, offline, ct).ConfigureAwait(false);
+            report.PluginStanding = HeldPluginStanding(report);
         }
 
         if (!game.IsModdable)
@@ -220,11 +275,56 @@ public sealed class GameInventory
         if (game.ArchitectureIsAssumed)
             report.Warnings.Add($"The architecture ({game.Architecture}) is what you told us, not what we read.");
 
+        // What the sweep already brought back for this game, when somebody handed us the cache.
+        //
+        // ⚠ Peek, never a request: this method promises to ask nobody, and a list of forty games
+        // redraws far too often for anything else. An absent cache leaves the three properties
+        // saying "not asked", which is a third answer and not "nothing published" — see
+        // GameReport.OnlineChecked.
+        if (Online?.Peek(game) is { } already)
+        {
+            report.OnlineTranslations = already;
+            report.OnlineChecked = true;
+            report.MatchingOnline = MatchingLineage(report);
+        }
+
+        ApplySync(report, game, descriptor);
+
+        // Deliberately outside the community lookup: whether this account leads or contributes to
+        // the lineage of the local file is a fact about the account, and it holds even when the
+        // catalog search failed or the game is not published anywhere.
+        report.MyPosition = Lineages?.For(report.LocalTranslation?.Uuid);
+
+        return report;
+    }
+
+    /// <summary>
+    /// The same report, plus what only the network can answer: today's published plugin build, and
+    /// a community search made now rather than taken from the cache.
+    ///
+    /// ⚠ Everything a screen shows comes from <see cref="BuildReport"/>; this adds two answers and
+    /// changes no rule. Anything worked out here that a row would also want belongs down there
+    /// instead — that split is what stops the list and the card disagreeing.
+    /// </summary>
+    public async Task<GameReport> BuildReportAsync(GameInstall game, bool offline = false,
+                                                   CancellationToken ct = default)
+    {
+        var report = BuildReport(game);
+
+        var descriptor = ResolveDescriptor(report, game);
+
+        // Kept exactly as it was for the CLI: offline there means a report that says it did not
+        // look, rather than one comparing against whatever a previous run happened to fetch.
+        if (descriptor is not null)
+            report.PluginStanding = await ReadPluginStandingAsync(report, offline, ct).ConfigureAwait(false);
+
+        if (offline) return report;
+
         // Steam id when we have one, the game's name otherwise — the same order the mod uses, and
         // for the same reason: a game bought outside Steam, or installed by hand, has a published
         // translation just as often. Looking up only Steam games reported "none found" for games
         // whose translation was sitting on the site.
-        if (!offline && _api is not null && (game.SteamAppId is not null || !string.IsNullOrWhiteSpace(game.Name)))
+        if (_api is not null && (game.SteamAppId is not null || !string.IsNullOrWhiteSpace(game.Name)))
         {
             report.OnlineTranslations = game.SteamAppId is not null
                 ? await _api.SearchBySteamIdAsync(game.SteamAppId, apiToken: _apiToken, ct: ct).ConfigureAwait(false)
@@ -240,43 +340,84 @@ public sealed class GameInventory
 
             // Same lineage as the local file? Then it is not something to offer, it is the
             // thing the user already runs — and the only question is whether it moved online.
-            if (report.LocalTranslation?.Uuid is { Length: > 0 } localUuid)
-            {
-                report.MatchingOnline = report.OnlineTranslations.FirstOrDefault(
-                    t => string.Equals(t.Uuid, localUuid, StringComparison.OrdinalIgnoreCase));
-            }
-        }
+            report.MatchingOnline = MatchingLineage(report);
 
-        // ⚠ Only once we hold the published entry of THIS file, which is what makes the hash worth
-        // computing: without something to compare it to, walking a 6000-line file would answer a
-        // question nobody asked. With it, the manager reaches the same verdict a running game
-        // would, and reaches it before anybody launches anything.
-        if (report.MatchingOnline is { FileHash.Length: > 0 } published
-            && report.LocalTranslation is { } local
-            && ResolveDescriptor(report, game) is { } loader)
-        {
-            // ⚠ Measured against the ancestor when there is one, and only otherwise taken from the
-            // counter the mod keeps. That counter describes what the MOD did: a file edited from
-            // the browser editor, or by hand, carries a number that stopped describing it — and
-            // reading it as "nothing changed here" is what turns a merge into an offer to download
-            // over somebody's work.
-            //
-            // Null — no ancestor AND no counter to trust — is read as "there is work here": the
-            // safe direction is the one that refuses to overwrite.
-            report.Sync = Common.Sync.Decide(
-                LocalTranslationProbe.ComputeContentHash(game.Path, loader),
-                published.FileHash,
-                local.SourceHash,
-                local.HasLocalWork ?? true);
+            // Asked again because the search may have just produced the other side of the
+            // comparison — there was nothing to decide against a moment ago.
+            ApplySync(report, game, descriptor);
         }
-
-        // Deliberately outside the community lookup: whether this account leads or contributes to
-        // the lineage of the local file is a fact about the account, and it holds even when the
-        // catalog search failed or the game is not published anywhere.
-        report.MyPosition = Lineages?.For(report.LocalTranslation?.Uuid);
 
         return report;
     }
+
+    /// <summary>
+    /// The published entry of the local file's own lineage, when it is among the ones we hold.
+    ///
+    /// Not something to offer: it is the thing the player already runs, and the only question left
+    /// is whether it moved online.
+    /// </summary>
+    private static OnlineTranslation? MatchingLineage(GameReport report) =>
+        report.LocalTranslation?.Uuid is { Length: > 0 } uuid
+            ? report.OnlineTranslations.FirstOrDefault(
+                t => string.Equals(t.Uuid, uuid, StringComparison.OrdinalIgnoreCase))
+            : null;
+
+    /// <summary>
+    /// Where this game's translation stands against the published one — the shared verdict, the
+    /// same four words the mod and the site use.
+    ///
+    /// ⚠ Only once we hold the published entry of THIS file, which is what makes the hash worth
+    /// computing: without something to compare it to, walking a 6000-line file would answer a
+    /// question nobody asked. With it, the manager reaches the same verdict a running game would,
+    /// and reaches it before anybody launches anything.
+    ///
+    /// ⚠ ContentHashOf, never ComputeContentHash. This runs for every game on every lookup that
+    /// comes back; remembered against the file's stamp it is paid once per file and per change to
+    /// it, where computing it afresh would parse every translation on the machine once per answer
+    /// received.
+    /// </summary>
+    /// <param name="loader">
+    /// The loader already resolved for this report. Handed in rather than looked up again:
+    /// ResolveDescriptor reads the catalogue and the settings, and calling it a second time for the
+    /// same report was pure repetition.
+    /// </param>
+    private static void ApplySync(GameReport report, GameInstall game, LoaderDescriptor? loader)
+    {
+        if (report.MatchingOnline is not { FileHash.Length: > 0 } published
+            || report.LocalTranslation is not { } local
+            || loader is null)
+        {
+            return;
+        }
+
+        // ⚠ Measured against the ancestor when there is one, and only otherwise taken from the
+        // counter the mod keeps. That counter describes what the MOD did: a file edited from the
+        // browser editor, or by hand, carries a number that stopped describing it — and reading it
+        // as "nothing changed here" is what turns a merge into an offer to download over somebody's
+        // work.
+        //
+        // Null — no ancestor AND no counter to trust — is read as "there is work here": the safe
+        // direction is the one that refuses to overwrite.
+        report.Sync = Common.Sync.Decide(
+            LocalTranslationProbe.ContentHashOf(game.Path, loader),
+            published.FileHash,
+            local.SourceHash,
+            local.HasLocalWork ?? true);
+    }
+
+    /// <summary>
+    /// The plugin here against the newest published build we ALREADY hold — asking nobody.
+    ///
+    /// 🔴 **Only when the answer is actually held, and null otherwise.** Nothing from
+    /// <see cref="PluginReleases.Known"/> means the lookup has not come back yet, and a standing
+    /// built on that reads as "no newer version" — the one thing it must never say on the strength
+    /// of a question nobody asked. The row that says "not checked" is honest; the row that says
+    /// "up to date" because nobody answered is not.
+    /// </summary>
+    private VersionStanding? HeldPluginStanding(GameReport report) =>
+        Releases?.Known(Channel) is { Version.Length: > 0 } newest
+            ? new VersionStanding(report.InstalledPluginVersion, newest.Version)
+            : null;
 
     /// <summary>
     /// The installed loader against the catalog's entry for it — WHOEVER installed it.
@@ -353,7 +494,7 @@ public sealed class GameInventory
 
         // ⚠ The person's answer first, the catalog's order after. Filtering comes before both:
         // a preference reorders what fits, it never makes something fit.
-        var preferred = new Settings.SettingsStore(_platform).Current.PreferredLoaderFor(game.Runtime);
+        var preferred = _settings.PreferredLoaderFor(game.Runtime);
 
         var candidates = _catalog.Loaders
             .Where(l => l.SupportsRuntime(game.Runtime))

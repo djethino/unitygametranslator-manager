@@ -277,7 +277,24 @@ public sealed class WindowsPlatform : IPlatform
         }
     }
 
-    public bool? HasDotnetDesktopRuntime(string majorVersion)
+    /// <summary>
+    /// Which .NET Desktop runtimes this machine carries — asked once per version, then remembered.
+    ///
+    /// ⚠ **A fact about the machine, not about a game**, and it is now on the drawing path: every
+    /// report built for an IL2CPP game asks it, and the game list rebuilds every report each time a
+    /// community lookup comes back. Unremembered that is a directory enumeration per IL2CPP game
+    /// per answer — quadratic in the size of somebody's library, on the interface thread.
+    ///
+    /// ⚠ Held for the life of the process, which is the honest lifetime: somebody installing a .NET
+    /// runtime while this window is open is doing it BECAUSE this tool asked them to, and the
+    /// screen that asked tells them to run it again.
+    /// </summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool?> _dotnetRuntimes = new();
+
+    public bool? HasDotnetDesktopRuntime(string majorVersion) =>
+        _dotnetRuntimes.GetOrAdd(majorVersion, LookUpDotnetDesktopRuntime);
+
+    private bool? LookUpDotnetDesktopRuntime(string majorVersion)
     {
         // The shared framework folder is the ground truth; `dotnet --list-runtimes` needs the
         // CLI on PATH, which a player machine may not have.

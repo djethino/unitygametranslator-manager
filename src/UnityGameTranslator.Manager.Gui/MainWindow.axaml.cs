@@ -473,6 +473,12 @@ public partial class MainWindow : Window
                                        _settings.Current.ApiToken)
         {
             Lineages = _lineages,
+
+            // 🔴 What lets a ROW be built from the same report the card is built from. Without it
+            // the list had to build its own — nine fields out of twenty-three — and every field
+            // added afterwards had to be copied across by hand. See GameInventory.Online.
+            Online = _online,
+
             // ⚠ Same answer as the loader lookup: both are "what newer build exists for a game",
             // asked before anybody clicked. Leaving one on while the other is off would make the
             // setting mean half of what it says.
@@ -842,128 +848,33 @@ public partial class MainWindow : Window
     private (GameSituationInfo Situation, bool Mine, (string? User, string? Server) Account)
         ReadSituation(GameInstall game)
     {
-        var language = _settings.ResolveTargetLanguage();
-        var online = _online.Peek(game);
-        var report = new GameReport { Game = game };
-        var mine = false;
-
-        var detected = LoaderProbe.Detect(game.Path, _catalog);
-        var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == detected?.Id);
-        (string? User, string? Server) account = default;
-
-        // 🔴 **The row builds its OWN report, so anything it wants must be filled in here.** That
-        // is why a newer loader appeared on the game's page and nowhere in the list: BuildReportAsync
-        // works this out, and this method deliberately does not call it — one file read per game
-        // instead of a network round trip.
+        // 🔴 **The same report the card is built from — there is no longer a second builder.**
+        // This method used to assemble its own GameReport, filling nine of its twenty-three fields,
+        // and every field added to the real one afterwards had to be copied here by hand. Three
+        // defects were that copy being forgotten; a fourth was MyPosition, never copied at all, so
+        // "contribution frozen" and its two neighbours had no path to a row while the card showed
+        // them. Nothing is copied now, so nothing can be missed.
         //
-        // ⚠ Comparing versions costs nothing: the catalog is already in memory, and the loader's
-        // version was just read off the disk by the probe above. The promise this method makes is
-        // "no network", not "no thinking".
-        report.InstalledLoader = detected;
+        // ⚠ Asks nobody: BuildReport reads the disk and the community cache and makes no request.
+        // That is what allows this to run for every game on every answer the sweep brings back.
+        var report = _inventory.BuildReport(game);
 
-        if (detected is not null && descriptor is not null)
-        {
-            // ⚠ The build resolved for the chosen channel, not the catalogue's pin. The pin is a
-            // fallback that ages on purpose; comparing against it said "up to date" beside a
-            // picker offering a newer build. Cache-only, so this stays a dictionary lookup on the
-            // drawing path.
-            report.LoaderStanding = new VersionStanding(
-                detected.Version,
-                LoaderBuildResolver.Known(descriptor, _settings.Current.BepInEx6Channel)?.Version
-                    ?? descriptor.Version);
-
-            // Who installed it, which decides whether the row may say "update available" plainly
-            // or has to add "(not ours)". Read from the receipt, exactly as BuildReportAsync does.
-            var receipt = ReceiptStore.Read(game.Path);
-            detected.InstalledByUs = receipt?.Loader is { InstalledByUs: true } ours
-                                     && string.Equals(ours.Id, detected.Id, StringComparison.OrdinalIgnoreCase);
-
-            report.LoaderAdopted = _preferences.Read(game.Path).AdoptLoader;
-        }
-
-        if (descriptor is not null)
-        {
-            report.InstalledPluginVersion =
-                LocalTranslationProbe.ReadInstalledPluginVersion(game.Path, descriptor);
-            report.LocalTranslation = LocalTranslationProbe.Read(game.Path, descriptor);
-
-            // Read while we are in this game's folder anyway. ⚠ The token is never touched — the
-            // mod clears the name along with it, so the name answers the question on its own.
-            // ⚠ Both halves. The server used to be dropped here, and the card that reads this
-            // then had no way of telling "the same name on this site" from "the same name on
-            // another one" — see _accounts.
-            account = LocalTranslationProbe.ReadSiteAccount(game.Path, descriptor);
-
-            // Noted while the file is open anyway. Asked again at filter time it would mean
-            // re-reading a translation from disk on every keystroke in the search box.
-            mine = _lineages.For(report.LocalTranslation?.Uuid) is not null;
-        }
-
-        // 🔴 **The mod's own version, compared against the one answer held for the whole machine.**
-        // The row said "Ready to play" beside a card announcing an update, for the reason given
-        // above: this method builds its own report and never filled this in. Known() asks nobody —
-        // the release was fetched once when the window opened, and comparing two strings per game
-        // is the same "no network, but some thinking" the loader line already does.
-        //
-        // ⚠ Only when the answer is actually held. Null from Known() means the lookup has not come
-        // back yet, and a standing built on it would read as "no newer version" — the one thing it
-        // must never say on the strength of a question nobody asked. RecomputeSituations runs again
-        // when it does come back.
-        //
-        // ⚠ Behind the SAME two settings the full report is, and read the same way — offline or
-        // "do not check for updates" means the card says nothing about a newer build, and a row
-        // that said it anyway would contradict the screen it belongs to.
-        if (_settings.Current.OnlineMode && _settings.Current.CheckContentUpdates
-            && _releases.Known(string.Equals(_settings.Current.Channel, "beta",
-                                             StringComparison.OrdinalIgnoreCase)
-                                   ? ReleaseChannel.Beta
-                                   : ReleaseChannel.Stable) is { Version.Length: > 0 } newest)
-        {
-            report.PluginStanding = new VersionStanding(report.InstalledPluginVersion, newest.Version);
-        }
-
-        if (online is not null)
-        {
-            report.OnlineTranslations = online;
-            if (report.LocalTranslation?.Uuid is { Length: > 0 } uuid)
-            {
-                report.MatchingOnline = online.FirstOrDefault(
-                    t => string.Equals(t.Uuid, uuid, StringComparison.OrdinalIgnoreCase));
-            }
-
-            // 🔴 **The same sync verdict the card shows, reached the same way.** SituationReader
-            // has always read report.Sync first — Up to date / Update available / Unpublished
-            // changes / Conflict — and this method left it null, so the four words it exists to
-            // print were unreachable from the list. Every ingredient was already here; only the
-            // hash was missing, and it is the one expensive part.
-            //
-            // ⚠ ContentHashOf, never ComputeContentHash: this runs on every lookup that comes
-            // back, for every game. Remembered against the file's stamp it is paid once per file
-            // and per change to it; unremembered it would parse every translation on the machine
-            // once per answer received.
-            if (report.MatchingOnline is { FileHash.Length: > 0 } published
-                && report.LocalTranslation is { } here
-                && descriptor is not null)
-            {
-                report.Sync = Sync.Decide(
-                    LocalTranslationProbe.ContentHashOf(game.Path, descriptor),
-                    published.FileHash,
-                    here.SourceHash,
-                    here.HasLocalWork ?? true);
-            }
-        }
-
-        var checkedOnline = online is not null || !_settings.Current.OnlineMode;
+        // "We asked and nobody has published anything" is only true if we asked. A tool that may
+        // ask nobody has legitimately finished asking, which is the second half of this.
+        var checkedOnline = report.OnlineChecked || !_settings.Current.OnlineMode;
 
         // ⚠ Only when the account's lineages have actually been read. Unknown and none look
         // identical from here, and announcing "nobody is waiting" on that basis would be a guess
         // dressed as a fact — the reason AccountLineages exposes Known at all.
         var waiting = _lineages.Known
-            ? _lineages.For(report.LocalTranslation?.Uuid)?.BranchesWithWork ?? _lineages.For(report.LocalTranslation?.Uuid)?.BranchesCount
+            ? report.MyPosition?.BranchesWithWork ?? report.MyPosition?.BranchesCount
             : null;
 
-        return (SituationReader.Read(report, language, checkedOnline, waiting,
-                                     _settings.Current.ApiUser), mine, account);
+        var situation = SituationReader.Read(report, _settings.ResolveTargetLanguage(),
+                                             checkedOnline, waiting, _settings.Current.ApiUser);
+
+        // Both RETURNED rather than recorded, for the reason given above this method.
+        return (situation, report.MyPosition is not null, report.SiteAccount);
     }
 
     /// <summary>

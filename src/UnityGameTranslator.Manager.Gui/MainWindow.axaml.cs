@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using Avalonia.Interactivity;
@@ -183,7 +183,7 @@ public partial class MainWindow : Window
     /// two sources leaves the virtualising panel unable to anchor it — the window then goes down
     /// with no message at all.
     /// </summary>
-    private readonly Dictionary<string, (string Signature, ListBoxItem Item)> _rows =
+    private readonly Dictionary<string, (RowFacts Facts, ListBoxItem Item)> _rows =
         new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
@@ -1381,8 +1381,9 @@ public partial class MainWindow : Window
             .Where(MatchesFilter)
             .Select(game =>
             {
-                var item = BuildListItem(game);
-                _rows[game.Path] = (Signature(game.Path), item);
+                var facts = FactsFor(game);
+                var item = BuildListItem(game, facts);
+                _rows[game.Path] = (facts, item);
                 return item;
             })
             .ToList();
@@ -1504,16 +1505,12 @@ public partial class MainWindow : Window
         }
         else
         {
-            // Only the rows whose answer changed, and only their contents — an item belongs to the
-            // list that holds it, and handing one back through a new source is what brought the
-            // window down once already.
-            foreach (var (path, entry) in _rows.ToList())
-            {
-                if (entry.Item.Tag is not GameInstall game) continue;
-                if (sweep.IsRunning(game) == was.IsRunning(game)) continue;
-
-                entry.Item.Content = BuildRowContent(game);
-            }
+            // ⚠ The shared comparison, not a hand-written one. This loop used to ask only whether
+            // this game had started or stopped — the right question, asked in a second place — and
+            // it wrote the new content back WITHOUT the facts that went with it, leaving each row
+            // and the record of what it was saying out of step. RefreshRowContents answers the same
+            // question against everything a row draws from, and keeps the two together.
+            RefreshRowContents();
         }
 
         // The card carries buttons whose enabled state is exactly this question, so it is redrawn
@@ -1602,11 +1599,9 @@ public partial class MainWindow : Window
     /// </param>
     private async Task RereadAsync(GameInstall game, bool redraw = false)
     {
-        var before = _situations.TryGetValue(game.Path, out var was) ? was : null;
-
-        // ⚠ Held before the re-read, because the guard below has to compare them and the two lines
-        // that follow overwrite both.
-        var accountBefore = _accounts.TryGetValue(game.Path, out var had) ? had : default;
+        // ⚠ Held before the re-read, because the guard below has to compare them and the lines that
+        // follow overwrite what they are read from.
+        var before = FactsFor(game);
         var mineBefore = _mine.Contains(game.Path);
 
         var (now, mine, account) = await Task.Run(() => ReadSituation(game));
@@ -1620,28 +1615,29 @@ public partial class MainWindow : Window
         else _accounts.Remove(game.Path);
         _watchedStamps[game.Path] = TranslationFileStamp(game);
 
+        var facts = FactsFor(game);
+
         // Nothing said differently means nothing to redraw. A game can save its file without any of
         // it reaching this window — a setting changed in the mod, say.
         //
         // ⚠ Unless the caller knows something the game does not say. See the parameter.
         //
-        // 🔴 **The account and the lineage are part of "said differently".** They were read three
-        // lines up, written into the two dictionaries the row and the card draw from, and then left
-        // out of this comparison — so signing out inside a game changed everything this window
-        // knows and redrew none of it. The corner went on naming the previous account until
-        // somebody clicked the game, which is exactly what was reported: the comment above this
-        // guard says signing in happens inside the game, and the guard ignored it.
-        if (!redraw && before is not null && before.Headline == now.Headline
-            && before.Pending == now.Pending
-            && before.Detail == now.Detail
-            && accountBefore == account
-            && mineBefore == mine)
-            return;
+        // 🔴 **The shared comparison, so this cannot fall behind what a row draws from again.** This
+        // guard used to list the fields it cared about by hand — headline, detail, pending, account,
+        // lineage — which is a list that has to be kept in step with a drawing method four hundred
+        // lines away. It had already been wrong once: the account was read three lines up, written
+        // into the dictionary the row draws from, and left out of the comparison, so signing out
+        // inside a game changed everything this window knew and redrew none of it.
+        //
+        // ⚠ The lineage stays a separate term, and it is not an oversight: it decides MEMBERSHIP of
+        // the "Mine" filter, not what the row says — so it belongs beside this question rather than
+        // inside RowFacts.
+        if (!redraw && facts == before && mineBefore == mine) return;
 
         if (_rows.TryGetValue(game.Path, out var row) && row.Item.Tag is GameInstall shown)
         {
-            row.Item.Content = BuildRowContent(shown);
-            _rows[game.Path] = (Signature(game.Path), row.Item);
+            row.Item.Content = BuildRowContent(shown, facts);
+            _rows[game.Path] = (facts, row.Item);
         }
 
         if (_selected is not null && _selected.Path == game.Path) await ShowSelectedAsync();
@@ -1674,9 +1670,45 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>What a row is currently saying, so a change can be noticed without comparing controls.</summary>
-    private string Signature(string path) =>
-        _situations.TryGetValue(path, out var situation) ? situation.ToString() : "";
+    /// <summary>
+    /// Everything a row is drawn from — and therefore everything a change to it must be noticed in.
+    ///
+    /// 🔴 **This exists because the two halves used to be written separately, and drifted.** A row
+    /// was drawn from five sources and compared on ONE of them: the signature was the situation's
+    /// text, so signing in, signing out, a game opening, or a game's own account changing left the
+    /// row exactly as it was — no error, no log, a screen quietly telling somebody something that
+    /// had stopped being true. That is the "I signed in and the list did not notice" defect, and it
+    /// was also why the corner kept naming a previous account.
+    ///
+    /// ⚠ **A record, so the comparison is the compiler's and not a string somebody maintains.**
+    /// Every member here has structural equality already — GameSituationInfo is a record, the
+    /// account is a tuple, the rest are values — so `==` answers "would this row look different"
+    /// exactly. Adding a source to a row means adding it HERE, and then nothing can forget it: the
+    /// drawing method takes this and only this.
+    /// </summary>
+    private sealed record RowFacts(
+        GameSituationInfo? Situation,
+        bool Running,
+        (string? User, string? Server) Account,
+        ServerStandingKind Standing);
+
+    /// <summary>
+    /// What this game's row would say right now.
+    ///
+    /// ⚠ The standing is asked of <see cref="ServerIdentity"/> here rather than recomputed while
+    /// drawing: it is the authority every tab of the card already obeys, and the row comparing
+    /// names by itself is what let the list say "(you)" in green about somebody else's account.
+    /// </summary>
+    private RowFacts FactsFor(GameInstall game)
+    {
+        _accounts.TryGetValue(game.Path, out var account);
+
+        return new RowFacts(
+            _situations.TryGetValue(game.Path, out var situation) ? situation : null,
+            _running.IsRunning(game),
+            account,
+            ServerIdentity.For(_settings.Current, account, BuildInfo.ApiBaseUrl).Kind);
+    }
 
     /// <summary>
     /// Updates what the rows say, without touching the list that holds them.
@@ -1694,12 +1726,16 @@ public partial class MainWindow : Window
     {
         foreach (var (path, entry) in _rows.ToList())
         {
-            var signature = Signature(path);
-            if (signature == entry.Signature) continue;
             if (entry.Item.Tag is not GameInstall game) continue;
 
-            entry.Item.Content = BuildRowContent(game);
-            _rows[path] = (signature, entry.Item);
+            // Structural equality on RowFacts: "nothing this row draws from has moved". It used to
+            // be a string holding the situation alone, which is why four of the five sources could
+            // change without the row noticing.
+            var facts = FactsFor(game);
+            if (facts == entry.Facts) continue;
+
+            entry.Item.Content = BuildRowContent(game, facts);
+            _rows[path] = (facts, entry.Item);
         }
     }
 
@@ -1755,8 +1791,8 @@ public partial class MainWindow : Window
     /// answer "what is this" while someone scanning this list is asking "what can I do". They
     /// live in the card on the right, where they serve diagnosis.
     /// </summary>
-    private ListBoxItem BuildListItem(GameInstall game) =>
-        new() { Tag = game, Content = BuildRowContent(game) };
+    private ListBoxItem BuildListItem(GameInstall game, RowFacts facts) =>
+        new() { Tag = game, Content = BuildRowContent(game, facts) };
 
     /// <summary>
     /// What a row shows, separate from the row itself.
@@ -1766,8 +1802,14 @@ public partial class MainWindow : Window
     /// new ItemsSource leaves it with a stale visual parent — the virtualising panel then fails to
     /// anchor it and the window goes down without a word. Measured, not deduced: that was this
     /// morning's crash.
+    ///
+    /// 🔴 **Everything that can change is in <paramref name="facts"/>, and nothing here reads the
+    /// window's own state.** That is the guard, and it is the one the previous version lacked: a row
+    /// that helps itself to a field the comparison does not cover is a row that stops updating,
+    /// silently. What is read from <paramref name="game"/> — its name, its icon, how it launches —
+    /// cannot change without a rescan, which rebuilds every row anyway.
     /// </summary>
-    private Control BuildRowContent(GameInstall game)
+    private Control BuildRowContent(GameInstall game, RowFacts facts)
     {
         var title = new TextBlock
         {
@@ -1781,7 +1823,7 @@ public partial class MainWindow : Window
 
         // Said first, because it changes what every other line on this row is worth: a game that is
         // open cannot be set up or removed until it is closed, whatever its situation says.
-        if (_running.IsRunning(game))
+        if (facts.Running)
         {
             body.Children.Add(new TextBlock
             {
@@ -1792,7 +1834,7 @@ public partial class MainWindow : Window
             });
         }
 
-        if (_situations.TryGetValue(game.Path, out var situation))
+        if (facts.Situation is { } situation)
         {
             var headline = new TextBlock
             {
@@ -1868,10 +1910,10 @@ public partial class MainWindow : Window
             Grid.SetColumn(body, 1);
             row.Children.Add(body);
 
-            return WithAccountMark(game, row);
+            return WithAccountMark(game, row, facts);
         }
 
-        return WithAccountMark(game, body);
+        return WithAccountMark(game, body, facts);
     }
 
     /// <summary>
@@ -1886,11 +1928,11 @@ public partial class MainWindow : Window
     /// Its own column rather than a line in the text: it belongs to the game, not to the situation,
     /// and it must not push the name or the headline around as it comes and goes.
     /// </summary>
-    private Control WithAccountMark(GameInstall game, Control content)
+    private Control WithAccountMark(GameInstall game, Control content, RowFacts facts)
     {
-        _accounts.TryGetValue(game.Path, out var account);
+        var account = facts.Account;
 
-        var play = PlayButton(game, small: true);
+        var play = PlayButton(game, small: true, running: facts.Running);
         if (account.User is null && play is null) return content;
 
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
@@ -1931,13 +1973,15 @@ public partial class MainWindow : Window
             // ⚠ The refusal was right and nothing could be written — the guard is on the act. What
             // broke was the only thing an indicator is for: an indicator that contradicts itself is
             // not believed when it finally tells the truth.
-            var standing = ServerIdentity.For(_settings.Current, account, BuildInfo.ApiBaseUrl);
-            var yours = standing.Kind is ServerStandingKind.Mine;
+            // ⚠ Taken from the facts this row was compared on, not asked again here. Asking twice
+            // is how the two halves drift: the answer that decides whether the row is REDRAWN and
+            // the answer it draws WITH must be the same one.
+            var yours = facts.Standing is ServerStandingKind.Mine;
 
             // ⚠ Named, never a possessive: a name from another site is factually another person,
             // whatever it spells. See the naming rule — replace it with a proper noun, and if you
             // cannot say which one to write, do not write one.
-            var elsewhere = standing.Kind is ServerStandingKind.OtherServer;
+            var elsewhere = facts.Standing is ServerStandingKind.OtherServer;
 
             // 🔴 **A bare name does not say what role it plays.** This corner showed "@somebody"
             // and the card's own line shows "by @somebody-else" — the account the GAME is signed
@@ -2022,9 +2066,15 @@ public partial class MainWindow : Window
     /// wherever it appears — and grey is what the rest of this interface means by "cannot be
     /// pressed". A grey play mark on the card, next to green ones in the list, reads as disabled.
     /// </summary>
-    private Button? PlayButton(GameInstall game, bool small, GameReport? report = null)
+    /// <param name="running">
+    /// Whether this game is open. Handed in rather than read here, because a ROW must draw from the
+    /// same facts it was compared on — a button deciding for itself is a button that can disagree
+    /// with the row it sits in. The card passes what it just read; there is nothing to compare
+    /// there, it is rebuilt whole.
+    /// </param>
+    private Button? PlayButton(GameInstall game, bool small, bool running, GameReport? report = null)
     {
-        if (_running.IsRunning(game)) return null;
+        if (running) return null;
         if (GameLaunch.RouteFor(game) is not { } route) return null;
 
         // ⚠ Only the full-size button says it. The mark in the list is a glyph with no room for
@@ -3129,7 +3179,7 @@ public partial class MainWindow : Window
         var game = report.Game;
 
         var waiting = _lineages.Known
-            ? _lineages.For(report.LocalTranslation?.Uuid)?.BranchesWithWork ?? _lineages.For(report.LocalTranslation?.Uuid)?.BranchesCount
+            ? report.MyPosition?.BranchesWithWork ?? report.MyPosition?.BranchesCount
             : null;
 
         _situations[game.Path] = SituationReader.Read(
@@ -3138,10 +3188,21 @@ public partial class MainWindow : Window
             branchesWaiting: waiting,
             signedInAs: _settings.Current.ApiUser);
 
+        // 🔴 **The account and the lineage too, and they were simply missing here.** This report was
+        // built from the disk and from the site moments ago and carries both — while the two
+        // collections the ROW draws from were left on an older reading. That is the third place the
+        // same omission was made, and the reason a corner went on naming a previous account beside
+        // a card already showing the current one.
+        if (report.SiteAccount.User is not null) _accounts[game.Path] = report.SiteAccount;
+        else _accounts.Remove(game.Path);
+
+        if (report.MyPosition is not null) _mine.Add(game.Path); else _mine.Remove(game.Path);
+
         if (_rows.TryGetValue(game.Path, out var row) && row.Item.Tag is GameInstall shown)
         {
-            row.Item.Content = BuildRowContent(shown);
-            _rows[game.Path] = (Signature(game.Path), row.Item);
+            var facts = FactsFor(game);
+            row.Item.Content = BuildRowContent(shown, facts);
+            _rows[game.Path] = (facts, row.Item);
         }
     }
 
@@ -8724,7 +8785,7 @@ public partial class MainWindow : Window
             Grid.SetColumn(settled, 0);
             done.Children.Add(settled);
 
-            if (PlayButton(report.Game, small: false, report) is { } start)
+            if (PlayButton(report.Game, small: false, _running.IsRunning(report.Game), report) is { } start)
             {
                 start.Margin = new Avalonia.Thickness(16, 0, 0, 0);
                 start.VerticalAlignment = VerticalAlignment.Center;
@@ -8905,7 +8966,8 @@ public partial class MainWindow : Window
         // After the set-up button, not before it: the order on this bar is the order of the two
         // acts. Present even when there is nothing left to set up — a card whose every job is done
         // is exactly the one somebody opened in order to go and play.
-        if (PlayButton(report.Game, small: false, report) is { } play) right.Children.Add(play);
+        if (PlayButton(report.Game, small: false, _running.IsRunning(report.Game), report) is { } play)
+            right.Children.Add(play);
 
         Grid.SetColumn(right, 1);
         row.Children.Add(right);

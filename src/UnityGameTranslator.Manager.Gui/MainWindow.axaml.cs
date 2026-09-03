@@ -4362,20 +4362,23 @@ public partial class MainWindow : Window
     /// </summary>
     private Control TabStrip()
     {
-        var strip = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        // ⚠ Tabs sit side by side, where buttons are spaced apart. The gap is half the argument:
+        // things that touch read as one set of places, things kept apart read as separate acts.
+        var strip = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
 
         foreach (var page in GameTabs)
         {
             var button = new Button
             {
                 Content = page.Label,
-                FontSize = 12,
 
-                // The active tab wears the section colour; the others stay plain. No "quiet"
-                // class is invented here — App.axaml has no such style, and naming one that does
-                // not exist styles nothing while looking deliberate.
-                Classes = { page.Tab == _gameTab ? "primary" : "" },
+                // ⚠ **"tab", never "primary".** Wearing the primary class made the open tab
+                // pixel-identical to the one-click a few inches below — one saying "you are here",
+                // the other "this writes into your game". See Button.tab in App.axaml.
+                Classes = { "tab" },
             };
+
+            button.Classes.Set("selected", page.Tab == _gameTab);
 
             var chosen = page.Tab;
             button.Click += async (_, _) =>
@@ -4388,7 +4391,17 @@ public partial class MainWindow : Window
             strip.Children.Add(button);
         }
 
-        return strip;
+        // The rail the open tab's mark sits on. It is what turns two underlined words into a set of
+        // places: without it the mark reads as decoration on one item rather than as a position
+        // among several.
+        return new Border
+        {
+            BorderBrush = Brush("BorderSubtle"),
+            BorderThickness = new Avalonia.Thickness(0, 0, 0, 1),
+            Margin = new Avalonia.Thickness(0, 0, 0, 6),
+            Child = strip,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+        };
     }
 
     /// <summary>

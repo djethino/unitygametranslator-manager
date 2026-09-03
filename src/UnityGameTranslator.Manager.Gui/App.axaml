@@ -48,6 +48,17 @@
       <Setter Property="BorderBrush" Value="{DynamicResource BorderStrong}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+
+      <!--
+        Centred, because a label pinned to the left edge of a wider button reads as a mistake.
+
+        ⚠ It only SHOWS on a button wider than its own text — one with a MinWidth, or stretched into
+        a column — so it hid for a long time behind buttons whose labels happened to fill them, and
+        surfaced on the first short one ("Undo", MinWidth 90). Set here rather than on that button:
+        it was never a fact about Undo, and the filter chips had already worked around it locally.
+      -->
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
     <Style Selector="Button:pointerover /template/ ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource SurfaceCardHover}" />
@@ -185,6 +196,55 @@
     <Style Selector="Button.filter.selected:pointerover /template/ ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource AccentSelected}" />
       <Setter Property="BorderBrush" Value="{DynamicResource AccentSoft}" />
+    </Style>
+
+    <!--
+      TABS — a place, not an act, and they must not be mistaken for one.
+
+      🔴 **They used to wear the primary button's class**, so the open tab was pixel-identical to the
+      one-click sitting a few inches below it: same fill, same radius, same weight. One said "you are
+      here" and the other "this writes into your game", in the same clothes.
+
+      So everything a button in this program has, a tab drops: no fill, no outline, no rounded
+      corners. What it keeps is the one mark every program has used for thirty years — a line under
+      the open one, sitting on the rail the strip draws. Nothing here is invented: a tab that needs
+      explaining is a tab that failed, and the room for invention is in the colour, not the shape.
+
+      ⚠ The underline is 2px in BOTH states, transparent when closed. Same lesson as the filter
+      chips above: if selecting changed the thickness, every tab would shift by two pixels as the
+      line appeared — under the pointer that had just clicked it.
+    -->
+    <Style Selector="Button.tab">
+      <Setter Property="Padding" Value="14,7" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="CornerRadius" Value="0" />
+
+      <!-- Covers the strip's own hairline, so the mark reads as cut out of the rail rather than
+           stacked on top of it. -->
+      <Setter Property="Margin" Value="0,0,0,-1" />
+    </Style>
+    <Style Selector="Button.tab /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0,0,0,2" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+      <Setter Property="CornerRadius" Value="0" />
+    </Style>
+    <Style Selector="Button.tab:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource BorderStrong}" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+    </Style>
+    <Style Selector="Button.tab.selected /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+    </Style>
+    <Style Selector="Button.tab.selected:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
     </Style>
 
     <!--

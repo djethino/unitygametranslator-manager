@@ -54,7 +54,7 @@ public sealed class SettingsWindow : Window
     /// </summary>
     private TextBlock _locality = null!;
     private SearchPicker _aiModel = null!;
-    private ComboBox _testInto = null!;
+    private SearchPicker _testInto = null!;
 
     /// <summary>What the run will cost, said before the button rather than after it.</summary>
     private TextBlock _testCost = null!;
@@ -67,7 +67,7 @@ public sealed class SettingsWindow : Window
     /// cannot take back. Null when nothing is running.
     /// </summary>
     private CancellationTokenSource? _suiteStop;
-    private ComboBox _testFrom = null!;
+    private SearchPicker _testFrom = null!;
     private HotkeyEditor _hotkey = null!;
     private TextBlock _hotkeyProblem = null!;
     private ComboBox _channel = null!;
@@ -88,6 +88,12 @@ public sealed class SettingsWindow : Window
     private StackPanel _aiPanel = null!;
     private StackPanel _apiPanel = null!;
     private Control _aiCard = null!;
+
+    /// <summary>
+    /// Putting a model through the mod's own instructions — its own card, since it sets nothing.
+    /// Shown and hidden with <see cref="_aiCard"/>: there is nothing to test without a model.
+    /// </summary>
+    private Control _testCard = null!;
     private Control _apiCard = null!;
     private ComboBox _provider = null!;
     private TextBox _providerKey = null!;
@@ -223,8 +229,13 @@ public sealed class SettingsWindow : Window
         // left two headings sitting over nothing, which reads as a screen that failed to load
         // rather than as a section that does not apply.
         _aiCard = AiCard();
+
+        // ⚠ After the AI card, and it must be: it hooks the model picker that one builds.
+        _testCard = TestCard();
+
         _apiCard = ApiCard();
         layout.Children.Add(_aiCard);
+        layout.Children.Add(_testCard);
         layout.Children.Add(_apiCard);
         layout.Children.Add(ModCard());
         layout.Children.Add(SyncCard());
@@ -423,6 +434,11 @@ public sealed class SettingsWindow : Window
     {
         var backend = Tag(_backend);
         _aiCard.IsVisible = backend == "llm";
+
+        // ⚠ The same condition, never a second one: there is nothing to test without a model, and
+        // two conditions for one fact is how a card ends up on screen alone.
+        _testCard.IsVisible = _aiCard.IsVisible;
+
         _apiCard.IsVisible = backend == "google";
 
         if (backend == "llm") _ = LookNowThatAiIsChosenAsync();
@@ -612,41 +628,8 @@ public sealed class SettingsWindow : Window
         _refreshModels = new Button { Content = "Refresh", FontSize = 12 };
         _refreshModels.Click += async (_, _) => await TestConnectionAsync(asRefresh: true);
 
-        _testButton = new Button
-        {
-            Content = "Test this model",
-            FontSize = 12,
-            IsEnabled = false,
-
-            // Sits on the pickers' own line rather than centred on their labels: the two beside it
-            // carry a word above them, and a button floating half a line up reads as belonging to
-            // neither.
-            VerticalAlignment = VerticalAlignment.Bottom,
-        };
-        _testButton.Click += async (_, _) =>
-        {
-            // One button, two verbs — never a second control that is greyed out half the time.
-            if (_suiteStop is { } running)
-            {
-                running.Cancel();
-                return;
-            }
-
-            await RunSuiteAsync();
-        };
-
-        _testOutput = new StackPanel { Spacing = 6 };
-
         _connectButton = new Button { Content = "Test connection", FontSize = 12 };
         _connectButton.Click += async (_, _) => await TestConnectionAsync();
-
-        _metrics = new TextBlock
-        {
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            IsVisible = false,
-            Foreground = Brush("TextSecondary"),
-        };
 
         _aiPanel = new StackPanel { Spacing = 10 };
         _aiPanel.Children.Add(new StackPanel
@@ -703,30 +686,84 @@ public sealed class SettingsWindow : Window
 
         _aiPanel.Children.Add(Row("Model", _aiModel, _refreshModels));
 
-        // The test gets its own line and its own two pickers, because it is its own act: it does
-        // not change a single setting, it answers "what would this model do in my game".
+        return Card("AI translation", null, _aiPanel);
+    }
+
+    /// <summary>
+    /// Putting a model through what the mod actually asks of it — its own card, under the AI one.
+    ///
+    /// 🔴 **It is a feature, not a field.** It lived inside "AI translation", where every other line
+    /// SETS something: an address, a key, which model to use. This one sets nothing at all. It
+    /// answers a different question — *what would this model do in my game* — and it answers it by
+    /// running for a while and printing a page. Folded in among the settings it made a card of
+    /// eight controls read as a card of twenty, and its own two pickers looked like two more
+    /// settings somebody had to fill in before saving.
+    ///
+    /// ⚠ Appears and disappears with the AI card, since there is nothing to test without a model.
+    /// Both are driven from ShowBackendCards, on one condition rather than two.
+    /// </summary>
+    private Control TestCard()
+    {
+        _testButton = new Button
+        {
+            Content = "Test this model",
+            FontSize = 12,
+            IsEnabled = false,
+
+            // Sits on the pickers' own line rather than centred on their labels: the two beside it
+            // carry a word above them, and a button floating half a line up reads as belonging to
+            // neither.
+            VerticalAlignment = VerticalAlignment.Bottom,
+        };
+        _testButton.Click += async (_, _) =>
+        {
+            // One button, two verbs — never a second control that is greyed out half the time.
+            if (_suiteStop is { } running)
+            {
+                running.Cancel();
+                return;
+            }
+
+            await RunSuiteAsync();
+        };
+
+        _testOutput = new StackPanel { Spacing = 6 };
+
+        _metrics = new TextBlock
+        {
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            IsVisible = false,
+            Foreground = Brush("TextSecondary"),
+        };
+
+        // ⚠ Searchable, like every other language list in this product: about a hundred and eighty
+        // entries is past what anybody scans, and a dropdown that could not be scrolled with the
+        // wheel left no way through at all. See SearchPicker.
         //
-        // Both default when the panel opens and are never written anywhere — exactly like the
+        // Both default when the card opens and are never written anywhere — exactly like the
         // language pickers on the translations screen. Into starts on the language being set up,
         // From on the language most games are written in, or the next one when that IS the target:
         // asking a model for English from English is a job the mod never gives it.
-        _testInto = new ComboBox { Width = 150 };
-        _testFrom = new ComboBox { Width = 150 };
+        _testInto = new SearchPicker { Width = 190 };
+        _testFrom = new SearchPicker { Width = 190 };
 
         LanguageMark.Fill(_testInto, Languages.All());
 
         _testInto.SelectionChanged += (_, _) => { RefreshTestSources(); ShowTestCost(); };
         _testFrom.SelectionChanged += (_, _) => { _testOutput.Children.Clear(); ShowTestCost(); };
 
+        var panel = new StackPanel { Spacing = 10 };
+
         // Each picker carries its own word. They were laid out bare under a single "Test" label
         // with a caption naming them in order, which asked the reader to work out which was which
         // — and the two are not interchangeable.
-        _aiPanel.Children.Add(Row("Test",
+        panel.Children.Add(Row("Languages",
             Labelled("Into", _testInto),
             Labelled("From", _testFrom),
             _testButton));
 
-        _aiPanel.Children.Add(new TextBlock
+        panel.Children.Add(new TextBlock
         {
             Text = "The sentences are never written in the language you translate into: asking a "
                  + "model for English from English is a job the mod never gives it.",
@@ -744,21 +781,23 @@ public sealed class SettingsWindow : Window
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("TextMuted"),
         };
-        _aiPanel.Children.Add(_testCost);
+        panel.Children.Add(_testCost);
 
-        // Defaulted once, when the panel is built, and never written anywhere: this pair aims the
-        // test, it does not change the setting above.
+        // Defaulted once, when the card is built, and never written anywhere: this pair aims the
+        // test, it does not change a setting.
         Select(_testInto, _store.ResolveTargetLanguage());
         ShowTestCost();
         RefreshTestSources();
-        _aiPanel.Children.Add(_modelNote);
-        _aiPanel.Children.Add(_metrics);
+
+        panel.Children.Add(_modelNote);
+        panel.Children.Add(_metrics);
 
         // Shown as soon as a model is picked, before any test: knowing that one of the listed
         // models is the one the mod is developed against is worth more than a mark obtained
         // afterwards, because it tells someone where to start rather than judging where they went.
         _aiModel.SelectionChanged += (_, _) => ShowModelNote();
-        _aiPanel.Children.Add(new TextBlock
+
+        panel.Children.Add(new TextBlock
         {
             Text = "The test asks this model to do exactly what the mod asks of it, from easy to "
                  + "hard, and shows you its answers. Our checks are guesses about free text and "
@@ -767,9 +806,10 @@ public sealed class SettingsWindow : Window
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("TextMuted"),
         });
-        _aiPanel.Children.Add(_testOutput);
 
-        return Card("AI translation", null, _aiPanel);
+        panel.Children.Add(_testOutput);
+
+        return Card("Test this model", null, panel);
     }
 
     private Control ModCard()
@@ -1669,9 +1709,15 @@ public sealed class SettingsWindow : Window
         var into = Tag(_testInto) ?? _store.ResolveTargetLanguage();
         var wanted = ModelTestSuite.SourceFor(into).Code;
 
+        // 🔴 **The NAME comes from the shared catalogue, never from the fixture's own label.** A
+        // fixture calls its language whatever its author wrote — "Chinese" where the catalogue says
+        // "Simplified Chinese" — and a name that is not the catalogue's is a name nothing can match:
+        // the flag is looked up by it, so the row lost its flag and read differently from every
+        // other language list in the product. The fixture decides WHICH languages can be tested;
+        // what each one is called is not its to say.
         LanguageMark.Fill(_testFrom, Fixtures.All
             .Where(set => !string.Equals(set.Code, into, StringComparison.OrdinalIgnoreCase))
-            .Select(set => (set.Code, set.Language)));
+            .Select(set => (set.Code, Languages.NameOf(set.Code) ?? set.Language)));
 
         Select(_testFrom, wanted);
     }

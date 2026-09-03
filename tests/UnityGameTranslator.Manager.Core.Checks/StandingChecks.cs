@@ -60,6 +60,31 @@ internal static class StandingChecks
         Program.Check(elsewhere.Kind == ServerStandingKind.OtherServer && !elsewhere.CanAct,
             "the same name on another site is NOT me", "the server is compared first");
 
+        // 🔴 **The LOCAL write, pinned apart from CanAct — because that is the one call sites keep
+        // forgetting.** CanAct guards the server; CanWriteLocally guards the translation FILE in a
+        // game folder, and editing in a browser, merging, restoring and taking a translation all
+        // write only that file, which is exactly why they were once left unguarded.
+        //
+        // Twice now a control has reached TakeSelectedTranslationAsync with "the game is not
+        // running" as its only condition, on a card where every neighbouring button was greyed.
+        // The rule is CLAUDE.md's, extended to local writes on 2026-08-14: one must not break, by
+        // inattention, the setup another user of this computer put in place.
+        Program.Check(!theirs.CanWriteLocally && !elsewhere.CanWriteLocally,
+            "another account's game is read-only on disk too",
+            "editing and merging write that game's file, and it is not ours");
+
+        Program.Check(mine.CanWriteLocally && unlinked.CanWriteLocally,
+            "our own and unclaimed games stay writable",
+            "the refusal is about somebody else, never about caution");
+
+        // ⚠ Signed out with nobody's game is NOT a refusal: a machine where nothing is linked and
+        // nobody is signed in belongs to whoever is sitting at it. Only a game bearing a name is
+        // somebody's.
+        var anonymous = ServerIdentity.For(null, (null, null), Site);
+        Program.Check(anonymous.CanWriteLocally && !out1.CanWriteLocally,
+            "signed out is decided by whose game it is",
+            "nobody's game is anybody's; a named one is theirs");
+
         // ⚠ A trailing slash or an "/api/v1" suffix is a spelling, not a different server. Refusing
         // on one would send people hunting for an account problem they do not have.
         foreach (var spelling in new[]

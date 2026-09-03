@@ -4019,14 +4019,43 @@ public partial class MainWindow : Window
             Foreground = Brush("TextMuted"),
         });
 
-        var take = new Button
+        // 🔴 **A THIRD door to TakeSelectedTranslationAsync, and it had neither the mark nor the
+        // guard.** That method carries no account check of its own — every caller's BUTTON holds
+        // it, which is what the workbench's Apply says in as many words two hundred lines below:
+        // "Taking a translation OVERWRITES this game's file, so it obeys the account rule."
+        //
+        // This one replaces the very same file with only "the game is not running" in front of it,
+        // so on a game set up under somebody else's account it stayed live while Apply, Edit,
+        // Merge, Publish and Remove were all greyed. Same family as the two doors of 2026-07-26:
+        // sharing the function is not sharing the act, and the conditions live with the control.
+        //
+        // ⚠ The guard applies to the SINGLE case only. With several, this button opens the list and
+        // writes nothing — greying it would block looking, which nothing here has any reason to do.
+        var standing = ServerIdentity.For(_settings.Current, report.SiteAccount, BuildInfo.ApiBaseUrl);
+        var mayTake = !_running.IsRunning(report.Game) && standing.CanWriteLocally;
+
+        // ⚠ Marked, like every other action that puts a file into a game. Local: this restores the
+        // published translation onto this machine, and the site keeps whatever it held.
+        var take = mine.Count == 1
+            ? ScopeMark.Marked(EditSide.Local, "Restore my published translation", mayTake)
+            : new Button
+            {
+                Content = "Choose which one to install",
+                FontSize = 12,
+                IsEnabled = !_running.IsRunning(report.Game),
+            };
+
+        take.HorizontalAlignment = HorizontalAlignment.Left;
+        take.Margin = new Avalonia.Thickness(0, 4, 0, 0);
+
+        // No greyed control without words — the rule this program holds everywhere.
+        if (mine.Count == 1 && !mayTake)
         {
-            Content = mine.Count == 1 ? "Restore my published translation" : "Choose which one to install",
-            FontSize = 12,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            IsEnabled = !_running.IsRunning(report.Game),
-            Margin = new Avalonia.Thickness(0, 4, 0, 0),
-        };
+            ToolTip.SetTip(take, _running.IsRunning(report.Game)
+                ? "This game is open. The mod rewrites its translation file from memory while it "
+                  + "runs, so anything written now would be replaced without warning."
+                : standing.Reason);
+        }
 
         take.Click += async (_, _) =>
         {
@@ -4800,6 +4829,33 @@ public partial class MainWindow : Window
         yield return row;
     }
 
+    /// <summary>
+    /// Where this account stands in the lineage of the file this game holds — and, when the two
+    /// are not the same person's, whose is whose.
+    ///
+    /// 🔴 **The card mixes two subjects and used to name only one.** Everything else in this panel
+    /// is about the copy in the game folder; <see cref="GameReport.MyPosition"/> is about the
+    /// signed-in account on the site this window talks to, matched on uuid alone
+    /// (GameInventory.BuildReport). On an ordinary game they are the same thing and saying so would
+    /// be noise. On a game belonging to somebody else they are not, and the card said:
+    ///
+    ///   · every local control greyed, with the refusal at the top of the workbench;
+    ///   · "This translation is yours, and there is work waiting", in amber, with a live button.
+    ///
+    /// Both true. Read together, a bug — and "This translation" points at the file in front of the
+    /// reader, which is precisely the one thing that is not theirs.
+    ///
+    /// ⚠ **Not a dev-only case, which is how it was first read.** Two ordinary routes reach it:
+    /// somebody who downloaded a Main this account leads, on a shared computer (OtherAccount — the
+    /// case ServerIdentity exists for); and a game pointed at a self-hosted instance
+    /// (OtherServer, via the mod's api_base_url override). It is at its most confusing when both
+    /// accounts carry the SAME NAME and differ only by server: every label the card already has
+    /// then says the same word on both sides.
+    ///
+    /// ⚠ **Nothing is hidden and nothing is greyed here.** The count is a true fact about this
+    /// account, and reviewing writes to the site this window is signed into — never to the game.
+    /// What was missing was the subject, so the subject is what gets added.
+    /// </summary>
     private IEnumerable<Control> LineageNotes(GameReport report)
     {
         if (report.MyPosition is not { } position)
@@ -4843,6 +4899,28 @@ public partial class MainWindow : Window
             yield break;
         }
 
+        // ⚠ The same reading every other control on this card makes, from the same call. A second
+        // way of working out whose game this is would be a second answer waiting to disagree.
+        var standing = ServerIdentity.For(_settings.Current, report.SiteAccount, BuildInfo.ApiBaseUrl);
+
+        // The subject, said once, and only when the two subjects differ — the ordinary game says
+        // nothing, exactly as ServerStanding.Reason stays null when there is nothing to explain.
+        //
+        // ⚠ A heading rather than the inline "On this machine: …" three lines up, because what
+        // follows is a GROUP — a sentence that wraps, the contribution chips, and a button — where
+        // that one labels a single short value. Same grammar, the shape a group takes.
+        if (!standing.CanWriteLocally)
+        {
+            yield return new TextBlock
+            {
+                Text = "On your account",
+                FontSize = 11,
+                FontWeight = FontWeight.SemiBold,
+                Foreground = Brush("TextMuted"),
+                Margin = new Avalonia.Thickness(0, 6, 0, 0),
+            };
+        }
+
         if (position.IsMain)
         {
             // What is waiting, not how many contribute — same rule as Describe() reads.
@@ -4872,7 +4950,18 @@ public partial class MainWindow : Window
             // something to review: a button that leads to an empty page is worse than no button.
             if (waiting > 0)
             {
-                var review = Glyphs.Button(Glyphs.Site(), "Review them on the site");
+                // 🔴 **Marked, like every other action that writes — and this was the one that was
+                // not.** Of the five buttons on this window built without a scope mark, four open a
+                // folder, launch the game or go Home: they write nothing, so there is nothing to
+                // mark. This one leads to a merge, and where a write lands is the first thing this
+                // interface promises to say.
+                //
+                // ⚠ Server, and the socle names this very action as its example: "work done with no
+                // game and no manager on the other end — merging a contribution from the website".
+                // The published translation carries the result; the file in this game does not
+                // move, which is also the answer to why this button stays live on a game nothing
+                // else here may touch.
+                var review = ScopeMark.Marked(EditSide.Server, "Review them on the site");
                 review.Margin = new Avalonia.Thickness(0, 6, 0, 0);
                 review.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left;
                 review.Click += (_, _) =>

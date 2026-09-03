@@ -64,7 +64,7 @@ public sealed class GameModSettingsForm
 
     private readonly AiServerProbe _probe = new();
 
-    private ComboBox _language = null!;
+    private SearchPicker _language = null!;
     private ComboBox _backend = null!;
     private TextBox _aiUrl = null!;
     private TextBox _aiKey = null!;
@@ -1065,6 +1065,10 @@ public sealed class GameModSettingsForm
     /// the form would then offer to "set" one it already has.
     /// </summary>
     private static void Select(ComboBox box, string? value) =>
+        ModSettingControls.Select(box, Code(value));
+
+    /// <summary>The same, through the searchable picker the language list now uses.</summary>
+    private static void Select(SearchPicker box, string? value) =>
         ModSettingControls.Select(box, Code(value));
 
     /// <summary>

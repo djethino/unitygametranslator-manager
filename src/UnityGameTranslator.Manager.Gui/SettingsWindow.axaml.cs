@@ -44,7 +44,7 @@ public sealed class SettingsWindow : Window
 
     private readonly InstallerSettings _draft;
 
-    private ComboBox _language = null!;
+    private SearchPicker _language = null!;
     private ComboBox _backend = null!;
     private TextBox _aiUrl = null!;
 
@@ -53,7 +53,7 @@ public sealed class SettingsWindow : Window
     /// machine, privacy for one on the network, privacy and cost for anything else.
     /// </summary>
     private TextBlock _locality = null!;
-    private ComboBox _aiModel = null!;
+    private SearchPicker _aiModel = null!;
     private ComboBox _testInto = null!;
 
     /// <summary>What the run will cost, said before the button rather than after it.</summary>
@@ -449,7 +449,7 @@ public sealed class SettingsWindow : Window
 
         if (string.IsNullOrWhiteSpace(_aiUrl.Text)) _aiUrl.Text = servers[0].Url;
 
-        _aiModel.SelectedItem ??= _aiModel.Items.OfType<ComboBoxItem>().FirstOrDefault();
+        _aiModel.Reselect(_aiModel.SelectedItem ?? _aiModel.Items.FirstOrDefault());
 
         RefreshApplyButton();
     }
@@ -575,7 +575,7 @@ public sealed class SettingsWindow : Window
             Text = _draft.AiApiKey ?? "",
         };
 
-        _aiModel = new ComboBox { Width = 300 };
+        _aiModel = new SearchPicker { Width = 300, TextOf = model => model as string ?? "" };
 
         _aiStatus = new TextBlock
         {
@@ -921,8 +921,8 @@ public sealed class SettingsWindow : Window
         _aiModel.Items.Clear();
         if (!string.IsNullOrWhiteSpace(_draft.AiModel))
         {
-            _aiModel.Items.Add(new ComboBoxItem { Content = _draft.AiModel, Tag = _draft.AiModel });
-            _aiModel.SelectedIndex = 0;
+            _aiModel.Items.Add(_draft.AiModel);
+            _aiModel.Reselect(_draft.AiModel);
         }
 
         _testButton.IsEnabled = _aiModel.SelectedItem is not null;
@@ -949,7 +949,7 @@ public sealed class SettingsWindow : Window
         var saved = _draft.AiModel;
         _aiModel.Items.Clear();
         foreach (var model in models)
-            _aiModel.Items.Add(new ComboBoxItem { Content = model, Tag = model });
+            _aiModel.Items.Add(model);
 
         var stillThere = !string.IsNullOrWhiteSpace(saved)
                          && models.Any(m => string.Equals(m, saved, StringComparison.Ordinal));
@@ -1034,13 +1034,13 @@ public sealed class SettingsWindow : Window
         }
 
         foreach (var model in server.Models)
-            _aiModel.Items.Add(new ComboBoxItem { Content = model, Tag = model });
+            _aiModel.Items.Add(model);
 
         // Listing them is offering; selecting one is choosing. The list is filled either way — a
         // picker with nothing in it would be a dead end — but a model is only picked for somebody
         // once they have said they want AI at all.
         Select(_aiModel, _draft.AiModel);
-        if (chosen) _aiModel.SelectedItem ??= _aiModel.Items.OfType<ComboBoxItem>().FirstOrDefault();
+        if (chosen) _aiModel.Reselect(_aiModel.SelectedItem ?? _aiModel.Items.FirstOrDefault());
 
         _testButton.IsEnabled = _aiModel.SelectedItem is not null;
 
@@ -1742,10 +1742,10 @@ public sealed class SettingsWindow : Window
             ? $"{models.Count} model(s) on the server."
             : $"Connected — {models.Count} model(s) offered.");
         foreach (var name in models)
-            _aiModel.Items.Add(new ComboBoxItem { Content = name, Tag = name });
+            _aiModel.Items.Add(name);
 
         Select(_aiModel, _draft.AiModel);
-        _aiModel.SelectedItem ??= _aiModel.Items.OfType<ComboBoxItem>().FirstOrDefault();
+        _aiModel.Reselect(_aiModel.SelectedItem ?? _aiModel.Items.FirstOrDefault());
         _testButton.IsEnabled = _aiModel.SelectedItem is not null;
         _connectButton.IsEnabled = true;
         _refreshModels.IsEnabled = true;
@@ -2366,8 +2366,15 @@ public sealed class SettingsWindow : Window
     /// </summary>
     private void WatchForChanges()
     {
-        foreach (var box in new[] { _language, _backend, _aiModel, _channel })
+        foreach (var box in new[] { _backend, _channel })
             box.SelectionChanged += (_, _) => RefreshApplyButton();
+
+        // ⚠ Listed apart, not forgotten: a SearchPicker raises a plain event where a ComboBox
+        // raises one carrying selection args, so the two cannot share an array. Same subscription,
+        // and these must stay in step with the line above — a picker missing from either is a
+        // change the Apply button never notices.
+        foreach (var picker in new[] { _language, _aiModel })
+            picker.SelectionChanged += (_, _) => RefreshApplyButton();
 
         foreach (var field in new[] { _aiUrl, _apiKey })
             field.TextChanged += (_, _) => RefreshApplyButton();
@@ -2405,6 +2412,12 @@ public sealed class SettingsWindow : Window
         LanguageChoice choice => choice.Code,
         _ => null,
     };
+
+    /// <summary>The same, for the one list long enough to need searching — see SearchPicker.</summary>
+    private static string? Tag(SearchPicker box) => ModSettingControls.Tag(box);
+
+    private static void Select(SearchPicker box, string? value) =>
+        ModSettingControls.Select(box, value);
 
     private static void Select(ComboBox box, string? value)
     {

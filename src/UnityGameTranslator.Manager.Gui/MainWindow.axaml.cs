@@ -1250,19 +1250,20 @@ public partial class MainWindow : Window
         await RetryOnlineAsync();
     }
 
-    /// <summary>Puts the header picker back in step with what was just saved.</summary>
-    private void SyncLanguageBox()
-    {
-        var current = _settings.Current.TargetLanguage;
-        foreach (var item in LanguageBox.Items.OfType<ComboBoxItem>())
-        {
-            if (string.Equals(item.Tag as string, current, StringComparison.OrdinalIgnoreCase))
-            {
-                LanguageBox.SelectedItem = item;
-                return;
-            }
-        }
-    }
+    /// <summary>
+    /// Puts the header picker back in step with what was just saved.
+    ///
+    /// 🔴 **It did nothing at all, and nothing said so.** It walked the entries as ComboBoxItems
+    /// while the list has always held LanguageChoice, so the match never fired: changing the
+    /// language in the settings window left the header still showing the previous one, until
+    /// something else happened to rebuild it.
+    ///
+    /// ⚠ Reselect, through the shared helper: putting a picker back where the settings just put it
+    /// is not somebody choosing, and raising a choice here would save the answer a second time —
+    /// and, through the handler below, redraw the whole window for it.
+    /// </summary>
+    private void SyncLanguageBox() =>
+        ModSettingControls.Select(LanguageBox, _settings.Current.TargetLanguage);
 
     // ---------------------------------------------------------------- language and filters
 
@@ -1282,28 +1283,13 @@ public partial class MainWindow : Window
         var autoName = detected is not null ? Languages.NameOf(detected) : null;
         var autoLabel = autoName is not null ? $"{autoName} (system language)" : "System language";
 
-        // 🔴 **A template, not a Control per item.** A ComboBox renders the SELECTED entry a second
-        // time, in its closed box — and a control belongs to one place in the tree, so handing the
-        // same instance to both empties whichever claimed it first. The template is asked for a
-        // fresh one each time it is needed, which is the whole difference.
-        LanguageBox.ItemTemplate = new FuncDataTemplate<LanguageChoice>(
-            (choice, _) => LanguageMark.Named(choice?.Name, choice?.Label), supportsRecycling: false);
+        // ⚠ Filled through LanguageMark like every other language list in this product — the same
+        // order, the same template, the same "follow the system" entry first. It used to build its
+        // own, three lines from the shared one, which is how a list ends up differing from itself.
+        LanguageMark.Fill(LanguageBox, Languages.All(),
+                          new LanguageChoice("auto", autoName, autoLabel));
 
-        LanguageBox.Items.Add(new LanguageChoice("auto", autoName, autoLabel));
-
-        foreach (var (code, name) in Languages.All())
-            LanguageBox.Items.Add(new LanguageChoice(code, name, name));
-
-        var current = _settings.Current.TargetLanguage;
-        foreach (var choice in LanguageBox.Items.OfType<LanguageChoice>())
-        {
-            if (string.Equals(choice.Code, current, StringComparison.OrdinalIgnoreCase))
-            {
-                LanguageBox.SelectedItem = choice;
-                break;
-            }
-        }
-        LanguageBox.SelectedItem ??= LanguageBox.Items.OfType<LanguageChoice>().FirstOrDefault();
+        ModSettingControls.Select(LanguageBox, _settings.Current.TargetLanguage);
 
         LanguageBox.SelectionChanged += (_, _) =>
         {

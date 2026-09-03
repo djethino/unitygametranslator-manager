@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ugt="using:UnityGameTranslator.Manager.Gui"
         x:Class="UnityGameTranslator.Manager.Gui.MainWindow"
         Title="UnityGameTranslator Manager"
         Width="1220" Height="720"
@@ -68,7 +69,9 @@
           <!-- Wide enough for the longest entry it can show, which is not a language name but
                "<language> (system language)". At 170 that one was cut in half, so the entry the
                list opens on said the least of any of them. -->
-          <ComboBox x:Name="LanguageBox" Width="240" />
+          <!-- Searchable: it is the same hundred-and-eighty-entry list the settings screens show,
+               and the one somebody reaches for most often. -->
+          <ugt:SearchPicker x:Name="LanguageBox" Width="240" />
           <TextBox x:Name="SearchBox" Width="240" Watermark="Search your games" />
         </StackPanel>
       </StackPanel>

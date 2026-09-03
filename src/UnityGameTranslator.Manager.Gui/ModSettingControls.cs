@@ -76,9 +76,15 @@ public static class ModSettingControls
     /// ⚠ The list comes from the shared catalogue, never from a literal here — it is the same table
     /// the mod compiles in and the site publishes under, and the NAME is the upload contract.
     /// </summary>
-    public static ComboBox LanguagePicker(IPlatform platform, double width, bool followSystem = true)
+    /// <summary>
+    /// ⚠ A <see cref="SearchPicker"/> rather than a ComboBox, and only because the list is long:
+    /// about a hundred and eighty languages is past what anybody scans, and its dropdown did not
+    /// answer the wheel. Every short list here stays a ComboBox — a search field over four entries
+    /// is furniture.
+    /// </summary>
+    public static SearchPicker LanguagePicker(IPlatform platform, double width, bool followSystem = true)
     {
-        var box = new ComboBox { Width = width };
+        var box = new SearchPicker { Width = width };
 
         LanguageChoice? follow = null;
         if (followSystem)
@@ -91,10 +97,51 @@ public static class ModSettingControls
         }
 
         // ⚠ Through LanguageMark so the flags come with it — and so no picker in this product is
-        // ever built with a Control per item, which a ComboBox cannot render twice.
+        // ever built with a Control per item, which neither shape can render twice.
         LanguageMark.Fill(box, Languages.All(), follow);
 
         return box;
+    }
+
+    /// <summary>
+    /// The value behind the selected row of a searchable picker.
+    ///
+    /// ⚠ Two shapes, like the ComboBox above: a language is a LanguageChoice because it carries a
+    /// flag, an AI model is its own name and nothing else. A model list holds no second field to
+    /// wrap it in, and wrapping it in one would invent a distinction that does not exist.
+    /// </summary>
+    public static string? Tag(SearchPicker box) => box.SelectedItem switch
+    {
+        LanguageChoice choice => choice.Code,
+        string text => text,
+        _ => null,
+    };
+
+    /// <summary>
+    /// Selects the row carrying this value, falling back to the first rather than to nothing.
+    ///
+    /// ⚠ Reselect, not SelectedItem: putting a list back where it was is not somebody choosing, and
+    /// raising a choice here would file an answer nobody gave.
+    /// </summary>
+    public static void Select(SearchPicker box, string? value)
+    {
+        foreach (var item in box.Items)
+        {
+            var code = item switch
+            {
+                LanguageChoice choice => choice.Code,
+                string text => text,
+                _ => null,
+            };
+
+            if (string.Equals(code, value, StringComparison.OrdinalIgnoreCase))
+            {
+                box.Reselect(item);
+                return;
+            }
+        }
+
+        if (box.SelectedItem is null && box.Items.Count > 0) box.Reselect(box.Items[0]);
     }
 
     /// <summary>

@@ -129,8 +129,7 @@ public static class LanguageMark
     public static void Fill(ComboBox box, IEnumerable<(string Code, string Name)> languages,
                             LanguageChoice? extra = null)
     {
-        box.ItemTemplate = new FuncDataTemplate<LanguageChoice>(
-            (choice, _) => Named(choice?.Name, choice?.Label), supportsRecycling: false);
+        box.ItemTemplate = Rows();
 
         box.Items.Clear();
 
@@ -139,6 +138,34 @@ public static class LanguageMark
         foreach (var (code, name) in languages)
             box.Items.Add(new LanguageChoice(code, name, name));
     }
+
+    /// <summary>
+    /// The same list, in the picker that can be searched — see <see cref="SearchPicker"/>.
+    ///
+    /// ⚠ One filling for both shapes, deliberately: what goes in a language list, in what order,
+    /// with which extra entry first, is the same answer wherever it is shown. Two fillings is two
+    /// places for the "follow the system" row to be forgotten.
+    /// </summary>
+    public static void Fill(SearchPicker picker, IEnumerable<(string Code, string Name)> languages,
+                            LanguageChoice? extra = null)
+    {
+        picker.ItemTemplate = Rows();
+
+        // What somebody types is the language's NAME — never its code, which nobody knows, and
+        // never the "(follow the system)" wrapper, which would match everything on "s".
+        picker.TextOf = item => item is LanguageChoice choice ? choice.Name ?? choice.Label ?? "" : "";
+
+        picker.Items.Clear();
+
+        if (extra is not null) picker.Items.Add(extra);
+
+        foreach (var (code, name) in languages)
+            picker.Items.Add(new LanguageChoice(code, name, name));
+    }
+
+    /// <summary>How one language reads in a list: its flag, its name, and the label when it has one.</summary>
+    private static FuncDataTemplate<LanguageChoice> Rows() =>
+        new((choice, _) => Named(choice?.Name, choice?.Label), supportsRecycling: false);
 
     /// <summary>
     /// One flag as a bitmap, or null when it has not been drawn yet.

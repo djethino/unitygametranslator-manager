@@ -3362,7 +3362,7 @@ public partial class MainWindow : Window
         // Not a constant: on a game with nothing left to install, choosing a translation IS the
         // act of this screen, and it takes the fill back. Same reading either way — the loudest
         // thing on the card is the thing to do next.
-        var barActs = OneClickSteps(report, _preferences.Read(report.Game.Path)).Any();
+        var barActs = OneClickSteps(report, EffectivePreference(report)).Any();
         var bodyLead = barActs ? "" : "primary";
 
         var inMyLanguage = report.OnlineTranslations
@@ -8662,7 +8662,9 @@ public partial class MainWindow : Window
             return;
         }
 
-        var preference = _preferences.Read(report.Game.Path);
+        // ⚠ Pending answers included: this bar DESCRIBES what the one-click would do, and it read
+        // the stored preference while the act itself read the pending ones too.
+        var preference = EffectivePreference(report);
         var blocked = WhyNotReady(report);
 
         var body = new StackPanel { Spacing = 8 };
@@ -8939,7 +8941,6 @@ public partial class MainWindow : Window
         // own to rewrite somebody else's language, model and key from this account's answers.
         if (mayChangeThisGame
             && _settings.Current.Reviewed
-            && (!GameConfig(report).IsConfigured || preference.UsesModDefaults(GameConfig(report)))
             && SettingsWouldChangeAnything(report, preference))
         {
             yield return new(OneClickAct.ApplySettings, SettingsStepText(report, preference));
@@ -9584,6 +9585,27 @@ public partial class MainWindow : Window
     /// </summary>
     private void ValidatePending(GameReport report, GamePreference preference) =>
         ValidateInto(report, preference, save: true);
+
+    /// <summary>
+    /// The preference as it stands RIGHT NOW: what is stored, plus every answer given on this card
+    /// and not yet applied.
+    ///
+    /// 🔴 **Describing the one-click and running it must read the same thing, and they did not.**
+    /// The bar and its list of steps read the STORED preference while RunOneClickAsync read the
+    /// pending answers too. Somebody who changed this game's own settings therefore saw a bar that
+    /// had not noticed, and had to scroll to find the block's own Apply — the one control that had
+    /// registered the change.
+    ///
+    /// ⚠ A copy, and never saved. What is pending has been ANSWERED, not validated: storing it here
+    /// would keep answers somebody typed and walked away from. It is promoted for real by
+    /// <see cref="ValidatePending"/>, once, when the act is actually run.
+    /// </summary>
+    private GamePreference EffectivePreference(GameReport report)
+    {
+        var preference = _preferences.Read(report.Game.Path).Copy();
+        ValidateInto(report, preference, save: false);
+        return preference;
+    }
 
     /// <param name="save">
     /// False to merely SHOW what is pending — a confirmation has to name it, and somebody who then

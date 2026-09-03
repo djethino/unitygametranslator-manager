@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -34,6 +35,7 @@ public sealed class SearchPicker : UserControl
     private readonly Popup _popup;
     private readonly TextBox _search;
     private readonly ListBox _list = new();
+    private readonly ScrollViewer _scroll;
     private readonly System.Collections.ObjectModel.ObservableCollection<object> _items = new();
 
     /// <summary>Everything on offer. Filled like a ComboBox's, and filtered by what is typed.</summary>
@@ -93,14 +95,26 @@ public sealed class SearchPicker : UserControl
             Margin = new Thickness(8, 8, 8, 6),
         };
 
-        _list.MaxHeight = 260;
         _list.Background = Brushes.Transparent;
         _list.BorderThickness = new Thickness(0);
+
+        // 🔴 **Our own ScrollViewer, holding the list unbounded inside it.** The height belongs
+        // here rather than on the list because the wheel has to be scrolled BY HAND — see
+        // OnWheelWhileOpen — and doing that needs a scroller we hold a reference to. Left on the
+        // list, the one doing the scrolling would be the one Avalonia builds inside its template,
+        // which nothing here can reach.
+        _scroll = new ScrollViewer
+        {
+            MaxHeight = 260,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Content = _list,
+        };
 
         var panel = new DockPanel { LastChildFill = true };
         DockPanel.SetDock(_search, Dock.Top);
         panel.Children.Add(_search);
-        panel.Children.Add(_list);
+        panel.Children.Add(_scroll);
 
         _popup = new Popup
         {
@@ -117,6 +131,11 @@ public sealed class SearchPicker : UserControl
                 Child = panel,
             },
         };
+
+        // The same give the rest of the window has at the end of a scroll.
+        ScrollBounce.Attach(_scroll);
+
+        _popup.Closed += OnClosed;
 
         _face.Click += (_, _) => Open();
 
@@ -172,9 +191,62 @@ public sealed class SearchPicker : UserControl
 
         _popup.IsOpen = true;
 
+        // 🔴 **The wheel has to be carried in by hand, and this is an Avalonia bug, not a choice.**
+        // AvaloniaUI/Avalonia#16646, open, Windows only: a wheel turned over a Popup never reaches
+        // what is inside it — the event stops at the LightDismissOverlayLayer. So a list in a
+        // dropdown cannot be scrolled with the wheel, which on a hundred and eighty languages is
+        // not a detail but the only way through.
+        //
+        // ⚠ Hooked on the TOP LEVEL, not on the popup: the popup's tree is precisely where the
+        // event never arrives. handledEventsToo, because the overlay has already marked it handled
+        // by the time it passes here.
+        if (TopLevel.GetTopLevel(this) is { } top)
+        {
+            top.AddHandler(InputElement.PointerWheelChangedEvent, OnWheelWhileOpen,
+                           RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
+        }
+
         // ⚠ Posted: the popup's tree is not there to take focus until it has been laid out, and a
         // search field that needs clicking before it accepts a letter is a search field nobody uses.
         Dispatcher.UIThread.Post(() => _search.Focus(), DispatcherPriority.Loaded);
+    }
+
+    /// <summary>
+    /// Scrolls the open list, because nothing else will. See the note in <see cref="Open"/>.
+    ///
+    /// ⚠ Only while the list is open, and taken off the top level as soon as it closes — a handler
+    /// left behind would eat the wheel for the whole window.
+    ///
+    /// ⚠ Three lines per notch, the figure Windows itself reports for a wheel detent. Scrolling by
+    /// a fixed pixel count would move a different distance in this list than in every other.
+    /// </summary>
+    private void OnWheelWhileOpen(object? sender, PointerWheelEventArgs e)
+    {
+        if (!_popup.IsOpen) return;
+
+        var reach = Math.Max(0, _scroll.Extent.Height - _scroll.Viewport.Height);
+        if (reach <= 0) return;
+
+        var moved = Math.Clamp(_scroll.Offset.Y - e.Delta.Y * 3 * RowHeight, 0, reach);
+
+        _scroll.Offset = new Vector(_scroll.Offset.X, moved);
+        e.Handled = true;
+    }
+
+    /// <summary>About one row, used to turn a wheel notch into a distance.</summary>
+    private const double RowHeight = 28;
+
+    /// <summary>
+    /// Takes the wheel handler back off, however the list was closed.
+    ///
+    /// 🔴 **Hung on the popup's own Closed, never on the paths that close it.** A light dismiss —
+    /// a click anywhere else — closes it without passing through any of them, and a handler left
+    /// behind would swallow the wheel for the entire window from then on.
+    /// </summary>
+    private void OnClosed(object? sender, EventArgs e)
+    {
+        if (TopLevel.GetTopLevel(this) is { } top)
+            top.RemoveHandler(InputElement.PointerWheelChangedEvent, OnWheelWhileOpen);
     }
 
     private void Refill()

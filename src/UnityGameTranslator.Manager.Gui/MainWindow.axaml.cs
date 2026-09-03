@@ -306,6 +306,11 @@ public partial class MainWindow : Window
         BuildLanguageBox();
         BuildFilterBar();
 
+        // The give at the end of a scroll, on the two things long enough to have an end worth
+        // reaching — the card being read, and the library. See ScrollBounce.
+        ScrollBounce.Attach(DetailScroll);
+        ScrollBounce.AttachTo(GameList);
+
         Loaded += async (_, _) =>
         {
             // 🔴 Before the scan and before anything is asked of anybody. The scan itself sends

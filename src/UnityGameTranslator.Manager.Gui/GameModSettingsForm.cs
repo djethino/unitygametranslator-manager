@@ -294,15 +294,25 @@ public sealed class GameModSettingsForm
     }
 
     /// <summary>
-    /// Hands the answers up to be stored — and only where nothing else ever would.
+    /// Hands the answers up to be HELD, so the rest of the card can see them.
     ///
-    /// ⚠ Silent on an installed game, deliberately: there the answers are stored by Apply, together
-    /// with the write into the game, because that is one decision taken at one moment. Storing them
-    /// as they are typed as well would half-apply a form somebody has not finished filling in.
+    /// 🔴 **It used to stay silent on an installed game, and that is what left the one-click
+    /// blind.** The reasoning was that Apply stores the answers there, together with the write, as
+    /// one decision at one moment — true of STORING, and the event does not store: the window keeps
+    /// what it hears in memory (`_pendingMod`) and writes nothing to disk. So the only thing the
+    /// silence achieved was that nothing outside this form could know an answer was waiting. The
+    /// block's own Apply lit up, the one-click a screen below said the game was fully set up, and
+    /// the person had to scroll to find the one control that had noticed.
+    ///
+    /// ⚠ Still nothing is applied by this: half a form answered is half a form answered, and it
+    /// reaches a game only through Apply or through the one-click, both of which ask first.
+    ///
+    /// ⚠ Not raised per keystroke: a text field answers when focus leaves it, a list or a tick when
+    /// it changes.
     /// </summary>
     private void Record()
     {
-        if (_populating || _installed) return;
+        if (_populating) return;
 
         Recorded?.Invoke();
     }

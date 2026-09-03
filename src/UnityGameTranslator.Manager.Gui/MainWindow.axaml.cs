@@ -7626,7 +7626,16 @@ public partial class MainWindow : Window
         //
         // ⚠ **Held, not saved.** Nothing here has been validated: writing it to disk would have the
         // program come back tomorrow with answers somebody typed and walked away from.
-        form.Recorded += () => _pendingMod[report.Game.Path] = form.Draft.Copy();
+        form.Recorded += () =>
+        {
+            _pendingMod[report.Game.Path] = form.Draft.Copy();
+
+            // ⚠ The BAR only, never refresh(). The bar lives in its own container and its steps are
+            // computed from what is pending, so it can be redrawn while somebody is still typing;
+            // rebuilding the card would destroy the control under their cursor mid-edit. Without
+            // this the answer was held and nothing on screen said so until the next redraw.
+            ShowActionBar(report);
+        };
 
         form.Applied += async () =>
         {
@@ -9368,6 +9377,11 @@ public partial class MainWindow : Window
 
         preference.Mod = null;
         _preferences.Set(report.Game.Path, preference);
+
+        // ⚠ The held draft goes with them. It is the same answers one step earlier in the journey,
+        // and leaving it behind would have the one-click go on offering to write what is already
+        // in the file — the stale rival source this method exists to remove, by another door.
+        _pendingMod.Remove(report.Game.Path);
     }
 
     private void RememberDefaultsWereWritten(GameReport report, InstallPlan plan,

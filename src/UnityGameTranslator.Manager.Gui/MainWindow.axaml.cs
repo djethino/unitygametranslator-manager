@@ -8341,6 +8341,54 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// Whether writing this game's configuration is part of the job.
+    ///
+    /// 🔴 **ONE answer, for the list that promises the step and the plan that performs it.** The
+    /// rule lived twice, and the copies drifted: BuildPlan wrote a game's own answers (`hasOwn`),
+    /// while the step list only ever considered Mod defaults. Somebody changed a field under "set
+    /// it up here", the block's Apply lit up, and the one-click said the game was fully set up —
+    /// then would have written those very answers had anything else made it appear.
+    /// </summary>
+    private bool WouldWriteSettings(GameReport report, GamePreference preference)
+    {
+        var config = GameConfig(report);
+
+        // Answers of its own are written whatever the box says — the Reviewed guard is about not
+        // deciding FOR somebody, and a game they answered themselves is not that.
+        if (preference.Mod is { IsEmpty: false }) return true;
+
+        return _settings.Current.Reviewed
+               && (!config.IsConfigured || preference.UsesModDefaults(config));
+    }
+
+    /// <summary>
+    /// What would change in this game if the settings were written NOW — measured against the
+    /// values that would actually go in.
+    ///
+    /// ⚠ Deliberately not <see cref="Differences"/>, and the two must not be merged. That one
+    /// answers "what would applying Mod defaults change here", always, because the block under it
+    /// says exactly that and a list whose meaning moves with a checkbox cannot be read. This one
+    /// answers "is there work for the button", which is a different question the moment a game
+    /// stops following the defaults.
+    ///
+    /// ⚠ The same resolution the writer uses (<see cref="SettingsFor"/>), so what is counted here
+    /// is what ApplyOwnSettingsAsync and the plan would put in the file — not an estimate of it.
+    /// On a game that follows Mod defaults the resolver returns them, so the two calls agree.
+    /// </summary>
+    private IReadOnlyList<ConfigDifference> WrittenDifferences(GameReport report,
+                                                              GamePreference preference)
+    {
+        var descriptor = InstalledDescriptor(report);
+        if (descriptor is null) return Array.Empty<ConfigDifference>();
+
+        var settings = SettingsFor(report, preference);
+
+        return new GameConfigWriter().Compare(
+            report.Game.Path, descriptor, settings,
+            TargetFor(report, descriptor, settings), preference);
+    }
+
+    /// <summary>
     /// What happens about Mod defaults, and the two ways out — in the bar, which both tabs show.
     ///
     /// 🔴 **The bar is the only part of a card that Home and Set up have in common**, so anything
@@ -8964,8 +9012,7 @@ public partial class MainWindow : Window
         // which is exactly what the comment above `Differences` warns must not be conflated with
         // this one. See TODO.md.
         if (mayChangeThisGame
-            && _settings.Current.Reviewed
-            && (!GameConfig(report).IsConfigured || preference.UsesModDefaults(GameConfig(report)))
+            && WouldWriteSettings(report, preference)
             && SettingsWouldChangeAnything(report, preference))
         {
             yield return new(OneClickAct.ApplySettings, SettingsStepText(report, preference));
@@ -9013,7 +9060,7 @@ public partial class MainWindow : Window
     /// </summary>
     private string SettingsStepText(GameReport report, GamePreference preference)
     {
-        var changes = Differences(report, preference).Count(d => d.Writes);
+        var changes = WrittenDifferences(report, preference).Count(d => d.Writes);
 
         // ⚠ **Two sources when there are two, because "apply Mod defaults" was only half true.** A
         // game that answered for itself is set up from the defaults EXCEPT where it answered, and
@@ -9024,7 +9071,13 @@ public partial class MainWindow : Window
         // reached on a game with no configuration whatever the box says.
         var own = preference.Mod?.Count ?? 0;
 
-        var source = own == 0
+        // ⚠ **What is actually going in, named.** A game that does not follow Mod defaults is
+        // written from its own answers and from what it already holds — announcing "Mod defaults"
+        // there offered to write the one thing its owner had refused.
+        var source = !preference.UsesModDefaults(GameConfig(report))
+            ? (own == 0 ? "the settings this game keeps"
+                        : $"the {own} set for this game")
+            : own == 0
             ? "Mod defaults"
             : $"Mod defaults, with {own} set for this game";
 
@@ -9052,7 +9105,10 @@ public partial class MainWindow : Window
         // this game is deliberately keeping — is not work for the button: counting it would light
         // a one-click whose settings step then changed nothing, which reads as a failure rather
         // than as "there was nothing to do". See ConfigDifference.Writes.
-        return Differences(report, preference).Any(d => d.Writes);
+        //
+        // ⚠ Against what would ACTUALLY be written, which is not always Mod defaults — see
+        // WrittenDifferences. On a game following the defaults the two are the same call.
+        return WrittenDifferences(report, preference).Any(d => d.Writes);
     }
 
     /// <summary>
@@ -9705,21 +9761,19 @@ public partial class MainWindow : Window
         // ⚠ And writing then contradicts nothing: the resolver reads own answers, THEN what the game
         // holds, THEN the defaults — so the form already shows a complete set of values on an
         // unconfigured game, and writing less than the screen shows is the lie, not the reverse.
-        var configured = GameConfig(report).IsConfigured;
+        // ⚠ Still needed below to choose WHICH values go in; whether they go in at all is
+        // WouldWriteSettings' answer.
         var usesDefaults = preference.UsesModDefaults(GameConfig(report));
 
-        // 🔴 **Answers of its own are written even with Mod defaults untouched.** The Reviewed
-        // guard is about not deciding FOR somebody — writing the program's guesses into their game
-        // before they have said anything. It has nothing to say about a game they answered
-        // themselves, and it was refusing those too: untick the box, set a language and a model,
-        // press OneClick, and the game came up with neither.
+        // 🔴 **One rule, asked once.** Answers of its own are written even with Mod defaults
+        // untouched — the Reviewed guard is about not deciding FOR somebody, and a game they
+        // answered themselves is not that. That reasoning now lives in WouldWriteSettings, which
+        // the step list asks too: they were two copies and they drifted, so the act wrote a game's
+        // own answers while the promise never mentioned them.
         //
         // ⚠ The wizard stays open in that case, decided in the plan: the unanswered fields are
         // still guesses, and the wizard is the only thing that will ever correct them.
-        var hasOwn = preference.Mod is { IsEmpty: false };
-
-        var writeSettings = settings
-                            && (hasOwn || (_settings.Current.Reviewed && (!configured || usesDefaults)));
+        var writeSettings = settings && WouldWriteSettings(report, preference);
 
         // ⚠ Per game, because that is where the risk is taken: putting a pre-release plugin in one
         // game to test a fix is a different decision from putting it in all of them. Read from the

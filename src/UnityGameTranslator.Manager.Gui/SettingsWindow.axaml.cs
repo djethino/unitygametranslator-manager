@@ -1458,9 +1458,9 @@ public sealed class SettingsWindow : Window
     {
         var grid = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto,Auto,Auto,Auto"),
             RowSpacing = 2,
-            ColumnSpacing = 14,
+            ColumnSpacing = 12,
         };
 
         void Put(Control control, int row, int column, int span = 1)
@@ -1483,8 +1483,19 @@ public sealed class SettingsWindow : Window
         Put(Head("MODEL"), 0, 0);
         Put(Head("HELD"), 0, 1);
         Put(Head("DOWNLOAD"), 0, 2);
-        Put(Head("PER LINE"), 0, 3);
-        Put(Head("SUITE"), 0, 4);
+
+        // ⚠ Its own column, and it belongs beside the others rather than in the prose: it is paid
+        // while a GAME is starting, it is the widest spread of anything measured here, and it does
+        // not follow the download size — a model can be quick per line and slow to arrive.
+        Put(Head("LOAD"), 0, 3);
+
+        Put(Head("PER LINE"), 0, 4);
+
+        // A model can follow every instruction and still need three goes at some of them. Same
+        // result, three times the wait and three times the card — which is a choice, not a detail.
+        Put(Head("RETRIES"), 0, 5);
+
+        Put(Head("SUITE"), 0, 6);
 
         var line = 1;
 
@@ -1529,6 +1540,37 @@ public sealed class SettingsWindow : Window
                 });
             }
 
+            // ⚠ A mark rather than a column, because it is rare — one model in ten. A column of
+            // dashes would spend a seventh of the width saying "no" nine times.
+            //
+            // Quiet on purpose: it qualifies an option that stays experimental, so it must not
+            // compete with the mark above it, which says what this project runs on.
+            if (measured?.StrictSource == true)
+            {
+                var strict = new Border
+                {
+                    BorderBrush = Brush("BorderStrong"),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(3),
+                    Padding = new Thickness(6, 1),
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                    Child = new TextBlock
+                    {
+                        Text = "strict source",
+                        FontSize = 10,
+                        Foreground = Brush("TextMuted"),
+                    },
+                };
+
+                ToolTip.SetTip(strict,
+                    "This model refused both a real foreign language and an invented one, so the "
+                    + "experimental 'strict source' option can be switched on for it. It stays "
+                    + "experimental: when it goes wrong it drops text that was perfectly fine, and "
+                    + "says nothing.");
+
+                name.Children.Add(strict);
+            }
+
             Put(name, line, 0);
 
             TextBlock Figure(string text, string colour = "TextSecondary") => new()
@@ -1548,12 +1590,20 @@ public sealed class SettingsWindow : Window
 
             Put(Figure(candidate.DownloadGb is { } dl ? $"{dl:F1} GB" : "—"), line, 2);
 
+            // The wait before the first line of a session, paid while a game is starting.
+            Put(Figure(measured?.LoadSeconds is { } load ? $"{load:F0}s" : "—"), line, 3);
+
             // What a line costs in waiting, which is the figure somebody actually feels.
-            Put(Figure(measured?.TypicalSeconds is { } typical ? $"{typical:F1}s" : "—"), line, 3);
+            Put(Figure(measured?.TypicalSeconds is { } typical ? $"{typical:F1}s" : "—"), line, 4);
+
+            // Amber as soon as there is one: it is not a failure — the line came out right — but it
+            // is the same line paid for twice, and that is what the reader is weighing.
+            Put(Figure(measured is { Retried: { } tries, Lines: { } all } ? $"{tries}/{all}" : "—",
+                       measured?.Retried > 0 ? "StatusWarning" : "TextSecondary"), line, 5);
 
             Put(Figure(measured is { Suite: { } suite, SuiteOf: { } of } ? $"{suite}/{of}" : "—",
                        measured is { Suite: { } s, SuiteOf: { } o } && s < o ? "StatusWarning" : "TextSecondary"),
-                line, 4);
+                line, 6);
 
             line++;
 

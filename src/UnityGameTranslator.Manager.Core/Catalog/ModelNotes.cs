@@ -71,6 +71,17 @@ public sealed class ModelMeasurements
     [JsonPropertyName("worst_s")] public double? WorstSeconds { get; set; }
 
     /// <summary>
+    /// The wait for the very first line, in seconds: the model being read off the disk and put on
+    /// the card.
+    ///
+    /// ⚠ Paid once per session and paid while a game is starting, which is why it is here rather
+    /// than folded into the figures above. It is also the widest spread of anything measured — six
+    /// seconds to nearly a minute — and it does not follow the download size the way people expect.
+    /// A model can be quick per line and slow to arrive.
+    /// </summary>
+    [JsonPropertyName("load_s")] public double? LoadSeconds { get; set; }
+
+    /// <summary>
     /// Lines the mod had to ask for again, and lines it gave up on, out of how many it tried.
     ///
     /// A retry is not a failure — the mod corrects most of them — but it spends the time and the

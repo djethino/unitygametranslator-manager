@@ -64,7 +64,6 @@ public sealed class GameModSettingsForm
 
     private readonly AiServerProbe _probe = new();
 
-    private SearchPicker _language = null!;
     private ComboBox _backend = null!;
     private TextBox _aiUrl = null!;
     private TextBox _aiKey = null!;
@@ -125,25 +124,6 @@ public sealed class GameModSettingsForm
     public event Action? OpenDefaults;
 
     /// <summary>
-    /// The language this game will be set to whatever the picker says, or null when the picker
-    /// decides.
-    ///
-    /// 🔴 **Without this, the language field is a setting that silently does nothing.** A game
-    /// already holding a translation keeps that translation's language — its target is not a
-    /// preference, it is what the file IS, and retargeting it would leave the mod hunting for one
-    /// language while a file in another sits beside it. That rule is right and it is not moving;
-    /// what was wrong was letting somebody pick a language here and watch nothing happen, with no
-    /// line anywhere saying why.
-    /// </summary>
-    private readonly string? _languagePinnedTo;
-
-    /// <summary>
-    /// Whether the pin comes from a PUBLISHED translation, which decides the wording: published is
-    /// final, work in progress is changed inside the game.
-    /// </summary>
-    private readonly bool _languagePinnedPublished;
-
-    /// <summary>
     /// Whether this game has a configuration to write into.
     ///
     /// 🔴 **It decides whether there is an Apply at all**, and there is no third option. Apply means
@@ -174,10 +154,14 @@ public sealed class GameModSettingsForm
     /// </summary>
     private readonly string? _refusal;
 
+    /// <summary>
+    /// ⚠ **No language pin any more** (2026-09-04): the language left this form for a brick of its
+    /// own on the card, and the two facts that governed it — what settles the language and how to
+    /// say so — travelled with the control. A form that still took them would be asking for
+    /// something it has nothing to do with.
+    /// </summary>
     public GameModSettingsForm(IPlatform platform, InstallerSettings defaults,
                                GameConfigSnapshot snapshot, GameModOverrides? stored,
-                               string? languagePinnedTo = null,
-                               bool languagePinnedPublished = false,
                                bool installed = true,
                                string? refusal = null)
     {
@@ -186,8 +170,6 @@ public sealed class GameModSettingsForm
         _inGame = snapshot.Values;
         _inGameHotkey = snapshot.InGameHotkey;
         _draft = stored?.Copy() ?? new GameModOverrides();
-        _languagePinnedTo = languagePinnedTo;
-        _languagePinnedPublished = languagePinnedPublished;
         _installed = installed;
         _refusal = refusal;
     }
@@ -376,27 +358,12 @@ public sealed class GameModSettingsForm
             _host.Children.Add(control);
         }
 
-        AddField(LanguageRow());
-
-        if (_languagePinnedTo is not null)
-        {
-            _host.Children.Add(new TextBlock
-            {
-                // Two reasons, two sentences. "Published" is final — the file is on the site
-                // under that language and nothing here can move it. "Being written here" is not:
-                // it is changed in the game, which is where that file lives.
-                Text = _languagePinnedPublished
-                    ? $"Stays on {_languagePinnedTo}: this game holds a published "
-                      + $"{_languagePinnedTo} translation. Take one in another language to change it."
-                    : $"Stays on {_languagePinnedTo}: a {_languagePinnedTo} translation is being "
-                      + "written in this game. Change it in the game, or the lines already "
-                      + "captured would be left behind.",
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Avalonia.Thickness(120, 0, 0, 0),
-                Foreground = Palette.Of("StatusWarning"),
-            });
-        }
+        // 🔴 **The language is NOT here, and its absence is the point** (2026-09-04). It has a brick
+        // of its own on the card, immediately above the hotkey's — see MainWindow.LanguageDecision.
+        // Kept in both places, the two pickers would have been live at once on a game with no
+        // translation yet: two doors onto one act, three inches apart, which is the shape
+        // .claude/rules/implement-with-existing.md exists to refuse. The sentence explaining a
+        // settled language travelled with the control rather than staying behind without it.
 
         AddField(BackendRow());
 
@@ -439,43 +406,6 @@ public sealed class GameModSettingsForm
         Background = Palette.Of("BorderSubtle"),
         Margin = new Avalonia.Thickness(0, 4),
     };
-
-    private Control LanguageRow()
-    {
-        _language = ModSettingControls.LanguagePicker(_platform, 220);
-
-        // 🔴 **Disabled, not merely explained, when this game's language is settled.**
-        //
-        // A translation's pair of languages never changes once it exists: the server ignores the
-        // languages sent with an update and keeps the ones the translation was published with, and
-        // TargetFor does the same here — a game holding a French translation stays on French
-        // whatever this picker says. Leaving it usable offered a choice that was read, accepted
-        // and then discarded, with a sentence underneath explaining why nothing happened.
-        //
-        // The way to change it is to take a translation in another language, which is what the
-        // note beside this says. Same rule as everywhere else on these screens: a control whose
-        // verb cannot act must not invite the act.
-        if (_languagePinnedTo is not null) _language.IsEnabled = false;
-
-        // ⚠ The game stores a language NAME, the picker works in codes. Matched by the shared table
-        // rather than by string equality: "French" and "fr" are the same answer, and comparing them
-        // as text would show every configured game as having no language set.
-        Select(_language, EffectiveText(o => o.TargetLanguage, _defaults.TargetLanguage));
-
-        // 🔴 Both sides through Canonical, and it is not a nicety. The game stores a NAME
-        // ("French"), this picker hands back a code ("fr") — so comparing them as text answers
-        // "different" for a language against itself. Picking the language the game already has
-        // would then store an override that changes nothing today and quietly stops following the
-        // defaults for ever after, which is the one thing this form promises not to do.
-        _language.SelectionChanged += (_, _) => Answer(
-            v => _draft.TargetLanguage = v,
-            Code(ModSettingControls.Tag(_language)),
-            Code(_inGame.TargetLanguage ?? _defaults.TargetLanguage));
-
-        return Row("Language", _language,
-                   Origin(_draft.TargetLanguage, _inGame.TargetLanguage,
-                          () => _draft.TargetLanguage = null));
-    }
 
     private Control BackendRow()
     {

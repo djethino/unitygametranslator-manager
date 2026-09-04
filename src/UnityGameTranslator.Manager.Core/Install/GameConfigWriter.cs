@@ -100,6 +100,17 @@ public sealed class GameConfigWriter
     public const string TargetLanguageKey = "target_language";
 
     /// <summary>
+    /// The mod's key for the language a game's own text is in.
+    ///
+    /// 🔴 **Named here, and still absent from <see cref="Intended"/> on purpose.** It is written by
+    /// exactly one path — taking a published translation, whose pair is fixed and stated by whoever
+    /// uploaded it — and by nothing that composes settings. Nothing can read what language a game's
+    /// text is in, so a source derived from preferences is a guess; and this key is not a label but
+    /// an instruction, carried into every prompt the mod sends.
+    /// </summary>
+    public const string SourceLanguageKey = "source_language";
+
+    /// <summary>
     /// Who the MOD is signed in as, in this game.
     ///
     /// ⚠ Read only, and never written — like api_token, which this class does not touch at all.
@@ -350,13 +361,33 @@ public sealed class GameConfigWriter
         // ⚠ And it is NEVER "auto" — see GameLanguages, which decides this pair. The tool knows
         // the answer at the moment it writes; leaving the mod to resolve it at launch made the
         // same install mean different things on different machines.
-        intents.Add(new Intent(null, "target_language", targetLanguage, "language"));
+        // 🔴 **Answered on the card, and never overwritten** (2026-09-05). The language has a
+        // control of its own with its own Apply — MainWindow.LanguageDecision — so it is not one of
+        // the things "Use Mod defaults in this game" settles, exactly as enable_ai and the hotkey
+        // are not.
+        //
+        // Listing it counted a decision the reader had just taken with another button, and writing
+        // it put somebody's default back over the language they had chosen for THIS game: apply a
+        // Swedish target from the card, and the one-click beside it offered to undo it, reporting
+        // "1 change" that no screen could name.
+        //
+        // ⚠ Still written on a game that names none — a fresh configuration has to be given a
+        // language, and the value is GameLanguages.TargetFor's, which already knows to follow a
+        // translation in place rather than a preference.
+        intents.Add(new Intent(null, TargetLanguageKey, targetLanguage, "language",
+            OnlyIfAbsent: true,
+            AnsweredOnTheCard: true));
 
         // ⚠ source_language is NOT here and must not be added — see GameLanguages. We cannot read
         // what language a game's own text is in, and writing a guess is an instruction to the
         // model, not a label: with strict_source_language it makes the model skip every line it
         // judges to be in another language, and a skipped line is cached "S", which the merge
         // treats as immutable. One wrong guess retires those lines for good.
+        //
+        // ⚠ **This refusal is about THIS path, not about the key** (2026-09-05). Taking a published
+        // translation does write it, because there the pair is stated by its author and fixed by
+        // the server — see MainWindow.AlignGameLanguage. What has no business naming a source is a
+        // list of settings, which is what this method composes.
 
         // 🔴 **"capture" is OURS, and the mod must never see it.** The mod knows llm, google, deepl
         // and none; an unknown value falls through every branch it has, including the migration
@@ -515,6 +546,21 @@ public sealed class GameConfigWriter
         intents.Add(new Intent("sync", "merge_strategy", settings.MergeStrategy, "update preferences"));
         intents.Add(new Intent("sync", "notifications_enabled", settings.NotificationsEnabled, null));
         intents.Add(new Intent("sync", "notification_position", settings.NotificationPosition, "notifications"));
+
+        // 🔴 **The latch opens as well as it shuts** (2026-09-05). Until now it was only ever set to
+        // true, so "let the mod ask" could be chosen on a fresh game and never again: the only way
+        // back was a button of its own, acting the moment it was pressed. That made one idea — the
+        // game asks its own questions — a radio before the first setup and an immediate act after
+        // it, which is two shapes for one answer.
+        //
+        // ⚠ Removing the key, not writing false: that is how the mod reads "never answered", and
+        // false would be a claim of its own.
+        if (perGame?.LetWizardAsk == true)
+        {
+            intents.Add(new Intent(null, "first_run_completed", null, "first-run setup"));
+            wizardSkipped = false;
+            return intents;
+        }
 
         wizardSkipped = skipWizard && settings.AnswersTheWizard;
         if (wizardSkipped)
@@ -688,8 +734,14 @@ public sealed class GameConfigWriter
         // first-run wizard differs" on every game somebody has actually played.
         foreach (var intent in Intended(settings, perGame, targetLanguage, skipWizard: false, out _))
         {
-            // A key we would only remove has nothing to compare: its absence is our intent.
-            if (intent.Value is null) continue;
+            // A key we would only remove has nothing to compare WHEN THE GAME DOES NOT CARRY IT —
+            // its absence is already our intent, and reporting it would announce a change to
+            // nothing.
+            //
+            // ⚠ It is a difference when the game does carry it: removing a key somebody's game
+            // holds is a change like any other, and the one that reopens the mod's Setup is
+            // precisely the one a reader has to see before pressing Apply.
+            if (intent.Value is null && Existing(root, intent) is null) continue;
 
             // Answered by its own control, with its own Apply — see Intent.AnsweredOnTheCard.
             if (intent.AnsweredOnTheCard) continue;
@@ -715,7 +767,11 @@ public sealed class GameConfigWriter
             // offering — it is how "your game never learned your hotkey" shows up — but it is
             // worded as absence rather than as a wrong value.
             var inGame = node is null ? null : Read(node, intent.Secret);
-            var ours = Render(intent.Value, intent.Secret);
+
+            // ⚠ "not set" on our side too when the intent is to remove the key — the same words the
+            // left-hand side uses for an absent value, so a line reads the same way whichever end
+            // of it is empty.
+            var ours = intent.Value is null ? "not set" : Render(intent.Value, intent.Secret);
 
             if (inGame is not null && string.Equals(inGame, ours, StringComparison.Ordinal)) continue;
 

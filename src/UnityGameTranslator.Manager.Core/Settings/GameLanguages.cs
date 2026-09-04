@@ -19,16 +19,18 @@ namespace UnityGameTranslator.Manager.Core.Settings;
 /// German default does not translate that game into German: it leaves the mod hunting for German
 /// while a French file sits beside it, which reads as "the translation stopped working".
 ///
-/// ⚠ **The SOURCE is never written, by anything here.** This tool cannot read what language a
-/// game's own text is in, and the one thing that looks like an answer — the source declared on a
-/// published translation — is a statement about the person who made it, not a measurement of the
-/// game. Writing it is not labelling, it is instructing: the mod puts it in every prompt
-/// ("Translating video game from English to French"), and with strict_source_language it tells the
-/// model to answer with a skip marker for anything not in that language. A line skipped that way
-/// is cached with the tag "S", which the merge treats as immutable — so one wrong guess about a
-/// game's source language permanently retires the lines it hit, and counts them as settled in the
-/// quality bar. Auto-detection is the mod's job, it works line by line, and it was never ours to
-/// override.
+/// ⚠ **The SOURCE is never written from anything HERE, and the distinction is the whole rule**
+/// (revised 2026-09-05). Nothing in this class can read what language a game's own text is in, so
+/// a source composed from settings or preferences is a guess — and this key is not a label but an
+/// instruction: the mod puts it in every prompt ("Translating video game from English to French"),
+/// and with strict_source_language it tells the model to answer with a skip marker for anything
+/// not in that language. A line skipped that way is cached with the tag "S", which the merge
+/// treats as immutable, so one wrong guess retires the lines it hit for good.
+///
+/// What DOES write it is taking a published translation (MainWindow.AlignGameLanguage): there the
+/// pair is stated by its author and kept by the server, which ignores the languages an update
+/// sends. Adopting that file is adopting its pair — writing half of it left the mod prompting
+/// without a source on every line it ever translates for that game.
 /// </summary>
 public static class GameLanguages
 {

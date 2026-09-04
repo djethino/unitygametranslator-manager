@@ -7687,25 +7687,30 @@ public partial class MainWindow : Window
         // unmistakably its consequence. With three radios, the same block sitting under the group
         // belongs to none of them in particular — and the question "what is this attached to?" has
         // no answer on the screen. Each goes under its own line, set in.
-        var driftHost = new StackPanel
+        // ⚠ **One per way, and only the chosen one is filled** (2026-09-05). There was a single
+        // host, placed under the first radio — so choosing either of the other two showed what THAT
+        // way would write above the line that had been picked, under a radio it had nothing to do
+        // with. The intent below was already written here; only one host had been made.
+        StackPanel DriftHost() => new()
         {
             Spacing = 4,
             Margin = new Avalonia.Thickness(24, 2, 0, 6),
         };
+
+        var driftDefaults = DriftHost();
+        var driftWizard = DriftHost();
+        var driftCustom = DriftHost();
 
         var ownHost = new StackPanel
         {
             Spacing = 4,
             Margin = new Avalonia.Thickness(24, 2, 0, 0),
         };
+        var languageHost = new StackPanel { Spacing = 4 };
         var hotkeyHost = new StackPanel { Spacing = 4 };
 
         void Refresh()
         {
-            driftHost.Children.Clear();
-            foreach (var control in ConfigDrift(report, preference))
-                driftHost.Children.Add(control);
-
             // ⚠ Present ONLY under "Settings of its own", because that is the only way in which it
             // means anything. Under Mod defaults every field is answered by that screen; under
             // "Let the mod ask" they are answered in the game. A form full of values nobody may
@@ -7714,17 +7719,37 @@ public partial class MainWindow : Window
             // ⚠ Keyed on the chosen way and no longer on "the box is unticked": unticked now covers
             // TWO ways, and only one of them owns this form.
             var snapshotHere = GameConfig(report);
+            var wayHere = SetupWayOf(preference, snapshotHere, _settings.Current.Reviewed);
+
+            // The comparison describes what the CHOSEN way would write, so it belongs under that
+            // way's own line and nowhere else. Emptied everywhere first: a host left filled would
+            // leave a stale answer sitting under a radio nobody picked.
+            driftDefaults.Children.Clear();
+            driftWizard.Children.Clear();
+            driftCustom.Children.Clear();
+
+            var drift = wayHere switch
+            {
+                SetupWay.Wizard => driftWizard,
+                SetupWay.Custom => driftCustom,
+                _ => driftDefaults,
+            };
+
+            foreach (var control in ConfigDrift(report, preference))
+                drift.Children.Add(control);
 
             ownHost.Children.Clear();
-            ownHost.IsVisible = SetupWayOf(preference, snapshotHere, _settings.Current.Reviewed,
-                                           firstTime: !snapshotHere.FirstRunCompleted)
-                                == SetupWay.Custom;
+            ownHost.IsVisible = wayHere == SetupWay.Custom;
 
             if (ownHost.IsVisible)
             {
                 foreach (var control in OwnModSettings(report, preference, Refresh))
                     ownHost.Children.Add(control);
             }
+
+            languageHost.Children.Clear();
+            foreach (var control in LanguageDecision(report, preference, Refresh))
+                languageHost.Children.Add(control);
 
             hotkeyHost.Children.Clear();
             foreach (var control in HotkeyDecision(report, preference, Refresh))
@@ -7814,7 +7839,7 @@ public partial class MainWindow : Window
             return button;
         }
 
-        var chosenWay = SetupWayOf(preference, snapshotNow, reviewedNow, firstTime);
+        var chosenWay = SetupWayOf(preference, snapshotNow, reviewedNow);
 
         source.Children.Add(Way(
             "Use Mod defaults",
@@ -7825,22 +7850,26 @@ public partial class MainWindow : Window
             reviewedNow,
             () => { preference.ApplyModDefaults = true; preference.LetWizardAsk = false; }));
 
-        // ⚠ Under this one whichever way is chosen, and that is deliberate: what this game holds
-        // against what that way would write is precisely what somebody needs in order to pick it.
-        // Hidden until chosen, the choice would be made blind.
-        source.Children.Add(driftHost);
+        source.Children.Add(driftDefaults);
 
-        // ⚠ Only while the mod has never finished its own setup here. Afterwards the latch is
-        // closed and no tick reopens it — the button below does, by name.
-        if (firstTime)
-        {
-            source.Children.Add(Way(
-                "Set it up in the game",
-                "The mod shows its Setup when the game starts.",
-                chosenWay == SetupWay.Wizard,
-                enabled: true,
-                () => { preference.ApplyModDefaults = false; preference.LetWizardAsk = true; }));
-        }
+        // 🔴 **Always offered, and it used to vanish once the mod had been set up here** (2026-09-05).
+        // The latch could only be closed, so after the first setup this way disappeared from the
+        // list and came back as a button in the action bar that acted the moment it was pressed —
+        // one idea in two shapes, and the second one out of the group that explains it.
+        //
+        // The latch opens now (GameConfigWriter.Intended), so this is a way like the other two:
+        // choosing it decides nothing, Apply carries it out, and the difference it makes is listed
+        // above with the rest.
+        source.Children.Add(Way(
+            "Set it up in the game",
+            firstTime
+                ? "The mod shows its Setup when the game starts."
+                : "The mod shows its Setup again the next time the game starts.",
+            chosenWay == SetupWay.Wizard,
+            enabled: true,
+            () => { preference.ApplyModDefaults = false; preference.LetWizardAsk = true; }));
+
+        source.Children.Add(driftWizard);
 
         source.Children.Add(Way(
             "Set it up here",
@@ -7852,6 +7881,13 @@ public partial class MainWindow : Window
         source.Children.Add(ownHost);
 
         yield return source;
+
+        // 🔴 **The language comes first of the two bricks, and before the hotkey deliberately.** It
+        // is the setting that decides whether this game is playable at all in somebody's language;
+        // a shortcut is a convenience. Same shape as its neighbour below — control, the sentence
+        // that qualifies it, the comparison, the verb — so the pair reads as one grammar rather
+        // than two layouts.
+        yield return languageHost;
 
         // 🔴 **The hotkey question sits HERE — governed by the box above, beside the differences,
         // and outside both.** It belongs to "Use Mod defaults in this game" exactly as the list of
@@ -7886,63 +7922,14 @@ public partial class MainWindow : Window
             Margin = new Avalonia.Thickness(0, 8, 0, 0),
         };
 
-        // 🔴 **The way back into the mod's own setup, once the latch is closed.** A key the two
-        // programs read differently, a translator that turns out not to work, a game somebody
-        // wants to start over: the wizard answers all three and there was no way to ask for it.
-        if (!firstTime && snapshotNow.Exists)
-        {
-            // 🔴 **It names the screen and where the screen is.** "Run the mod's setup again" left
-            // both to be guessed: what setup, and whose — this window has settings of its own and a
-            // reader has no way to tell that the thing being reopened belongs to the other program.
-            // The mod titles that screen "Unity Game Translator - Setup", so it is called Setup,
-            // and it happens in the game. Both facts are on the button.
-            var again = new Button
-            {
-                Content = "Show Setup in the game",
-                FontSize = 12,
-            };
-
-            ToolTip.SetTip(again,
-                $"The mod opens its Setup screen the next time {report.Game.Name} starts, and asks "
-                + "its own questions there. Nothing is changed now.");
-
-            // ⚠ It edits this game's configuration — one key, but a shared file, and the person who
-            // meets that wizard next is whoever launches the game, not whoever pressed this.
-            again.IsEnabled = MaySetUp(report, again);
-
-            again.Click += async (_, _) =>
-            {
-                if (InstalledDescriptor(report) is not { } loader) return;
-
-                // 🔴 **Asked, because it edits this game's configuration.** It is one key and it
-                // writes nothing else, but somebody pressing it is entitled to know that a file is
-                // being changed and which one — the rule every act on this card follows.
-                var go = await ConfirmAsync(
-                    "Show Setup in the game?",
-                    $"The mod opens its Setup screen the next time {report.Game.Name} starts, and "
-                    + "what you answer there is written into the game.\n\nThe only change made "
-                    + "now is to this game's configuration, which stops saying it has already been "
-                    + "set up. Its settings, its translation and its key stay exactly as they are.",
-                    "Show Setup");
-
-                if (!go) return;
-
-                // ⚠ Null REMOVES the key, which is how the mod reads "never answered". Writing
-                // false would be a claim of its own; removing puts the game back where it started.
-                var done = new GameConfigWriter().ApplyOne(
-                    report.Game.Path, loader, "first_run_completed", null, "first-run setup");
-
-                await MessageAsync(
-                    done.Written ? "It will ask again" : "Nothing was changed",
-                    done.Written
-                        ? $"{report.Game.Name} opens the mod's Setup the next time it starts."
-                        : $"The game's configuration could not be written ({done.Failure}).");
-
-                await ShowSelectedAsync();
-            };
-
-            acts.Children.Add(again);
-        }
+        // 🔴 **"Show Setup in the game" was here, and it is gone** (2026-09-05). It existed because
+        // the latch could only be closed: once a game had been set up, the way "let the mod ask"
+        // left the list of ways and came back as a button, acting the instant it was pressed.
+        //
+        // That is a duplicate of the radio above, and the worse half of it — an act where its twin
+        // is a choice, in a bar where nothing explains what Setup is. The way is offered
+        // permanently now and Apply carries it out, so there is nothing left for a button to do.
+        // See GameConfigWriter.Intended, where the latch learnt to open.
 
         // 🔴 **The other half of the circle: a game already set up can SEED Mod defaults.** Without
         // it, somebody who configured a game inside the mod and never filled the defaults in had to
@@ -8008,12 +7995,19 @@ public partial class MainWindow : Window
     /// first one-click cannot quietly overwrite a set-up somebody made inside the mod. A game with
     /// nothing yet follows the defaults when there are any, and asks in the game when there are not.
     ///
-    /// ⚠ And once the mod has finished its own setup, Wizard is not on offer: the latch is closed
-    /// and no tick here reopens it. A stored answer saying otherwise reads as Custom, which is what
-    /// it amounts to — this game answers for itself.
+    /// ⚠ Wizard is on offer whatever the latch says (2026-09-05). It used to be read as Custom once
+    /// the mod had finished its own setup, because nothing here could reopen the latch — a true
+    /// statement then, and the reason that way vanished from the list and came back as a button.
+    /// Applying now removes `first_run_completed`, so the way means something at any moment and is
+    /// taken at its word.
     /// </summary>
+    /// <remarks>
+    /// ⚠ It no longer takes `firstTime`: nothing here reads the latch since Wizard stopped
+    /// depending on it. A parameter still being passed would say this answer depends on something
+    /// it does not, which is the kind of leftover nobody questions afterwards.
+    /// </remarks>
     private static SetupWay SetupWayOf(GamePreference preference, GameConfigSnapshot snapshot,
-                                       bool reviewed, bool firstTime)
+                                       bool reviewed)
     {
         if (preference.ApplyModDefaults == true && reviewed) return SetupWay.ModDefaults;
 
@@ -8026,8 +8020,13 @@ public partial class MainWindow : Window
         // writes false/false, this read it back as stale, and the selection sprang back to the
         // wizard — so the one way to open the settings of a game could never be taken. A stored
         // answer that the reader can change with one click needs no rescuing.
+        // ⚠ **No `&& firstTime` any more** (2026-09-05). It read a stored "let the mod ask" as
+        // Custom once the latch was closed, because nothing could reopen it — so choosing that way
+        // on a configured game moved the selection to "Set it up here" and left its form on screen
+        // under a radio nobody had picked. The latch opens now (GameConfigWriter.Intended), so the
+        // answer is taken at its word whenever it was given.
         if (preference.ApplyModDefaults == false)
-            return preference.LetWizardAsk && firstTime ? SetupWay.Wizard : SetupWay.Custom;
+            return preference.LetWizardAsk ? SetupWay.Wizard : SetupWay.Custom;
 
         // Nobody has decided for this game.
         if (snapshot.IsConfigured) return SetupWay.Custom;
@@ -8051,14 +8050,13 @@ public partial class MainWindow : Window
     {
         var snapshot = GameConfig(report);
 
-        var pinned = LanguagePinnedTo(report, preference);
-
         // ⚠ What is pending wins over what is stored: it is the newer answer, and it is why the
         // form survives this card being redrawn under somebody who is still filling it in.
         var stored = _pendingMod.TryGetValue(report.Game.Path, out var held) ? held : preference.Mod;
 
+        // ⚠ No language pin handed over any more: the language is decided in its own brick above
+        // the hotkey's, so this form neither shows it nor needs to know what settles it.
         var form = new GameModSettingsForm(_platform, _settings.Current, snapshot, stored,
-                                           pinned.Language, pinned.Published,
                                            installed: snapshot.IsConfigured,
                                            refusal: SetupRefusal(report));
 
@@ -8320,6 +8318,10 @@ public partial class MainWindow : Window
         //
         // ⚠ It is still counted by SettingsWouldChangeAnything and by the one-click's figure: it IS
         // a modification, and the split is about WHERE it is shown, not about whether it happens.
+        // ⚠ The language is not filtered here: it no longer reaches this list at all. It is marked
+        // AnsweredOnTheCard in GameConfigWriter, so Compare skips it — which is what also takes it
+        // out of the one-click's count, where filtering the display alone had left it announcing a
+        // change no screen would name.
         var differences = Differences(report, preference)
             .Where(d => d.Key != GameConfigWriter.HotkeyKey)
             .ToList();
@@ -8409,9 +8411,14 @@ public partial class MainWindow : Window
         // whether an install does this on its own; it does not change what this button is.
         if (writes > 0)
         {
+            // ⚠ **"Apply (N)", like every other verb on this card** (2026-09-05). It read "Apply Mod
+            // defaults to this game" — a sentence on a button, which this interface never does, and
+            // one that became untrue the day the ways stopped being only two: under "Set it up in
+            // the game" it is not Mod defaults that gets applied. The sentence above already names
+            // the source, and it follows the way chosen; the button carries the verb and the count.
             var apply = new Button
             {
-                Content = "Apply Mod defaults to this game",
+                Content = $"Apply ({writes})",
                 FontSize = 12,
                 HorizontalAlignment = HorizontalAlignment.Left,
                 Margin = new Avalonia.Thickness(0, 6, 0, 0),
@@ -8437,6 +8444,271 @@ public partial class MainWindow : Window
         var notice = Callout(body, tone);
         ((Border)notice).Margin = new Avalonia.Thickness(0, 8, 0, 0);
         yield return notice;
+    }
+
+    /// <summary>
+    /// The language this game translates into: a brick of its own, immediately before the hotkey.
+    ///
+    /// 🔴 **It left the list of differences for the reason the hotkey did.** That list says what
+    /// "Use Mod defaults in this game" writes. A game holding a translation takes its language from
+    /// THAT FILE — GameLanguages.TargetFor, where the published pair wins over anybody's preference
+    /// — so the line sat under a control that does not command it. Somebody reading "language:
+    /// French → Swedish" beneath the Mod defaults box could only conclude their defaults said
+    /// Swedish, which is the opposite of the truth.
+    ///
+    /// 🔴 **One picker, here, and it is the only one.** The same control used to live in this
+    /// game's own settings form as well, and the two would have been live at the same time on a
+    /// game with no translation yet — two doors onto one act, which is what
+    /// .claude/rules/implement-with-existing.md forbids. The form's row is gone; this is where a
+    /// language is chosen for a game, whichever of the three ways the game is set up.
+    ///
+    /// ⚠ Greyed, never hidden, when a translation settles it: the answer is then a fact about the
+    /// file, and the sentence beside it says which file and what would change it. Hiding the
+    /// control would leave somebody wondering where the language went.
+    /// </summary>
+    private IEnumerable<Control> LanguageDecision(GameReport report, GamePreference preference,
+                                                  Action refresh)
+    {
+        var descriptor = InstalledDescriptor(report);
+        var settings = SettingsFor(report, preference);
+        var snapshot = GameConfig(report);
+
+        // What no picker may overrule — see LanguagePinnedTo: a published translation fixes it for
+        // good, a local one until somebody retargets it inside the game.
+        var (pinnedTo, pinnedPublished) = LanguagePinnedTo(report, preference);
+
+        // 🔴 **The game's own file wins over anything remembered about it.** A language kept in this
+        // game's preferences is a second copy of a fact the config.json already holds, and the
+        // resolver reads the copy first — so it went stale the moment the language changed anywhere
+        // else, and then counted itself as "1 set for this game". The preference is only consulted
+        // where there is no file yet, which is the one case it exists for.
+        //
+        // ⚠ Through Canonical on both sides. The game stores a NAME ("French"), this picker works
+        // in codes ("fr"), and comparing them as text answers "different" for a language against
+        // itself.
+        var configured = snapshot.Exists;
+
+        var shown = Languages.Canonical(
+            pinnedTo
+            ?? (configured
+                ? snapshot.Values.TargetLanguage
+                : preference.Mod?.TargetLanguage)
+            ?? settings.TargetLanguage);
+
+        var picker = ModSettingControls.LanguagePicker(_platform, 220);
+        ModSettingControls.Select(picker, shown);
+
+        var row = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 10,
+            Margin = new Avalonia.Thickness(0, 12, 0, 0),
+        };
+
+        row.Children.Add(new TextBlock
+        {
+            Text = "Language for this game",
+            Width = 120,
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = Brush("TextMuted"),
+        });
+
+        row.Children.Add(picker);
+
+        // ⚠ The same rule as the hotkey editor: greyed and explained, never greyed alone.
+        ToolTip.SetTip(picker, pinnedTo is not null
+            ? "This game's language comes from the translation it holds."
+            : "The language this game will be set to translate into.");
+
+        picker.IsEnabled = pinnedTo is null && MaySetUp(report, picker);
+
+        // 🔴 **Held, not stored, and compared against the GAME.** This block used to file the choice
+        // into this game's preferences and let the settings machinery notice it — which it cannot:
+        // ModSettingsResolver returns the defaults untouched while "Use Mod defaults" is chosen, so
+        // the answer was written where nothing read it. No difference was computed, no verb
+        // appeared, and pressing Play then ran the game in its previous language with a picker on
+        // screen showing another. A setting that cannot be applied is worse than no setting.
+        //
+        // So this brick answers on its own, exactly as the hotkey's does: what the game holds
+        // against what is chosen here, and its own verb to close the gap.
+        var inGame = Languages.Canonical(snapshot.Values.TargetLanguage);
+        var draft = shown;
+
+        Button? write = null;
+        Control? pending = null;
+        TextBlock? pendingLine = null;
+
+        // ⚠ Both directions. Going back to the language Mod defaults name is a change like any
+        // other — the asymmetry where only one way offered a verb is the defect this replaces.
+        bool Differs() => draft is not null
+                          && !string.Equals(draft, inGame, StringComparison.OrdinalIgnoreCase);
+
+        // 🔴 **Both go away entirely when there is nothing to apply, banner included.** Hiding the
+        // panel INSIDE the callout left its border on screen: an empty yellow box under the picker,
+        // saying nothing and looking like a control that failed to draw. And a verb that cannot act
+        // is not shown greyed here — this program's rule everywhere else, and the one I broke.
+        void RefreshApply()
+        {
+            var differs = Differs();
+
+            if (pending is not null) pending.IsVisible = differs;
+
+            if (write is not null)
+            {
+                write.IsVisible = differs;
+                write.IsEnabled = differs && !_running.IsRunning(report.Game)
+                                  && MaySetUp(report, write);
+            }
+
+            // ⚠ "none set" rather than a blank: a game the mod has never written has no language at
+            // all, and an empty left-hand side would read as a value we failed to display.
+            if (pendingLine is not null && draft is not null)
+                pendingLine.Text = $"• language: {Languages.NameOf(inGame) ?? "none set"} → "
+                                   + $"{Languages.NameOf(draft)}";
+        }
+
+        picker.SelectionChanged += (_, _) =>
+        {
+            var chosen = ModSettingControls.Tag(picker);
+
+            // "Follow the system" is this picker's way of saying "whatever this machine is set to".
+            // ⚠ Resolved HERE and never written as "auto" — see GameLanguages: the mod would settle
+            // it at launch from the machine's locale, so the same game would mean different things
+            // on different computers.
+            draft = string.Equals(chosen, "auto", StringComparison.OrdinalIgnoreCase)
+                ? GameLanguages.Resolve(null, _platform.SystemLanguage())
+                : Languages.Canonical(chosen);
+
+            // ⚠ **Only where there is no file to write into.** Before the mod is installed this is
+            // the sole place the answer can live until an install carries it — the same reason the
+            // settings form stores as it is typed while `installed` is false. With a config.json
+            // present it would be a rival copy of what that file already says.
+            if (!configured && draft is not null)
+            {
+                SaveAnswer(report.Game.Path, p =>
+                {
+                    p.Mod ??= new GameModOverrides();
+                    p.Mod.TargetLanguage = Languages.NameOf(draft);
+                });
+            }
+
+            RefreshApply();
+        };
+
+        yield return row;
+
+        if (pinnedTo is not null)
+        {
+            yield return new TextBlock
+            {
+                // Two reasons, two sentences — the wording this program already uses for it, moved
+                // here with the control rather than reinvented beside it.
+                Text = pinnedPublished
+                    ? $"Stays on {pinnedTo}: this game holds a published {pinnedTo} translation. "
+                      + "Take one in another language to change it."
+                    : $"Stays on {pinnedTo}: a {pinnedTo} translation is being written in this "
+                      + "game. Change it in the game, or the lines already captured would be left "
+                      + "behind.",
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Avalonia.Thickness(0, 4, 0, 0),
+                Foreground = Brush("StatusWarning"),
+            };
+        }
+
+        // What pressing the verb would change, in the shape every other difference is written in.
+        //
+        // 🔴 **Composed from the choice, not from the settings comparison.** That comparison speaks
+        // for "Use Mod defaults", and this brick is not governed by it — reading it there is what
+        // made the block silent under the very mode it appears in most.
+        //
+        // ⚠ Hidden rather than absent, so choosing a language makes it appear without rebuilding
+        // the card under the person choosing.
+        // ⚠ Nothing to compare and nothing to press before there is a file — the answer above is
+        // held instead, and the line below says where it goes. Same shape as the hotkey's.
+        if (descriptor is not null && pinnedTo is null && !configured)
+        {
+            yield return new TextBlock
+            {
+                Text = "Written into the game when the mod is installed.",
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Avalonia.Thickness(0, 6, 0, 0),
+                Foreground = Brush("TextMuted"),
+            };
+        }
+
+        if (descriptor is not null && pinnedTo is null && configured)
+        {
+            var state = new StackPanel { Spacing = 4 };
+
+            pendingLine = new TextBlock
+            {
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextMuted"),
+            };
+
+            state.Children.Add(pendingLine);
+
+            // ⚠ The BORDER is what gets hidden, not the panel inside it.
+            pending = Callout(state, Tone.Warning);
+            pending.Margin = new Avalonia.Thickness(0, 6, 0, 0);
+            pending.IsVisible = false;
+
+            // Its own verb, like every other brick — and "Apply (N)" without exception, because the
+            // count is the convention a reader learns once.
+            // ⚠ Flush left, like the callout above it. The hotkey's verb is indented to 120 so it
+            // lines up under its capture field; copied here it landed in the middle of nothing,
+            // after a full-width banner — an indent that pointed at no column.
+            write = ScopeMark.Marked(EditSide.Local, "Apply (1)", enabled: false);
+            write.FontSize = 12;
+            write.HorizontalAlignment = HorizontalAlignment.Left;
+            write.Margin = new Avalonia.Thickness(0, 6, 0, 0);
+
+            write.Click += async (_, _) =>
+            {
+                if (draft is not { } chosen) return;
+
+                Busy(true, "Applying the language...");
+
+                var result = new GameConfigWriter().ApplyOne(
+                    report.Game.Path, descriptor, GameConfigWriter.TargetLanguageKey,
+                    Languages.NameOf(chosen), "language");
+
+                Busy(false, "Ready.");
+
+                if (!result.Written)
+                {
+                    await MessageAsync("Nothing was changed",
+                        $"The language could not be written ({result.Failure}).");
+                    return;
+                }
+
+                // 🔴 **Cleared, not stored — the config.json IS the storage.** Writing it into this
+                // game's preferences as well made a second copy of one fact, and the resolver reads
+                // that copy FIRST: it went stale the moment anything else changed the language, and
+                // then counted itself as "1 set for this game" and offered an Apply for a value the
+                // game already had. The rule is written twice over in this file, about the hotkey
+                // and about the pending answers; this line is what it looks like when followed.
+                SaveAnswer(report.Game.Path, p =>
+                {
+                    if (p.Mod is not null) p.Mod.TargetLanguage = null;
+                });
+
+                await ShowSelectedAsync();
+            };
+
+            // Called once the controls exist, so the first draw already says where things stand —
+            // a game whose configuration disagrees with what is shown says so before anybody
+            // touches the picker.
+            RefreshApply();
+
+            yield return pending;
+            yield return write;
+        }
     }
 
     /// <summary>
@@ -8660,10 +8932,14 @@ public partial class MainWindow : Window
         // ⚠ And the count is NOT dropped because this block holds one setting. The count is the
         // convention: a reader learns "Apply (N)" once and recognises it everywhere. An exception
         // made for being obvious is an exception somebody has to notice.
+        // ⚠ **Flush left, like every other line of this brick** (2026-09-05). The 120 indent lined
+        // it up under the capture field, which reads as an alignment only while looking at that one
+        // row: under a full-width callout and above a full-width sentence, it simply floated in the
+        // middle. Its twin above does the same, so the two blocks read as one grammar.
         write = ScopeMark.Marked(EditSide.Local, "Apply", enabled: false);
         write.FontSize = 12;
         write.HorizontalAlignment = HorizontalAlignment.Left;
-        write.Margin = new Avalonia.Thickness(120, 4, 0, 0);
+        write.Margin = new Avalonia.Thickness(0, 6, 0, 0);
 
         write.Click += async (_, _) =>
         {
@@ -8725,7 +9001,7 @@ public partial class MainWindow : Window
                 Text = "Written into the game when the mod is installed.",
                 FontSize = 11,
                 TextWrapping = TextWrapping.Wrap,
-                Margin = new Avalonia.Thickness(120, 4, 0, 0),
+                Margin = new Avalonia.Thickness(0, 6, 0, 0),
                 Foreground = Brush("TextMuted"),
             };
         }
@@ -8763,7 +9039,7 @@ public partial class MainWindow : Window
             Text = "The same key is not detected the same way in every game, and this game may "
                  + "already use it for something else.",
             FontSize = 11,
-            Margin = new Avalonia.Thickness(120, 2, 0, 0),
+            Margin = new Avalonia.Thickness(0, 4, 0, 0),
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("TextMuted"),
         };
@@ -8910,8 +9186,7 @@ public partial class MainWindow : Window
         var preference = _preferences.Read(report.Game.Path);
         var snapshot = GameConfig(report);
 
-        var way = SetupWayOf(preference, snapshot, reviewed: false,
-                             firstTime: !snapshot.FirstRunCompleted);
+        var way = SetupWayOf(preference, snapshot, reviewed: false);
 
         if (!blocking)
         {
@@ -9792,7 +10067,20 @@ public partial class MainWindow : Window
             var message = outcome.Message;
 
             if (translation is not null)
+            {
                 message += Environment.NewLine + Environment.NewLine + await TakeTranslationAsync(report, plan.Loader, translation);
+
+                // 🔴 **The language follows the translation HERE too, and it did not.** Taking a
+                // translation from the list aligned the game's `target_language`; setting a game up
+                // with one did not — the same act, by the other door, leaving a game holding a
+                // Swedish file and configured for French. The mod then writes every line it meets
+                // and the file does not hold in French, so the game fills up in two languages.
+                //
+                // ⚠ After the download, never before: the configuration written by the install is
+                // what this compares against, and the translation must have arrived for taking it
+                // to mean anything.
+                AlignGameLanguage(report, plan.Loader, translation);
+            }
 
             Busy(false, "Done.");
             await MessageAsync("Ready to play", message);
@@ -11306,13 +11594,23 @@ public partial class MainWindow : Window
     /// sensible answer is a confirmation of something already decided. Choosing a translation in
     /// another language IS choosing to play this game in it.
     /// </summary>
+    /// <param name="loader">
+    /// The loader to read the configuration through, for callers that have one the REPORT does not
+    /// yet carry.
+    ///
+    /// 🔴 **Without it this answered null during an install, silently.** A one-click builds its
+    /// plan from a game with no loader on disk, so `report.InstalledLoader` is null all the way
+    /// through — and reaching for it here made the whole language alignment a no-op on the one
+    /// path where a translation and a fresh configuration land together.
+    /// </param>
     private (string From, string To)? LanguageSwitchOnTaking(GameReport report,
-                                                             OnlineTranslation translation)
+                                                             OnlineTranslation translation,
+                                                             LoaderDescriptor? loader = null)
     {
         var taken = translation.TargetLanguage;
         if (string.IsNullOrWhiteSpace(taken)) return null;
 
-        if (InstalledDescriptor(report) is not { } descriptor) return null;
+        if ((loader ?? InstalledDescriptor(report)) is not { } descriptor) return null;
 
         // What the GAME is set to, not what this tool defaults to: they are allowed to differ, and
         // this one is what the mod acts on.
@@ -11331,18 +11629,44 @@ public partial class MainWindow : Window
     /// update preferences along with it — a language question answered by rewriting the whole
     /// configuration.
     ///
-    /// ⚠ The SOURCE language is deliberately not carried across. That field describes the person
-    /// who made the translation, not the game: nothing here can read what language a game's own
-    /// text is in, and writing a guess would put "translate from English" into every prompt — and,
-    /// under strict_source_language, retire every line judged to be in another language.
+    /// 🔴 **The SOURCE goes with it, and only from here** (2026-09-05). A published translation is
+    /// fixed in BOTH languages — the server keeps the pair it was uploaded under and ignores what
+    /// an update sends — so taking one adopts its pair, not half of it. The mod's prompt carries
+    /// the source on every single line ("Translating video game (…) from English to Swedish"
+    /// against "… to Swedish"), so leaving it unset spends that accuracy on every request.
+    ///
+    /// ⚠ **From a translation somebody published, never from settings.** That is the whole
+    /// distinction, and the reason the old rule said "never": nothing can READ what language a
+    /// game's own text is in, so a source composed from preferences is a guess — and a guess put
+    /// in `source_language` is an instruction, not a label. GameConfigWriter.Intended still
+    /// refuses it for exactly that reason, and must go on refusing it.
+    ///
+    /// ⚠ What that arms, said plainly: `strict_source_language` is a no-op while the source is
+    /// "auto", and it starts working once one is named. It is off by default and this tool never
+    /// writes it — turning it on stays the player's decision, in the mod, and it is only then that
+    /// a line judged to be in another language is skipped.
     /// </summary>
     private void AlignGameLanguage(GameReport report, LoaderDescriptor descriptor,
                                    OnlineTranslation translation)
     {
-        if (LanguageSwitchOnTaking(report, translation) is not { } switching) return;
+        var writer = new GameConfigWriter();
 
-        new GameConfigWriter().ApplyOne(report.Game.Path, descriptor,
-            GameConfigWriter.TargetLanguageKey, switching.To, "language");
+        if (LanguageSwitchOnTaking(report, translation, descriptor) is { } switching)
+        {
+            writer.ApplyOne(report.Game.Path, descriptor,
+                GameConfigWriter.TargetLanguageKey, switching.To, "language");
+        }
+
+        // ⚠ Its own condition rather than the target's: a translation may state a source while
+        // matching the game's target, and the pair would then land half written.
+        var source = translation.SourceLanguage;
+        if (string.IsNullOrWhiteSpace(source)) return;
+
+        var configured = LocalTranslationProbe.ReadLanguages(report.Game.Path, descriptor).Source;
+        if (string.Equals(configured, source, StringComparison.OrdinalIgnoreCase)) return;
+
+        writer.ApplyOne(report.Game.Path, descriptor,
+            GameConfigWriter.SourceLanguageKey, source, "source language");
     }
 
     /// <summary>

@@ -72,6 +72,25 @@ public sealed class GameInstall
     /// <summary>Display name. From the store manifest when we have one, folder name otherwise.</summary>
     public required string Name { get; init; }
 
+    /// <summary>
+    /// The product name Unity itself wrote, when the game states one — the second line of
+    /// &lt;Game&gt;_Data/app.info.
+    ///
+    /// 🔴 **Kept apart from <see cref="Name"/>, which is what the reader SEES.** The display name
+    /// can come from a store manifest or from a folder; this one is the string the site records as
+    /// `unity_name` when somebody publishes, so it is the key two machines can agree on. Sending
+    /// the display name instead is how a game ends up looked up by a repack's folder name.
+    ///
+    /// Null when app.info says nothing usable — the name then falls back exactly as before.
+    /// </summary>
+    public string? ProductName { get; set; }
+
+    /// <summary>
+    /// The company on the first line of the same file. Weak on its own, and the reason it is here:
+    /// a product name like "Game" identifies nothing, and the pair identifies a great deal.
+    /// </summary>
+    public string? CompanyName { get; set; }
+
     /// <summary>Root folder holding the executable and the *_Data directory.</summary>
     public required string Path { get; init; }
 

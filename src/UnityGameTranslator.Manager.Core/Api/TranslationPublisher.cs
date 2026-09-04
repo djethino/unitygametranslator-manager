@@ -1,4 +1,4 @@
-using System.Net.Http.Headers;
+﻿using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using UnityGameTranslator.Manager.Core.Net;
@@ -264,12 +264,21 @@ public sealed class TranslationPublisher
     /// rather than together.
     /// </param>
     /// <returns>The published translation's id, or null on failure.</returns>
+    /// <param name="company">
+    /// The studio Unity records beside the product name, when the game states one.
+    ///
+    /// 🔴 **It is what turns a weak name into an identity.** A product called "Game" or "Prototype"
+    /// identifies nothing; with the studio beside it, two machines looking at the same folder agree
+    /// without anybody typing anything. The site keeps the pair as `unity_name`/`unity_company` and
+    /// resolves with it — see the migration that added them, and what their absence used to cost.
+    /// </param>
     public async Task<int?> PublishAsync(string contentJson, string apiToken,
                                          string? steamId, string? gameName,
                                          string sourceLanguage, string targetLanguage,
                                          string? notes = null, string? status = null,
                                          string? resourcesUrl = null,
                                          bool? acceptsBranches = null,
+                                         string? company = null,
                                          CancellationToken ct = default)
     {
         LastError = null;
@@ -298,6 +307,10 @@ public sealed class TranslationPublisher
                 writer.WriteStartObject();
                 if (!string.IsNullOrWhiteSpace(steamId)) writer.WriteString("steam_id", steamId);
                 if (!string.IsNullOrWhiteSpace(gameName)) writer.WriteString("game_name", gameName);
+
+                // ⚠ Sent whenever the game states one. An older site ignores an unknown field, so
+                // this costs nothing where it is not understood.
+                if (!string.IsNullOrWhiteSpace(company)) writer.WriteString("game_company", company);
                 writer.WriteString("source_language", sourceLanguage);
                 writer.WriteString("target_language", targetLanguage);
                 writer.WriteString("content", contentJson);

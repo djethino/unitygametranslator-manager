@@ -6148,13 +6148,18 @@ public partial class MainWindow : Window
         // update, so leaving them out stores null — and this window erased, on each publish, the
         // description and the link their author had written in the game or on the site. Nothing
         // here changes them; restating them is what keeps them.
-        var id = await publisher.PublishAsync(content, token, report.Game.SteamAppId, report.Game.Name,
+        // ⚠ The name Unity wrote, not the one on screen: it is what the site records as
+        // `unity_name`, and what every other machine will search this game with. The display name
+        // can be a store manifest or a repack's folder, which nobody else can reproduce.
+        var id = await publisher.PublishAsync(content, token, report.Game.SteamAppId,
+                                              report.Game.ProductName ?? report.Game.Name,
                                               languages.Source, languages.Target,
                                               notes: lineage.Notes ?? "", status: status,
                                               resourcesUrl: lineage.ResourcesUrl ?? "",
                                               // ⚠ Null on branch work, exactly like status: a
                                               // contribution does not decide this for the Main.
-                                              acceptsBranches: branchWork ? null : takeContributions);
+                                              acceptsBranches: branchWork ? null : takeContributions,
+                                              company: report.Game.CompanyName);
 
         button.IsEnabled = true;
         ScopeMark.SetLabel(button, "Publish…");

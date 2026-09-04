@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
 
@@ -56,12 +56,17 @@ public sealed class OnlineCatalogCache
 
     /// <summary>
     /// How a game is looked up. Steam hands us an id, which matches exactly; everything else has
-    /// only its name, which the endpoint matches loosely. Same split the mod makes.
+    /// only its name. Same split the mod makes.
+    ///
+    /// ⚠ **The product name before the display name.** `Name` is what the reader sees — a store
+    /// manifest, or a folder called "LONESTARuBxQC" — while `ProductName` is what Unity wrote and
+    /// what the site records as `unity_name` when somebody publishes. Asking with the display name
+    /// is how a game gets looked up under a repack's folder.
     /// </summary>
     public static string KeyFor(GameInstall game) =>
         game.SteamAppId is { Length: > 0 } id
             ? $"steam:{id}"
-            : $"name:{game.Name.Trim().ToLowerInvariant()}";
+            : $"name:{(game.ProductName ?? game.Name).Trim().ToLowerInvariant()}";
 
     /// <summary>Whatever we already know, without asking anyone. Null when never fetched.</summary>
     public IReadOnlyList<OnlineTranslation>? Peek(GameInstall game) =>

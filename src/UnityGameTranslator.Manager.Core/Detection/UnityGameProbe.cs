@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.RegularExpressions;
 using UnityGameTranslator.Manager.Core.Model;
 
@@ -54,6 +54,12 @@ public static partial class UnityGameProbe
             DataDirectory = dataDir,
             ExecutablePath = executable,
         };
+
+        // What the game states about itself, kept whatever the display name ended up being: the
+        // site records this pair, and it is what lets another machine find the same game.
+        var (company, product) = ReadAppInfo(dataDir);
+        game.ProductName = product;
+        game.CompanyName = company;
 
         game.Runtime = DetectRuntime(folder, dataDir);
         game.UnityVersion = DetectUnityVersion(folder, dataDir);
@@ -116,27 +122,38 @@ public static partial class UnityGameProbe
     /// for years, but it is not guaranteed — so a missing or odd file means "no answer" and the
     /// caller falls back, never an exception.
     /// </summary>
-    private static string? ReadProductName(string? dataDir)
+    private static string? ReadProductName(string? dataDir) => ReadAppInfo(dataDir).Product;
+
+    /// <summary>
+    /// Both lines of &lt;Game&gt;_Data/app.info: the company, then the product.
+    ///
+    /// ⚠ The product was already read here to name the game; the company was thrown away. It is
+    /// what turns a weak product name into an identity — the site keeps the pair, so two machines
+    /// looking at the same game agree without anybody typing anything.
+    /// </summary>
+    private static (string? Company, string? Product) ReadAppInfo(string? dataDir)
     {
-        if (dataDir is null) return null;
+        if (dataDir is null) return (null, null);
 
         try
         {
             var path = Path.Combine(dataDir, "app.info");
-            if (!File.Exists(path)) return null;
+            if (!File.Exists(path)) return (null, null);
 
             var lines = File.ReadAllLines(path);
-            if (lines.Length < 2) return null;
+            if (lines.Length < 2) return (null, null);
 
+            var company = lines[0].Trim();
             var product = lines[1].Trim();
 
             // A blank or absurd value is worse than the folder name: it would show as an empty row
             // and search for nothing.
-            return product.Length is > 1 and < 120 ? product : null;
+            return (company.Length is > 1 and < 120 ? company : null,
+                    product.Length is > 1 and < 120 ? product : null);
         }
         catch
         {
-            return null;
+            return (null, null);
         }
     }
 

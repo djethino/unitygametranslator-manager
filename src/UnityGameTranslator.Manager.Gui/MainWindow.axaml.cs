@@ -116,10 +116,12 @@ public partial class MainWindow : Window
     /// <summary>
     /// ⚠ The beginning of an orchestration, and deliberately still small.
     ///
-    /// Two cadences on one clock, because two questions have different costs and different worth:
-    /// which games are open is asked every four seconds because it is nearly free, and whether a
-    /// played game's file has moved is asked every ten because that is as often as it can usefully
-    /// change — the mod's own save is debounced to thirty seconds.
+    /// Three cadences on one clock, because three questions have different costs and different
+    /// worth: which games are open is asked every four seconds because it is nearly free, whether a
+    /// played game's file has moved is asked every twelve because that is as often as it can
+    /// usefully change — the mod's own save is debounced to thirty seconds — and whether what came
+    /// off the network has aged out is asked every five minutes, because it can only happen once
+    /// every six hours and answering it costs a dictionary lookup.
     ///
     /// One clock rather than two, because two clocks drift apart and nothing then knows the whole
     /// picture. When the periodic checks of versions, translations and branches arrive, they join
@@ -129,6 +131,15 @@ public partial class MainWindow : Window
     private int _clockTicks;
 
     private const int TicksBetweenFileChecks = 3;   // 4 s per tick → about twelve seconds
+
+    /// <summary>
+    /// How often the tool checks whether a network answer has aged past its freshness.
+    ///
+    /// ⚠ Not how often it ASKS: <see cref="LoaderBuildResolver.Freshness"/> decides that, and this
+    /// only decides how soon after an answer goes stale somebody notices. Five minutes against six
+    /// hours costs nothing and keeps the delay invisible.
+    /// </summary>
+    private const int TicksBetweenStaleChecks = 75;  // 4 s per tick → about five minutes
 
     /// <summary>Situation per game path, so a row can be redrawn without redoing the work.</summary>
     private readonly Dictionary<string, GameSituationInfo> _situations =
@@ -547,6 +558,17 @@ public partial class MainWindow : Window
         // refresh button that refreshes some things.
         _releases.Forget();
 
+        // ⚠ **And the loader builds with it, which is exactly what "some things" meant.** The
+        // resolver holds its answers for six hours, so a rescan two hours after the last one asked
+        // the publishers nothing at all — the one gesture that means "look again" quietly refreshed
+        // the mod's version and not the loaders'.
+        //
+        // ⚠ Only what is more than a minute old. Four loaders is up to four GitHub requests against
+        // sixty an hour for this whole address, and a rescan is a button somebody can lean on;
+        // forgetting everything unconditionally would let an afternoon of testing spend the
+        // allowance, after which every answer is a refusal cached as the catalogue's pin.
+        LoaderBuildResolver.Forget(TimeSpan.FromMinutes(1));
+
         // ⚠ The token goes with the search, and only so the answer carries this account's own vote.
         // Without it every arrow drew neutral whatever somebody had chosen, so a second click
         // withdrew the vote they meant to confirm.
@@ -791,6 +813,22 @@ public partial class MainWindow : Window
         _sweep = new CancellationTokenSource();
         var token = _sweep.Token;
 
+        // The lineage each game is running, so the answer can name a translation that has left the
+        // catalogue and is still the one installed — a Main delisted for holding no translated line
+        // is out of every listing, and losing it would take the author, the sync verdict and the
+        // votes off the card of the very file in front of the reader.
+        //
+        // ⚠ Read once, here, off the same reports the rows are built from. Asking per game inside
+        // the sweep would parse every translation file again on a background thread.
+        var lineages = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var game in _games.Where(g => g.IsModdable))
+        {
+            var key = OnlineCatalogCache.KeyFor(game);
+            if (lineages.ContainsKey(key)) continue;
+
+            lineages[key] = _inventory.BuildReport(game).LocalTranslation?.Uuid;
+        }
+
         _ = Task.Run(async () =>
         {
             var done = 0;
@@ -804,7 +842,7 @@ public partial class MainWindow : Window
 
                     Status($"Checking community translations... {progress}/{ids.Count}");
                 });
-            }, token);
+            }, token, key => lineages.TryGetValue(key, out var uuid) ? uuid : null);
 
             if (!token.IsCancellationRequested)
                 await Dispatcher.UIThread.InvokeAsync(() => Status("Ready."));
@@ -1492,14 +1530,23 @@ public partial class MainWindow : Window
         Activated += OnActivated;
     }
 
-    private async void OnActivated(object? sender, EventArgs e) => await LookForRunningGamesAsync();
+    private async void OnActivated(object? sender, EventArgs e)
+    {
+        await LookForRunningGamesAsync();
+
+        // Coming back is also the moment a network answer is most likely to have aged out, since
+        // being away is what takes hours. Checking costs a dictionary lookup and asks nobody
+        // anything unless something really has expired.
+        await RefreshStaleLookupsAsync();
+    }
 
     /// <summary>
-    /// One beat, two questions, each asked as often as it is worth asking.
+    /// One beat, three questions, each asked as often as it is worth asking.
     ///
     /// Which games are open: every beat, because a name comparison over the process list is nearly
     /// free. Whether a played game's file has moved: every third, because it cannot usefully change
-    /// faster than the mod saves it.
+    /// faster than the mod saves it. Whether what came off the network has aged out: every
+    /// seventy-fifth, because it can only happen once every six hours.
     /// </summary>
     private async Task OnClockTickAsync()
     {
@@ -1507,10 +1554,52 @@ public partial class MainWindow : Window
 
         await LookForRunningGamesAsync();
 
+        // ⚠ Before the early return below, which is only about games being played. Put after it,
+        // this would never run on a machine where nobody is playing — which is most of them.
+        if (_clockTicks % TicksBetweenStaleChecks == 0) await RefreshStaleLookupsAsync();
+
         if (_clockTicks % TicksBetweenFileChecks != 0) return;
         if (WindowState == WindowState.Minimized) return;
 
         await FollowGamesBeingPlayedAsync();
+    }
+
+    /// <summary>Stops two stale checks overlapping — the warm-up takes seconds, the clock beats.</summary>
+    private bool _refreshingLookups;
+
+    /// <summary>
+    /// Asks the publishers again once what we hold about them has aged past its freshness.
+    ///
+    /// 🔴 **Written because expiry had been added with nobody to act on it.** The resolver forgets
+    /// an answer after six hours — right for a window left open for days — but the only thing that
+    /// ever warmed it ran after a scan. So on a long-open window the answers aged out, the rows
+    /// went on showing what they had been drawn with, and the first act that redrew a row (clicking
+    /// its game) replaced "loader update available" with silence, drawn from the catalogue's pinned
+    /// version. The tool un-said something true and gave no way to get it back.
+    ///
+    /// ⚠ **Only when something has actually expired.** WarmLoaderBuildsAsync ends with
+    /// RepublishAsync, which rebuilds the open card — doing that every five minutes for nothing
+    /// would throw away a dropdown somebody had open, which is the fault the running-games clock is
+    /// already careful about.
+    ///
+    /// ⚠ Nothing here is for the plugin release: PluginReleases holds its answer for the life of
+    /// the process on purpose, so it has nothing to expire and cannot un-say anything.
+    /// </summary>
+    private async Task RefreshStaleLookupsAsync()
+    {
+        if (_refreshingLookups) return;
+        if (!_settings.Current.OnlineMode || !_settings.Current.CheckContentUpdates) return;
+        if (!LoaderBuildResolver.AnythingStale(_catalog, _settings.Current.BepInEx6Channel)) return;
+
+        _refreshingLookups = true;
+        try
+        {
+            await WarmLoaderBuildsAsync();
+        }
+        finally
+        {
+            _refreshingLookups = false;
+        }
     }
 
     private async Task LookForRunningGamesAsync()
@@ -3496,13 +3585,26 @@ public partial class MainWindow : Window
                 : $"{local.EntryCount} entries"
                   + (unpublished > 0 ? $", {unpublished} never uploaded" : "");
 
-            body.Children.Add(new TextBlock
-            {
-                Text = detail,
-                FontSize = 12,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = Brush("TextSecondary"),
-            });
+            // 🔴 **The languages, on the line the eye lands on after the opening sentence.** This
+            // card named the author, the size and the standing of the file and never said what it
+            // translates into — the pair was drawn further down and only for a translation somebody
+            // had published. A file this game is building is exactly the one whose target somebody
+            // needs to check.
+            //
+            // ⚠ On the size line rather than on one of its own: they are two halves of "what is
+            // this file", and the community entries below read the same way — pair, then size.
+            //
+            // An unreadable file gets the sentence alone: its languages are a claim about a file we
+            // could not open, and the pair would read as a fact measured in it.
+            body.Children.Add(local.EntryCount < 0
+                ? new TextBlock
+                {
+                    Text = detail,
+                    FontSize = 12,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = Brush("TextSecondary"),
+                }
+                : TranslationLanguages(report, after: "· " + detail));
 
             // What it is made of, whose it is, and what can be done with it — the three questions
             // this tab exists for, and none of them was answered here.
@@ -5015,22 +5117,24 @@ public partial class MainWindow : Window
             // lines invite a comparison they do not support: a local file and a published one can
             // share a target and differ on the source, and the reader had no way to see it.
             //
-            // ⚠ Read from what this game IS set to, and shown as "→ auto" only where that is
+            // ⚠ Read from what this game IS set to, and shown as "no target set" only where that is
             // genuinely the answer — which, for a file that exists, it should never be. The pair
             // used to come straight out of config.json, so a game left on the mod's default
             // announced "French → auto" over a translation that plainly had a target: the display
             // was faithful and the configuration was wrong. Both are fixed; this line is what
             // makes the second one visible when it happens again.
-            var loaderId = report.InstalledLoader?.Id ?? report.RecommendedLoader?.Id;
-            var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == loaderId);
-
-            var pair = descriptor is null
-                ? null
-                : LocalTranslationProbe.DescribeLanguages(report.Game.Path, descriptor);
-
-            var prefix = pair is null ? "" : $"{pair}, ";
-
-            panel.Children.Add(new TextBlock { Text = $"On this machine: {prefix}{count}{unsynced}", FontSize = 12, Foreground = Brush("TextSecondary") });
+            //
+            // ⚠ **Flags, and the same row the other tab draws** — see TranslationLanguages. It was
+            // grey prose here and nothing at all on Home, for one fact about one file.
+            panel.Children.Add(local.EntryCount < 0
+                ? new TextBlock
+                {
+                    Text = $"On this machine: {count}{unsynced}",
+                    FontSize = 12,
+                    Foreground = Brush("TextSecondary"),
+                }
+                : TranslationLanguages(report, before: "On this machine:",
+                                               after: $"· {count}{unsynced}"));
 
             // What the file is actually made of, drawn by the same bar as every community entry.
             //
@@ -6144,6 +6248,72 @@ public partial class MainWindow : Window
     /// announce what has just been said.
     /// </param>
     /// <summary>
+    /// Which two languages the translation in this game goes between, flags first — the same shape
+    /// the community list and every other pair in this product use.
+    ///
+    /// 🔴 **Written because the pair was only ever drawn for a PUBLISHED translation.** It lived
+    /// inside <see cref="PublishedBy"/>, so on a file nobody has put on the site — the ordinary
+    /// state of a translation being built — the card said how many lines it held, what it was made
+    /// of and where it stood, and never what it translates INTO. Nothing was gained by hiding it:
+    /// the answer is in the game's own config.json whether or not a server has ever heard of it.
+    ///
+    /// ⚠ **Which answer wins is <see cref="GameLanguages.PairFor"/>'s**, not this screen's, and it
+    /// is the same order of authority the install path already obeys: what was published is what
+    /// the file IS, the game's own configuration answers when nothing is published.
+    ///
+    /// ⚠ An unstated language is written out ("auto-detected", "no target set") rather than left
+    /// blank — a game whose target nobody has settled is something to fix, and a gap says nothing.
+    /// </summary>
+    /// <param name="before">What the pair is, when the card needs saying — "On this machine:".</param>
+    /// <param name="after">The size of the file, in the words the card around it already uses.</param>
+    private Control TranslationLanguages(GameReport report, string? before = null,
+                                         string? after = null)
+    {
+        var loaderId = report.InstalledLoader?.Id ?? report.RecommendedLoader?.Id;
+        var descriptor = _catalog.Loaders.FirstOrDefault(l => l.Id == loaderId);
+
+        var inGame = descriptor is null
+            ? (null, null)
+            : LocalTranslationProbe.ReadLanguages(report.Game.Path, descriptor);
+
+        var pair = GameLanguages.PairFor(report.MatchingOnline, inGame);
+
+        var row = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        };
+
+        Control Muted(string text) => new TextBlock
+        {
+            Text = text,
+            FontSize = 12,
+            Foreground = Brush("TextMuted"),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        };
+
+        if (!string.IsNullOrEmpty(before)) row.Children.Add(Muted(before));
+
+        row.Children.Add(LanguageMark.Named(pair.Source, pair.SourceLabel));
+        row.Children.Add(Muted("→"));
+        row.Children.Add(LanguageMark.Named(pair.Target, pair.TargetLabel));
+
+        if (!string.IsNullOrEmpty(after))
+        {
+            row.Children.Add(new TextBlock
+            {
+                Text = after,
+                FontSize = 12,
+                Foreground = Brush("TextSecondary"),
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            });
+        }
+
+        return row;
+    }
+
+    /// <summary>
     /// Whose translation this is, and the one thing a player can give back for it.
     ///
     /// ⚠ **Written because using somebody's work said nothing about them.** Running a downloaded
@@ -6174,24 +6344,15 @@ public partial class MainWindow : Window
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
         };
 
-        // 🔴 **Which languages this translation is, said on its own card.** The card carried the
-        // author and the votes and never the pair — so the one line telling you whether it is even
-        // the translation you want was missing from the translation you are using.
-        row.Children.Add(LanguageMark.Named(published.SourceLanguage,
-                                            published.SourceLanguage ?? "?"));
+        // ⚠ **The pair used to open this row, and it has moved to the head of the card** — see
+        // TranslationLanguages. It was drawn from the published entry, so a translation nobody had
+        // put on the site showed no languages at all: the one property deciding whether the file is
+        // any use was shown only for the files somebody else had already vouched for. What is left
+        // here is what genuinely belongs to a PUBLISHED translation — who published it, and the
+        // rating it carries.
         row.Children.Add(new TextBlock
         {
-            Text = "→",
-            FontSize = 12,
-            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-            Foreground = Brush("TextMuted"),
-        });
-        row.Children.Add(LanguageMark.Named(published.TargetLanguage,
-                                            published.TargetLanguage ?? "?"));
-
-        row.Children.Add(new TextBlock
-        {
-            Text = "· published by",
+            Text = "Published by",
             FontSize = 12,
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
             Foreground = Brush("TextMuted"),

@@ -356,11 +356,30 @@ public sealed class GameInventory
     /// Not something to offer: it is the thing the player already runs, and the only question left
     /// is whether it moved online.
     /// </summary>
-    private static OnlineTranslation? MatchingLineage(GameReport report) =>
-        report.LocalTranslation?.Uuid is { Length: > 0 } uuid
-            ? report.OnlineTranslations.FirstOrDefault(
-                t => string.Equals(t.Uuid, uuid, StringComparison.OrdinalIgnoreCase))
+    private OnlineTranslation? MatchingLineage(GameReport report)
+    {
+        if (report.LocalTranslation?.Uuid is not { Length: > 0 } uuid) return null;
+
+        var listed = report.OnlineTranslations.FirstOrDefault(
+            t => string.Equals(t.Uuid, uuid, StringComparison.OrdinalIgnoreCase));
+
+        if (listed is not null) return listed;
+
+        // 🔴 **Out of the catalogue is not out of existence.** A Main that holds no translated line
+        // leaves every listing once its grace period is over — `scopePubliclyListed` says so, and
+        // says in the same breath "never where it resolves one". So the search cannot bring it back,
+        // and this game would lose the author, the sync verdict and the votes of the very file it is
+        // running. The batch endpoint resolves it from the uuid we send; this is where it lands.
+        //
+        // ⚠ The uuid is compared again rather than trusted: the cache is keyed by game, and a
+        // translation replaced since the last sweep would otherwise be described as the one here.
+        var resolved = Online?.PeekMatching(report.Game);
+
+        return resolved is not null
+               && string.Equals(resolved.Uuid, uuid, StringComparison.OrdinalIgnoreCase)
+            ? resolved
             : null;
+    }
 
     /// <summary>
     /// Where this game's translation stands against the published one — the shared verdict, the

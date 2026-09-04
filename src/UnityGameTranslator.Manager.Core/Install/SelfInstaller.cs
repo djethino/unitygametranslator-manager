@@ -462,7 +462,7 @@ public sealed class SelfInstaller
         }
 
         // Last, because it outlives us: nothing after this line is guaranteed to run.
-        if (running is not null) FinishAfterWeExit(running, installation, left);
+        if (running is not null) FinishAfterWeExit(running, installation, _platform.SelfInstallDirectory, left);
 
         return new SelfRemovalReport(gone, left, running, installation.Directory);
     }
@@ -491,12 +491,27 @@ public sealed class SelfInstaller
     /// and the file simply goes.
     /// </summary>
     private static void FinishAfterWeExit(string executable, ToolInstallation installation,
-                                          List<string> left)
+                                          string expectedDirectory, List<string> left)
     {
         if (!OperatingSystem.IsWindows())
         {
             Take(executable, "file", [], left);
             RemoveIfEmpty(installation.Directory, [], left);
+            return;
+        }
+
+        // 🔴 The folder handed to the shell is read from a JSON in the user's profile, and this tool
+        // only ever installs itself in ONE place. A record naming any other folder is not a record
+        // this tool wrote — so it is not a folder this tool removes, however empty, however quoted.
+        // The files above were already held to `Inside(installation.Directory, …)`; this holds the
+        // directory itself to the same standard.
+        if (!Inside(expectedDirectory, installation.Directory)
+            && !string.Equals(Path.GetFullPath(expectedDirectory).TrimEnd(Path.DirectorySeparatorChar),
+                              Path.GetFullPath(installation.Directory).TrimEnd(Path.DirectorySeparatorChar),
+                              ArchiveFetcher.PathComparison))
+        {
+            left.Add($"{installation.Directory} — left alone: it is not where this tool installs "
+                     + $"itself ({expectedDirectory}). Delete it by hand if it is yours to delete.");
             return;
         }
 
@@ -573,7 +588,8 @@ public sealed class SelfInstaller
             var root = Path.GetFullPath(folder);
             if (!root.EndsWith(Path.DirectorySeparatorChar)) root += Path.DirectorySeparatorChar;
 
-            return Path.GetFullPath(file).StartsWith(root, StringComparison.OrdinalIgnoreCase);
+            // The file system's rule for case, not Windows' everywhere — see ArchiveFetcher.
+            return Path.GetFullPath(file).StartsWith(root, ArchiveFetcher.PathComparison);
         }
         catch
         {

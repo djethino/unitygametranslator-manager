@@ -63,6 +63,10 @@
     <PackageReference Include="Avalonia.Desktop" Version="11.3.10" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.10" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.10" />
+    <!-- Pulled in by Avalonia for the Linux build (D-Bus). Named here only to take the version
+         that closes GHSA-xrw6-gwf8-vvr9 without moving Avalonia itself; drop this line the day
+         Avalonia's own reference is at or past 0.21.3. -->
+    <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" />
 
   </ItemGroup>
 

@@ -1,6 +1,7 @@
 ﻿using System.Text.Json;
 using UnityGameTranslator.Manager.Core.Install;
 using UnityGameTranslator.Manager.Core.Model;
+using UnityGameTranslator.Manager.Core.Settings;
 using UnityGameTranslator.Common;
 
 namespace UnityGameTranslator.Manager.Core.Detection;
@@ -76,16 +77,19 @@ public static class LocalTranslationProbe
     /// therefore worded as the gap it is, not as "auto", so it reads like something to settle
     /// rather than like a setting somebody chose. What settles it is the difference list on the
     /// game's card, which offers to write the real target in.
+    ///
+    /// ⚠ **The two words come from <see cref="GameLanguages"/>**, which is also where the pair
+    /// shown on a game's card is decided. They were spelled out here as well, and one screen
+    /// wording a missing target differently from the next is how a reader ends up thinking they
+    /// are two different states.
     /// </summary>
     public static string? DescribeLanguages(string gamePath, LoaderDescriptor descriptor)
     {
-        var (source, target) = ReadLanguages(gamePath, descriptor);
+        var pair = GameLanguages.PairFor(null, ReadLanguages(gamePath, descriptor));
 
         // Nothing configured at all: the mod has not been through its first run here, and saying
         // "auto → auto" would dress that up as a choice somebody made.
-        if (source is null && target is null) return null;
-
-        return $"{source ?? "auto-detected"} → {target ?? "no target set"}";
+        return pair.Known ? $"{pair.SourceLabel} → {pair.TargetLabel}" : null;
     }
 
     /// <summary>

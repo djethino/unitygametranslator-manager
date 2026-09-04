@@ -33,6 +33,65 @@ namespace UnityGameTranslator.Manager.Core.Settings;
 public static class GameLanguages
 {
     /// <summary>
+    /// What is written where a source has not been declared. The mod detects it line by line, so
+    /// this is a real answer rather than a blank — and it is what explains why no source filter
+    /// can be preselected from it.
+    /// </summary>
+    public const string SourceUnstated = "auto-detected";
+
+    /// <summary>
+    /// What is written where a target has not been settled. ⚠ Worded as the gap it is, never as
+    /// "auto": the mod resolves it from the machine's locale at launch, so a game left that way
+    /// means something different on every machine — and over a translation that exists, it means
+    /// the mod may be working towards a language that file is not in.
+    /// </summary>
+    public const string TargetUnstated = "no target set";
+
+    /// <summary>Both languages of one translation, either of them unstated.</summary>
+    public readonly record struct LanguagePair(string? Source, string? Target)
+    {
+        /// <summary>Whether anything at all is known — a game the mod has never run in says no.</summary>
+        public bool Known => Source is not null || Target is not null;
+
+        /// <summary>The source as it is written on a screen, named when it is not declared.</summary>
+        public string SourceLabel => Source ?? SourceUnstated;
+
+        /// <summary>The target as it is written on a screen, named when it is not settled.</summary>
+        public string TargetLabel => Target ?? TargetUnstated;
+    }
+
+    /// <summary>
+    /// The pair the translation a game holds IS — the one fact every screen about that file has to
+    /// carry, whether or not anybody has published it.
+    ///
+    /// 🔴 **Written because the pair was only ever shown for a PUBLISHED translation.** It came out
+    /// of the published entry, inside the line naming its author, so a game running a file nobody
+    /// has put on the site said what it was made of, whose it was and where it stood — and never
+    /// which languages it went between. That is the one property that decides whether the file is
+    /// of any use at all, and it was the one hidden.
+    ///
+    /// The order of authority is <see cref="TargetFor"/>'s, for the same reason: what was published
+    /// is what the file IS — the site lists it under that pair and it was uploaded under it — while
+    /// the game's own configuration is what somebody is building towards when nothing is published.
+    /// Field by field rather than wholesale: an old published entry missing its source must not
+    /// erase the source this game names.
+    ///
+    /// ⚠ Pure on purpose — the caller reads the two files. Both answers are already at hand
+    /// wherever this is asked, and a rule this small is only worth having if it can be checked.
+    /// </summary>
+    /// <param name="published">The published entry of THIS file's lineage, or null.</param>
+    /// <param name="inGame">What the game's own config.json names, "auto" and blanks already null
+    /// — see <see cref="Detection.LocalTranslationProbe.ReadLanguages"/>.</param>
+    public static LanguagePair PairFor(OnlineTranslation? published,
+                                       (string? Source, string? Target) inGame) =>
+        new(Stated(published?.SourceLanguage) ?? Stated(inGame.Source),
+            Stated(published?.TargetLanguage) ?? Stated(inGame.Target));
+
+    /// <summary>A language somebody actually named, or null. Blanks are not answers.</summary>
+    private static string? Stated(string? language) =>
+        string.IsNullOrWhiteSpace(language) ? null : language;
+
+    /// <summary>
     /// The language to reason with: the configured one, or the system's when set to "auto".
     ///
     /// Written once and used by both the settings store and the install path, because the two

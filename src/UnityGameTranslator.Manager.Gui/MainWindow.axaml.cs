@@ -5165,6 +5165,21 @@ public partial class MainWindow : Window
 
         foreach (var line in LineageNotes(report)) panel.Children.Add(line);
 
+        // ── What THIS game holds, and what can be done with it ───────────────────────────────
+        foreach (var control in TranslationWorkbench(report)) panel.Children.Add(control);
+
+        // ── What the community has, which is a different subject ─────────────────────────────
+        //
+        // 🔴 **After the actions on this game's own translation, never between them.** Moving the
+        // community block up to give the button a subject put it BETWEEN the state of the file
+        // installed here and the things one can do with it — so the card offered to replace a
+        // translation before saying what could be done with the one already there. The other tab
+        // has always read in this order, in two separate cards; this one now matches it.
+        //
+        // ⚠ The rule dropped for a moment: what belongs to one subject stays together. A block
+        // that answers "what else exists" is not a step of "what do I do with mine".
+        var community = new StackPanel { Spacing = 4 };
+
         // 🔴 **Choosing and applying share a line — the same shape as the other tab, and it was not.**
         //
         // This card used to read: a sentence naming what would be taken, a button to open the list,
@@ -5179,7 +5194,7 @@ public partial class MainWindow : Window
 
         if (offered == 0)
         {
-            foreach (var control in NothingPublishedYet(report)) panel.Children.Add(control);
+            foreach (var control in NothingPublishedYet(report)) community.Children.Add(control);
         }
         else
         {
@@ -5189,9 +5204,9 @@ public partial class MainWindow : Window
             // the community: 2 in French"). So the button appeared with no subject, and the only
             // way to learn what it opened was to press it. Same block as the other tab now.
             foreach (var line in CommunityPublished(report, _settings.ResolveTargetLanguage()))
-                panel.Children.Add(line);
+                community.Children.Add(line);
 
-            if (PendingTranslationNote(report) is { } waitingNote) panel.Children.Add(waitingNote);
+            if (PendingTranslationNote(report) is { } waitingNote) community.Children.Add(waitingNote);
 
             // One button rather than a list of names: choosing between translations needs what they
             // are made of, who reviewed them and which language they came FROM — none of which fits
@@ -5220,10 +5235,23 @@ public partial class MainWindow : Window
                 choiceRow.Children.Add(waiting);
             }
 
-            panel.Children.Add(choiceRow);
+            community.Children.Add(choiceRow);
         }
 
-        foreach (var control in TranslationWorkbench(report)) panel.Children.Add(control);
+        // ⚠ The rule and the separator go together: a rule above nothing reads as a defect, and
+        // NothingPublishedYet stays silent on a game the mod can never run on.
+        if (community.Children.Count > 0)
+        {
+            panel.Children.Add(new Border
+            {
+                Height = 1,
+                Background = Brush("BorderSubtle"),
+                Margin = new Avalonia.Thickness(0, 12, 0, 8),
+            });
+
+            panel.Children.Add(community);
+        }
+
         foreach (var control in TranslationPlanning(report)) panel.Children.Add(control);
 
         // ⚠ **The language tally has moved UP, above the button that opens them** — see

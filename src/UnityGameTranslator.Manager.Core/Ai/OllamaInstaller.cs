@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using UnityGameTranslator.Manager.Core.Api;
+using UnityGameTranslator.Manager.Core.Catalog;
 using UnityGameTranslator.Manager.Core.Diagnostics;
 using UnityGameTranslator.Manager.Core.Install;
 using UnityGameTranslator.Manager.Core.Model;
@@ -55,7 +56,13 @@ public sealed record OllamaOffer(
 /// </summary>
 public sealed class OllamaInstaller
 {
-    private const string Repository = "ollama/ollama";
+    private const string Repository = DownloadOrigins.OllamaRepository;
+
+    /// <summary>
+    /// The most the installer may weigh. It is 1.5 GB today (measured 2026-09-04), and this is a
+    /// bound against a publisher serving something absurd, not a guess at the next version.
+    /// </summary>
+    private const long MaxInstallerBytes = 4096L * 1024 * 1024;
 
     private readonly IPlatform _platform;
     private readonly GitHubAssets _assets;
@@ -229,27 +236,11 @@ public sealed class OllamaInstaller
         }
     }
 
-    private async Task DownloadAsync(string url, string destination, CancellationToken ct)
-    {
-        using var response = await _http
-            .GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct)
-            .ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-
-        var total = response.Content.Headers.ContentLength;
-        await using var source = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-        await using var target = File.Create(destination);
-
-        var buffer = new byte[81920];
-        long done = 0;
-        int read;
-        while ((read = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
-        {
-            await target.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
-            done += read;
-            Progress?.Invoke(done, total);
-        }
-    }
+    // Through the one download path, so the address and the landing host are checked like every
+    // other file — and this one is executed afterwards, which makes it the one that matters most.
+    private Task DownloadAsync(string url, string destination, CancellationToken ct) =>
+        Download.ToFileAsync(_http, url, destination, MaxInstallerBytes,
+                             (done, total) => Progress?.Invoke(done, total), ct);
 
     private static void TryDelete(string path)
     {

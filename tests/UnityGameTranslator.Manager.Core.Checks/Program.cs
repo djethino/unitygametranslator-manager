@@ -31,6 +31,8 @@ internal static class Program
         ModelOrderChecks.HowModelsAreRanked();
         ModelOrderChecks.WhichRowsCarryAMark();
         UserDataChecks.WhichFilesAreTheModsInterface();
+        DownloadOriginsChecks.WhereADownloadMayStart();
+        DownloadOriginsChecks.WhereADownloadMayLand();
 
         Console.WriteLine();
         if (_failures == 0)

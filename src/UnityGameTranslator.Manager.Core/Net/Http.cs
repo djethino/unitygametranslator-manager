@@ -100,6 +100,15 @@ public static class Http
         client.DefaultRequestHeaders.UserAgent.ParseAdd(
             $"UnityGameTranslatorManager/{BuildInfo.Version}");
 
+        // 🔴 **What a buffered answer may weigh.** Some thirty calls in this tool read an answer
+        // into a string — the catalogue, GitHub's API, the site, and the AI server at whatever
+        // address the person typed — and none of them had a bound: a server could answer with
+        // gigabytes and the process would try to hold them. Files are streamed to disk elsewhere
+        // and are not subject to this. The figure is the site's own cap on a translation file
+        // (100 MB), with room, because that is the largest thing any of these calls legitimately
+        // reads back.
+        client.MaxResponseContentBufferSize = 128L * 1024 * 1024;
+
         return client;
     }
 

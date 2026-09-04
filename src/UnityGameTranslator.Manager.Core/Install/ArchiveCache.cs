@@ -132,7 +132,7 @@ public sealed class ArchiveCache
     /// ⚠ Path separators go too, not only the characters Windows rejects: a loader id containing a
     /// slash would otherwise make a subfolder, and one containing ".." would leave the cache.
     /// </summary>
-    private static string SafeName(string name)
+    internal static string SafeName(string name)
     {
         var invalid = Path.GetInvalidFileNameChars();
 

@@ -104,27 +104,35 @@ public sealed class ArchiveFetcher
         return new FetchedArchive(extractPath, actual);
     }
 
-    private async Task DownloadAsync(string url, string destination, CancellationToken ct)
-    {
-        using var response = await _http
-            .GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct)
-            .ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+    /// <summary>
+    /// The most an archive fetched here may weigh. The largest real one is this tool's own update
+    /// (40 MB, measured 2026-09-04); loaders are a few megabytes. Room for twenty-five of those, and
+    /// still a bound rather than none.
+    /// </summary>
+    private const long MaxArchiveBytes = 1024L * 1024 * 1024;
 
-        var total = response.Content.Headers.ContentLength;
-        await using var source = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-        await using var target = File.Create(destination);
+    /// <summary>
+    /// The most an archive may hold once unpacked, and in how many entries. This tool's update
+    /// unpacks to about a hundred megabytes and a dozen files; a loader to a few megabytes and a
+    /// few dozen. A zip that claims gigabytes, or ten thousand entries, is not one of ours.
+    /// </summary>
+    private const long MaxUnpackedBytes = 2048L * 1024 * 1024;
+    private const int MaxEntries = 10_000;
 
-        var buffer = new byte[81920];
-        long done = 0;
-        int read;
-        while ((read = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
-        {
-            await target.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
-            done += read;
-            Progress?.Invoke(done, total);
-        }
-    }
+    private Task DownloadAsync(string url, string destination, CancellationToken ct) =>
+        Download.ToFileAsync(_http, url, destination, MaxArchiveBytes,
+                             (done, total) => Progress?.Invoke(done, total), ct);
+
+    /// <summary>
+    /// How two resolved paths are compared when deciding whether one is under the other.
+    ///
+    /// 🔴 The file system's rule, not one comparison for every system. Windows ignores case, so
+    /// "…\Games\x" and "…\games\x" are one folder there and must compare equal; Linux does not, so
+    /// on the published linux-x64 build the same comparison let "../Games/x" out of "/home/u/games/"
+    /// — the two spellings are different folders, and only one of them was the root.
+    /// </summary>
+    internal static StringComparison PathComparison =>
+        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
     /// <summary>
     /// The archive format, read from the address rather than guessed from the bytes.
@@ -157,11 +165,22 @@ public sealed class ArchiveFetcher
         }
 
         using var archive = ZipFile.OpenRead(archivePath);
+
+        // Counted from the table of contents, before a single byte is written: a zip states each
+        // entry's unpacked size up front, so an archive that would fill the disk is refused whole.
+        if (archive.Entries.Count > MaxEntries)
+            throw new InvalidOperationException($"Archive holds {archive.Entries.Count} entries. Refusing to extract.");
+
+        long unpacked = 0;
         foreach (var entry in archive.Entries)
         {
+            unpacked += entry.Length;
+            if (unpacked > MaxUnpackedBytes)
+                throw new InvalidOperationException("Archive unpacks to more than this tool ever ships. Refusing to extract.");
+
             var target = Path.GetFullPath(Path.Combine(root, entry.FullName));
 
-            if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            if (!target.StartsWith(root, PathComparison))
             {
                 throw new InvalidOperationException(
                     $"Archive entry escapes its folder: '{entry.FullName}'. Refusing to extract.");
@@ -195,11 +214,22 @@ public sealed class ArchiveFetcher
         using var gzip = new GZipStream(file, CompressionMode.Decompress);
         using var reader = new TarReader(gzip);
 
+        // A tar is read as a stream, so the same bounds are held as it goes rather than up front.
+        var entries = 0;
+        long unpacked = 0;
+
         while (reader.GetNextEntry() is { } entry)
         {
+            if (++entries > MaxEntries)
+                throw new InvalidOperationException($"Archive holds more than {MaxEntries} entries. Refusing to extract.");
+
+            unpacked += Math.Max(0, entry.Length);
+            if (unpacked > MaxUnpackedBytes)
+                throw new InvalidOperationException("Archive unpacks to more than this tool ever ships. Refusing to extract.");
+
             var target = Path.GetFullPath(Path.Combine(root, entry.Name));
 
-            if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            if (!target.StartsWith(root, PathComparison))
             {
                 throw new InvalidOperationException(
                     $"Archive entry escapes its folder: '{entry.Name}'. Refusing to extract.");
@@ -225,11 +255,11 @@ public sealed class ArchiveFetcher
         }
     }
 
-    private static string SafeFileName(string label)
-    {
-        var invalid = Path.GetInvalidFileNameChars();
-        return new string(label.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
-    }
+    /// <summary>
+    /// The staging name for a label. Same rule as the cache's folder names, and for the same
+    /// reason: a separator or a ".." in a label would name a place outside the staging folder.
+    /// </summary>
+    private static string SafeFileName(string label) => ArchiveCache.SafeName(label);
 
     private static void TryDelete(string path)
     {

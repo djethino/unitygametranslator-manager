@@ -510,7 +510,7 @@ public sealed class InstallEngine
         //
         // ⚠ It refuses rather than falling back. Downloading something else instead would be a
         // decision made on the user's behalf about which code enters their game.
-        if (!Catalog.LoaderOrigins.IsAllowedDownload(url))
+        if (!Catalog.DownloadOrigins.IsAllowedDownload(url))
         {
             throw new InvalidOperationException(
                 $"Refusing to download {loader.Display} from {url}: that address is not one of "

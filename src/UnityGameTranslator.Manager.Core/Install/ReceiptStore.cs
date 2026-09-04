@@ -7,9 +7,14 @@ namespace UnityGameTranslator.Manager.Core.Install;
 /// Reads and writes the install receipt.
 ///
 /// It lives in the game folder, which means it travels with the game if it is moved and is found
-/// again without any registry or index. A copy is also kept in the tool's own data directory so
-/// every install can be listed without rescanning the machine — but the one in the game folder
-/// is the authority, because it is the one that matches what is actually on disk.
+/// again without any registry or index. It is also the AUTHORITY: it is the one record that matches
+/// what is actually on disk, so every action — above all uninstall — reads this and nothing else.
+///
+/// ⚠ **This class writes in the game folder and nowhere else.** Its summary used to claim a copy
+/// was kept in the tool's own data directory; there was none, and on 2026-09-04 that sentence sent
+/// somebody looking for a file that did not exist while trying to work out what had happened to a
+/// game. <see cref="InstallLedger"/> now keeps that summary — for MEMORY, deliberately not as a
+/// second source of truth — and the engines write to it beside their calls here.
 /// </summary>
 public sealed class ReceiptStore
 {

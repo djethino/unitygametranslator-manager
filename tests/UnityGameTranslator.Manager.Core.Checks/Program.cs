@@ -32,6 +32,7 @@ internal static class Program
         ModelOrderChecks.HowModelsAreRanked();
         ModelOrderChecks.WhichRowsCarryAMark();
         UserDataChecks.WhichFilesAreTheModsInterface();
+        InstallLedgerChecks.WhatTheToolRemembersDoing();
         DownloadOriginsChecks.WhereADownloadMayStart();
         DownloadOriginsChecks.WhereADownloadMayLand();
 

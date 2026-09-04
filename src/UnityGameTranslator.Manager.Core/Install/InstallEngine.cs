@@ -288,6 +288,11 @@ public sealed class InstallEngine
 
             ReceiptStore.Write(plan.Game.Path, receipt);
 
+            // ⚠ Beside the receipt, never instead of it: this one survives the uninstall, so the
+            // tool can still answer "what did we do here, and when" once the folder cannot.
+            // It never fails an install — see InstallLedger.
+            new InstallLedger(_platform).Remember(receipt);
+
             // Written after the health check, and deliberately outside the rollback: config.json
             // belongs to the mod and may predate us. Rolling it back would mean restoring a file
             // we did not create, and a failure to write settings is not a reason to undo a

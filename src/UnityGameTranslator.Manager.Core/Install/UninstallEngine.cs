@@ -314,6 +314,11 @@ public sealed class UninstallEngine
 
                     SweepEmptyBackups(game);
 
+                    // ⚠ Noted even with no receipt to close: an entry may exist from an install
+                    // whose receipt has since gone, and if none does, "something of ours was taken
+                    // out of this folder on that date" is still the answer somebody will want.
+                    new InstallLedger(_platform).RememberRemoval(game.Path);
+
                     return new UninstallOutcome(true,
                         $"Removed {name}. It was not installed by UnityGameTranslator Manager, so "
                         + "nothing else was touched — your settings and translations are still there.",
@@ -443,15 +448,25 @@ public sealed class UninstallEngine
         // The receipt stays only while it still describes something WE installed. A record of a
         // loader that was already there is not an install of ours: keeping it would make the
         // tool believe it manages a game it no longer touches.
+        var ledger = new InstallLedger(_platform);
+
         if (receipt.Plugin is null && receipt.Loader?.InstalledByUs != true)
         {
             ReceiptStore.Delete(game.Path);
             FileOperations.TryRemoveEmptyDirectory(
                 Path.Combine(game.Path, FileOperations.BackupDirectory));
+
+            // 🔴 The moment the folder stops being able to answer for itself. Without this line the
+            // tool forgets it was ever here — which is exactly the hole found on 2026-09-04, when
+            // establishing what had happened to a game took reading file creation timestamps.
+            ledger.RememberRemoval(game.Path);
         }
         else
         {
             ReceiptStore.Write(game.Path, receipt);
+
+            // Something of ours is still here — the entry goes back to describing an install.
+            ledger.Remember(receipt);
         }
 
         var message = removed.Count == 0

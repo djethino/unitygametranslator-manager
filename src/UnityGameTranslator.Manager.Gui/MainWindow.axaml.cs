@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using Avalonia.Interactivity;
@@ -1036,44 +1036,83 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// What exists for this game, counted by language, with the reader's own language first.
+    /// What the community has published for this game: how many, and in which languages.
     ///
-    /// The order is the answer: someone scanning this line wants to know whether they can play,
-    /// and only then what else is around. Naming the other languages when there are few of them
-    /// costs nothing and saves opening a screen; past a handful it becomes the noise it was meant
-    /// to replace, so it turns into a count.
+    /// 🔴 **Written once for both tabs, because it was written twice and differently.** Home said
+    /// "3 translations are published for this game" and listed the languages; Set up said "From the
+    /// community: 2 in French, 1 in German" — one fact, two vocabularies, and on Set up it sat
+    /// THREE blocks below the button that opens them. A button whose subject is announced further
+    /// down the page is a button nobody can read.
+    ///
+    /// ⚠ **With the flags**, like every other language in this product — the community list, the
+    /// pair on the card, the picker. A row of bare names was the one place they were missing.
     /// </summary>
-    private static string SummariseLanguages(IReadOnlyList<OnlineTranslation> translations,
-                                             string targetLanguage)
+    /// <param name="target">The language this person reads, so theirs comes first.</param>
+    private IEnumerable<Control> CommunityPublished(GameReport report, string target)
     {
-        var mine = translations.Count(t => Languages.Matches(t.TargetLanguage, targetLanguage));
+        var published = report.OnlineTranslations;
+        if (published.Count == 0) yield break;
 
-        var others = translations
-            .Where(t => !Languages.Matches(t.TargetLanguage, targetLanguage))
-            .Select(t => t.TargetLanguage)
-            .Where(l => !string.IsNullOrWhiteSpace(l))
-            .Select(l => l!)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(l => l, StringComparer.OrdinalIgnoreCase)
+        yield return new TextBlock
+        {
+            Text = published.Count == 1
+                ? "One translation is published for this game."
+                : $"{published.Count} translations are published for this game.",
+            FontSize = 13,
+            FontWeight = FontWeight.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("TextPrimary"),
+        };
+
+        // The languages themselves, yours first when there is one. A list somebody can read and
+        // judge, rather than a verdict about a language we may have resolved wrongly.
+        var byLanguage = published
+            .GroupBy(t => t.TargetLanguage ?? "unknown")
+            .OrderByDescending(g => Languages.Matches(g.Key, target))
+            .ThenByDescending(g => g.Count())
             .ToList();
 
-        var yours = Languages.NameOf(targetLanguage);
+        var chips = new WrapPanel
+        {
+            Orientation = Orientation.Horizontal,
+            ItemSpacing = 10,
+            LineSpacing = 4,
+            Margin = new Avalonia.Thickness(0, 2, 0, 0),
+        };
 
-        var head = mine > 0
-            ? $"From the community: {mine} in {yours}"
-            : $"From the community: none in {yours} yet";
+        foreach (var group in byLanguage)
+        {
+            var label = group.Count() == 1 ? group.Key : $"{group.Key} ({group.Count()})";
+            var chip = LanguageMark.Named(group.Key, label);
 
-        if (others.Count == 0) return head + ".";
+            // ⚠ Only the reader's own language is coloured, and only when something IS in it: the
+            // colour answers "can I play", which is one question about one language. Colouring the
+            // whole row — what the plain text used to do — said it about all of them at once.
+            if (Languages.Matches(group.Key, target)
+                && chip is StackPanel row
+                && row.Children.LastOrDefault() is TextBlock name)
+            {
+                name.Foreground = Brush("StatusSuccess");
+                name.FontWeight = FontWeight.SemiBold;
+            }
 
-        var otherCount = translations.Count - mine;
+            chips.Children.Add(chip);
+        }
 
-        // Named while the list stays readable, counted once it would not. Five is where a line
-        // stops being scannable at this size, not a figure with any deeper meaning.
-        var tail = others.Count <= 5
-            ? $"{otherCount} in {string.Join(", ", others)}"
-            : $"{otherCount} in {others.Count} other languages";
+        yield return chips;
 
-        return $"{head}, {tail}.";
+        if (!published.Any(t => Languages.Matches(t.TargetLanguage, target)))
+        {
+            yield return new TextBlock
+            {
+                Text = $"None of them is in {Languages.NameOf(target)}, the language set in "
+                     + "your mod defaults — taking one still works, and the game can be "
+                     + "pointed at its language.",
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextMuted"),
+            };
+        }
     }
 
     /// <summary>
@@ -3692,46 +3731,9 @@ public partial class MainWindow : Window
         }
         else
         {
-            var byLanguage = report.OnlineTranslations
-                .GroupBy(t => t.TargetLanguage ?? "unknown")
-                .OrderByDescending(g => Languages.Matches(g.Key, target))
-                .ThenByDescending(g => g.Count())
-                .Select(g => g.Count() == 1 ? g.Key : $"{g.Key} ({g.Count()})")
-                .ToList();
-
-            question.Children.Add(new TextBlock
-            {
-                Text = report.OnlineTranslations.Count == 1
-                    ? "One translation is published for this game."
-                    : $"{report.OnlineTranslations.Count} translations are published for this game.",
-                FontSize = 13,
-                FontWeight = FontWeight.SemiBold,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = Brush("TextPrimary"),
-            });
-
-            // The languages themselves, yours first when there is one. A list somebody can read
-            // and judge, rather than a verdict about a language we may have resolved wrongly.
-            question.Children.Add(new TextBlock
-            {
-                Text = string.Join(" · ", byLanguage),
-                FontSize = 12,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = Brush(inMyLanguage.Count > 0 ? "StatusSuccess" : "TextSecondary"),
-            });
-
-            if (inMyLanguage.Count == 0 && elsewhere > 0)
-            {
-                question.Children.Add(new TextBlock
-                {
-                    Text = $"None of them is in {Languages.NameOf(target)}, the language set in "
-                         + "your mod defaults — taking one still works, and the game can be "
-                         + "pointed at its language.",
-                    FontSize = 11,
-                    TextWrapping = TextWrapping.Wrap,
-                    Foreground = Brush("TextMuted"),
-                });
-            }
+            // ⚠ The same block as Set up, with the flags — see CommunityPublished. It was written
+            // out here in plain names, and worded differently over there for the same fact.
+            foreach (var line in CommunityPublished(report, target)) question.Children.Add(line);
         }
 
         if (report.OnlineTranslations.Count > 0)
@@ -5181,6 +5183,14 @@ public partial class MainWindow : Window
         }
         else
         {
+            // 🔴 **What the button is about, BEFORE the button.** This said nothing here: the
+            // sentence naming what the community has sat at the very bottom of the card, three
+            // blocks below — after the workbench and the planning — in wording of its own ("From
+            // the community: 2 in French"). So the button appeared with no subject, and the only
+            // way to learn what it opened was to press it. Same block as the other tab now.
+            foreach (var line in CommunityPublished(report, _settings.ResolveTargetLanguage()))
+                panel.Children.Add(line);
+
             if (PendingTranslationNote(report) is { } waitingNote) panel.Children.Add(waitingNote);
 
             // One button rather than a list of names: choosing between translations needs what they
@@ -5216,32 +5226,12 @@ public partial class MainWindow : Window
         foreach (var control in TranslationWorkbench(report)) panel.Children.Add(control);
         foreach (var control in TranslationPlanning(report)) panel.Children.Add(control);
 
-        // Counted over everything published, not over the alternatives. Excluding the one already
-        // installed made the card announce "none in French" to the very person who wrote the only
-        // French one and published it — the count contradicted the line above it.
-        var published = report.OnlineTranslations;
-
-        if (published.Count > 0)
-        {
-            // A count by language, not a list of names.
-            //
-            // This section used to print up to eight entries. It was written when it was the only
-            // place a translation could be seen; now a button opens a screen with filters and full
-            // cards, and eight raw lines both duplicate it and fail at it — on a game with two
-            // hundred translations they are eight arbitrary ones, taking the room without
-            // answering the question the card is for: is there something here for ME.
-            //
-            // Not a silent truncation either: every figure below is the real total.
-            panel.Children.Add(new TextBlock
-            {
-                Text = SummariseLanguages(published, _settings.ResolveTargetLanguage()),
-                FontSize = 12,
-                Opacity = 0.8,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Avalonia.Thickness(0, 4, 0, 0),
-            });
-        }
-        else if (report.OnlineSearchError is not null)
+        // ⚠ **The language tally has moved UP, above the button that opens them** — see
+        // CommunityPublished. It stood here, at the very bottom of the card: after the workbench,
+        // after the planning, three blocks below the button whose subject it was. Counted over
+        // everything published, not over the alternatives — excluding the one already installed
+        // made the card announce "none in French" to the very person who wrote the only French one.
+        if (report.OnlineTranslations.Count == 0 && report.OnlineSearchError is not null)
         {
             panel.Children.Add(new TextBlock
             {
@@ -5278,7 +5268,7 @@ public partial class MainWindow : Window
             actions.Children.Add(network);
             panel.Children.Add(actions);
         }
-        else if (report.Game.SteamAppId is null)
+        else if (report.OnlineTranslations.Count == 0 && report.Game.SteamAppId is null)
         {
             panel.Children.Add(new TextBlock
             {

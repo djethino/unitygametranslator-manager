@@ -32,8 +32,15 @@ public static class PlayPromises
 {
     public static PlayPromise For(GameReport report, GameConfigSnapshot config)
     {
-        // No plugin, nothing to promise. The loader alone changes nothing anybody can see.
-        if (report.InstalledPluginVersion is null) return PlayPromise.Plain;
+        // Nothing that can run, nothing to promise — a plugin with no loader to load it is inert,
+        // and a loader on its own changes nothing anybody can see.
+        //
+        // ⚠ **Was `InstalledPluginVersion is null`, which ignored the loader entirely.** It gave
+        // the right answer on the game that exposed this (2026-09-04) only by accident: that game
+        // had no auto-translate and no translated line, so it fell through to Plain anyway. Put a
+        // translation next to that inert plugin and this promised "Play translated" over a game
+        // that shows nothing at all.
+        if (!report.ModCanRun) return PlayPromise.Plain;
 
         // Both halves, and neither is enough on its own: a backend that is configured but switched
         // off produces nothing, and the switch on its own has nothing to run.

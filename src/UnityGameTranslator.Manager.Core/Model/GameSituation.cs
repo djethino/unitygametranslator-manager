@@ -19,6 +19,15 @@ public enum Situation
     /// <summary>Nothing installed, and nobody has translated it into the target language yet.</summary>
     NotTranslatedYet,
 
+    /// <summary>
+    /// Something of ours is in this game and it will not run — see GameReport.SetupIncomplete.
+    ///
+    /// ⚠ Neither "not set up" nor "ready", and folding it into either would lose the one fact that
+    /// matters: there IS something here, and it is inert. Told apart because the verb differs — a
+    /// game nobody has set up invites a choice, this one names a missing piece.
+    /// </summary>
+    SetupIncomplete,
+
     /// <summary>Set up and current.</summary>
     Ready,
 
@@ -82,6 +91,11 @@ public sealed record GameSituationInfo(
         // ⚠ Warning, not info. Both sides moved, and the row is asking for an arbitration rather
         // than announcing something pending — the one state here where doing nothing has a cost.
         Situation.Conflict => "StatusWarning",
+
+        // ⚠ Warning for the same reason: doing nothing here means playing a game that translates
+        // nothing while believing it does. Without an entry it would fall to the `_` below and draw
+        // with no colour at all — the quietest possible rendering of the loudest fact on the row.
+        Situation.SetupIncomplete => "StatusWarning",
 
         _ => null,
     };

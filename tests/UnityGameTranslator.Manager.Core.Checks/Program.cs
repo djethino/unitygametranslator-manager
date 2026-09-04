@@ -23,6 +23,7 @@ internal static class Program
     private static int Main()
     {
         SituationChecks.SituationsAGameCanBeIn();
+        SituationChecks.SomethingHereThatCannotRun();
         SituationChecks.WhatASecondLineSays();
         StandingChecks.WhereThisAccountStands();
         TranslationChoiceChecks.WhichTranslationAGameWouldGet();

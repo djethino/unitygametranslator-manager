@@ -487,6 +487,54 @@ public sealed class GameReport
     /// <summary>Installed plugin version read from the deployed assembly, or null.</summary>
     public string? InstalledPluginVersion { get; set; }
 
+    /// <summary>
+    /// Whether anything of ours is in this game at all — the plugin, or a translation the mod wrote.
+    ///
+    /// ⚠ Says nothing about it WORKING. It is the difference between "we have never been here" and
+    /// "something of ours is here", which is what separates <see cref="SetupIncomplete"/> from a
+    /// game nobody has ever set up.
+    /// </summary>
+    public bool AnythingOfOursHere => InstalledPluginVersion is not null || LocalTranslation is not null;
+
+    /// <summary>
+    /// Whether what is here can actually RUN — a plugin, and something to load it.
+    ///
+    /// 🔴 **One rule, because two screens were answering this question separately and contradicting
+    /// each other.** On 2026-09-04 a game read "Ready to play" in the list while Set up said "no
+    /// loader installed", on the same report: the list weighed <see cref="InstalledPluginVersion"/>
+    /// and a translation file, and the loader entered neither calculation. A plugin with nothing to
+    /// load it is inert — the game starts, and not one line is translated.
+    ///
+    /// 🔴 **The loader is the half that decides, and the plugin the half that cannot.**
+    /// A loader is recognised from marker files (LoaderProbe); the plugin version is read out of an
+    /// assembly and comes back null whenever that read fails —
+    /// <see cref="Detection.LocalTranslationProbe.InstalledPlugin"/> carries a nullable Version on a
+    /// plugin it FOUND. Requiring it here would report a working game as broken, which is the
+    /// mirror of the defect being fixed and no better.
+    ///
+    /// So: a loader, plus any sign of us. Absence of a loader is a verdict; absence of a version is
+    /// not.
+    ///
+    /// ⚠ Read by SituationReader and by PlayPromises. Anything else that wants to say "this game is
+    /// set up" reads it too, rather than re-deriving it.
+    /// </summary>
+    public bool ModCanRun => InstalledLoader is not null && AnythingOfOursHere;
+
+    /// <summary>
+    /// Something of ours is here and it will not run: the state that used to read "Ready to play".
+    ///
+    /// 🔴 **Reachable without anybody doing anything wrong.** Steam's "verify integrity of game
+    /// files" deletes `winhttp.dll` — a file foreign to the game — and leaves `BepInEx\plugins\`
+    /// untouched. A game update does the same. The player then sees no translation at all while the
+    /// tool that is supposed to tell them where they stand says everything is fine.
+    ///
+    /// ⚠ A translation file here does NOT rescue it, and that is a decision taken deliberately on
+    /// 2026-09-04: a translation proves the mod ran here ONCE, which is exactly what the case above
+    /// invalidates. It stays a good reason not to say "not set up yet" — the work exists and must
+    /// keep being named — never a reason to say "ready".
+    /// </summary>
+    public bool SetupIncomplete => AnythingOfOursHere && !ModCanRun;
+
     /// <summary>Where this loader expects our plugin, relative to the game. Null with no loader.</summary>
     public string? PluginDirectory { get; set; }
 

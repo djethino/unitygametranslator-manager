@@ -44,10 +44,35 @@ public static class SituationReader
         // translation states deserve to win, and "your mod is old" losing it silently was the bug.
         var pending = Signals(report, branchesWaiting);
 
+        // 🔴 **Before anything else: can what is here actually run?** Something of ours in the
+        // folder with no loader to load it is inert, and this row used to call it "Ready to play" —
+        // measured on a real game on 2026-09-04, while Set up said "no loader installed" about the
+        // same report. See GameReport.ModCanRun for why the loader is the half that decides.
+        //
+        // ⚠ First, and deliberately ahead of the sync verdicts: those describe a translation moving
+        // between here and the server, which is a real question — but not while nothing reads that
+        // translation at all. A conflict on a mod that cannot start is not the headline.
+        if (report.SetupIncomplete)
+        {
+            return new GameSituationInfo(
+                Situation.SetupIncomplete,
+                "Setup incomplete",
+                // ⚠ The standing ONLY when a translation is actually here. Its fallback line —
+                // "no translation file yet — it fills up as you play" — promises the very thing
+                // this state says will not happen, and it read that way on the first build of it.
+                WhatIsMissing(report, local is null ? null : Standing(report, local, signedInAs)),
+                "Set up",
+                pending);
+        }
+
         // A translation file is proof the mod ran here, whatever we did or did not find on disk.
         // Deciding on the assembly alone made a game with a live translation read as "not set up
         // yet" and offer to install a mod that was already working — the row contradicted the
         // player's own game.
+        //
+        // ⚠ Reached only once the loader is known to be there, so "a translation means installed"
+        // now covers the case it was written for — an assembly whose version would not read — and
+        // no longer the case where nothing can start.
         var installed = report.InstalledPluginVersion is not null || local is not null;
 
         // What exists online in the language the player actually wants.
@@ -148,6 +173,27 @@ public static class SituationReader
                 ? $"{report.OnlineTranslations.Count} translation(s) in other languages"
                 : null,
             "Install and translate");
+    }
+
+    /// <summary>
+    /// Which piece is missing, said as a fact rather than as a diagnosis to work out.
+    ///
+    /// ⚠ **Names the piece.** "Setup incomplete" alone leaves the reader to guess what to do; the
+    /// whole point of this state is that the answer is knowable and short. Two plain sentences —
+    /// the convention every installer uses — not one sentence with a subordinate clause.
+    ///
+    /// ⚠ The standing follows when there is one, so a person whose translation is here is told it
+    /// is still here. Finding "Setup incomplete" on a game you had translated should not read as
+    /// having lost the work.
+    /// </summary>
+    private static string WhatIsMissing(GameReport report, string? standing)
+    {
+        // ⚠ One sentence pair, because there is one way into this state: something of ours is here
+        // and no loader is. A missing PLUGIN cannot land here — see GameReport.ModCanRun, where the
+        // plugin's absence is never a verdict because its version is unreadable often enough.
+        const string missing = "No mod loader installed. The mod will not run.";
+
+        return standing is { Length: > 0 } ? $"{missing} · {standing}" : missing;
     }
 
     /// <summary>

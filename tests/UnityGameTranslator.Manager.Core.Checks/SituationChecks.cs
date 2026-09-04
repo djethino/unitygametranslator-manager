@@ -34,6 +34,22 @@ internal static class SituationChecks
         LocalChanges = localChanges,
     };
 
+    /// <summary>
+    /// A loader in place — what every real set-up game has.
+    ///
+    /// 🔴 **Added 2026-09-04, and its absence was the whole point.** These fixtures described games
+    /// as "installed" with no loader at all, which is not a state any working game is in — so every
+    /// case here silently agreed that a plugin alone means ready. That is exactly the answer a real
+    /// game gave while translating nothing (see GameReport.SetupIncomplete).
+    /// </summary>
+    private static DetectedLoader Loader() => new()
+    {
+        Id = "bepinex6-il2cpp",
+        Display = "BepInEx 6 (IL2CPP)",
+        Version = "6.0.0.0",
+        PluginDir = @"BepInEx\plugins\UnityGameTranslator",
+    };
+
     internal static void SituationsAGameCanBeIn()
     {
         Program.Section("Situations a game can be in");
@@ -57,6 +73,7 @@ internal static class SituationChecks
             var report = new GameReport
             {
                 Game = Game(),
+                InstalledLoader = Loader(),
                 LocalTranslation = Local(),
                 InstalledPluginVersion = "0.12.0",
                 Sync = direction,
@@ -73,6 +90,7 @@ internal static class SituationChecks
             new GameReport
             {
                 Game = Game(),
+                InstalledLoader = Loader(),
                 LocalTranslation = Local(localChanges: 12),
                 InstalledPluginVersion = "0.12.0",
             }, "fr", onlineChecked: true);
@@ -81,8 +99,14 @@ internal static class SituationChecks
 
         // A translation file is proof the mod ran here, whatever is on disk beside it — the row
         // must not offer to install a mod that is already working.
+        //
+        // ⚠ **With the loader present, which is what "already working" means.** This case used to
+        // pass with no loader at all, and that is precisely the answer that turned out to be wrong
+        // on a real game: it accepted a translation as proof of a working install even when nothing
+        // could start. The rescue it was written for — an assembly whose version will not read — is
+        // unchanged and still checked here.
         var noAssembly = SituationReader.Read(
-            new GameReport { Game = Game(), LocalTranslation = Local() },
+            new GameReport { Game = Game(), InstalledLoader = Loader(), LocalTranslation = Local() },
             "fr", onlineChecked: true);
         Program.Check(noAssembly.Situation == Situation.Ready,
             "a translation file alone means set up", "no assembly found is not \"not set up\"");
@@ -93,6 +117,81 @@ internal static class SituationChecks
             new GameReport { Game = Game() }, "fr", onlineChecked: false);
         Program.Check(unasked.Situation == Situation.Unknown,
             "not having asked is its own situation", "never \"no translation exists\"");
+    }
+
+    /// <summary>
+    /// Something of ours is here and nothing will run it.
+    ///
+    /// 🔴 **Every case below was read off a real game on 2026-09-04**, which said "Ready to play"
+    /// in the list while Set up said "no loader installed" — on the same report. What produced it
+    /// needs no mistake from anybody: Steam's "verify integrity of game files" deletes winhttp.dll
+    /// and leaves BepInEx\plugins\ alone.
+    /// </summary>
+    internal static void SomethingHereThatCannotRun()
+    {
+        Program.Section("Something here that cannot run");
+
+        // The exact shape observed: the plugin is on disk, no loader anywhere.
+        var inert = SituationReader.Read(
+            new GameReport { Game = Game(), InstalledPluginVersion = "0.12.1" },
+            "fr", onlineChecked: true);
+        Program.Check(inert.Situation == Situation.SetupIncomplete && inert.Headline == "Setup incomplete",
+            "a plugin with no loader is not \"Ready to play\"", "the state that shipped saying it was");
+        Program.Check(inert.Detail is not null && inert.Detail.Contains("mod loader", StringComparison.Ordinal),
+            "and the row names the missing piece", "never a diagnosis to work out");
+        Program.Check(inert.PrimaryAction == "Set up",
+            "the verb is the one that fixes it", "a verb, not a sentence");
+
+        // 🔴 And it must not promise what it has just said will not happen. The standing's fallback
+        // line is "no translation file yet — it fills up as you play"; on the first build of this
+        // state it was printed right after "The mod will not run."
+        Program.Check(inert.Detail is not null && !inert.Detail.Contains("as you play", StringComparison.Ordinal),
+            "and promises nothing about playing", "the row must not contradict itself");
+
+        // ⚠ A translation does NOT rescue it — the decision taken on 2026-09-04. It proves the mod
+        // ran here once, which is exactly what deleting the loader invalidates.
+        var withWork = SituationReader.Read(
+            new GameReport { Game = Game(), InstalledPluginVersion = "0.12.1", LocalTranslation = Local() },
+            "fr", onlineChecked: true);
+        Program.Check(withWork.Situation == Situation.SetupIncomplete,
+            "a translation beside an inert plugin is still not ready", "it ran once, not now");
+        Program.Check(withWork.Detail is not null && withWork.Detail.Contains("400", StringComparison.Ordinal),
+            "and the work here is still named", "\"incomplete\" must not read as \"lost\"");
+
+        // ⚠ Ahead of the sync verdicts on purpose: a conflict about a translation nothing reads is
+        // not the headline. Doing nothing about a mod that cannot start costs more.
+        var conflicted = SituationReader.Read(
+            new GameReport
+            {
+                Game = Game(),
+                InstalledPluginVersion = "0.12.1",
+                LocalTranslation = Local(localChanges: 5),
+                Sync = SyncDirection.Merge,
+            }, "fr", onlineChecked: true);
+        Program.Check(conflicted.Situation == Situation.SetupIncomplete,
+            "and it outranks a sync verdict", "nothing reads that translation yet");
+
+        // ⚠ The colour matters as much as the words: without its own entry this fell to the default
+        // and drew with no status colour at all.
+        Program.Check(inert.StatusKey == "StatusWarning",
+            "the row carries a warning colour", "the loudest fact must not render quietest");
+
+        // A game nobody has ever touched is NOT this state — there is nothing here to be inert.
+        var untouched = SituationReader.Read(
+            new GameReport { Game = Game() }, "fr", onlineChecked: true);
+        Program.Check(untouched.Situation != Situation.SetupIncomplete,
+            "an untouched game is not \"Setup incomplete\"", "nothing of ours is here to be broken");
+
+        // 🔴 And the second screen answers the same way, which is the point of putting the rule on
+        // the report. This one used to be right by accident: with a translation present it would
+        // have promised "Play translated" over a game that shows nothing.
+        var promise = PlayPromises.For(
+            new GameReport { Game = Game(), InstalledPluginVersion = "0.12.1", LocalTranslation = Local() },
+            new Settings.GameConfigSnapshot(
+                Exists: true, FirstRunCompleted: true, InGameHotkey: null,
+                Values: new Settings.GameModOverrides()));
+        Program.Check(promise == PlayPromise.Plain,
+            "and Play promises nothing", "one rule, both screens");
     }
 
     /// <summary>

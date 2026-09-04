@@ -78,14 +78,43 @@ public sealed record LoaderBuild(
 /// Silently installing a two-year-old build because a page did not answer is the failure mode this
 /// whole change exists to end; repeating it quietly one level down would be worse than before.
 ///
-/// ⚠ Results are cached for the life of the process, keyed by loader and channel. Unauthenticated
-/// GitHub allows 60 requests an hour per IP: resolving on every card that gets displayed would
-/// exhaust that on a machine with a large library, and the answer changes a few times a year.
+/// ⚠ Results are cached keyed by loader and channel. Unauthenticated GitHub allows 60 requests an
+/// hour per IP: resolving on every card that gets displayed would exhaust that on a machine with a
+/// large library, and the answer changes a few times a year.
+///
+/// ⚠ **Two questions, and keeping them apart is what this class got wrong once.** How long an
+/// answer is trusted before being asked AGAIN is <see cref="Freshness"/>; what the tool will admit
+/// to knowing is the last answer received, whatever its age (<see cref="Known"/>). Merging the two
+/// meant an expired answer was deleted, so screens fell back to the catalogue's pin and silently
+/// un-said what they had been saying all morning.
 /// </summary>
 public sealed class LoaderBuildResolver
 {
     private static readonly Dictionary<string, (DateTimeOffset At, IReadOnlyList<LoaderBuild> Builds)> Cache = new();
     private static readonly SemaphoreSlim Gate = new(1, 1);
+
+    /// <summary>
+    /// What each ADDRESS answered, so several loaders reading the same page pay for it once.
+    ///
+    /// 🔴 **Three catalogue entries share one repository.** `bepinex5`, `bepinex6-mono` and
+    /// `bepinex6-il2cpp` all resolve to `BepInEx/BepInEx` (see LoaderOrigins), and the two BepInEx 6
+    /// entries share the Bleeding Edge page as well. The cache above is keyed by LOADER, so a
+    /// warm-up fetched the same URL up to three times — two requests spent on an answer already in
+    /// hand, out of sixty an hour for the whole machine.
+    ///
+    /// ⚠ **The result cannot be shared, only the document.** Which files in a release belong to a
+    /// loader is decided by the catalogue's own rules (`RuleFor`), and mono and il2cpp pick
+    /// different assets out of the very same release. So this holds the raw body and each loader
+    /// still reads it with its own rules.
+    ///
+    /// ⚠ A failure is remembered too, briefly. Without that, one unreachable page is requested once
+    /// per loader in the same second; with it for six hours, a hiccup would blind the tool for the
+    /// afternoon. A minute covers the burst and nothing more.
+    /// </summary>
+    private static readonly Dictionary<string, (DateTimeOffset At, string? Body)> Documents = new();
+
+    /// <summary>How long a failed fetch is remembered — long enough to cover one warm-up pass.</summary>
+    private static readonly TimeSpan FailureHeld = TimeSpan.FromMinutes(1);
 
     /// <summary>
     /// How long an answer is trusted before being asked again.
@@ -109,33 +138,172 @@ public sealed class LoaderBuildResolver
     public static void Forget()
     {
         lock (Cache) Cache.Clear();
+        lock (Documents) Documents.Clear();
     }
 
-    /// <summary>The cached answer while it is still young enough to be believed.</summary>
+    /// <summary>
+    /// One address, fetched at most once per <see cref="Freshness"/> however many loaders want it.
+    ///
+    /// ⚠ Throws what the fetch threw, exactly as before — the caller turns a failure into the
+    /// pinned build and says so. What is remembered here is only that it failed, and only for
+    /// <see cref="FailureHeld"/>, so the loaders behind it in the same pass do not each retry it.
+    /// </summary>
+    private async Task<string> FetchAsync(string url, CancellationToken ct)
+    {
+        lock (Documents)
+        {
+            if (Documents.TryGetValue(url, out var held))
+            {
+                var age = DateTimeOffset.UtcNow - held.At;
+
+                if (held.Body is { } body && age <= Freshness) return body;
+
+                // A failure just met by the loader ahead of this one. Answered as the failure it
+                // was rather than asked again — three requests for one dead address is what this
+                // whole cache exists to stop.
+                if (held.Body is null && age <= FailureHeld)
+                    throw new HttpRequestException($"{url} did not answer a moment ago");
+            }
+        }
+
+        try
+        {
+            var body = await _http.GetStringAsync(url, ct).ConfigureAwait(false);
+            lock (Documents) Documents[url] = (DateTimeOffset.UtcNow, body);
+            return body;
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            lock (Documents) Documents[url] = (DateTimeOffset.UtcNow, null);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Forgets only what is older than this, so that "look again" really does — without a burst of
+    /// them spending the budget.
+    ///
+    /// 🔴 **A rescan asks the publishers again, and a rescan is a button.** Four loaders is up to
+    /// four requests against sixty an hour, shared with the mod's release check, this tool's own
+    /// update check and every other program on this address. Pressed twenty times in an hour —
+    /// which is a normal afternoon of testing — an unbounded Forget would exhaust the allowance and
+    /// every later answer would be a rate-limit refusal, cached as the catalogue's pin.
+    ///
+    /// ⚠ The floor is deliberately far shorter than <see cref="Freshness"/>: the point is not to
+    /// make somebody wait, it is that pressing the same button twice in ten seconds cannot cost
+    /// twice.
+    /// </summary>
+    public static void Forget(TimeSpan olderThan)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        lock (Cache)
+        {
+            foreach (var key in Cache.Where(e => now - e.Value.At > olderThan)
+                                     .Select(e => e.Key).ToList())
+            {
+                Cache.Remove(key);
+            }
+        }
+
+        // ⚠ The documents too, or the builds would be recomputed from a page held in memory and the
+        // rescan would ask nobody anything — the exact fault this method exists to fix.
+        lock (Documents)
+        {
+            foreach (var url in Documents.Where(e => now - e.Value.At > olderThan)
+                                         .Select(e => e.Key).ToList())
+            {
+                Documents.Remove(url);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The cached answer while it is still young enough to be asked about again.
+    ///
+    /// ⚠ **Asking whether to re-ask, NOT what is known** — and the two were one method. It used to
+    /// DELETE the entry on its way past, so the moment an answer turned six hours old the tool
+    /// forgot it had ever had one. See <see cref="LastKnown"/> for what that cost.
+    /// </summary>
     private static IReadOnlyList<LoaderBuild>? Fresh(string key)
     {
         lock (Cache)
         {
             if (!Cache.TryGetValue(key, out var hit)) return null;
-            if (DateTimeOffset.UtcNow - hit.At > Freshness) { Cache.Remove(key); return null; }
-            return hit.Builds;
+            return DateTimeOffset.UtcNow - hit.At > Freshness ? null : hit.Builds;
         }
+    }
+
+    /// <summary>
+    /// The last answer received, however old — what to SHOW, as opposed to whether to ask again.
+    ///
+    /// 🔴 **Written because forgetting made the window lie.** Expiring dropped the entry, so
+    /// <see cref="Known"/> answered null, and ReadLoaderStanding falls back to the version PINNED in
+    /// the catalogue when it gets null. On a window left open past six hours, clicking a game
+    /// redrew its row from that pin — and "loader update available" simply vanished from a game
+    /// that still had one, with nothing said and no way back short of a rescan.
+    ///
+    /// ⚠ A six-hour-old answer from the publisher is not stale data to be hidden: it is enormously
+    /// closer to the truth than a version pinned in a catalogue months ago. What expiry decides is
+    /// when to go and ask — never what to admit to knowing.
+    /// </summary>
+    private static IReadOnlyList<LoaderBuild>? LastKnown(string key)
+    {
+        lock (Cache) return Cache.TryGetValue(key, out var hit) ? hit.Builds : null;
+    }
+
+    /// <summary>
+    /// Whether anything held about this catalogue has aged past <see cref="Freshness"/> and is
+    /// worth asking about again.
+    ///
+    /// 🔴 **Nothing was watching for this, which is what turned a cache into a leak.** Expiry was
+    /// added for "a tool left running for days", and <see cref="WarmAsync"/>'s own summary claims it
+    /// is called "again when what it holds has gone stale" — but the only caller runs after a scan.
+    /// So the answers aged out and nobody ever asked again: the window forgot, and stayed forgotten
+    /// until somebody rescanned.
+    ///
+    /// ⚠ Entries that were never fetched are NOT reported here. Absent means the warm-up has not
+    /// run — at startup, or with online mode off — and that is a different question with a different
+    /// answer; treating it as stale would have a window that is deliberately offline asking every
+    /// few minutes for ever.
+    /// </summary>
+    public static bool AnythingStale(LoaderCatalogDocument catalog, string? bepinex6Channel,
+                                     int count = 5)
+    {
+        foreach (var loader in catalog.Loaders)
+        {
+            var channel = loader.Id.StartsWith("bepinex6", StringComparison.OrdinalIgnoreCase)
+                ? bepinex6Channel
+                : null;
+
+            if (Pick(loader, channel) is not { } source) continue;
+
+            var key = $"{loader.Id}|{source.Channel}|{count}";
+
+            lock (Cache)
+            {
+                if (!Cache.TryGetValue(key, out var hit)) continue;
+                if (DateTimeOffset.UtcNow - hit.At > Freshness) return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
     /// What is already known about this loader on this channel, WITHOUT asking anybody.
     ///
     /// 🔴 **The whole point of warming up.** A screen drawn fifty times a minute cannot resolve;
-    /// but once the answer is in, showing it costs a dictionary lookup. Null means "not asked yet
-    /// or gone stale", and a caller getting null says nothing rather than guessing — printing the
-    /// pinned version beside a channel that would install something else is the fault this exists
-    /// to end.
+    /// but once the answer is in, showing it costs a dictionary lookup. Null means **nobody has
+    /// ever asked** — never "the answer went stale" — and a caller getting null says nothing rather
+    /// than guessing, because printing the pinned version beside a channel that would install
+    /// something else is the fault this exists to end.
     /// </summary>
     public static LoaderBuild? Known(LoaderDescriptor loader, string? channel, int count = 5)
     {
         if (Pick(loader, channel) is not { } source) return null;
 
-        return Fresh($"{loader.Id}|{source.Channel}|{count}") is { Count: > 0 } builds
+        return LastKnown($"{loader.Id}|{source.Channel}|{count}") is { Count: > 0 } builds
             ? builds[0]
             : null;
     }
@@ -251,8 +419,10 @@ public sealed class LoaderBuildResolver
         var repo = LoaderOrigins.GitHubRepoFor(loaderId);
         if (repo is null) return Array.Empty<LoaderBuild>();
 
+        // ⚠ Through FetchAsync: three catalogue entries resolve to this same repository, and each
+        // reads the same releases with its own asset rules.
         var url = $"{_apiBase}/repos/{repo}/releases?per_page=30";
-        var json = await _http.GetStringAsync(url, ct).ConfigureAwait(false);
+        var json = await FetchAsync(url, ct).ConfigureAwait(false);
 
         using var document = JsonDocument.Parse(json);
         if (document.RootElement.ValueKind != JsonValueKind.Array) return Array.Empty<LoaderBuild>();
@@ -323,7 +493,8 @@ public sealed class LoaderBuildResolver
         var pageUrl = LoaderOrigins.BuildsPageFor(loaderId);
         if (pageUrl is null) return Array.Empty<LoaderBuild>();
 
-        var page = await _http.GetStringAsync(pageUrl, ct).ConfigureAwait(false);
+        // ⚠ Same reason as the GitHub side: both BepInEx 6 entries read this one page.
+        var page = await FetchAsync(pageUrl, ct).ConfigureAwait(false);
         var origin = new Uri(pageUrl);
 
         var builds = new List<LoaderBuild>();

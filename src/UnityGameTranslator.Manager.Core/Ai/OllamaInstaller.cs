@@ -58,12 +58,6 @@ public sealed class OllamaInstaller
 {
     private const string Repository = DownloadOrigins.OllamaRepository;
 
-    /// <summary>
-    /// The most the installer may weigh. It is 1.5 GB today (measured 2026-09-04), and this is a
-    /// bound against a publisher serving something absurd, not a guess at the next version.
-    /// </summary>
-    private const long MaxInstallerBytes = 4096L * 1024 * 1024;
-
     private readonly IPlatform _platform;
     private readonly GitHubAssets _assets;
     private readonly HttpClient _http;
@@ -152,7 +146,7 @@ public sealed class OllamaInstaller
         {
             // The tag the checksum was taken from, never a fresh lookup — see OllamaOffer.
             var url = GitHubAssets.BuildUrl(Repository, offer.Tag, offer.AssetName);
-            await DownloadAsync(url, target, ct).ConfigureAwait(false);
+            await DownloadAsync(url, target, offer.SizeBytes, ct).ConfigureAwait(false);
 
             var actual = FileOperations.HashFile(target);
             if (!string.Equals(actual, offer.Sha256, StringComparison.OrdinalIgnoreCase))
@@ -236,10 +230,11 @@ public sealed class OllamaInstaller
         }
     }
 
-    // Through the one download path, so the address and the landing host are checked like every
-    // other file — and this one is executed afterwards, which makes it the one that matters most.
-    private Task DownloadAsync(string url, string destination, CancellationToken ct) =>
-        Download.ToFileAsync(_http, url, destination, MaxInstallerBytes,
+    // Through the one download path, so the address, the landing host and the size the publisher
+    // stated are checked like every other file — and this one is executed afterwards, which makes
+    // it the one that matters most.
+    private Task DownloadAsync(string url, string destination, long? declaredBytes, CancellationToken ct) =>
+        Download.ToFileAsync(_http, url, destination, declaredBytes,
                              (done, total) => Progress?.Invoke(done, total), ct);
 
     private static void TryDelete(string path)

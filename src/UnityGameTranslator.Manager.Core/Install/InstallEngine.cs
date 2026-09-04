@@ -361,7 +361,8 @@ public sealed class InstallEngine
             .FetchAsync(download.Url, download.Sha256, plan.Loader.Id,
                         // Per OS and architecture: a machine that installs the 64-bit build has no
                         // use for the 32-bit one, and keeping both would be keeping one too many.
-                        new ArchiveCacheKey($"{plan.Loader.Id}-{asset.Os}-{asset.Arch}", version), ct)
+                        new ArchiveCacheKey($"{plan.Loader.Id}-{asset.Os}-{asset.Arch}", version),
+                        download.Bytes, ct)
             .ConfigureAwait(false);
 
         Status?.Invoke($"Installing {plan.Loader.Display}...");
@@ -413,7 +414,8 @@ public sealed class InstallEngine
         var fetcher = new ArchiveFetcher(staging, cache: ArchivesCache());
         var archive = await fetcher
             .FetchAsync(resolved.Url, resolved.Sha256, "plugin",
-                        new ArchiveCacheKey($"plugin-{plan.Loader.Id}", release.Version), ct)
+                        new ArchiveCacheKey($"plugin-{plan.Loader.Id}", release.Version),
+                        SizeOf(release, resolved.Url), ct)
             .ConfigureAwait(false);
 
         Status?.Invoke($"Installing the plugin {release.Version}...");
@@ -482,6 +484,24 @@ public sealed class InstallEngine
     }
 
     /// <summary>
+    /// The size GitHub states for the asset behind a URL of this release, or null when it is not
+    /// one of them. The download is held to it — see <see cref="Net.Download.ToFileAsync"/>.
+    /// </summary>
+    private static long? SizeOf(PublishedRelease release, string url)
+    {
+        foreach (var (name, assetUrl) in release.Assets)
+        {
+            if (string.Equals(assetUrl, url, StringComparison.OrdinalIgnoreCase)
+                && release.AssetSizes.TryGetValue(name, out var bytes) && bytes > 0)
+            {
+                return bytes;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Works out where an archive lives and what checksum we can hold it to.
     ///
     /// Order matters: a hash pinned in our catalog wins, then the digest GitHub publishes for
@@ -524,22 +544,22 @@ public sealed class InstallEngine
         if (build is { IsPinnedFallback: false })
         {
             return string.IsNullOrWhiteSpace(asset.Sha256)
-                ? new ResolvedDownload(url, null, IntegrityLevel.None)
+                ? new ResolvedDownload(url, null, IntegrityLevel.None, asset.Bytes)
                 : new ResolvedDownload(url, asset.Sha256.Trim().ToLowerInvariant(),
-                                       IntegrityLevel.Published);
+                                       IntegrityLevel.Published, asset.Bytes);
         }
 
         if (!string.IsNullOrWhiteSpace(asset.Sha256))
-            return new ResolvedDownload(url, asset.Sha256.Trim().ToLowerInvariant(), IntegrityLevel.Pinned);
+            return new ResolvedDownload(url, asset.Sha256.Trim().ToLowerInvariant(), IntegrityLevel.Pinned, asset.Bytes);
 
         if (repo is not null && loader.GitHub is { } source && !string.IsNullOrWhiteSpace(asset.Name))
         {
             var digests = await _assets.GetDigestsAsync(repo, source.Tag, ct).ConfigureAwait(false);
             if (digests.TryGetValue(asset.Name, out var digest))
-                return new ResolvedDownload(url, digest, IntegrityLevel.Published);
+                return new ResolvedDownload(url, digest, IntegrityLevel.Published, asset.Bytes);
         }
 
-        return new ResolvedDownload(url, null, IntegrityLevel.None);
+        return new ResolvedDownload(url, null, IntegrityLevel.None, asset.Bytes);
     }
 
     /// <summary>

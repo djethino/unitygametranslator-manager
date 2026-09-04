@@ -458,6 +458,10 @@ public sealed class LoaderBuildResolver
                     // the file is, and one place fewer to be wrong about.
                     Url = Text(asset, "browser_download_url") ?? "",
                     Sha256 = Digest(Text(asset, "digest")),
+                    // What the publisher says the file weighs; the download is held to it.
+                    Bytes = asset.TryGetProperty("size", out var size) && size.TryGetInt64(out var bytes)
+                        ? bytes
+                        : null,
                 });
             }
 

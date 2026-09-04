@@ -45,8 +45,13 @@ public sealed class ArchiveFetcher
     /// publish hashes. A mismatch is always fatal; an absent checksum is reported, not fatal.
     /// The hash actually observed is returned either way and recorded in the receipt.
     /// </summary>
+    /// <param name="declaredBytes">
+    /// The size the publisher states for this file, when the caller read it (GitHub's `size`);
+    /// null when nobody but the server says. See <see cref="Download.ToFileAsync"/>.
+    /// </param>
     public async Task<FetchedArchive> FetchAsync(string url, string? expectedSha256, string label,
                                                  ArchiveCacheKey? cacheKey = null,
+                                                 long? declaredBytes = null,
                                                  CancellationToken ct = default)
     {
         Directory.CreateDirectory(_stagingRoot);
@@ -73,7 +78,7 @@ public sealed class ArchiveFetcher
         }
         else
         {
-            await DownloadAsync(url, archivePath, ct).ConfigureAwait(false);
+            await DownloadAsync(url, archivePath, declaredBytes, ct).ConfigureAwait(false);
 
             actual = FileOperations.HashFile(archivePath);
 
@@ -105,22 +110,17 @@ public sealed class ArchiveFetcher
     }
 
     /// <summary>
-    /// The most an archive fetched here may weigh. The largest real one is this tool's own update
-    /// (40 MB, measured 2026-09-04); loaders are a few megabytes. Room for twenty-five of those, and
-    /// still a bound rather than none.
+    /// How much bigger than the archive its contents may be.
+    ///
+    /// ⚠ A ratio, not a size, so it cannot go stale as the files grow: what it bounds is the
+    /// physics of the format, not this year's release. Deflate cannot expand beyond about 1030:1,
+    /// and what this tool ships unpacks to two to five times its archive; a hundred times is a
+    /// zip bomb and nothing else.
     /// </summary>
-    private const long MaxArchiveBytes = 1024L * 1024 * 1024;
+    private const int MaxUnpackRatio = 100;
 
-    /// <summary>
-    /// The most an archive may hold once unpacked, and in how many entries. This tool's update
-    /// unpacks to about a hundred megabytes and a dozen files; a loader to a few megabytes and a
-    /// few dozen. A zip that claims gigabytes, or ten thousand entries, is not one of ours.
-    /// </summary>
-    private const long MaxUnpackedBytes = 2048L * 1024 * 1024;
-    private const int MaxEntries = 10_000;
-
-    private Task DownloadAsync(string url, string destination, CancellationToken ct) =>
-        Download.ToFileAsync(_http, url, destination, MaxArchiveBytes,
+    private Task DownloadAsync(string url, string destination, long? declaredBytes, CancellationToken ct) =>
+        Download.ToFileAsync(_http, url, destination, declaredBytes,
                              (done, total) => Progress?.Invoke(done, total), ct);
 
     /// <summary>
@@ -166,17 +166,16 @@ public sealed class ArchiveFetcher
 
         using var archive = ZipFile.OpenRead(archivePath);
 
-        // Counted from the table of contents, before a single byte is written: a zip states each
-        // entry's unpacked size up front, so an archive that would fill the disk is refused whole.
-        if (archive.Entries.Count > MaxEntries)
-            throw new InvalidOperationException($"Archive holds {archive.Entries.Count} entries. Refusing to extract.");
+        // Bounded by the archive's own size, from the table of contents, before a single byte is
+        // written: a zip states each entry's unpacked size up front.
+        var mostUnpacked = new FileInfo(archivePath).Length * MaxUnpackRatio;
 
         long unpacked = 0;
         foreach (var entry in archive.Entries)
         {
             unpacked += entry.Length;
-            if (unpacked > MaxUnpackedBytes)
-                throw new InvalidOperationException("Archive unpacks to more than this tool ever ships. Refusing to extract.");
+            if (unpacked > mostUnpacked)
+                throw new InvalidOperationException("Archive unpacks to far more than its own size. Refusing to extract.");
 
             var target = Path.GetFullPath(Path.Combine(root, entry.FullName));
 
@@ -214,18 +213,15 @@ public sealed class ArchiveFetcher
         using var gzip = new GZipStream(file, CompressionMode.Decompress);
         using var reader = new TarReader(gzip);
 
-        // A tar is read as a stream, so the same bounds are held as it goes rather than up front.
-        var entries = 0;
+        // A tar is read as a stream, so the same bound is held as it goes rather than up front.
+        var mostUnpacked = new FileInfo(archivePath).Length * MaxUnpackRatio;
         long unpacked = 0;
 
         while (reader.GetNextEntry() is { } entry)
         {
-            if (++entries > MaxEntries)
-                throw new InvalidOperationException($"Archive holds more than {MaxEntries} entries. Refusing to extract.");
-
             unpacked += Math.Max(0, entry.Length);
-            if (unpacked > MaxUnpackedBytes)
-                throw new InvalidOperationException("Archive unpacks to more than this tool ever ships. Refusing to extract.");
+            if (unpacked > mostUnpacked)
+                throw new InvalidOperationException("Archive unpacks to far more than its own size. Refusing to extract.");
 
             var target = Path.GetFullPath(Path.Combine(root, entry.Name));
 

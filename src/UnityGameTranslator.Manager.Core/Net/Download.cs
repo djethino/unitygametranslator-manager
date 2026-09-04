@@ -14,18 +14,24 @@ namespace UnityGameTranslator.Manager.Core.Net;
 ///
 ///  · is the address one we agree to start from (<see cref="DownloadOrigins.IsAllowedDownload"/>);
 ///  · after the redirects, did it land with the same publisher (<see cref="DownloadOrigins.IsAllowedLanding"/>);
-///  · is the file the size the server said, and under the ceiling the caller set.
+///  · is the file the size it was said to be.
 ///
-/// ⚠ The ceiling is the CALLER's, because the files differ by two orders of magnitude: a loader
-/// archive is a few megabytes, this tool's update forty, Ollama's installer 1.5 GB (measured
-/// 2026-09-04). One number for all of them would either mean nothing or refuse a real file. What
-/// a ceiling protects against, with the origin already checked, is a publisher serving something
-/// absurd — a disk filled, not a machine compromised — so it is set with room to spare, never
-/// close to the file.
+/// ⚠ **The size is the publisher's word, never a figure of ours.** GitHub's API states each
+/// asset's size, and every caller that has read it hands it in; the server then states a length
+/// with the answer. What is read may not exceed the first when it is known, nor the second
+/// otherwise. There is no ceiling here on purpose: the files differ by two orders of magnitude
+/// (a loader is a few megabytes, Ollama's installer 1.5 GB on 2026-09-04) and they grow, so a
+/// number chosen today would be either meaningless or, one day, a refusal of a real file that
+/// nobody would trace back to this line. A bound that follows the file cannot go stale.
 /// </summary>
 public static class Download
 {
-    public static async Task ToFileAsync(HttpClient http, string url, string destination, long maxBytes,
+    /// <param name="declaredBytes">
+    /// The size the publisher stated for this file (GitHub's `size`), when the caller has it.
+    /// Null means "only the server's own length is known", which is what a Bleeding Edge href
+    /// or a `.sha256` sidecar gives.
+    /// </param>
+    public static async Task ToFileAsync(HttpClient http, string url, string destination, long? declaredBytes,
                                          Action<long, long?>? progress, CancellationToken ct)
     {
         if (!DownloadOrigins.IsAllowedDownload(url))
@@ -52,12 +58,16 @@ public static class Download
                 + $"{landed.Host}, which is not where this publisher serves its files. Nothing was fetched.");
         }
 
-        var total = response.Content.Headers.ContentLength;
-        if (total > maxBytes)
+        var announced = response.Content.Headers.ContentLength;
+
+        // The publisher's figure first, the server's second. A server announcing more than the
+        // publisher stated is not sending the file that was described.
+        var limit = declaredBytes ?? announced;
+        if (declaredBytes is { } declared && announced > declared)
         {
             throw new InvalidOperationException(
-                $"Refusing the download from {Sanitize.Url(url)}: the server announces "
-                + $"{Human(total.Value)}, more than the {Human(maxBytes)} this could ever be.");
+                $"Refusing the download from {Sanitize.Url(url)}: the publisher lists this file at "
+                + $"{Human(declared)} and the server is sending {Human(announced.Value)}. Nothing was fetched.");
         }
 
         await using var source = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
@@ -70,18 +80,15 @@ public static class Download
         {
             done += read;
 
-            // The stated length is a promise the server made; more bytes than that is a server
-            // that is not sending the file it described. And the ceiling holds whether or not a
-            // length was stated at all.
-            if (done > maxBytes || (total is { } stated && done > stated))
+            if (limit is { } most && done > most)
             {
                 throw new InvalidOperationException(
-                    $"The download from {Sanitize.Url(url)} kept going past its announced size. "
-                    + "It was discarded.");
+                    $"The download from {Sanitize.Url(url)} kept going past the {Human(most)} it was "
+                    + "said to be. It was discarded.");
             }
 
             await target.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
-            progress?.Invoke(done, total);
+            progress?.Invoke(done, limit);
         }
     }
 

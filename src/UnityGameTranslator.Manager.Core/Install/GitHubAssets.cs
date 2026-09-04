@@ -16,7 +16,11 @@ public enum IntegrityLevel
     None,
 }
 
-public sealed record ResolvedDownload(string Url, string? Sha256, IntegrityLevel Integrity)
+/// <param name="Bytes">
+/// The file's size as its publisher states it, when that answer was read (GitHub's `size`); the
+/// download is held to it. Null for a publisher that states none.
+/// </param>
+public sealed record ResolvedDownload(string Url, string? Sha256, IntegrityLevel Integrity, long? Bytes = null)
 {
     public string Describe() => Integrity switch
     {

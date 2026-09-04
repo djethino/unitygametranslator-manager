@@ -179,6 +179,14 @@ public sealed class LoaderAsset
     [JsonIgnore] public string Url { get; set; } = "";
 
     /// <summary>
+    /// The file's size as the publisher states it (GitHub's `size`), filled in memory beside
+    /// <see cref="Url"/> and for the same reason kept out of the catalog: the download is held to
+    /// it, so it has to come from the publisher's answer, never from a fetched document. Null when
+    /// the publisher states none (a Bleeding Edge page).
+    /// </summary>
+    [JsonIgnore] public long? Bytes { get; set; }
+
+    /// <summary>
     /// Optional pinned SHA-256. Takes precedence over the digest GitHub publishes, for the case
     /// where we want to guarantee a specific file rather than "whatever is behind that name".
     /// </summary>

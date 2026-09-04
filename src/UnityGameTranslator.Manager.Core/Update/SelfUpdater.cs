@@ -297,7 +297,8 @@ public sealed class SelfUpdater
         // is the one running. Keeping it would be storing a binary that is already on disk, under
         // its new name.
         var fetched = await fetcher
-            .FetchAsync(offer.Url, offer.Sha256, $"installer-{offer.NewVersion}", cacheKey: null, ct)
+            .FetchAsync(offer.Url, offer.Sha256, $"installer-{offer.NewVersion}", cacheKey: null,
+                        declaredBytes: offer.SizeBytes, ct: ct)
             .ConfigureAwait(false);
 
         var incoming = Path.Combine(fetched.ExtractedPath, _platform.ExecutableFileName);

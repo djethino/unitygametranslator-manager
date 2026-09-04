@@ -631,8 +631,18 @@ public sealed class TranslationsWindow : Window
                     : "Select",
             FontSize = 12,
             Classes = { "primary" },
+
+            // 🔴 **Never on the one already in the game, and it used to be live there.**
+            // TranslationChoice.Waiting answers null for the translation this game already runs —
+            // deliberately: bringing its published version down again is the workbench's act, not a
+            // second door here. So selecting it wrote an intention that produced no Apply anywhere,
+            // under a message promising one on the game's page. A control that cannot lead anywhere
+            // is the dead end this program refuses everywhere else.
+            //
+            // ⚠ Absent-in-effect rather than silently inert: the reason is written under it, with
+            // where the act actually lives.
             // ⚠ See _mayChoose: the window is open to anyone, choosing is not.
-            IsEnabled = !chosen && _mayChoose,
+            IsEnabled = !chosen && !installed && _mayChoose,
             HorizontalAlignment = HorizontalAlignment.Left,
             Margin = new Thickness(0, 8, 0, 0),
         };
@@ -649,6 +659,16 @@ public sealed class TranslationsWindow : Window
             Show(outcome, installed
                 ? "This is the one in the game."
                 : "Chosen. Apply it on this game's page, under \"This game\".", "StatusSuccess");
+        }
+        else if (installed)
+        {
+            // What to do INSTEAD, named. Taking the published version again is how somebody drops
+            // what they changed locally — a real thing to want — and it is offered on the game's
+            // card, where a replacement can be weighed against what the file already holds.
+            Show(outcome, _report.Sync is SyncDirection.Upload or SyncDirection.Merge
+                ? "This is the one in the game. To drop the changes made here and take the "
+                  + "published version again, use \"Take the published version\" on the game's card."
+                : "This is the one in the game.", "TextMuted");
         }
 
         take.Click += (_, _) => Select(translation.Id, outcome,

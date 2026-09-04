@@ -1053,11 +1053,31 @@ public partial class MainWindow : Window
         var published = report.OnlineTranslations;
         if (published.Count == 0) yield break;
 
+        // 🔴 **How many OTHERS, when one of them is the one this game runs.** The plain total
+        // answers a question nobody is asking: somebody reading this block has just read what their
+        // own file is, and wants to know whether there is anything else. "3 translations are
+        // published" over a game running one of the three leaves them to work out that there are
+        // two alternatives.
+        //
+        // ⚠ The total does not disappear — it is on the button below, which opens all of them,
+        // theirs included. Saying "2 other" and opening 3 is deliberate and readable; hiding the
+        // third would not be.
+        var others = report.MatchingOnline is null ? published.Count : published.Count - 1;
+
         yield return new TextBlock
         {
-            Text = published.Count == 1
-                ? "One translation is published for this game."
-                : $"{published.Count} translations are published for this game.",
+            Text = report.MatchingOnline is null
+                ? published.Count == 1
+                    ? "One translation is published for this game."
+                    : $"{published.Count} translations are published for this game."
+                : others switch
+                {
+                    // Only theirs. "0 other translations" is a sentence about nothing; what a reader
+                    // needs to know is that there is nowhere else to look.
+                    0 => "The translation this game runs is the only one published.",
+                    1 => "One other translation is published for this game.",
+                    _ => $"{others} other translations are published for this game.",
+                },
             FontSize = 13,
             FontWeight = FontWeight.SemiBold,
             TextWrapping = TextWrapping.Wrap,
@@ -1083,6 +1103,17 @@ public partial class MainWindow : Window
         foreach (var group in byLanguage)
         {
             var label = group.Count() == 1 ? group.Key : $"{group.Key} ({group.Count()})";
+
+            // ⚠ **"installed", the word the list of translations already puts on that very card** —
+            // not "same", which would be a second name for one thing. It says which of these
+            // languages the reader is already playing in, so the row stops being a list of
+            // possibilities among which theirs is hidden.
+            if (report.MatchingOnline is { } here
+                && group.Any(t => t.Id == here.Id))
+            {
+                label += "  ·  installed";
+            }
+
             var chip = LanguageMark.Named(group.Key, label);
 
             // ⚠ Only the reader's own language is coloured, and only when something IS in it: the
@@ -5213,7 +5244,14 @@ public partial class MainWindow : Window
             // on a line here, and all of which decides the choice.
             var browse = new Button
             {
-                Content = offered == 1 ? "See the translation" : $"See the {offered} translations",
+                // ⚠ "all" when the sentence above counted the OTHERS: it says the list holds more
+                // than the number just read, and that what it holds in addition is this game's own
+                // — which is what makes taking the published version back from there thinkable.
+                Content = offered == 1
+                    ? "See the translation"
+                    : report.MatchingOnline is null
+                        ? $"See the {offered} translations"
+                        : $"See all {offered} translations",
                 FontSize = 12,
                 HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
             };

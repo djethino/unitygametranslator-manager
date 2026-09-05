@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <Version>0.2.0</Version>
+    <Version>0.2.1</Version>
 
     <!-- Where the catalogs are fetched from, in this order. A folder, not a file: every
          catalog we add (loaders, models, languages) sits beside the others and needs no new

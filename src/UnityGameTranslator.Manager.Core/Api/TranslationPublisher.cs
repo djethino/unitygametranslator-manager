@@ -1,6 +1,7 @@
 ﻿using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using UnityGameTranslator.Common;
 using UnityGameTranslator.Manager.Core.Net;
 
 namespace UnityGameTranslator.Manager.Core.Api;
@@ -88,6 +89,27 @@ public sealed record LineageStanding(PublishOutcome Outcome, string? MainOwner,
 {
     /// <summary>Whether this account has a row here at all — the thing details can be edited on.</summary>
     public bool HasARowOfItsOwn => Outcome == PublishOutcome.UpdateMine;
+
+    /// <summary>
+    /// Where this file stands, in the socle's terms — the same axis the card's badges read.
+    /// </summary>
+    public Publication Publication => Publications.Of(
+        hereOnDisk: true,
+        onTheSite: Outcome != PublishOutcome.NewTranslation,
+        yours: Outcome == PublishOutcome.UpdateMine);
+
+    /// <summary>
+    /// What sending the file would become, weighed by the shared rule from what the server just
+    /// said. 🔴 This — not <see cref="Outcome"/> — decides what the tool may do: the outcome says
+    /// who leads the lineage, the act says whether a send can land there at all.
+    /// </summary>
+    public UploadAct Act =>
+        Uploads.ActOf(Publication, OnABranch, AcceptsBranches, MainMissing, MainAbandoned, BranchFrozen)
+        ?? UploadAct.Upload;
+
+    /// <summary>The wall in front of that act, in the socle's words, or null when there is none.</summary>
+    public string? Wall =>
+        Uploads.Wall(Publication, OnABranch, MainOwner, AcceptsBranches, MainMissing, MainAbandoned, BranchFrozen);
 
     /// <summary>Whether the author's "finished" declaration is theirs to make on this row.</summary>
     public bool MayDeclareFinished => HasARowOfItsOwn && !OnABranch;

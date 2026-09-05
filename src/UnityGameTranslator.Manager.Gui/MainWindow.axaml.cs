@@ -6048,74 +6048,37 @@ public partial class MainWindow : Window
             return;
         }
 
+        // 🔴 **What this send would BECOME, weighed by the shared rule on the server's answer —
+        // and the two acts this tool does not take.** Contributing to somebody else's lineage and
+        // forking away from it are decided in the game, on purpose: they are one person's
+        // decision about one translation, made with the game in front of them, not something a
+        // tool listing twenty games files in a minute. This tool creates a translation and
+        // updates this account's own row, Main or branch, and stops there.
+        //
+        // ⚠ Refused before the work is sent, with the wall named when there is one — its author
+        // works alone, the Main is gone, the account behind it erased, the branch closed since —
+        // and the way on. Each of those used to be its own dialogue here, and the one that
+        // mattered most never fired: the server did not send the Main's refusal to the person
+        // about to contribute, so "Send as a contribution" opened on a translation that takes none.
+        var act = lineage.Act;
+
+        if (Uploads.DecidedInTheGame(act))
+        {
+            var wall = lineage.Wall;
+            await ConfirmationWindow.TellAsync(this,
+                wall is null ? "Decided in the game" : "This translation cannot take a contribution",
+                wall is null ? Uploads.OnlyInTheGame : wall + "\n\n" + Uploads.OnlyInTheGame);
+            return;
+        }
+
         // 🔴 **Whether it is finished is the author's own word**, and it is asked here because it
         // belongs to the same act. The site has offered it from the start and the mod now does;
         // this window was the only one of the three that could not say it.
         //
         // ⚠ A contribution inherits its Main's, exactly as the server decides and as the other two
         // products say — so nothing is offered for one, rather than a control that does nothing.
-        //
-        // ⚠ **Two ways of being a contributor, and only one used to be covered.** The outcome says
-        // "sending this would MAKE you one"; somebody who already IS one comes back through
-        // UpdateMine, and was shown the box. The server discarded what they set, silently.
-        var contributing = lineage.Outcome == PublishOutcome.ContributeToTheirs;
-        var branchWork = contributing || lineage.OnABranch;
-
-        // 🔴 **Refused before the work is sent, not after.** Sending would make this a
-        // contribution, and that lineage takes none — the server would answer 403 and the person
-        // would have watched an upload run to be told no. Said as the fact plus the way on: the
-        // fork is theirs to take and nobody can close it.
-        //
-        // ⚠ Only on a stated refusal. AcceptsBranches is null on a server that predates the
-        // field, and null means "not asked" — behaving as a no there would invent a decision.
-        if (contributing && lineage.AcceptsBranches == false)
-        {
-            // ⚠ **Sent to the mod, not to the website.** Forking is something the mod does — it is
-            // where the file lives and where the button is — and this tool has no such action of
-            // its own. Four messages here used to point at the site, which is a place a fork can
-            // also be made from but not the one anybody reaches for.
-            await ConfirmationWindow.TellAsync(this, "This translation is solo work",
-                $"{People.MentionOf(lineage.MainOwner, standing.SignedInAs)} works alone on this one and does not take "
-                + "contributions.\n\nYour lines are safe. Open the game and use Fork in the mod to "
-                + "publish your own version of it.");
-            return;
-        }
-
-        // A branch whose Main has closed since: the same wall, reached from the other side.
-        if (lineage.BranchFrozen)
-        {
-            await ConfirmationWindow.TellAsync(this, "This contribution is frozen",
-                "The translation you contribute to no longer accepts contributions, so this can "
-                + "no longer be sent.\n\nYour lines are safe. Open the game and use Fork in the mod "
-                + "to carry on with them.");
-            return;
-        }
-
-        // 🔴 **The two remaining ways this lineage ends, refused here rather than by the server.**
-        // Both were shown as a note on the card and neither stopped the send: somebody read the
-        // warning, worked anyway, pressed publish and watched an upload run to be told no. The
-        // note is worth nothing if the door it describes stays open.
-        //
-        // ⚠ Two messages, one wall. Which of them applies decides whether the translation they
-        // were building on is still published — the first thing anybody asks next.
-        if (lineage.MainMissing == true)
-        {
-            await ConfirmationWindow.TellAsync(this, "There is nothing left to contribute to",
-                "The translation this contributes to has been removed by its author.\n\nYour lines "
-                + "are safe, and your copy is now the only one. Open the game and use Fork in the "
-                + "mod to publish it as your own version.");
-            return;
-        }
-
-        if (lineage.MainAbandoned == true)
-        {
-            await ConfirmationWindow.TellAsync(this, "Nobody can review this contribution",
-                "The account that owned the translation you contribute to has been deleted, so no "
-                + "contribution will ever be read.\n\nThe translation itself is still published and "
-                + "still works. Your lines are safe: open the game and use Fork in the mod to "
-                + "publish them as your own version.");
-            return;
-        }
+        // Updating one's own branch IS this tool's to do: the first act was taken in the game.
+        var branchWork = lineage.OnABranch;
 
         // ⚠ Starts on what the SERVER holds for our own row — not on MatchingOnline, which is the
         // lineage's public translation and belongs to somebody else whenever we are a branch.
@@ -6123,7 +6086,9 @@ public partial class MainWindow : Window
                                             StringComparison.OrdinalIgnoreCase);
 
         var body = lineage.Describe() + $"\n\nAs {People.Mention(standing.SignedInAs, true)}.";
-        var confirm = contributing ? "Send as a contribution" : "Publish";
+
+        // The mod's verb, and nothing else on the button: Upload creates, Update replaces.
+        var confirm = Uploads.Verb(act);
 
         // ⚠ Same source as "finished" right above, and the same reason: this account's own row.
         // Null — an older site, or nothing published yet — starts closed, which is the default
@@ -6138,11 +6103,9 @@ public partial class MainWindow : Window
         // ⚠ Opened on what the SERVER holds for our own row, never on anything remembered here:
         // everything in it is sent back as the new truth, so a stale description would be quietly
         // restored. Nothing published yet means nothing to restore.
-        var heading = contributing
-            ? "Send this translation as a contribution?"
-            : lineage.Outcome == PublishOutcome.UpdateMine
-                ? "Publish this version?"
-                : "Publish this translation?";
+        var heading = branchWork
+            ? "Update your contribution?"
+            : $"{confirm} this translation?";
 
         var edited = await TranslationDetailsWindow.PublishAsync(
             this, heading, body, ask, _platform,
@@ -6207,8 +6170,8 @@ public partial class MainWindow : Window
         if (ask.SourceIsAsked) WriteSourceLanguage(report, descriptor, source);
 
         await ConfirmationWindow.TellAsync(this, "Sent",
-            lineage.Outcome == PublishOutcome.ContributeToTheirs
-                ? "Your contribution is waiting for the translation's owner to review it."
+            branchWork
+                ? "Your contribution is updated and waiting for the translation's owner to review it."
                 : "Your translation is published.");
 
         // ⚠ redraw: publishing changes what the SITE holds — the badges, the votes, the author's
@@ -6917,13 +6880,46 @@ public partial class MainWindow : Window
             actions.Children.Add(takeTheirs);
         }
 
+        // 🔴 **The button says what the send would BECOME, in the mod's word, and stays shut on the
+        // two acts this tool does not take.** It said "Publish…" whatever the lineage — over a
+        // Main that works alone, over a branch whose Main is gone — and the role was only
+        // discovered on the click, by the server. The card knows the role before the click: the
+        // lineage listing says whether this account holds a row, the community entry says who
+        // leads it and whether they take contributions.
+        //
+        // ⚠ The verb is a reading of what is known NOW. Before the lineage listing has answered,
+        // `yours` is null and the socle keeps its older reading; the redraw that follows the
+        // answer corrects the word, and the click path decides on the server's fresh answer
+        // either way.
+        var myRow = report.MyPosition;
+        var theirEntry = report.MatchingOnline;
+        var publication = Publications.Of(hereOnDisk: true,
+                                          onTheSite: theirEntry is not null,
+                                          yours: _lineages.Known ? myRow is not null : null);
+        var onABranch = myRow is { IsMain: false };
+        var act = Uploads.ActOf(publication, onABranch,
+                                myRow?.AcceptsBranches ?? theirEntry?.AcceptsBranches,
+                                myRow?.MainMissing, myRow?.MainAbandoned, myRow?.BranchFrozen)
+                  ?? UploadAct.Upload;
+
+        // Contributing and forking are the game's acts — see Uploads. Said under the button, with
+        // the wall when there is one, so a grey verb is never a verb without a reason.
+        var inTheGame = Uploads.DecidedInTheGame(act)
+            ? Uploads.Wall(publication, onABranch, theirEntry?.Author,
+                           myRow?.AcceptsBranches ?? theirEntry?.AcceptsBranches,
+                           myRow?.MainMissing, myRow?.MainAbandoned, myRow?.BranchFrozen) is { } wall
+                ? wall + " " + Uploads.OnlyInTheGame
+                : Uploads.OnlyInTheGame
+            : null;
+
         // ⚠ Both, not Server. What is sent is the file from this game, so afterwards the published
         // translation and this machine carry the same thing. Server would mean "the published
         // version has the result and this machine does not", which cannot happen from a tool that
         // is sending the machine's own file.
         var publish = ScopeMark.Marked(EditScope.SideAfter(onThisMachine: true, yourPublishedCopy: true),
-                                       "Publish…",
-                                       standing.CanAct && nothingYet is null && nothingToSend is null);
+                                       Uploads.Verb(act) + "…",
+                                       standing.CanAct && nothingYet is null && nothingToSend is null
+                                       && inTheGame is null);
         publish.Click += async (_, _) => await PublishTranslationAsync(report, descriptor, publish);
         actions.Children.Add(publish);
 
@@ -6992,9 +6988,12 @@ public partial class MainWindow : Window
         // be the third arm of an if/else chain, so it could only run when neither account refusal
         // did. Dropping the condition would stack two reasons on one card and leave somebody
         // fixing the second while the first still stands.
+        // ⚠ The game's acts come last in the ladder: an empty file or nothing to send governs
+        // more than one button, and there is no point naming a wall in front of a send that has
+        // nothing to send.
         if (standing.CanWriteLocally
             && standing.Reason is null
-            && (nothingYet ?? nothingToSend) is { } why)
+            && (nothingYet ?? nothingToSend ?? inTheGame) is { } why)
         {
             // ⚠ The empty file comes FIRST: it governs two buttons where the sync reason governs
             // one, and a game with no line cannot be in any sync state worth explaining.

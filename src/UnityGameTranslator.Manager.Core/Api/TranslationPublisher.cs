@@ -122,26 +122,20 @@ public sealed record LineageStanding(PublishOutcome Outcome, string? MainOwner,
     public bool MayDecideContributions => MayDeclareFinished;
 
     /// <summary>
-    /// What will happen, said before it happens.
+    /// What will happen, said before it happens — in the socle's sentence, the one the mod's card
+    /// and the Manager's badges already show for the same state, plus what is waiting on a Main.
     ///
-    /// ⚠ The third case is the one that must never be a surprise: uploading into somebody else's
-    /// lineage files the work as a contribution under their translation. That is a perfectly good
-    /// thing to do on purpose and a bad thing to discover afterwards.
+    /// ⚠ It had a wording of its own here for the three cases, which is how one fact ends up read
+    /// two ways by a person moving between the products. What is added is the one thing the
+    /// socle's tag does not carry: the contributions a Main has not been through.
     /// </summary>
-    public string Describe() => Outcome switch
+    public string Describe()
     {
-        PublishOutcome.NewTranslation =>
-            "Nobody has published this translation yet. It will become yours, and you will lead it.",
+        var said = Publications.Effect(Publication, MainOwner);
 
-        PublishOutcome.UpdateMine => BranchesCount is > 0
-            ? $"This replaces your published version. {BranchesCount} contribution"
-              + (BranchesCount == 1 ? " is" : "s are") + " waiting for your review."
-            : "This replaces your published version.",
-
-        _ => $"This translation is led by {MainOwner ?? "somebody else"}. What you send becomes a "
-             + "contribution for them to review — nothing of theirs is replaced, and nothing is "
-             + "published under your name until they take it.",
-    };
+        var waiting = OnABranch ? "" : Contributions.WhatIsWaiting(BranchesCount ?? 0, null);
+        return waiting.Length == 0 ? said : said + " " + waiting;
+    }
 }
 
 /// <summary>

@@ -86,6 +86,22 @@ public static class PublishLanguages
     {
         if (outcome != PublishOutcome.NewTranslation)
         {
+            // 🔴 **A file that STATES another pair is not an update of this lineage.** A backup
+            // restored from a time the game was played in another language, or a file edited by
+            // hand, says so in its own `_target_language`; sending it would push content of one
+            // language into a lineage declared as another. The mod refuses this (UploadPanel) and
+            // the rule is the socle's — one wording, both products.
+            // ⚠ Only two STATED languages can disagree: a file that says nothing, or "auto",
+            // publishes fine, and that is the ordinary state of most files.
+            var side = TranslationLanguages.PublicationConflict(file.Source, file.Target,
+                                                                lineage.Source, lineage.Target);
+            if (side != TranslationLanguages.Side.None)
+            {
+                return new Ask(null, null, false,
+                    TranslationLanguages.ExplainConflict(side, file.Source, file.Target,
+                                                         lineage.Source, lineage.Target));
+            }
+
             // The server's answer first: it is the one that will be kept. The file and the config
             // follow the server on every launch, so they are the same answer one step older — and
             // still a real one on a site too old to have said.

@@ -55,8 +55,10 @@ internal static class PublishLanguagesChecks
 
         // 🔴 An update or a contribution is never asked: the server keeps the lineage's pair and
         // ignores what is sent. What the server said is what is shown, whatever this machine says.
+        // ⚠ The CONFIG may disagree freely — it is a preference, and the mod rewrites it from the
+        // server at every launch. Only the file's own stamp can conflict (see further down).
         var update = Decide(PublishOutcome.UpdateMine, new Pair("English", "French"),
-                            new Pair(null, "German"), new Pair("Japanese", "German"));
+                            new Pair(null, "French"), new Pair("Japanese", "German"));
         Program.Check(update is { CanProceed: true, SourceIsAsked: false, Source: "English", Target: "French" },
             "an update shows the lineage's pair and asks nothing", "the server keeps what it was published with");
 
@@ -80,6 +82,27 @@ internal static class PublishLanguagesChecks
         var nobody = Decide(PublishOutcome.UpdateMine, Nothing, Nothing, new Pair(null, "French"));
         Program.Check(nobody is { CanProceed: false, Refusal: LineagePairUnknown },
             "nothing known anywhere on an update is refused", "the pair cannot be invented here");
+
+        // 🔴 A file that STATES another pair is a different translation, not an update — the
+        // restored-backup case. The mod refuses it; this tool used to send it under the lineage's
+        // pair without a word. The refusal is the socle's sentence: both languages named, and Fork.
+        var backup = Decide(PublishOutcome.UpdateMine, new Pair("English", "French"),
+                            new Pair("English", "Thai"), Nothing);
+        Program.Check(backup is { CanProceed: false, Refusal: { } why }
+                      && why.Contains("Thai") && why.Contains("French") && why.Contains("Fork"),
+            "a file stating another target is refused as an update", "the socle's rule, the mod's wording");
+
+        // ⚠ And only a STATED disagreement: a file that says nothing keeps publishing fine.
+        var silentFile = Decide(PublishOutcome.UpdateMine, new Pair("English", "French"),
+                                new Pair("auto", null), Nothing);
+        Program.Check(silentFile is { CanProceed: true, Target: "French" },
+            "a file that states nothing is not a conflict", "most files were written before the stamp");
+
+        // A code against a name is the same language, not a conflict.
+        var spelled = Decide(PublishOutcome.UpdateMine, new Pair("English", "French"),
+                             new Pair("en", "fr"), Nothing);
+        Program.Check(spelled is { CanProceed: true, Source: "English", Target: "French" },
+            "a code against a name is not a conflict", "compared through the catalogue, and the lineage's names win");
     }
 
     internal static void WhatASourceMayBe()

@@ -6118,10 +6118,14 @@ public partial class MainWindow : Window
         // from the site's answers. The server creates a game around whatever name arrives, and
         // one created from a repack's folder is a translation nobody else finds. Nothing is asked
         // on an update: the lineage already names its game and the server ignores any other.
+        // ⚠ With this account's token: the game search reaches the stores on the site's quota and
+        // only answers a named caller. Sent without one it was refused, and the refusal read as
+        // "the site could not be reached".
         var api = new CatalogApiClient();
         var game = ask.SourceIsAsked
             ? new GameToConfirm(report.Game.ProductName ?? report.Game.Name, report.Game.SteamAppId,
-                                (query, steamId) => api.SearchGamesAsync(query, steamId))
+                                (query, steamId) => api.SearchGamesAsync(query, steamId, token),
+                                () => api.LastError)
             : null;
 
         var edited = await TranslationDetailsWindow.PublishAsync(

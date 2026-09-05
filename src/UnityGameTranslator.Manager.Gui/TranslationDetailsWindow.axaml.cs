@@ -36,8 +36,10 @@ public readonly record struct TranslationDetails(bool Saved, string Notes, strin
 /// <param name="DetectedName">What this machine read: the product name, or the folder's.</param>
 /// <param name="DetectedSteamId">The Steam id read on this machine, when there is one.</param>
 /// <param name="Search">Asks the site: a name, a Steam id, or both. Null when it could not be asked.</param>
+/// <param name="WhyNot">Why the last search could not be asked, for the sentence under the field.</param>
 public sealed record GameToConfirm(string? DetectedName, string? DetectedSteamId,
-                                   Func<string?, string?, Task<IReadOnlyList<CatalogApiClient.GameCandidate>?>> Search);
+                                   Func<string?, string?, Task<IReadOnlyList<CatalogApiClient.GameCandidate>?>> Search,
+                                   Func<string?> WhyNot);
 
 /// <summary>
 /// The things said ABOUT a translation rather than in it: what it is, where to find the fonts or
@@ -374,18 +376,14 @@ public sealed class TranslationDetailsWindow : Window
         {
             var found = await SearchGamesAsync(null, game.DetectedSteamId);
 
-            if (found is { Count: > 0 })
-            {
-                var best = found[0];
-                _confirmedGame = (best.Name ?? game.DetectedName ?? "", best.SteamId ?? game.DetectedSteamId);
-            }
-            else if (found is not null)
-            {
-                // Asked and unknown: the site will create it from what this machine read.
-                _confirmedGame = (game.DetectedName ?? "", game.DetectedSteamId);
-            }
+            // The site's own name and id when it knows the game; what this machine read when it
+            // does not, or could not be asked — the mod falls back the same way on a network
+            // error, and the sentence under the field says which of the two happened.
+            _confirmedGame = found is { Count: > 0 }
+                ? (found[0].Name ?? game.DetectedName ?? "", found[0].SteamId ?? game.DetectedSteamId)
+                : (game.DetectedName ?? "", game.DetectedSteamId);
 
-            ShowGame(confirmed: _confirmedGame is not null);
+            ShowGame(confirmed: true);
             Acceptable();
             return;
         }
@@ -420,7 +418,13 @@ public sealed class TranslationDetailsWindow : Window
 
         if (found is null)
         {
-            _gameSearchStatus.Text = "The site could not be reached. The game is taken as detected.";
+            // The reason, then the consequence — and the consequence is only true on a Steam id
+            // lookup (see ConfirmDetectedGameAsync); a name search that fails leaves the person
+            // to try again, so it says nothing it cannot keep.
+            var why = _game.WhyNot() ?? "The site could not be reached.";
+            _gameSearchStatus.Text = steamId is not null
+                ? why + " The game is taken as detected."
+                : why;
             return null;
         }
 

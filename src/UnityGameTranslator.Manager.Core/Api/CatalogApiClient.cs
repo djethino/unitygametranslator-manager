@@ -124,8 +124,14 @@ public sealed class CatalogApiClient
     ///
     /// ⚠ Null when the question could not be asked, which is not an empty answer: a caller falls
     /// back on what this machine detected, and says so, rather than on "no such game".
+    ///
+    /// 🔴 <paramref name="apiToken"/> is REQUIRED by the route, unlike the translation searches
+    /// above: it reaches the store and game databases on the site's own quota, so the site only
+    /// answers a named caller. Sent without one it answered 401, which this tool reported as "the
+    /// site could not be reached".
     /// </summary>
     public async Task<IReadOnlyList<GameCandidate>?> SearchGamesAsync(string? query, string? steamId,
+                                                                      string apiToken,
                                                                       CancellationToken ct = default)
     {
         LastError = null;
@@ -140,7 +146,7 @@ public sealed class CatalogApiClient
 
         try
         {
-            var json = await GetAsync(url, null, ct).ConfigureAwait(false);
+            var json = await GetAsync(url, apiToken, ct).ConfigureAwait(false);
 
             using var document = JsonDocument.Parse(json);
             if (!document.RootElement.TryGetProperty("games", out var games)
@@ -169,7 +175,11 @@ public sealed class CatalogApiClient
         }
         catch (Exception ex)
         {
-            LastError = Net.Http.Describe(ex, "the community site");
+            // The status when there is one: a 401 or a 429 is not "could not be reached", and
+            // the sentence under the search field is the only place the reason ever shows.
+            LastError = LastStatus is { } status && (int)status >= 400
+                ? $"The site answered {(int)status}."
+                : Net.Http.Describe(ex, "the community site");
             return null;
         }
     }

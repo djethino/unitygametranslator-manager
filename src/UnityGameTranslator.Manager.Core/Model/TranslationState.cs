@@ -93,6 +93,24 @@ public sealed class LocalTranslation
     /// </summary>
     public string? SourceHash { get; init; }
 
+    /// <summary>
+    /// The language this file says it is written FROM (`_source_language`), or null when it does
+    /// not say. The mod writes it once somebody declared it at publication or the site stated it;
+    /// until then the source is detected line by line and the file carries nothing.
+    /// </summary>
+    public string? SourceLanguage { get; init; }
+
+    /// <summary>
+    /// The language this file says it is written INTO (`_target_language`), or null when it does
+    /// not say.
+    ///
+    /// 🔴 **This is what the file IS, and it outranks the game's config.json.** The mod settles it
+    /// the moment the first line is written and keeps the config following it, never the other way
+    /// round (TranslatorCore.SettleLanguagesFromFile: "the file wins"). A reader that only asked
+    /// the config could be told "auto" about a file whose every line is French.
+    /// </summary>
+    public string? TargetLanguage { get; init; }
+
     public DateTimeOffset? LastWrite { get; init; }
 }
 

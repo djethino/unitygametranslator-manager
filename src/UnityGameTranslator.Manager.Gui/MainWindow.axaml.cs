@@ -6025,12 +6025,26 @@ public partial class MainWindow : Window
             return;
         }
 
-        var languages = LocalTranslationProbe.ReadLanguages(report.Game.Path, descriptor);
-        if (languages.Source is null || languages.Target is null)
+        // 🔴 **Which languages, and which of them to ask — decided by the shared rule, not here.**
+        // This used to read both from config.json and refuse on "auto", which is the ordinary
+        // state of a source nobody has published yet: the mod detects it and only asks at the first
+        // publication. The rule says what the mod's own setup panel does — target fixed by the file,
+        // source asked once — and on an update or a contribution takes the lineage's pair from the
+        // server, which is the only one that will be kept.
+        var inFile = report.LocalTranslation is { } local
+            ? new PublishLanguages.Pair(local.SourceLanguage, local.TargetLanguage)
+            : new PublishLanguages.Pair(null, null);
+
+        var inConfig = LocalTranslationProbe.ReadLanguages(report.Game.Path, descriptor);
+
+        var ask = PublishLanguages.Decide(lineage.Outcome,
+                                          new PublishLanguages.Pair(lineage.SourceLanguage, lineage.TargetLanguage),
+                                          inFile,
+                                          new PublishLanguages.Pair(inConfig.Source, inConfig.Target));
+
+        if (!ask.CanProceed)
         {
-            await ConfirmationWindow.TellAsync(this, "Languages are not set",
-                "Publishing needs to know which language this translates from, and into. Both are "
-                + "set in the game's own settings, from the mod.");
+            await ConfirmationWindow.TellAsync(this, "Languages are not set", ask.Refusal!);
             return;
         }
 
@@ -6108,8 +6122,7 @@ public partial class MainWindow : Window
         var alreadyComplete = string.Equals(lineage.Status, "complete",
                                             StringComparison.OrdinalIgnoreCase);
 
-        var body = lineage.Describe() + "\n\n"
-                 + $"{languages.Source} → {languages.Target}, as {People.Mention(standing.SignedInAs, true)}.";
+        var body = lineage.Describe() + $"\n\nAs {People.Mention(standing.SignedInAs, true)}.";
         var confirm = contributing ? "Send as a contribution" : "Publish";
 
         // ⚠ Same source as "finished" right above, and the same reason: this account's own row.
@@ -6117,48 +6130,62 @@ public partial class MainWindow : Window
         // anybody publishing for the first time gets.
         var alreadyOpen = lineage.AcceptsBranches == true;
 
-        bool agreed;
-        var markComplete = alreadyComplete;
-        var takeContributions = alreadyOpen;
+        // 🔴 **One window, the whole act** — the languages it travels under, the description, the
+        // link, the two declarations. It used to be two boxes and a sentence, and a first
+        // publication reached the site with nothing said about it; "Edit details" then promised
+        // that publishing had asked. The mod asks all of it in one act, and so does this now.
+        //
+        // ⚠ Opened on what the SERVER holds for our own row, never on anything remembered here:
+        // everything in it is sent back as the new truth, so a stale description would be quietly
+        // restored. Nothing published yet means nothing to restore.
+        var heading = contributing
+            ? "Send this translation as a contribution?"
+            : lineage.Outcome == PublishOutcome.UpdateMine
+                ? "Publish this version?"
+                : "Publish this translation?";
 
-        if (branchWork)
-        {
-            agreed = await ConfirmationWindow.AskAsync(this, "Publish this translation?", body, confirm);
-        }
-        else
-        {
-            (agreed, markComplete, takeContributions) = await ConfirmationWindow.AskAsync(
-                this, "Publish this translation?", body, confirm,
-                "This translation is finished", alreadyComplete,
-                "Accept contributions", alreadyOpen,
-                "A contribution is a copy of this work with somebody else's changes, sent to you "
-                + "to accept or not. Left off, others can still publish their own version.");
-        }
+        var edited = await TranslationDetailsWindow.PublishAsync(
+            this, heading, body, ask, _platform,
+            lineage.Notes, lineage.ResourcesUrl, alreadyComplete, branchWork, alreadyOpen, confirm);
 
-        if (!agreed) return;
+        if (!edited.Saved) return;
+
+        // The source of a first publication is what was just declared; every other case is the
+        // fixed pair the rule handed back. The window cannot close on an empty one — see
+        // TranslationDetailsWindow.Acceptable — so a null here is a caller mistake, not a user's.
+        var source = ask.SourceIsAsked ? edited.SourceLanguage : ask.Source;
+        var target = ask.Target;
+
+        if (string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(target))
+        {
+            await ConfirmationWindow.TellAsync(this, "Nothing was published",
+                "Publishing needs to know which language this translates from, and into.");
+            return;
+        }
 
         button.IsEnabled = false;
         ScopeMark.SetLabel(button, "Publishing…");
 
         // ⚠ Null on any branch work: the server makes a branch inherit its Main's, and sending a
         // value would be this window deciding something it has no say in.
-        var status = branchWork ? null : (markComplete ? "complete" : "in_progress");
+        var status = branchWork ? null : (edited.Finished ? "complete" : "in_progress");
 
-        // 🔴 **Sent back, not omitted.** The endpoint writes these two from the request on every
-        // update, so leaving them out stores null — and this window erased, on each publish, the
-        // description and the link their author had written in the game or on the site. Nothing
-        // here changes them; restating them is what keeps them.
+        // 🔴 **Sent as the window holds them, never omitted.** The endpoint writes these two from
+        // the request on every update, so leaving them out stores null — and this window erased,
+        // on each publish, the description and the link their author had written in the game or
+        // on the site. The window opened on the server's values and hands back what is now wanted,
+        // the empty string included: that is how a link gets cleared on purpose.
         // ⚠ The name Unity wrote, not the one on screen: it is what the site records as
         // `unity_name`, and what every other machine will search this game with. The display name
         // can be a store manifest or a repack's folder, which nobody else can reproduce.
         var id = await publisher.PublishAsync(content, token, report.Game.SteamAppId,
                                               report.Game.ProductName ?? report.Game.Name,
-                                              languages.Source, languages.Target,
-                                              notes: lineage.Notes ?? "", status: status,
-                                              resourcesUrl: lineage.ResourcesUrl ?? "",
+                                              source, target,
+                                              notes: edited.Notes, status: status,
+                                              resourcesUrl: edited.ResourcesUrl,
                                               // ⚠ Null on branch work, exactly like status: a
                                               // contribution does not decide this for the Main.
-                                              acceptsBranches: branchWork ? null : takeContributions,
+                                              acceptsBranches: branchWork ? null : edited.AcceptsContributions,
                                               company: report.Game.CompanyName);
 
         button.IsEnabled = true;
@@ -6170,6 +6197,14 @@ public partial class MainWindow : Window
                 publisher.LastError ?? "The site did not answer.");
             return;
         }
+
+        // 🔴 **The source just declared goes into the game, exactly as taking a published
+        // translation writes it.** It is the same fact from the same authority — the author
+        // stated it and the server now keeps it — and the mod does the same after its own upload
+        // (UploadPanel: "Source language recorded from upload"). Left unwritten, the mod would go
+        // on prompting without a source for every line it translates in this game, and strict
+        // source language would have nothing to enforce, until a launch signed in fetched it back.
+        if (ask.SourceIsAsked) WriteSourceLanguage(report, descriptor, source);
 
         await ConfirmationWindow.TellAsync(this, "Sent",
             lineage.Outcome == PublishOutcome.ContributeToTheirs
@@ -6227,11 +6262,13 @@ public partial class MainWindow : Window
 
         // ⚠ Nothing published means nothing to describe. Said rather than greyed: the button is
         // drawn before this answer is known, so its refusal has to arrive as a sentence.
+        // ⚠ And the sentence is TRUE now — the publish window asks the description and the link.
+        // It said so for two weeks while publishing asked neither (2026-09-05).
         if (!lineage.HasARowOfItsOwn || lineage.RowId is not { } rowId)
         {
             await ConfirmationWindow.TellAsync(this, "Nothing is published yet",
-                "These details belong to a published translation. Publish this one first — the "
-                + "same description and link are asked for as part of it.");
+                "These details belong to a published translation. Publish this one first: the "
+                + "description and the link are asked for as part of it.");
             return;
         }
 
@@ -11662,10 +11699,24 @@ public partial class MainWindow : Window
         var source = translation.SourceLanguage;
         if (string.IsNullOrWhiteSpace(source)) return;
 
+        WriteSourceLanguage(report, descriptor, source);
+    }
+
+    /// <summary>
+    /// Writes the source language into the game's config.json when it does not already name it.
+    ///
+    /// 🔴 **The only two callers are the only two legitimate writers of this key** — taking a
+    /// published translation, and publishing one for the first time. Both write a pair the author
+    /// stated and the server keeps. Nothing composed from settings or preferences may reach this:
+    /// the key is an instruction to the model, not a label, and a guess retires lines for good
+    /// (GameLanguages, GameConfigWriter.Compose).
+    /// </summary>
+    private static void WriteSourceLanguage(GameReport report, LoaderDescriptor descriptor, string source)
+    {
         var configured = LocalTranslationProbe.ReadLanguages(report.Game.Path, descriptor).Source;
         if (string.Equals(configured, source, StringComparison.OrdinalIgnoreCase)) return;
 
-        writer.ApplyOne(report.Game.Path, descriptor,
+        new GameConfigWriter().ApplyOne(report.Game.Path, descriptor,
             GameConfigWriter.SourceLanguageKey, source, "source language");
     }
 

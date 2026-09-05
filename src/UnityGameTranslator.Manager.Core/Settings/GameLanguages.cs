@@ -31,6 +31,11 @@ namespace UnityGameTranslator.Manager.Core.Settings;
 /// pair is stated by its author and kept by the server, which ignores the languages an update
 /// sends. Adopting that file is adopting its pair — writing half of it left the mod prompting
 /// without a source on every line it ever translates for that game.
+///
+/// ⚠ The second writer is the first publication FROM this tool (MainWindow.PublishTranslationAsync,
+/// via Api.PublishLanguages): the person declares the source there, exactly as the mod asks it at
+/// its own first upload, and the server keeps it from then on. Same authority, same key, and the
+/// same helper writes it (MainWindow.WriteSourceLanguage).
 /// </summary>
 public static class GameLanguages
 {

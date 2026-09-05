@@ -348,7 +348,11 @@ public static class LocalTranslationProbe
     /// <summary>One language field, with "auto" and blanks reported as "not set".</summary>
     private static string? Named(JsonElement root, string property)
     {
-        if (!root.TryGetProperty(property, out var value)) return null;
+        if (!root.TryGetProperty(property, out var value)
+            || value.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
 
         var language = value.GetString();
         return string.IsNullOrWhiteSpace(language)
@@ -371,6 +375,7 @@ public static class LocalTranslationProbe
 
             var entryCount = 0;
             string? uuid = null, gameName = null, steamId = null, sourceHash = null;
+            string? sourceLanguage = null, targetLanguage = null;
             var localChanges = 0;
             int human = 0, validated = 0, ai = 0, captured = 0, skipped = 0;
 
@@ -407,6 +412,16 @@ public static class LocalTranslationProbe
                                 : s.GetString();
                         }
                         break;
+
+                    // What the file says about itself, through the same reading as the config's
+                    // two keys: "auto" and blanks are not answers. See LocalTranslation for why the
+                    // target here outranks the config's.
+                    case "_source_language":
+                        sourceLanguage = Named(root, property.Name);
+                        break;
+                    case "_target_language":
+                        targetLanguage = Named(root, property.Name);
+                        break;
                 }
             }
 
@@ -416,6 +431,8 @@ public static class LocalTranslationProbe
                 Uuid = uuid,
                 GameName = gameName,
                 SteamId = steamId,
+                SourceLanguage = sourceLanguage,
+                TargetLanguage = targetLanguage,
                 EntryCount = entryCount,
                 LocalChanges = localChanges,
                 // Measured rather than believed. Costs one more read of a file we have just read,

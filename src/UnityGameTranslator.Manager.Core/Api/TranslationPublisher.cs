@@ -67,13 +67,24 @@ public enum PublishOutcome
 /// A branch whose Main is still published and whose owner erased their account. Nobody will ever
 /// read a contribution to it — and unlike the two above, nothing about the lineage looks wrong.
 /// </param>
+/// <param name="SourceLanguage">
+/// The language the LINEAGE is published from — this account's own row when it has one, the
+/// Main's otherwise. Null on nothing published yet.
+///
+/// 🔴 **On an update or a contribution this is the pair, full stop.** The server keeps the
+/// languages a lineage was published with and ignores whatever an upload sends
+/// (TranslationService::resolveLanguages), so what the file or the game's config say is at best
+/// the same thing and at worst stale. See <see cref="PublishLanguages"/> for who decides what.
+/// </param>
+/// <param name="TargetLanguage">The language the lineage is published into, under the same rule.</param>
 public sealed record LineageStanding(PublishOutcome Outcome, string? MainOwner,
                                      int? BranchesCount, string? ServerFileHash,
                                      bool OnABranch = false, string? Notes = null,
                                      string? ResourcesUrl = null, string? Status = null,
                                      int? RowId = null, bool? AcceptsBranches = null,
                                      bool BranchFrozen = false,
-                                     bool? MainMissing = null, bool? MainAbandoned = null)
+                                     bool? MainMissing = null, bool? MainAbandoned = null,
+                                     string? SourceLanguage = null, string? TargetLanguage = null)
 {
     /// <summary>Whether this account has a row here at all — the thing details can be edited on.</summary>
     public bool HasARowOfItsOwn => Outcome == PublishOutcome.UpdateMine;
@@ -210,7 +221,12 @@ public sealed class TranslationPublisher
                     // does for a frozen branch. Null on a server that predates them, and null is
                     // "not asked" — never "the Main is fine".
                     MainMissing: Flag(root, "main_missing"),
-                    MainAbandoned: Flag(root, "main_abandoned"));
+                    MainAbandoned: Flag(root, "main_abandoned"),
+
+                    // The pair this row was published under. A branch's is its Main's — the
+                    // server made it inherit — so reading our own row answers for both.
+                    SourceLanguage: has ? Text(mine, "source_language") : null,
+                    TargetLanguage: has ? Text(mine, "target_language") : null);
             }
 
             // Somebody else's lineage: we would be contributing to it — if they take contributions.
@@ -223,7 +239,12 @@ public sealed class TranslationPublisher
                                            // holding this file and about to contribute for the
                                            // first time meets the same wall, and meets it before
                                            // the work rather than after.
-                                           MainAbandoned: Flag(root, "main_abandoned"));
+                                           MainAbandoned: Flag(root, "main_abandoned"),
+
+                                           // A contribution inherits the Main's pair on arrival,
+                                           // so this is what the sender is told, before sending.
+                                           SourceLanguage: Text(main, "source_language"),
+                                           TargetLanguage: Text(main, "target_language"));
 
             // Exists without either shape: unknown to us, and inventing a reading would be worse
             // than saying so.
@@ -291,11 +312,11 @@ public sealed class TranslationPublisher
 
         // ⚠ Language NAMES, not codes: the endpoint checks them against the catalogue, and a code
         // is refused outright — which is the good outcome compared to publishing under a language
-        // nobody searches by.
+        // nobody searches by. Which two names to send is PublishLanguages' decision, taken before
+        // this is called; a blank here is a caller that skipped it.
         if (string.IsNullOrWhiteSpace(sourceLanguage) || string.IsNullOrWhiteSpace(targetLanguage))
         {
-            LastError = "Publishing needs to know which language this translates from, and into. "
-                      + "Both are set in the game's own settings.";
+            LastError = "Publishing needs to know which language this translates from, and into.";
             return null;
         }
 

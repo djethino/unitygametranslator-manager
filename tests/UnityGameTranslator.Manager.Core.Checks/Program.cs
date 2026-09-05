@@ -29,6 +29,8 @@ internal static class Program
         TranslationChoiceChecks.WhichTranslationAGameWouldGet();
         TranslationChoiceChecks.WhenNothingIsWaiting();
         LanguagePairChecks.WhichLanguagesAGameShows();
+        PublishLanguagesChecks.WhichLanguagesAPublicationTravelsUnder();
+        PublishLanguagesChecks.WhatASourceMayBe();
         ModelOrderChecks.HowModelsAreRanked();
         ModelOrderChecks.WhichRowsCarryAMark();
         UserDataChecks.WhichFilesAreTheModsInterface();

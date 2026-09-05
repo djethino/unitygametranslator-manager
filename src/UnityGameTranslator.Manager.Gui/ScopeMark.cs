@@ -110,6 +110,18 @@ public static class ScopeMark
     }
 
     /// <summary>
+    /// A marked button's label, for putting it back after "Checking…".
+    ///
+    /// ⚠ Read rather than remembered by the caller as a literal: the label is a verb the card
+    /// chose from the lineage (Upload…, Update…), and a literal written back after a busy state
+    /// was how "Upload…" turned into "Publish…" on the first cancelled click.
+    /// </summary>
+    public static string? LabelOf(Button button) =>
+        button.Content is StackPanel { Children.Count: 3 } row && row.Children[2] is TextBlock text
+            ? text.Text
+            : null;
+
+    /// <summary>
     /// The identity the socle gives a side, turned into this program's picture.
     ///
     /// ⚠ No default case on purpose-by-omission: an unknown mark would come back as an empty box,

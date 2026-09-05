@@ -6009,14 +6009,20 @@ public partial class MainWindow : Window
             return;
         }
 
+        // ⚠ The verb the card chose, put back as it was — or as the server's fresh answer says it
+        // should be. A literal here turned "Upload…" into "Publish…" on the first cancelled click.
+        var verb = ScopeMark.LabelOf(button) ?? Uploads.Verb(UploadAct.Upload) + "…";
+
         button.IsEnabled = false;
         ScopeMark.SetLabel(button, "Checking…");
 
         var publisher = new TranslationPublisher();
         var lineage = await publisher.CheckAsync(report.LocalTranslation?.Uuid ?? "", token);
 
+        if (lineage is not null) verb = Uploads.Verb(lineage.Act) + "…";
+
         button.IsEnabled = true;
-        ScopeMark.SetLabel(button, "Publish…");
+        ScopeMark.SetLabel(button, verb);
 
         if (lineage is null)
         {
@@ -6152,7 +6158,7 @@ public partial class MainWindow : Window
                                               company: report.Game.CompanyName);
 
         button.IsEnabled = true;
-        ScopeMark.SetLabel(button, "Publish…");
+        ScopeMark.SetLabel(button, verb);
 
         if (id is null)
         {

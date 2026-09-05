@@ -108,6 +108,77 @@ public sealed class CatalogApiClient
         }
     }
 
+    /// <summary>
+    /// What the site knows about a game somebody is about to publish under.
+    ///
+    /// ⚠ Ranked by the caller through <see cref="Common.GameCandidates"/>, never here: the order
+    /// is the same decision in every product. This only carries what the server said.
+    /// </summary>
+    /// <param name="Source">Where the site found it: "local" (its own catalogue), "steam", "igdb", "rawg".</param>
+    public sealed record GameCandidate(int Id, string? Name, string? SteamId, string? Source,
+                                       int TranslationsCount);
+
+    /// <summary>
+    /// The games the site offers for a name or a Steam id — its own catalogue first, then the
+    /// stores and the game databases. The same endpoint the mod asks before a first upload.
+    ///
+    /// ⚠ Null when the question could not be asked, which is not an empty answer: a caller falls
+    /// back on what this machine detected, and says so, rather than on "no such game".
+    /// </summary>
+    public async Task<IReadOnlyList<GameCandidate>?> SearchGamesAsync(string? query, string? steamId,
+                                                                      CancellationToken ct = default)
+    {
+        LastError = null;
+        LastStatus = null;
+
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(query)) parts.Add("q=" + Uri.EscapeDataString(query.Trim()));
+        if (!string.IsNullOrWhiteSpace(steamId)) parts.Add("steam_id=" + Uri.EscapeDataString(steamId.Trim()));
+        if (parts.Count == 0) return Array.Empty<GameCandidate>();
+
+        var url = $"{BuildInfo.ApiBaseUrl}/games/search?{string.Join("&", parts)}";
+
+        try
+        {
+            var json = await GetAsync(url, null, ct).ConfigureAwait(false);
+
+            using var document = JsonDocument.Parse(json);
+            if (!document.RootElement.TryGetProperty("games", out var games)
+                || games.ValueKind != JsonValueKind.Array)
+            {
+                return Array.Empty<GameCandidate>();
+            }
+
+            var found = new List<GameCandidate>();
+            foreach (var game in games.EnumerateArray())
+            {
+                if (game.ValueKind != JsonValueKind.Object) continue;
+
+                found.Add(new GameCandidate(
+                    game.TryGetProperty("id", out var id) && id.TryGetInt32(out var number) ? number : 0,
+                    Text(game, "name"),
+                    // A number on one source, a string on another: read either way.
+                    game.TryGetProperty("steam_id", out var steam)
+                        ? steam.ValueKind == JsonValueKind.Number ? steam.GetRawText() : steam.GetString()
+                        : null,
+                    Text(game, "source"),
+                    game.TryGetProperty("translations_count", out var count) && count.TryGetInt32(out var n) ? n : 0));
+            }
+
+            return found;
+        }
+        catch (Exception ex)
+        {
+            LastError = Net.Http.Describe(ex, "the community site");
+            return null;
+        }
+    }
+
+    private static string? Text(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+
     /// <summary>One game to ask about: how to find it, and what this machine already holds of it.</summary>
     /// <param name="Key">The caller's own key, handed back untouched so answers can be matched up.</param>
     /// <param name="Uuid">

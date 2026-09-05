@@ -18,9 +18,26 @@ namespace UnityGameTranslator.Manager.Gui;
 /// which is a first publication. Null everywhere else: the pair is the lineage's and was shown,
 /// not asked.
 /// </param>
+/// <param name="GameName">The game confirmed for a first publication — the site's name for it. Null when not asked.</param>
+/// <param name="GameSteamId">Its Steam id as the site knows it, or the detected one when the site has none.</param>
 public readonly record struct TranslationDetails(bool Saved, string Notes, string ResourcesUrl,
                                                  bool Finished, bool AcceptsContributions,
-                                                 string? SourceLanguage = null);
+                                                 string? SourceLanguage = null,
+                                                 string? GameName = null, string? GameSteamId = null);
+
+/// <summary>
+/// The game a first publication has to be filed under, and how to ask the site about it.
+///
+/// 🔴 **Asked BEFORE the upload, as the mod has always done.** The server will create a game
+/// around whatever name arrives; a name read from a repack's folder or a product called "Game"
+/// then becomes a translation nobody else ever finds. So the site is asked — by Steam id when
+/// there is one, by name otherwise — and the person picks from what it answers.
+/// </summary>
+/// <param name="DetectedName">What this machine read: the product name, or the folder's.</param>
+/// <param name="DetectedSteamId">The Steam id read on this machine, when there is one.</param>
+/// <param name="Search">Asks the site: a name, a Steam id, or both. Null when it could not be asked.</param>
+public sealed record GameToConfirm(string? DetectedName, string? DetectedSteamId,
+                                   Func<string?, string?, Task<IReadOnlyList<CatalogApiClient.GameCandidate>?>> Search);
 
 /// <summary>
 /// The things said ABOUT a translation rather than in it: what it is, where to find the fonts or
@@ -68,13 +85,26 @@ public sealed class TranslationDetailsWindow : Window
     /// <summary>The target the picker is judged against. Null when no language is in play.</summary>
     private readonly string? _target;
 
+    // The game block of a first publication. All null when the game is not in question.
+    private readonly GameToConfirm? _game;
+    private readonly TextBlock? _gameName;
+    private readonly TextBlock? _gameState;
+    private readonly TextBox? _gameSearch;
+    private readonly Button? _gameSearchButton;
+    private readonly TextBlock? _gameSearchStatus;
+    private readonly ListBox? _gameResults;
+
+    /// <summary>The game confirmed so far: the site's name and id, or the detected ones.</summary>
+    private (string Name, string? SteamId)? _confirmedGame;
+
     private bool _saved;
 
     private TranslationDetailsWindow(string heading, string? body, PublishLanguages.Ask? languages,
                                      IPlatform? platform, string notes, string url,
                                      bool finished, bool onABranch, bool acceptsContributions,
-                                     string confirm)
+                                     string confirm, GameToConfirm? game = null)
     {
+        _game = game;
         Title = languages is null ? "Translation details" : "Publish translation";
         Width = 560;
         SizeToContent = SizeToContent.Height;
@@ -105,6 +135,78 @@ public sealed class TranslationDetailsWindow : Window
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = this.FindResource("TextSecondary") as IBrush,
             });
+        }
+
+        // ── The game, first: everything below is filed under it ──────────────
+        //
+        // ⚠ The same three parts as the mod's setup screen, in the same order: the game as read
+        // here and whether it is confirmed, a search field, the site's answers marked ★ and ☆.
+        if (game is not null)
+        {
+            layout.Children.Add(Label("Game"));
+
+            var gameRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+            _gameName = new TextBlock
+            {
+                Text = game.DetectedName ?? "No game detected",
+                FontWeight = FontWeight.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = this.FindResource("TextPrimary") as IBrush,
+            };
+            _gameState = new TextBlock
+            {
+                FontSize = 11,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(12, 0, 0, 0),
+                Foreground = this.FindResource("StatusWarning") as IBrush,
+            };
+            Grid.SetColumn(_gameName, 0);
+            Grid.SetColumn(_gameState, 1);
+            gameRow.Children.Add(_gameName);
+            gameRow.Children.Add(_gameState);
+            layout.Children.Add(gameRow);
+
+            var searchRow = new Grid
+            {
+                ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+                ColumnSpacing = 8,
+            };
+            _gameSearch = new TextBox { Watermark = "Search for a game…" };
+            _gameSearchButton = new Button { Content = "Search" };
+            Grid.SetColumn(_gameSearch, 0);
+            Grid.SetColumn(_gameSearchButton, 1);
+            searchRow.Children.Add(_gameSearch);
+            searchRow.Children.Add(_gameSearchButton);
+            layout.Children.Add(searchRow);
+
+            _gameSearchStatus = Hint("");
+            layout.Children.Add(_gameSearchStatus);
+
+            _gameResults = new ListBox { MaxHeight = 160 };
+            layout.Children.Add(_gameResults);
+
+            layout.Children.Add(Hint(GameCandidates.Legend));
+
+            _gameSearchButton.Click += async (_, _) => await SearchGamesAsync(_gameSearch.Text, null);
+            _gameSearch.KeyDown += async (_, e) =>
+            {
+                if (e.Key == Avalonia.Input.Key.Enter) await SearchGamesAsync(_gameSearch.Text, null);
+            };
+
+            // 🔴 **Highlighting a row IS choosing it here**, unlike the language picker: the list
+            // is short, the rows are answers, and the mod's screen confirms on a single click too.
+            _gameResults.SelectionChanged += (_, _) =>
+            {
+                if (_gameResults.SelectedItem is CandidateRow row)
+                {
+                    _confirmedGame = (row.Candidate.Name ?? game.DetectedName ?? "", row.Candidate.SteamId ?? game.DetectedSteamId);
+                    ShowGame(confirmed: true);
+                    Acceptable();
+                }
+            };
+
+            ShowGame(confirmed: false);
         }
 
         if (languages is { } ask)
@@ -250,6 +352,120 @@ public sealed class TranslationDetailsWindow : Window
         // ⚠ Judged once on opening too: a first publication with no source suggested opens with
         // the button off and the reason written, rather than with a button that refuses on click.
         Acceptable();
+
+        // Then the site is asked about the game, once the window is on screen: by Steam id when
+        // there is one, by the detected name otherwise. Posted so the window opens first — a
+        // search that fails must not delay it, and its answer redraws the block when it comes.
+        if (game is not null)
+            Avalonia.Threading.Dispatcher.UIThread.Post(async () => await ConfirmDetectedGameAsync(game));
+    }
+
+    /// <summary>
+    /// What the mod's setup screen does on opening: a Steam id is looked up on the site and its
+    /// answer taken as the game, else the detected name is searched and the person picks.
+    ///
+    /// ⚠ A Steam id the site does not know is not a refusal: the game is taken as detected and the
+    /// server creates it on upload, exactly as the mod does. What is never done is taking a NAME
+    /// as confirmed without the person having seen the site's answers.
+    /// </summary>
+    private async Task ConfirmDetectedGameAsync(GameToConfirm game)
+    {
+        if (!string.IsNullOrWhiteSpace(game.DetectedSteamId))
+        {
+            var found = await SearchGamesAsync(null, game.DetectedSteamId);
+
+            if (found is { Count: > 0 })
+            {
+                var best = found[0];
+                _confirmedGame = (best.Name ?? game.DetectedName ?? "", best.SteamId ?? game.DetectedSteamId);
+            }
+            else if (found is not null)
+            {
+                // Asked and unknown: the site will create it from what this machine read.
+                _confirmedGame = (game.DetectedName ?? "", game.DetectedSteamId);
+            }
+
+            ShowGame(confirmed: _confirmedGame is not null);
+            Acceptable();
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(game.DetectedName) && _gameSearch is not null)
+        {
+            _gameSearch.Text = game.DetectedName;
+            await SearchGamesAsync(game.DetectedName, null);
+        }
+    }
+
+    /// <summary>Asks the site and fills the list, likeliest first. Returns what it answered.</summary>
+    private async Task<IReadOnlyList<CatalogApiClient.GameCandidate>?> SearchGamesAsync(string? query, string? steamId)
+    {
+        if (_game is null || _gameResults is null || _gameSearchStatus is null || _gameSearchButton is null)
+            return null;
+
+        query = query?.Trim();
+        if (steamId is null && (query is null || query.Length < 2))
+        {
+            _gameSearchStatus.Text = "Enter at least 2 characters";
+            return null;
+        }
+
+        _gameSearchButton.IsEnabled = false;
+        _gameSearchStatus.Text = "Searching…";
+        _gameResults.ItemsSource = null;
+
+        var found = await _game.Search(query, steamId);
+
+        _gameSearchButton.IsEnabled = true;
+
+        if (found is null)
+        {
+            _gameSearchStatus.Text = "The site could not be reached. The game is taken as detected.";
+            return null;
+        }
+
+        // Likeliest first — the socle's score, the same order the mod shows.
+        var rows = found
+            .Select(candidate => new CandidateRow(candidate,
+                GameCandidates.Confidence(candidate.SteamId, candidate.Name, candidate.Source,
+                                          _game.DetectedSteamId, _game.DetectedName)))
+            .OrderByDescending(row => row.Confidence)
+            .ToList();
+
+        _gameResults.ItemsSource = rows;
+        _gameSearchStatus.Text = rows.Count == 0
+            ? "No games found"
+            : rows.Count == 1 ? "Found 1 game" : $"Found {rows.Count} games";
+
+        return found;
+    }
+
+    /// <summary>The game line: its name, and whether it is confirmed or still to confirm.</summary>
+    private void ShowGame(bool confirmed)
+    {
+        if (_gameName is null || _gameState is null || _game is null) return;
+
+        if (confirmed && _confirmedGame is { } picked)
+        {
+            _gameName.Text = picked.Name;
+            _gameName.Foreground = this.FindResource("StatusSuccess") as IBrush;
+            _gameState.Text = "✓ confirmed";
+            _gameState.Foreground = this.FindResource("StatusSuccess") as IBrush;
+            return;
+        }
+
+        var detected = !string.IsNullOrWhiteSpace(_game.DetectedName);
+        _gameName.Text = detected ? _game.DetectedName : "No game detected";
+        _gameName.Foreground = this.FindResource("StatusWarning") as IBrush;
+        _gameState.Text = detected ? "⚠ confirm below" : "- please search";
+        _gameState.Foreground = this.FindResource(detected ? "StatusWarning" : "TextMuted") as IBrush;
+    }
+
+    /// <summary>One answer from the site, as the list shows it.</summary>
+    private sealed record CandidateRow(CatalogApiClient.GameCandidate Candidate, int Confidence)
+    {
+        public override string ToString() =>
+            GameCandidates.Row(Candidate.Name, Candidate.Source, Confidence);
     }
 
     /// <summary>
@@ -264,7 +480,11 @@ public sealed class TranslationDetailsWindow : Window
     {
         string? complaint = null;
 
-        if (_source is not null && _target is not null)
+        // The game first, as the mod's screen judges it: nothing below it can be sent unfiled.
+        if (_game is not null && _confirmedGame is null)
+            complaint = "Please select a game";
+
+        if (complaint is null && _source is not null && _target is not null)
             complaint = PublishLanguages.Complaint(SourceName(), _target);
 
         var url = _url.Text?.Trim() ?? "";
@@ -342,18 +562,23 @@ public sealed class TranslationDetailsWindow : Window
     /// its own dialogue, never by opening a form that cannot be sent.
     /// </param>
     /// <param name="platform">Needed to build the source picker. Unused when the source is fixed.</param>
-    /// <param name="confirm">"Publish", or "Send as a contribution".</param>
+    /// <param name="confirm">The verb: Upload or Update.</param>
+    /// <param name="game">
+    /// On a first publication, the game to confirm with the site before anything is filed under
+    /// it. Null on an update: the lineage already names its game and the server ignores any other.
+    /// </param>
     public static async Task<TranslationDetails> PublishAsync(
         Window owner, string heading, string body, PublishLanguages.Ask languages,
         IPlatform platform, string? notes, string? resourcesUrl,
-        bool finished, bool onABranch, bool acceptsContributions, string confirm)
+        bool finished, bool onABranch, bool acceptsContributions, string confirm,
+        GameToConfirm? game = null)
     {
         if (!languages.CanProceed)
             throw new ArgumentException("A refusal is said before this window, not by it.", nameof(languages));
 
         var window = new TranslationDetailsWindow(heading, body, languages, platform, notes ?? "",
                                                   resourcesUrl ?? "", finished, onABranch,
-                                                  acceptsContributions, confirm);
+                                                  acceptsContributions, confirm, game);
         await window.ShowDialog(owner);
 
         return Read(window);
@@ -365,5 +590,7 @@ public sealed class TranslationDetailsWindow : Window
         window._url.Text?.Trim() ?? "",
         window._finished?.IsChecked == true,
         window._contributions?.IsChecked == true,
-        window._saved ? window.SourceName() : null);
+        window._saved ? window.SourceName() : null,
+        window._saved ? window._confirmedGame?.Name : null,
+        window._saved ? window._confirmedGame?.SteamId : null);
 }

@@ -6113,9 +6113,21 @@ public partial class MainWindow : Window
             ? "Update your contribution?"
             : $"{confirm} this translation?";
 
+        // 🔴 **On a first publication the GAME is confirmed with the site before anything is filed
+        // under it**, as the mod has always done: by Steam id, else by name with the person picking
+        // from the site's answers. The server creates a game around whatever name arrives, and
+        // one created from a repack's folder is a translation nobody else finds. Nothing is asked
+        // on an update: the lineage already names its game and the server ignores any other.
+        var api = new CatalogApiClient();
+        var game = ask.SourceIsAsked
+            ? new GameToConfirm(report.Game.ProductName ?? report.Game.Name, report.Game.SteamAppId,
+                                (query, steamId) => api.SearchGamesAsync(query, steamId))
+            : null;
+
         var edited = await TranslationDetailsWindow.PublishAsync(
             this, heading, body, ask, _platform,
-            lineage.Notes, lineage.ResourcesUrl, alreadyComplete, branchWork, alreadyOpen, confirm);
+            lineage.Notes, lineage.ResourcesUrl, alreadyComplete, branchWork, alreadyOpen, confirm,
+            game);
 
         if (!edited.Saved) return;
 
@@ -6147,8 +6159,11 @@ public partial class MainWindow : Window
         // ⚠ The name Unity wrote, not the one on screen: it is what the site records as
         // `unity_name`, and what every other machine will search this game with. The display name
         // can be a store manifest or a repack's folder, which nobody else can reproduce.
-        var id = await publisher.PublishAsync(content, token, report.Game.SteamAppId,
-                                              report.Game.ProductName ?? report.Game.Name,
+        // The game as confirmed with the site on a first publication — its name and id, which are
+        // what the server resolves on — and this machine's reading everywhere else.
+        var id = await publisher.PublishAsync(content, token,
+                                              edited.GameSteamId ?? report.Game.SteamAppId,
+                                              edited.GameName ?? report.Game.ProductName ?? report.Game.Name,
                                               source, target,
                                               notes: edited.Notes, status: status,
                                               resourcesUrl: edited.ResourcesUrl,

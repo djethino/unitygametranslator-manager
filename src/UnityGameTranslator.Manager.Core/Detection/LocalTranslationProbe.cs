@@ -17,7 +17,7 @@ namespace UnityGameTranslator.Manager.Core.Detection;
 /// </summary>
 public static class LocalTranslationProbe
 {
-    public const string TranslationFileName = "translations.json";
+    public const string TranslationFileName = TranslationFiles.Name;
     public const string ConfigFileName = "config.json";
     public const string PluginAssemblyName = "UnityGameTranslator.dll";
 
@@ -191,7 +191,7 @@ public static class LocalTranslationProbe
     /// tell "I changed this" from "the published version moved", and every difference has to be
     /// reported as an unknown.
     /// </summary>
-    public const string AncestorFileName = TranslationFileName + ".ancestor";
+    public const string AncestorFileName = TranslationFileName + TranslationFiles.AncestorSuffix;
 
     /// <summary>
     /// Every translated line of a file, keyed as the file keys them. Null when there is no such

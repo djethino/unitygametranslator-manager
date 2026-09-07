@@ -23,7 +23,8 @@ namespace UnityGameTranslator.Manager.Core.Install;
 public static class TranslationBackupStore
 {
     private const string TranslationFile = "translations.json";
-    private const string AncestorFile = "translations.json.ancestor";
+    // Inside a copy the ancestor keeps the name it has beside the translation — one spelling, the socle's.
+    private const string AncestorFile = LocalTranslationProbe.AncestorFileName;
 
     /// <summary>Marks an id that names a file left by an earlier version rather than a folder.</summary>
     private const string LegacyPrefix = "legacy:";
@@ -311,15 +312,22 @@ public static class TranslationBackupStore
         try
         {
             if (JsonNode.Parse(File.ReadAllText(translationPath)) is not JsonObject root) return names;
-            if (root["_images"] is not JsonArray images) return names;
+            // ⚠ The key the file WRITES. This read `_images` — a key nothing writes — for as long as
+            // the mod did, and every saved copy carried no image. The spelling lives in the socle.
+            if (root[TranslationFiles.ImagesSection] is not JsonArray images) return names;
 
             foreach (var item in images)
             {
                 if (item is not JsonObject obj) continue;
 
-                names.Add(obj["file"]?.GetValue<string>()
-                          ?? obj["replacement_file"]?.GetValue<string>()
-                          ?? obj["original_file"]?.GetValue<string>());
+                var file = obj[TranslationFiles.ImageFileField]?.GetValue<string>();
+                foreach (var legacy in TranslationFiles.ImageFileLegacyFields)
+                {
+                    if (!string.IsNullOrEmpty(file)) break;
+                    file = obj[legacy]?.GetValue<string>();
+                }
+
+                names.Add(file);
             }
         }
         catch

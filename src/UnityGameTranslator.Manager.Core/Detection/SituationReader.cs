@@ -93,29 +93,38 @@ public static class SituationReader
             //     stamp the mod bumps whenever it caches a line, so a real update went unmentioned
             //     for any game somebody had simply played.
             //
-            // One verdict, one vocabulary. The four words are the ecosystem's own, fixed on
-            // 2026-08-14: Up to date / Update available / Unpublished changes / Conflict.
+            // One verdict, one vocabulary — and the words come from Sync.Name, which owns them.
+            // ⚠ They were typed out here AND in the badge strip, under this very comment: the
+            // verdict was shared and the vocabulary was not, so changing one of the four words
+            // would have reached a badge and left this row saying the old thing.
+            //
+            // What stays this list's own is the VERB on the button, which is not a description of
+            // the state but of the act this window offers for it.
             if (report.Sync is { } sync && sync != SyncDirection.InSync)
             {
-                var (headline, verb, situation) = sync switch
+                var (verb, situation) = sync switch
                 {
-                    SyncDirection.Merge => ("Conflict", "Manage", Situation.Conflict),
-                    SyncDirection.Upload => ("Unpublished changes", "Manage", Situation.UnpublishedWork),
-                    SyncDirection.Download => ("Update available", "Update", Situation.UpdateAvailable),
-                    _ => ("", "", Situation.Ready),
+                    SyncDirection.Merge => ("Manage", Situation.Conflict),
+                    SyncDirection.Upload => ("Manage", Situation.UnpublishedWork),
+                    SyncDirection.Download => ("Update", Situation.UpdateAvailable),
+                    _ => ("", Situation.Ready),
                 };
 
-                if (headline.Length > 0)
-                    return new GameSituationInfo(situation, headline, Standing(report, local, signedInAs), verb, pending);
+                if (verb.Length > 0)
+                    return new GameSituationInfo(situation, Sync.Name(sync), Standing(report, local, signedInAs), verb, pending);
             }
 
             // Nothing published to compare against — see GameReport.Sync, whose null covers exactly
             // that. Work that exists in this game and nowhere else is still worth naming, and the
             // shared verdict cannot name it because there is no other side to the comparison.
+            //
+            // ⚠ Said in the same words as the verdict above, on purpose: to whoever is reading,
+            // work that has never been published and work the published copy has not caught up
+            // with are the same thing — theirs, and only here.
             if (report.Sync is null && local is { LocalChanges: > 0 })
             {
                 return new GameSituationInfo(
-                    Situation.UnpublishedWork, "Unpublished changes",
+                    Situation.UnpublishedWork, Sync.Name(SyncDirection.Upload),
                     Standing(report, local, signedInAs), "Manage", pending);
             }
 

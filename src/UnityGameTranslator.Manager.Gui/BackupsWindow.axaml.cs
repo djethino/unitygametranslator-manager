@@ -297,14 +297,23 @@ public sealed class BackupsWindow : Window
         // the buttons — the saved list showed it first, carrying three verbs instead of two. Cut
         // with an ellipsis it lost the end; split in two it loses nothing, and the row reads the
         // way the rows below it already did.
+        // 🔴 **A NAME identifies; a date only qualifies.** Both products wrote the name in the
+        // smallest size and the dimmest colour, on the second line, under the date — so the one
+        // thing somebody scans a list of ten dated rows for was the hardest thing on the row to
+        // read. The rename help in the mod says it outright: a name is what makes one of them
+        // findable.
+        //
+        // ⚠ The grammar of the row does not change, only what fills each slot. Kept identical to
+        // the mod's, deliberately: this is one list of one folder shown in two windows.
+        string named = !string.IsNullOrEmpty(entry.Label) ? entry.Label : null;
         var facts = $"{entry.At:dd MMM HH:mm}   {entry.Lines} lines";
 
         var details = new List<string>();
 
-        // The name somebody gave it, or the act that caused it — first, because it is what the
-        // eye is looking for. An unnamed saved copy says nothing here: "Saved by you" would be
-        // the title of the very card it sits in, repeated on every row.
-        if (!string.IsNullOrEmpty(entry.Label)) details.Add("\"" + entry.Label + "\"");
+        // Named, the date joins the qualifiers. Unnamed, the act that caused it takes their first
+        // place — an unnamed saved copy says nothing here, since "Saved by you" is the title of
+        // the very card it sits in, repeated on every row.
+        if (named != null) details.Add(facts);
         else if (!entry.IsSaved) details.Add(Backups.Describe(entry.Reason, entry.By));
 
         if (entry.ByHand > 0) details.Add($"{entry.ByHand} by hand");
@@ -324,7 +333,7 @@ public sealed class BackupsWindow : Window
 
         text.Children.Add(new TextBlock
         {
-            Text = facts,
+            Text = named ?? facts,
             TextTrimming = TextTrimming.CharacterEllipsis,
             Foreground = Brush("TextPrimary"),
         });

@@ -9668,8 +9668,16 @@ public partial class MainWindow : Window
             Margin = new Avalonia.Thickness(16, 0, 0, 0),
         };
 
-        // Beside the button rather than up in the card: it changes what the button does, and a
-        // switch for an action belongs where the action is.
+        // 🔴 **Under the sentence, not beside the buttons.** It changes what the button does, so it
+        // was put next to it — and that cost the sentence its width: the buttons take what they
+        // need, the box took its own text width on top, and the explanation was left with a strip
+        // narrow enough to wrap "swap the translation here for another one, and set this game to
+        // English (it will ask first)" over ten lines. A bar that is one line tall became a third
+        // of the window.
+        //
+        // ⚠ It still reads as belonging to the act: it sits directly under the step it qualifies,
+        // which is the sentence that names that act. Column 0 grows with the window; the button
+        // column never does.
         //
         // ⚠ Absent when there is nothing for it to do — nothing published to take, the file here
         // already IS the one that would be taken, or this game is set up under another account. A
@@ -9728,7 +9736,9 @@ public partial class MainWindow : Window
                 ShowActionBar(report);
             };
 
-            right.Children.Add(withTranslation);
+            withTranslation.Margin = new Avalonia.Thickness(0, 4, 0, 0);
+            withTranslation.HorizontalAlignment = HorizontalAlignment.Left;
+            explanation.Children.Add(withTranslation);
         }
 
         var go = new Button

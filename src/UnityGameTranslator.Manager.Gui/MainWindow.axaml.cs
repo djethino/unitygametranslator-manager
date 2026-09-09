@@ -9836,10 +9836,14 @@ public partial class MainWindow : Window
             yield return new(OneClickAct.UpdateLoader,
                              $"update the loader to {report.LoaderStanding!.Available}");
 
-        if (report.InstalledPluginVersion is null)
-            yield return new(OneClickAct.InstallMod, "install the mod");
-        else if (report.PluginStanding is { UpdateAvailable: true } pluginStanding)
-            yield return new(OneClickAct.UpdateMod, $"update the mod to {pluginStanding.Available}");
+        // ⚠ One question — report.PluginWriteOffered — asked here and by BuildPlan. The two
+        // branches below only choose the WORDS; whether there is a step at all is decided once.
+        if (report.PluginWriteOffered)
+        {
+            yield return report.InstalledPluginVersion is null
+                ? new(OneClickAct.InstallMod, "install the mod")
+                : new(OneClickAct.UpdateMod, $"update the mod to {report.PluginStanding!.Available}");
+        }
 
         // ⚠ Only when it would actually change something. This step used to be listed whenever the
         // box was ticked — which it is by default — so the list was NEVER empty, "nothing left for
@@ -10694,7 +10698,11 @@ public partial class MainWindow : Window
                                        // ⚠ Offered, not merely available: a newer loader we did
                                        // not install is reported and never written.
                                        || report.LoaderUpdateOffered),
-            InstallPlugin = plugin,
+            // ⚠ Conditioned exactly as InstallLoader above, and for the same reason: `plugin: true`
+            // means "put one there if needed", not "write one whatever is there". Without this the
+            // one-click rewrote a current mod on every click while its own confirmation dialog —
+            // built from PluginWriteOffered — said nothing about the mod at all.
+            InstallPlugin = plugin && (force || report.PluginWriteOffered),
 
             // Which BUILD of that loader: the one somebody picked by hand, and otherwise the one
             // Plan() resolved for the chosen channel — the very build this card names.
@@ -11090,9 +11098,11 @@ public partial class MainWindow : Window
         // while doing so is not, and it happened silently — an update wrote the whole configuration
         // from THIS account's answers. `settings: false` is the switch the loader button has used
         // since the day an "install the loader" wrote a config.json it had no business writing.
+        // force: this button was pressed by name, exactly as the loader's is. Without it a
+        // reinstall on an up-to-date game would confirm, run, report success and replace nothing.
         var plan = BuildPlan(report, preference,
             loader: report.InstalledLoader is null, plugin: true,
-            settings: MaySetUp(report));
+            settings: MaySetUp(report), force: true);
 
         await RunInstallAsync(report, new InstallEngine(_platform, _catalog), plan);
     }

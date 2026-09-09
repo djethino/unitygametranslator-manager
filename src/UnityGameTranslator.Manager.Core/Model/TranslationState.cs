@@ -615,6 +615,30 @@ public sealed class GameReport
         && LoaderStanding is { UpdateAvailable: true };
 
     /// <summary>
+    /// Whether putting the mod into this game would write anything — nothing here, or something
+    /// newer than what is here.
+    ///
+    /// 🔴 **The plugin had no twin of <see cref="LoaderUpdateOffered"/>, and the plan had no
+    /// condition at all**: `InstallPlugin = plugin` was a pass-through, so a one-click reinstalled
+    /// a mod that was already current, every time. What made that a defect rather than a waste is
+    /// that the confirmation dialog LISTS what is about to happen, and its list is built from the
+    /// two questions below — so on an up-to-date game the dialog said nothing about the mod and
+    /// the mod was rewritten anyway. Measured 2026-09-09: someone ticked "also bring a translation
+    /// down", and the click replaced the plugin they were running with the published release.
+    ///
+    /// ⚠ **Read by the promise AND by the act**, which is the whole point of it being here rather
+    /// than in a screen. The loader's own comment says the same thing about its parameter, and the
+    /// settings step already learnt this lesson once (see WouldWriteSettings): two copies of one
+    /// condition drift, and what drifts is what somebody was told versus what was done to them.
+    ///
+    /// ⚠ **"Asked for by name" is NOT this question.** A repair — the mod's own button — must
+    /// write even when the versions match, or it would confirm, run, report success and replace
+    /// nothing. That is what the plan's `force` is for, exactly as for the loader.
+    /// </summary>
+    public bool PluginWriteOffered =>
+        InstalledPluginVersion is null || PluginStanding is { UpdateAvailable: true };
+
+    /// <summary>
     /// Set from GamePreference.AdoptLoader: this game's loader is ours to manage although we did
     /// not put it there. Read by everything that offers to act, so the answer lives in one place.
     /// </summary>

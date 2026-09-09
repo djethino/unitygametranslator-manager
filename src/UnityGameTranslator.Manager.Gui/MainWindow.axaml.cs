@@ -9898,16 +9898,23 @@ public partial class MainWindow : Window
         if (!mayChangeThisGame || !_takeTranslation
             || TranslationWaiting(report) is not { } chosen) yield break;
 
+        // ⚠ **The language the game is about to be pointed at, when it moves.** Taking a
+        // translation also writes `target_language`, and only the fourth wording below ever named a
+        // language — so a swap or an update changed what the game translates INTO without a word.
+        // Said only when it actually changes: AlignGameLanguage writes nothing otherwise.
+        var switching = LanguageSwitchOnTaking(report, chosen);
+        var andLanguage = switching is { } move ? $", and set this game to {move.To}" : "";
+
         // Worded by what it would DO, not by what exists. The three are different acts and the
         // person is about to authorise one of them with a single click.
         yield return TranslationOffers.For(report, chosen) switch
         {
             TranslationOffer.ReplacesWork => new(OneClickAct.ReplaceTranslation,
-                "replace the translation here, losing what was never uploaded (it will ask first)"),
+                $"replace the translation here, losing what was never uploaded{andLanguage} (it will ask first)"),
             TranslationOffer.ReplacesChoice => new(OneClickAct.ReplaceTranslation,
-                "swap the translation here for another one (it will ask first)"),
+                $"swap the translation here for another one{andLanguage} (it will ask first)"),
             TranslationOffer.FreeToTake when report.LocalTranslation is not null =>
-                new(OneClickAct.UpdateTranslation, "update the translation"),
+                new(OneClickAct.UpdateTranslation, $"update the translation{andLanguage}"),
             _ => new(OneClickAct.TakeTranslation,
                 $"take the {chosen.TargetLanguage ?? Languages.NameOf(_settings.ResolveTargetLanguage())} "
                 + $"translation by {People.MentionOf(chosen.Author, _settings.Current.ApiUser)}"),
@@ -10652,7 +10659,15 @@ public partial class MainWindow : Window
         //
         // ⚠ The wizard stays open in that case, decided in the plan: the unanswered fields are
         // still guesses, and the wizard is the only thing that will ever correct them.
-        var writeSettings = settings && WouldWriteSettings(report, preference);
+        // ⚠ **Both halves, because the step list asks both.** WouldWriteSettings answers "may we
+        // write here"; SettingsWouldChangeAnything answers "is there anything to write". The list
+        // required the pair and the plan only the first, so a game whose configuration already
+        // matched had it rewritten while the confirmation dialog said nothing about settings.
+        // Harmless in content — identical values — and exactly the drift that let InstallPlugin
+        // rewrite a current mod. It returns true on a game with no loader and no config, so a
+        // first install still writes everything.
+        var writeSettings = settings && WouldWriteSettings(report, preference)
+                            && SettingsWouldChangeAnything(report, preference);
 
         // ⚠ Per game, because that is where the risk is taken: putting a pre-release plugin in one
         // game to test a fix is a different decision from putting it in all of them. Read from the

@@ -544,8 +544,16 @@ public sealed class BackupsWindow : Window
             MinWidth = 320,
         };
 
-        var save = new Button { Content = "Save", Classes = { "primary" } };
-        var cancel = new Button { Content = "Cancel", IsCancel = true, IsDefault = true };
+        // 🔴 **Enter saves here, where every confirmation in this program has it cancel.** That
+        // convention is deliberate and right for a dialog asking a DECISION — nobody should delete
+        // a translation by leaning on Enter, and ConfirmationWindow argues it at length. This one
+        // asks for a VALUE: somebody types a name and presses Enter, as they do in every program
+        // ever written, and it threw the name away.
+        //
+        // ⚠ The two flags answer two different keys and only one of them was ever in question:
+        // Escape still cancels.
+        var save = new Button { Content = "Save", Classes = { "primary" }, IsDefault = true };
+        var cancel = new Button { Content = "Cancel", IsCancel = true };
 
         var layout = new StackPanel { Spacing = 14, Margin = new Avalonia.Thickness(24) };
 

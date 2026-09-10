@@ -3718,9 +3718,12 @@ public partial class MainWindow : Window
 
                     body.Children.Add(new TextBlock
                     {
+                        // ⚠ "backup", the word the window, the folder and the button next to this
+                        // line already use. "copy" was a second word for one thing, and the reader
+                        // had to work out on their own that the two meant the same.
                         Text = kept.Count == 1
-                            ? "One copy is kept — you can put it back."
-                            : $"{kept.Count} copies are kept — you can put one back.",
+                            ? "One backup is kept — you can restore it."
+                            : $"{kept.Count} backups are kept — you can restore one.",
                         FontSize = 12,
                         TextWrapping = TextWrapping.Wrap,
                         Foreground = Brush("TextSecondary"),
@@ -6637,8 +6640,10 @@ public partial class MainWindow : Window
 
             yield return new TextBlock
             {
+                // ⚠ Same word as the window, the folder and the button under this line — see the
+                // twin of this block on the workbench card.
                 Text = "This game holds no translation. "
-                       + (left.Count == 1 ? "One copy is kept." : $"{left.Count} copies are kept."),
+                       + (left.Count == 1 ? "One backup is kept." : $"{left.Count} backups are kept."),
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Avalonia.Thickness(0, 12, 0, 0),

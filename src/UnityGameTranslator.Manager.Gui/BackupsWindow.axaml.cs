@@ -158,13 +158,16 @@ public sealed class BackupsWindow : Window
         var kept = TranslationBackupStore.List(_game.Path, _descriptor);
         var local = LocalTranslationProbe.Read(_game.Path, _descriptor);
 
-        _now.Text = local is null
-            ? "This game holds no translation yet."
-            : $"Now: {local.EntryCount} lines";
+        // ⚠ The sentence comes from the socle, so the mod's panel and this window head the same
+        // screen identically. Written here, this said "no translation yet" on a MISSING file and
+        // "Now: 0 lines" on an empty one — two answers to one question — and "Now: -1 lines" on a
+        // file too damaged to count.
+        var lines = local?.EntryCount ?? 0;
+        _now.Text = Backups.NowLine(lines);
 
         _cards.Children.Clear();
 
-        var saved = SavedCard(kept, local is not null);
+        var saved = SavedCard(kept, lines);
         var automatic = AutomaticCard(kept);
 
         ((Border)automatic).Margin = new Avalonia.Thickness(0, 16, 0, 0);
@@ -176,10 +179,16 @@ public sealed class BackupsWindow : Window
         _cards.Children.Add(automatic);
     }
 
-    private Control SavedCard(IReadOnlyList<BackupEntry> kept, bool hasTranslation)
+    /// <param name="lines">
+    /// What the game holds right now. ⚠ It decides whether Backup may be pressed, and the socle
+    /// decides that — this window used to carry its own half of the answer (a `hasTranslation` flag
+    /// and a sentence of its own) while the mod's panel had none, so the same empty game offered the
+    /// button in one product and refused it in the other, in two different sets of words.
+    /// </param>
+    private Control SavedCard(IReadOnlyList<BackupEntry> kept, int lines)
     {
         var saved = Backups.SavedCount(kept);
-        var why = Backups.WhyCannotSave(kept);
+        var why = Backups.WhyCannotSave(kept, lines);
 
         // ⚠ A grid, not a stack: a StackPanel gives each child its natural height, so the list
         // would keep its own and spill out of the card instead of scrolling inside it. The list
@@ -199,16 +208,15 @@ public sealed class BackupsWindow : Window
         // ⚠ `Backup`, one verb, nothing after it — the window is named "Translation backups", so
         // the subject is already written above and repeating it in the button says it twice.
         var save = ScopeMark.Marked(EditSide.Local, "Backup",
-                                    enabled: why is null && !_running && hasTranslation);
+                                    enabled: why is null && !_running);
         save.Classes.Add("primary");
 
-        // ⚠ Never a control that cannot be pressed without words saying which reason applies.
+        // ⚠ Never a control that cannot be pressed without words saying which reason applies. The
+        // running game comes first: it is the one refusal this window owns, and it outranks the
+        // others because nothing can be written at all while the files are locked.
         ToolTip.SetTip(save, _running
             ? $"{_game.Name} is running, so its files are locked."
-            : why
-              ?? (!hasTranslation
-                  ? "There is no translation here to back up yet."
-                  : "Backs up the translation as it stands, with the fonts and images it uses."));
+            : why ?? "Backs up the translation as it stands, with the fonts and images it uses.");
 
         save.Click += (_, _) =>
         {
@@ -455,9 +463,12 @@ public sealed class BackupsWindow : Window
                 IsEnabled = !already && Backups.CanSaveAnother(all),
             };
 
+            // ⚠ The slot ceiling alone: this duplicates a backup that already holds lines, so how
+            // many the game holds today has no say in it — which is why WhyNoRoom is a question of
+            // its own and not part of WhyCannotSave.
             ToolTip.SetTip(keep, already
                                  ? Backups.AlreadyKeptHint
-                                 : Backups.WhyCannotSave(all)
+                                 : Backups.WhyNoRoom(all)
                                    ?? $"Copies it into {Backups.SavedHeading}, so it stops ageing "
                                       + "out. This one stays where it is.");
 

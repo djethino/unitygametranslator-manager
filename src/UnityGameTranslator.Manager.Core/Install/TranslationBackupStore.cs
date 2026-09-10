@@ -217,10 +217,22 @@ public static class TranslationBackupStore
         Prune(gamePath, descriptor);
     }
 
-    /// <summary>The copy somebody asks for, with the assets the translation names.</summary>
+    /// <summary>
+    /// The copy somebody asks for, with the assets the translation names.
+    ///
+    /// ⚠ **Both refusals, from the socle, on the figure the window shows.** Only the slot ceiling
+    /// was checked here, and the window's own `hasTranslation` flag only knew whether the FILE was
+    /// there — so a file holding zero lines produced a backup that restores to nothing, takes one of
+    /// ten slots nothing evicts, and reads on the row exactly like one holding work.
+    ///
+    /// ⚠ A translation too damaged to count reads as <see cref="Backups.UnknownLineCount"/> and is
+    /// allowed through, deliberately: it is the one here most worth keeping.
+    /// </summary>
     public static string? SaveCopy(string gamePath, LoaderDescriptor descriptor)
     {
-        if (!Backups.CanSaveAnother(List(gamePath, descriptor))) return null;
+        var lines = LocalTranslationProbe.Read(gamePath, descriptor)?.EntryCount ?? 0;
+
+        if (Backups.WhyCannotSave(List(gamePath, descriptor), lines) is not null) return null;
 
         return Take(gamePath, descriptor, BackupReason.Saved, by: null, label: null,
                     withAssets: true);
@@ -236,6 +248,14 @@ public static class TranslationBackupStore
 
             var source = Target(gamePath, descriptor);
             if (!File.Exists(source)) return null;   // nothing written yet is not a failure
+
+            // 🔴 **And neither is an empty one, which is worse than nothing.** Here as well as in
+            // SaveCopy because the automatic family is where it does the damage: five empty backups
+            // rotate the real ones out, and the act behind each of them was the act somebody wanted
+            // protecting. Measured on the file about to be copied, so a translation too damaged to
+            // count still gets its backup — that is the one most worth having.
+            if (!Backups.HasAnythingToBackUp(LocalTranslationProbe.Read(gamePath, descriptor)?.EntryCount ?? 0))
+                return null;
 
             Directory.CreateDirectory(root);
 

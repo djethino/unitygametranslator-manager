@@ -466,7 +466,7 @@ public sealed class FoldersWindow : Window
         // Off the UI thread: a folder on a slow or sleeping drive takes seconds, and a window that
         // stops repainting while it waits looks like one that has crashed.
         var found = await Task.Run(() =>
-            StoreScanner.ScanFolder(path, GameStore.Manual, maxDepth: 2).ToList());
+            StoreScanner.ScanFolder(path, GameStore.Manual).ToList());
 
         // Remembered whatever came of it. A folder with nothing in it today is a folder somebody
         // is about to install a game into, and dropping it would make them add it twice.

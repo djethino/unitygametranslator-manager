@@ -168,17 +168,26 @@ public sealed class GameInventory
         foreach (var folder in Folders.All)
         {
             if (Folders.IsMissing(folder)) continue; // reported elsewhere, not silently dropped
-            foreach (var game in StoreScanner.ScanFolder(folder, GameStore.Manual, maxDepth: 2))
+            foreach (var game in StoreScanner.ScanFolder(folder, GameStore.Manual))
                 Add(game);
         }
 
         return games;
     }
 
-    /// <summary>Probes one folder the user pointed at directly.</summary>
+    /// <summary>
+    /// Probes one folder the user pointed at directly.
+    ///
+    /// ⚠ Looks below it as every other path does. Pointing at a folder whose game sits one level
+    /// down used to answer "no Unity game found" about a folder the person was looking straight
+    /// at — and this is the command people paste into an issue.
+    ///
+    /// ⚠ The first when a folder holds several: the person named this folder, and `scan` is what
+    /// lists everything. It is still better than the nothing it answered before.
+    /// </summary>
     public GameInstall? ScanFolder(string folder)
     {
-        var game = UnityGameProbe.Probe(folder, null, GameStore.Manual);
+        var game = UnityGameProbe.ProbeDeclaredFolder(folder, null, GameStore.Manual).FirstOrDefault();
         if (game is null) return null;
 
         ModdabilityProbe.Evaluate(game);

@@ -91,20 +91,26 @@ public sealed class SteamScanner
     {
         foreach (var app in EnumerateApps())
         {
-            var game = UnityGameProbe.Probe(app.Path, app.Name, GameStore.Steam, app.AppId);
-            if (game is null) continue;
-
-            if (app.ProtonPrefix is not null)
+            // ⚠ The install folder is where the game USUALLY is, not where it always is: this
+            // probed that one folder and nothing else, so a publisher shipping a launcher beside
+            // the game — the game itself one level down — had no Unity game in it as far as this
+            // tool was concerned. Measured 2026-09-11: two titles on one machine, both invisible,
+            // both perfectly ordinary installs.
+            foreach (var game in UnityGameProbe.ProbeDeclaredFolder(
+                         app.Path, app.Name, GameStore.Steam, app.AppId))
             {
-                game.ProtonPrefix = app.ProtonPrefix;
-                // A prefix exists for every app Steam ever launched through Proton, including
-                // native Linux ones in some setups. The deciding evidence is the game itself
-                // being a Windows build.
-                game.RunsUnderProton = _platform.OsId != "windows" && IsWindowsBuild(game);
-            }
+                if (app.ProtonPrefix is not null)
+                {
+                    game.ProtonPrefix = app.ProtonPrefix;
+                    // A prefix exists for every app Steam ever launched through Proton, including
+                    // native Linux ones in some setups. The deciding evidence is the game itself
+                    // being a Windows build.
+                    game.RunsUnderProton = _platform.OsId != "windows" && IsWindowsBuild(game);
+                }
 
-            ModdabilityProbe.Evaluate(game);
-            yield return game;
+                ModdabilityProbe.Evaluate(game);
+                yield return game;
+            }
         }
     }
 

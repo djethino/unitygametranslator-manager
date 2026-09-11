@@ -19,11 +19,13 @@ public sealed class StoreScanner
     {
         foreach (var hint in _platform.ExtraGameRoots())
         {
+            // ⚠ GOG used to be walked one level less than everything else, with nothing saying
+            // why — so a GOG game shipped inside a subfolder was invisible where the same layout
+            // was found anywhere else. One depth, decided in one place: UnityGameProbe.NestingDepth.
             var games = hint.Store switch
             {
                 GameStore.Epic => ScanEpicManifests(hint.Path),
-                GameStore.Gog => ScanFolder(hint.Path, GameStore.Gog, maxDepth: 1),
-                _ => ScanFolder(hint.Path, hint.Store, maxDepth: 2),
+                _ => ScanFolder(hint.Path, hint.Store),
             };
 
             foreach (var game in games) yield return game;
@@ -61,43 +63,39 @@ public sealed class StoreScanner
 
             if (string.IsNullOrWhiteSpace(location) || !Directory.Exists(location)) continue;
 
-            var game = UnityGameProbe.Probe(location, name, GameStore.Epic);
-            if (game is null) continue;
+            // Same rule as Steam: the manifest points at a folder, and the game is not always at
+            // the top of it. Several games found means the manifest names none of them, so the
+            // launcher's own id is not attached either — starting the wrong title through Epic is
+            // worse than offering no shortcut at all.
+            var games = UnityGameProbe.ProbeDeclaredFolder(location, name, GameStore.Epic);
 
-            game.StoreAppId = appName;
+            foreach (var game in games)
+            {
+                if (games.Count == 1) game.StoreAppId = appName;
 
-            ModdabilityProbe.Evaluate(game);
-            yield return game;
+                ModdabilityProbe.Evaluate(game);
+                yield return game;
+            }
         }
     }
 
     /// <summary>
     /// A plain folder of games, walked to a bounded depth.
     ///
-    /// Depth 2 is deliberate and empirical: repacked releases routinely nest the real game one
-    /// level down (Some.Game.v1.0/game/), so depth 1 misses them entirely. Going deeper turns a
-    /// half-second scan into a walk of the whole drive, which is how a scanner becomes a
-    /// five-minute wait — so the limit is enforced, not advisory.
+    /// ⚠ The walk itself lives in <see cref="UnityGameProbe.FindGameFolders"/> — it is the same
+    /// walk Steam needs, and two copies of "how deep do we look" is how Steam came to have its own
+    /// answer of zero.
     /// </summary>
-    public static IEnumerable<GameInstall> ScanFolder(string root, GameStore store, int maxDepth)
+    public static IEnumerable<GameInstall> ScanFolder(string root, GameStore store,
+                                                      int maxDepth = UnityGameProbe.NestingDepth)
     {
-        var direct = UnityGameProbe.Probe(root, null, store);
-        if (direct is not null)
+        foreach (var folder in UnityGameProbe.FindGameFolders(root, maxDepth))
         {
-            ModdabilityProbe.Evaluate(direct);
-            yield return direct;
-            yield break; // a game folder is a leaf: never look inside it
-        }
+            var game = UnityGameProbe.Probe(folder, null, store);
+            if (game is null) continue;
 
-        if (maxDepth <= 0) yield break;
-
-        IEnumerable<string> children;
-        try { children = Directory.EnumerateDirectories(root); }
-        catch { yield break; }
-
-        foreach (var child in children)
-        {
-            foreach (var game in ScanFolder(child, store, maxDepth - 1)) yield return game;
+            ModdabilityProbe.Evaluate(game);
+            yield return game;
         }
     }
 }

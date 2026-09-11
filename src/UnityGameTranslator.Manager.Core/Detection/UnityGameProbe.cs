@@ -69,6 +69,116 @@ public static partial class UnityGameProbe
     }
 
     /// <summary>
+    /// How far below a folder a game is still looked for. **The one place this is decided** — it
+    /// used to be written at four call sites, as 2 three times and 1 for GOG, so a GOG game one
+    /// level down was invisible for no reason anybody had stated.
+    ///
+    /// 🔴 **Two is a measured margin, not a guess.** Counted across one machine's Steam, Epic and
+    /// hand-added libraries on 2026-09-11: 53 games sit at the root of their folder, 7 one level
+    /// down (a repack's `.../game/`, or a publisher shipping a launcher beside the game), and
+    /// nothing at all at two. So one level is what publishers actually do, and two is a full level
+    /// of room beyond it.
+    ///
+    /// ⚠ **What makes going deeper safe is not this number** — it is the two rules below: a game
+    /// folder is a leaf, and a store manifest that turns out to cover several games names none of
+    /// them. Without those, depth 3 on that same machine turned a runtime's three bundled Unity
+    /// tools into three rows wearing that runtime's name and app id. With them, raising this is a
+    /// question of scan time and nothing else.
+    /// </summary>
+    public const int NestingDepth = 2;
+
+    /// <summary>
+    /// Every Unity game at or below <paramref name="root"/>, as folder paths.
+    ///
+    /// 🔴 **A game folder is a leaf: we never look inside one.** A game ships DLLs and data that
+    /// can look like another game from the outside, and the folder that holds the engine IS the
+    /// folder to install into. Descending past it would return a game's own innards as siblings of
+    /// it.
+    ///
+    /// ⚠ Unity's own subfolders are skipped rather than walked. They cannot contain a second game,
+    /// and they are where the file count actually is — `Managed/` alone is thousands of entries on
+    /// a large game, walked for nothing.
+    /// </summary>
+    public static IEnumerable<string> FindGameFolders(string root, int maxDepth = NestingDepth)
+    {
+        if (!Directory.Exists(root)) yield break;
+
+        if (IsGameFolder(root))
+        {
+            yield return root;
+            yield break;
+        }
+
+        if (maxDepth <= 0) yield break;
+
+        IEnumerable<string> children;
+        try { children = Directory.EnumerateDirectories(root); }
+        catch { yield break; }
+
+        foreach (var child in children)
+        {
+            if (BelongsToAnEngine(Path.GetFileName(child))) continue;
+
+            foreach (var found in FindGameFolders(child, maxDepth - 1)) yield return found;
+        }
+    }
+
+    /// <summary>
+    /// Whether this exact folder holds a Unity game — the same question <see cref="Probe"/> asks
+    /// before it agrees to describe one, so a folder cannot be a game to the walk and not to the
+    /// probe.
+    /// </summary>
+    public static bool IsGameFolder(string folder) =>
+        File.Exists(Path.Combine(folder, "UnityPlayer.dll"))
+        || File.Exists(Path.Combine(folder, "UnityPlayer.so"))
+        || FindDataDirectory(folder) is not null;
+
+    /// <summary>
+    /// The games inside a folder a store told us about — a Steam `installdir`, an Epic
+    /// `InstallLocation`.
+    ///
+    /// 🔴 **A store manifest names a PRODUCT, and a product is not always one game.** So the
+    /// declared name and id are handed over only when the folder turns out to hold exactly one
+    /// game. Find several and the manifest has been shown not to designate any of them: each is
+    /// then named by what Unity recorded in its own app.info, and none inherits the id.
+    ///
+    /// ⚠ Not a precaution — it is measured. One widely installed runtime ships three separate
+    /// Unity applications under `tools/`, and handing each of them the manifest's name and app id
+    /// produces three identical rows, all pointing the community lookup at a title none of them
+    /// is. The id is the worse half: a wrong name is read and dismissed, a wrong id answers.
+    ///
+    /// ⚠ Moddability is deliberately NOT evaluated here. Steam has to set the Proton prefix on the
+    /// game first, and evaluating before that answers a question about the wrong platform.
+    /// </summary>
+    public static List<GameInstall> ProbeDeclaredFolder(string folder, string? declaredName,
+                                                        GameStore store, string? steamAppId = null)
+    {
+        var folders = FindGameFolders(folder).ToList();
+
+        if (folders.Count == 0) return new List<GameInstall>();
+
+        if (folders.Count == 1)
+        {
+            var only = Probe(folders[0], declaredName, store, steamAppId);
+            return only is null ? new List<GameInstall>() : new List<GameInstall> { only };
+        }
+
+        var games = new List<GameInstall>();
+        foreach (var each in folders)
+        {
+            if (Probe(each, displayName: null, store) is { } game) games.Add(game);
+        }
+        return games;
+    }
+
+    /// <summary>Folders Unity itself writes: never a game of their own, and always large.</summary>
+    private static bool BelongsToAnEngine(string name) =>
+        name.EndsWith("_Data", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("Managed", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("il2cpp_data", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("MonoBleedingEdge", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// Folder names that say nothing about which game this is. Repacked releases very often put
     /// the real game in a "game" subfolder, which would otherwise leave the user staring at
     /// several identical rows named "game".
@@ -185,23 +295,31 @@ public static partial class UnityGameProbe
         }
     }
 
-    /// <summary>The &lt;Game&gt;_Data folder. Some games nest it one level down.</summary>
+    /// <summary>
+    /// The &lt;Game&gt;_Data folder — and only when it still holds the engine.
+    ///
+    /// 🔴 **An empty Managed/ is not a game, and that is not a theoretical case.** Uninstalling a
+    /// game leaves behind whatever the store did not put there: a folder of mod DLLs under
+    /// &lt;Game&gt;_Data/Managed/ outlives the game by design, since the store never wrote it and
+    /// will not remove it. Accepting Managed/ on its own reported one such leftover as an installed
+    /// game — 60 MB of Harmony and Cecil, no executable, no engine — and it sat in the list looking
+    /// exactly like the other sixty.
+    ///
+    /// So every accepted signal is something UNITY ships: the serialised assets, the IL2CPP
+    /// metadata, or one of the runtime assemblies inside Managed/. A mod folder cannot fake those
+    /// without being, in every way that matters here, a Unity game.
+    ///
+    /// ⚠ The Managed/ assemblies are the same three <see cref="DetectRuntime"/> demands before it
+    /// answers Mono. They already disagreed: a folder with a bare Managed/ was a game here and a
+    /// game of unknown runtime there, which is how it reached the list at all.
+    /// </summary>
     public static string? FindDataDirectory(string folder)
     {
         try
         {
             foreach (var dir in Directory.EnumerateDirectories(folder, "*_Data"))
             {
-                // A real data folder holds either Managed/ (Mono) or il2cpp_data/ (IL2CPP),
-                // or at minimum the serialised globals.
-                if (Directory.Exists(Path.Combine(dir, "Managed"))
-                    || Directory.Exists(Path.Combine(dir, "il2cpp_data"))
-                    || File.Exists(Path.Combine(dir, "globalgamemanagers"))
-                    || File.Exists(Path.Combine(dir, "data.unity3d"))
-                    || File.Exists(Path.Combine(dir, "mainData")))
-                {
-                    return dir;
-                }
+                if (HoldsEngine(dir)) return dir;
             }
         }
         catch
@@ -209,6 +327,30 @@ public static partial class UnityGameProbe
             // Unreadable folder: treated as "not a Unity game here".
         }
         return null;
+    }
+
+    /// <summary>Whether a &lt;Game&gt;_Data folder still carries something Unity itself wrote.</summary>
+    private static bool HoldsEngine(string dataDir)
+    {
+        // IL2CPP metadata, then the serialised assets: either one is the engine, unambiguously.
+        if (Directory.Exists(Path.Combine(dataDir, "il2cpp_data"))) return true;
+
+        foreach (var asset in new[] { "globalgamemanagers", "data.unity3d", "mainData" })
+        {
+            if (File.Exists(Path.Combine(dataDir, asset))) return true;
+        }
+
+        // Mono: the runtime assemblies, not the folder that usually contains them.
+        var managed = Path.Combine(dataDir, "Managed");
+        if (!Directory.Exists(managed)) return false;
+
+        foreach (var assembly in new[] { "UnityEngine.dll", "UnityEngine.CoreModule.dll",
+                                         "mscorlib.dll", "Assembly-CSharp.dll" })
+        {
+            if (File.Exists(Path.Combine(managed, assembly))) return true;
+        }
+
+        return false;
     }
 
     private static string? FindExecutable(string folder, string? dataDir)

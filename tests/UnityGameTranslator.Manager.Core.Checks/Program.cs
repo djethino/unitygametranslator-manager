@@ -38,6 +38,9 @@ internal static class Program
         InstallLedgerChecks.WhatTheToolRemembersDoing();
         DownloadOriginsChecks.WhereADownloadMayStart();
         DownloadOriginsChecks.WhereADownloadMayLand();
+        DetectionChecks.WhatMakesAFolderAGame();
+        DetectionChecks.HowFarBelowAFolderWeLook();
+        DetectionChecks.WhatAStoreManifestNames();
 
         Console.WriteLine();
         if (_failures == 0)

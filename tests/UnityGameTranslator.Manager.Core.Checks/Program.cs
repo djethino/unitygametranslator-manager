@@ -35,6 +35,7 @@ internal static class Program
         ModelOrderChecks.HowModelsAreRanked();
         ModelOrderChecks.WhichRowsCarryAMark();
         UserDataChecks.WhichFilesAreTheModsInterface();
+        ConfigContractChecks.WhatAGamesConfigSays();
         InstallLedgerChecks.WhatTheToolRemembersDoing();
         DownloadOriginsChecks.WhereADownloadMayStart();
         DownloadOriginsChecks.WhereADownloadMayLand();

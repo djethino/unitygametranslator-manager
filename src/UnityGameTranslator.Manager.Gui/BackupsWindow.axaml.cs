@@ -36,12 +36,18 @@ public sealed class BackupsWindow : Window
     private readonly bool _running;
 
     /// <summary>
-    /// Two rows of equal share: both lists grow when the window does, which is what makes
-    /// enlarging it worth doing. Stacked with fixed caps they ignored the extra room and left an
-    /// empty band under them.
+    /// The two cards. Their rows are rewritten on every redraw from what each list holds — see
+    /// <see cref="ShareTheHeight"/>; what is declared here only has to hold until then.
     /// </summary>
-    private readonly Grid _cards = new() { RowDefinitions = new RowDefinitions("*,*") };
+    private readonly Grid _cards = new() { RowDefinitions = new RowDefinitions("Auto,Auto,*") };
     private readonly TextBlock _now = new();
+
+    /// <summary>
+    /// What the window carries besides the two cards, kept so their height can be MEASURED rather
+    /// than guessed at — see <see cref="AroundTheCards"/>.
+    /// </summary>
+    private Control? _head;
+    private Control? _bar;
 
     /// <summary>Whether anything was written, so the caller knows to refresh the card behind.</summary>
     public bool Touched { get; private set; }
@@ -59,7 +65,12 @@ public sealed class BackupsWindow : Window
         // entries each — a list you cannot read two rows of is a list, not a choice.
         Height = 780;
         MinWidth = 660;
-        MinHeight = 520;
+
+        // ⚠ A starting value only. What the window may actually be shrunk to is what its two lists
+        // cost at their floors plus what it carries itself, and that is worked out on every redraw
+        // — see ShareTheHeight. Written here alone, it let the window be dragged past both floors
+        // until the second list went under the docked bar and covered the Close button.
+        MinHeight = SmallestWindow;
 
         // 🔴 **A plain size, and no SizeToContent.** Sizing to the content fought every attempt to
         // enlarge the window — the height was recomputed from the content, so dragging it taller
@@ -101,14 +112,15 @@ public sealed class BackupsWindow : Window
 
         var body = new Grid
         {
-            Margin = new Avalonia.Thickness(24),
+            Margin = new Avalonia.Thickness(BodyMargin),
             RowDefinitions = new RowDefinitions("Auto,*"),
         };
 
         Grid.SetRow(head, 0);
         Grid.SetRow(_cards, 1);
 
-        _cards.Margin = new Avalonia.Thickness(0, 16, 0, 0);
+        _cards.Margin = new Avalonia.Thickness(0, CardsGap, 0, 0);
+        _head = head;
 
         body.Children.Add(head);
         body.Children.Add(_cards);
@@ -144,6 +156,8 @@ public sealed class BackupsWindow : Window
                 Children = { close },
             },
         };
+
+        _bar = bar;
 
         var root = new DockPanel();
         DockPanel.SetDock(bar, Dock.Bottom);
@@ -181,80 +195,163 @@ public sealed class BackupsWindow : Window
         var saved = SavedCard(kept, lines);
         var automatic = AutomaticCard(kept);
 
-        ((Border)automatic).Margin = new Avalonia.Thickness(0, 16, 0, 0);
+        ((Border)automatic.Card).Margin = new Avalonia.Thickness(0, CardsGap, 0, 0);
 
-        Grid.SetRow(saved, 0);
-        Grid.SetRow(automatic, 1);
+        Grid.SetRow(saved.Card, 0);
+        Grid.SetRow(automatic.Card, 1);
 
-        _cards.Children.Add(saved);
-        _cards.Children.Add(automatic);
+        _cards.Children.Add(saved.Card);
+        _cards.Children.Add(automatic.Card);
 
-        ShareTheHeight(kept);
+        ShareTheHeight(saved, automatic);
     }
 
     /// <summary>
-    /// Gives each card the height it has content for, and the leftover to whichever list is still
-    /// scrolling.
+    /// A card, and the two things that say how much room it may be given: how many rows it holds,
+    /// and the panel those rows sit in — which, once measured, says what one row comes to here.
     ///
-    /// 🔴 **The two rows used to be `*,*` — strictly equal, whatever they held.** Three saved
-    /// copies took half a tall window and drew a gap under the third, while the eight automatic
-    /// ones beside them were still scrolling. The rule for who deserves what is in the socle
-    /// (ListShares), because the mod's panel asks it of the same two lists; only the rows are ours.
-    ///
-    /// ⚠ `Auto` for a list that fits, a weighted `*` for one that does not, and a final `*` that
-    /// collects what neither needs — without that last row the layout hands the spare height back
-    /// to the cards, which is the gap again.
+    /// ⚠ Both are needed because neither can be worked out from the other: the rows are ours to
+    /// count, what they come to on screen is the toolkit's to answer.
     /// </summary>
-    private void ShareTheHeight(IReadOnlyList<BackupEntry> kept)
+    private readonly record struct Sized(Control Card, int Rows, Control RowsPanel);
+
+    /// <summary>
+    /// Says what each card holds and what it may be squeezed to, and lets the Grid do the dividing.
+    ///
+    /// 🔴 **Nothing here works out a height, and THAT is the fix** (2026-09-12, on "je pense qu'il
+    /// faut que tu reréfléchisse le problème dans son ensemble […] là tu patch sur patch on
+    /// dirait"). Three shapes were tried in turn and each patched the one before: two equal `*`
+    /// rows, then a share worked out in proportion to the rows, then that share computed from an
+    /// ESTIMATE of the available room. The last could not work — it settled pixel heights ONCE, at
+    /// redraw time, from a guess, inside a Grid that knows the real sizes and re-runs on every
+    /// resize. A stretched window showed a band of empty card under one list while the other was
+    /// still scrolling.
+    ///
+    /// Each card now states three facts about itself and the Grid arbitrates:
+    ///
+    ///   the weight of its star row — everything it holds, so the longer list is cut less
+    ///   MaxHeight                  — the same figure: never given room it has nothing to fill
+    ///   MinHeight                  — its floor, so it is never squeezed to a heading alone
+    ///
+    /// and a final `*` row takes what neither needs. Without that row the Grid hands the spare
+    /// height back to the cards, which is the empty band again.
+    ///
+    /// ⚠ **Measured, not declared.** The two cards do not carry the same chrome — one has a
+    /// two-line introduction and a verb under its list — so a single figure for both either cut the
+    /// taller list short or padded the shorter one. Asking each card what it comes to costs one
+    /// measure pass and cannot drift when a sentence is reworded.
+    ///
+    /// ⚠ **Still no SizeChanged**, and never again: rewriting RowDefinitions from a size change is
+    /// a layout loop, and it took the window off the screen. Nothing is lost — star rows clamped
+    /// this way follow a resize on their own.
+    /// </summary>
+    private void ShareTheHeight(Sized saved, Sized automatic)
     {
-        var savedRows = kept.Count(e => e.IsSaved);
-        var autoRows = kept.Count - savedRows;
+        // ⚠ The one thing read off the previous layout, and it is a WIDTH: it decides nothing about
+        // heights except how many lines an introduction wraps onto. Before the first pass, the
+        // declared width answers exactly as well.
+        var width = _cards.Bounds.Width > 1 ? _cards.Bounds.Width : Width - 2 * BodyMargin;
 
-        var wants = new List<double>();
-        if (savedRows > 0) wants.Add(RowSpace * savedRows + CardChrome);
-        if (autoRows > 0) wants.Add(RowSpace * autoRows + CardChrome);
+        var savedRoom = RoomFor(saved, width);
+        var autoRoom = RoomFor(automatic, width);
 
-        // 🔴 **Never zero, or the cards ask for everything they hold.** This runs before the grid
-        // has been laid out, and a share computed on "no room" gives each list its whole content —
-        // two Auto rows taller than the window, so the window itself scrolls and the buttons go
-        // under the fold. The declared height stands in until there is a real one.
-        var room = _cards.Bounds.Height > 1 ? _cards.Bounds.Height : Height - 260;
-        // ⚠ The floor counts the card's own heading and padding, not only rows: a floor of rows
-        // alone did not cover the chrome, so the squeezed card showed its title and barely one
-        // entry. Two rows plus the chrome is a card somebody can still read and act on.
-        var floor = CardChrome + RowSpace * 2;
-        var shares = ListShares.Split(wants, Math.Max(floor, room), floor);
+        var rooms = new List<ListRoom>();
+        if (savedRoom is { } s) rooms.Add(s);
+        if (autoRoom is { } a) rooms.Add(a);
 
-        var rows = new RowDefinitions();
-        var next = 0;
+        // 🔴 The window refuses to go below what its own floors cost. Left at a figure written by
+        // hand, it could be dragged past them until the second list went under the docked bar and
+        // covered the Close button — the way out of the screen, hidden by the screen.
+        MinHeight = Math.Max(SmallestWindow, ListRooms.LeastSurface(rooms, AroundTheCards()));
 
-        rows.Add(Row(savedRows > 0 ? shares[next++] : default, savedRows > 0));
-        rows.Add(Row(autoRows > 0 ? shares[next] : default, autoRows > 0));
+        // ⚠ A list with nobody to share with fills the surface: there is nothing to leave the room
+        // to, and a window enlarged to show more that then draws small does nothing. An empty card
+        // is not somebody to share with — it is a sentence and a verb, and it takes their height.
+        var alone = rooms.Count == 1;
 
-        // ⚠ Only when nobody is scrolling: a spare row beside a list that still has rows to show
-        // would take room away from the one thing that needs it.
-        if (shares.TrueForAll(s => s.Weight <= 0)) rows.Add(new RowDefinition(GridLength.Star));
+        var rows = new RowDefinitions
+        {
+            Row(savedRoom, alone),
+            Row(autoRoom, alone),
+        };
+
+        // ⚠ Where the spare room goes once both lists show everything. Not when one of them is
+        // alone: it has already taken it.
+        if (!alone) rows.Add(new RowDefinition(GridLength.Star));
 
         _cards.RowDefinitions = rows;
     }
 
-    private static RowDefinition Row(ListShare share, bool hasRows)
+    /// <summary>
+    /// What one card asks for, measured. Null for a card with no rows — an empty list is a sentence
+    /// rather than a scroll area, and sizing it as one reserves room for rows that do not exist.
+    /// </summary>
+    private static ListRoom? RoomFor(Sized card, double width)
     {
-        if (!hasRows || share.Weight <= 0) return new RowDefinition(GridLength.Auto);
+        if (card.Rows <= 0) return null;
 
-        // ⚠ MinHeight on the row itself, not only in the share: a star row is free to be given
-        // nothing when the window is small, and a card squeezed to nothing shows its heading over
-        // no rows at all. Shrinking the window then hid the top card entirely.
-        return new RowDefinition(new GridLength(share.Weight, GridUnitType.Star))
+        // Unbounded downwards on purpose: what comes back is the height the card WOULD take with
+        // nothing scrolling — its rows and every part of its chrome, whatever they turned out to be.
+        card.Card.Measure(new Avalonia.Size(width, double.PositiveInfinity));
+
+        var whole = card.Card.DesiredSize.Height;
+        var rowSpace = card.RowsPanel.DesiredSize.Height / card.Rows;
+
+        return ListRooms.Of(whole, card.Rows, rowSpace);
+    }
+
+    /// <summary>
+    /// A star row clamped by what its card holds and by its floor — or an Auto row for a card with
+    /// no list in it, which is exactly as tall as the sentence and verb it does hold.
+    /// </summary>
+    private static RowDefinition Row(ListRoom? room, bool alone)
+    {
+        if (room is not { } asked) return new RowDefinition(GridLength.Auto);
+
+        // Alone: no ceiling. It is the surface, and stopping at its last row would leave the band
+        // of empty window the ceiling exists to prevent when there are two.
+        if (alone) return new RowDefinition(GridLength.Star) { MinHeight = asked.Least };
+
+        return new RowDefinition(new GridLength(asked.Whole, GridUnitType.Star))
         {
-            MinHeight = share.Preferred,
+            MinHeight = asked.Least,
+            MaxHeight = asked.Whole,
         };
     }
 
-    /// <summary>What one row comes to, and the card's own heading and padding around the list.</summary>
-    private const double RowSpace = 62;
+    /// <summary>
+    /// What the window carries besides its two cards — measured for the parts that hold text, and
+    /// written out for the margins, which are ours and appear in <see cref="Build"/> just above.
+    /// </summary>
+    private double AroundTheCards()
+    {
+        // ⚠ At the real width, not an unbounded one: the sentence at the top wraps, so measured
+        // without a width it comes back one line tall and the window's minimum is short by the
+        // lines it will actually take.
+        var inner = Math.Max(MinWidth, Width) - 2 * BodyMargin;
 
-    private const double CardChrome = 96;
+        return Measured(_head, inner) + Measured(_bar, Math.Max(MinWidth, Width))
+             + 2 * BodyMargin + CardsGap;
+    }
+
+    private static double Measured(Control? control, double width)
+    {
+        if (control is null) return 0;
+
+        control.Measure(new Avalonia.Size(width, double.PositiveInfinity));
+        return control.DesiredSize.Height;
+    }
+
+    /// <summary>The margins this window draws with, in one place because two of them are read back.</summary>
+    private const double BodyMargin = 24;
+
+    private const double CardsGap = 16;
+
+    /// <summary>
+    /// The smallest this window ever goes, whatever its lists hold. Below it the head and the bar
+    /// crowd each other and there is nothing left to look at.
+    /// </summary>
+    private const double SmallestWindow = 520;
 
     /// <param name="lines">
     /// What the game holds right now. ⚠ It decides whether Backup may be pressed, and the socle
@@ -262,7 +359,7 @@ public sealed class BackupsWindow : Window
     /// and a sentence of its own) while the mod's panel had none, so the same empty game offered the
     /// button in one product and refused it in the other, in two different sets of words.
     /// </param>
-    private Control SavedCard(IReadOnlyList<BackupEntry> kept, int lines)
+    private Sized SavedCard(IReadOnlyList<BackupEntry> kept, int lines)
     {
         var saved = Backups.SavedCount(kept);
         var why = Backups.WhyCannotSave(kept, lines);
@@ -274,7 +371,8 @@ public sealed class BackupsWindow : Window
 
         var list = Rows(kept, wantSaved: true,
             empty: "No backups yet. Take one before you try something, and you can walk back out "
-                 + "of whatever you try.");
+                 + "of whatever you try.",
+            rowsPanel: out var rowsPanel);
 
         Grid.SetRow(list, 0);
         body.Children.Add(list);
@@ -317,19 +415,24 @@ public sealed class BackupsWindow : Window
         Grid.SetRow(verb, 1);
         body.Children.Add(verb);
 
-        return Card(Backups.SavedHeading,
-                    $"{saved} of {Backups.SavedKept} — these stay until you delete one.", body);
+        var card = Card(Backups.SavedHeading,
+                        $"{saved} of {Backups.SavedKept} — these stay until you delete one.", body);
+
+        return new Sized(card, kept.Count(e => e.IsSaved), rowsPanel);
     }
 
-    private Control AutomaticCard(IReadOnlyList<BackupEntry> kept)
+    private Sized AutomaticCard(IReadOnlyList<BackupEntry> kept)
     {
         var body = Rows(kept, wantSaved: false,
-            empty: "Nothing yet. One is taken whenever something replaces this game's translation.");
+            empty: "Nothing yet. One is taken whenever something replaces this game's translation.",
+            rowsPanel: out var rowsPanel);
 
-        return Card(Backups.AutomaticHeading,
-                    $"The last {Backups.AutomaticKept} taken before something replaced this game's "
-                    + "translation — the oldest goes as a new one arrives. Keep holds on to one.",
-                    body);
+        var card = Card(Backups.AutomaticHeading,
+                        $"The last {Backups.AutomaticKept} taken before something replaced this game's "
+                        + "translation — the oldest goes as a new one arrives. Keep holds on to one.",
+                        body);
+
+        return new Sized(card, kept.Count(e => !e.IsSaved), rowsPanel);
     }
 
     /// <summary>
@@ -339,9 +442,16 @@ public sealed class BackupsWindow : Window
     /// card below the fold, and scrolling to reach it loses the first — which is the list this
     /// window exists to compare against.
     /// </summary>
-    private Control Rows(IReadOnlyList<BackupEntry> kept, bool wantSaved, string empty)
+    /// <param name="rowsPanel">
+    /// The panel the rows sit in, handed back so <see cref="ShareTheHeight"/> can ask it what they
+    /// come to. Measuring one row rather than declaring its height is what lets the two cards be
+    /// sized by what they actually draw.
+    /// </param>
+    private Control Rows(IReadOnlyList<BackupEntry> kept, bool wantSaved, string empty,
+                         out Control rowsPanel)
     {
         var rows = new StackPanel { Spacing = 4 };
+        rowsPanel = rows;
         var any = false;
 
         foreach (var entry in kept)

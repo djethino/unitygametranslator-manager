@@ -219,7 +219,11 @@ public sealed class BackupsWindow : Window
         // two Auto rows taller than the window, so the window itself scrolls and the buttons go
         // under the fold. The declared height stands in until there is a real one.
         var room = _cards.Bounds.Height > 1 ? _cards.Bounds.Height : Height - 260;
-        var shares = ListShares.Split(wants, Math.Max(RowSpace * 2, room), RowSpace);
+        // ⚠ The floor counts the card's own heading and padding, not only rows: a floor of rows
+        // alone did not cover the chrome, so the squeezed card showed its title and barely one
+        // entry. Two rows plus the chrome is a card somebody can still read and act on.
+        var floor = CardChrome + RowSpace * 2;
+        var shares = ListShares.Split(wants, Math.Max(floor, room), floor);
 
         var rows = new RowDefinitions();
         var next = 0;

@@ -7,6 +7,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using UnityGameTranslator.Common;
 
 namespace UnityGameTranslator.Manager.Gui;
 
@@ -218,13 +219,14 @@ public sealed class SearchPicker : UserControl
         // CONTENT** — which is what makes one control able to be every dropdown in the program. A
         // list of four answers and a list of a hundred and eighty languages are not two designs,
         // they are the same design measured against two lists.
+        //
+        // ⚠ Both answers come from the socle, not from here: the mod asks the same question of the
+        // same lists, and answering it twice is how the two products end up disagreeing about
+        // whether four entries deserve a search box.
         var room = TopLevel.GetTopLevel(this)?.ClientSize.Height ?? 0;
-        _scroll.MaxHeight = room > 0 ? Math.Max(RowGuess * 4, room * 0.45) : RowGuess * 9;
 
-        // ⚠ A search field over four entries is furniture: it costs a line of screen, a focus stop
-        // and a decision, to filter something already entirely visible. So it appears exactly when
-        // it becomes the only way through — when the list is taller than the room it has.
-        _search.IsVisible = _items.Count * RowGuess > _scroll.MaxHeight;
+        _scroll.MaxHeight = DropdownFit.Height(_items.Count, RowGuess, room);
+        _search.IsVisible = DropdownFit.NeedsSearch(_items.Count, RowGuess, room);
 
         _popup.IsOpen = true;
 

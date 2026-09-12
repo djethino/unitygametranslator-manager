@@ -302,6 +302,49 @@ public sealed class BackupsWindow : Window
     /// then a row of buttons — a copy took four lines, and the lists showed less than two entries
     /// each. A list you cannot read two rows of is not a list, it is a keyhole.
     /// </summary>
+    /// <summary>
+    /// What this copy translates, in two flags — or nothing when neither is known.
+    ///
+    /// 🔴 **Two flags and an arrow, never the names.** A row already carries a date, a count of
+    /// lines and sometimes a name; adding "English → French" in words turns a list of ten into a
+    /// wall of text, when the question is only "which one of mine is this".
+    ///
+    /// ⚠ A source that was never settled gets the arrow with nothing before it, because that IS
+    /// the fact: the copy was taken before anybody said what it translates from. Writing "Auto"
+    /// there would dress an absence up as an answer.
+    ///
+    /// ⚠ Identical to the mod's row, deliberately — this is one list of one folder shown in two
+    /// windows, and whether "auto" counts as a language is answered once, in the socle.
+    /// </summary>
+    private static Control? Languages(BackupEntry entry)
+    {
+        bool source = Backups.IsSettledLanguage(entry.SourceLanguage);
+        bool target = Backups.IsSettledLanguage(entry.TargetLanguage);
+
+        if (!source && !target) return null;
+
+        var row = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 4,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        if (source && LanguageMark.For(entry.SourceLanguage) is { } from) row.Children.Add(from);
+
+        row.Children.Add(new TextBlock
+        {
+            Text = "→",
+            FontSize = 11,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = Brush("TextMuted"),
+        });
+
+        if (target && LanguageMark.For(entry.TargetLanguage) is { } into) row.Children.Add(into);
+
+        return row;
+    }
+
     private Control Row(BackupEntry entry, IReadOnlyList<BackupEntry> all)
     {
         // 🔴 **What identifies stays on the first line; what qualifies goes underneath, small.**
@@ -349,6 +392,8 @@ public sealed class BackupsWindow : Window
             TextTrimming = TextTrimming.CharacterEllipsis,
             Foreground = Brush("TextPrimary"),
         });
+
+        if (Languages(entry) is { } pair) text.Children.Add(pair);
 
         // 🔴 The one restore nothing can undo, said where the counts are and not in small print:
         // this copy is a different translation, not an earlier version of the one in place.

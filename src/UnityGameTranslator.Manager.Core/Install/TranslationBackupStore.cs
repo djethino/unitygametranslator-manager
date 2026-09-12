@@ -113,6 +113,14 @@ public static class TranslationBackupStore
             entry.ByHand = json["by_hand"]?.GetValue<int>() ?? 0;
             entry.Uuid = json["uuid"]?.GetValue<string>();
             entry.WithAssets = json["assets"]?.GetValue<bool>() ?? saved;
+
+            entry.LanguagesKnown = json["languages"]?.GetValue<bool>() ?? false;
+            entry.SourceLanguage = json["source_language"]?.GetValue<string>();
+            entry.TargetLanguage = json["target_language"]?.GetValue<string>();
+
+            // 🔴 Asked once, of a copy taken before descriptions carried this — the same filling-in
+            // the mod does, because either product may be the first to open an old backup folder.
+            if (!entry.LanguagesKnown) LearnLanguages(directory, about, json, entry);
         }
         catch
         {
@@ -190,6 +198,63 @@ public static class TranslationBackupStore
         catch
         {
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Reads what a copy translates out of the copy itself, and writes it into its description so
+    /// nobody has to look again.
+    ///
+    /// ⚠ Silent on failure, and the mark is written even when nothing was found: this fills in a
+    /// decoration, and what it must not do is come back on the next draw. A copy whose file cannot
+    /// be read is still restorable, which is what the row is for.
+    /// </summary>
+    private static void LearnLanguages(string directory, string aboutPath, JsonObject about,
+                                       BackupEntry entry)
+    {
+        try
+        {
+            var file = Path.Combine(directory, TranslationFile);
+            if (File.Exists(file))
+            {
+                var (from, into) = LanguagesIn(file);
+                entry.SourceLanguage = from;
+                entry.TargetLanguage = into;
+            }
+
+            entry.LanguagesKnown = true;
+
+            about["languages"] = true;
+            about["source_language"] = entry.SourceLanguage;
+            about["target_language"] = entry.TargetLanguage;
+
+            File.WriteAllText(aboutPath, about.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch
+        {
+            // Nothing to say: the row keeps its other facts, and the copy is still restorable.
+        }
+    }
+
+    /// <summary>
+    /// What a translation FILE says it translates — not what the game is set to.
+    ///
+    /// ⚠ Deliberately not LocalTranslationProbe.ReadLanguages, which reads the game's config: a
+    /// backup is a copy of a file, and the row describes that copy. A game re-targeted since would
+    /// otherwise have every one of its older copies claim the new languages.
+    /// </summary>
+    private static (string? Source, string? Target) LanguagesIn(string path)
+    {
+        try
+        {
+            return JsonNode.Parse(File.ReadAllText(path)) is JsonObject json
+                ? (json["_source_language"]?.GetValue<string>(),
+                   json["_target_language"]?.GetValue<string>())
+                : (null, null);
+        }
+        catch
+        {
+            return (null, null);
         }
     }
 
@@ -422,6 +487,14 @@ public static class TranslationBackupStore
             if (!string.IsNullOrEmpty(by)) about["by"] = by;
             if (!string.IsNullOrEmpty(label)) about["label"] = label;
             if (UuidIn(source) is { Length: > 0 } uuid) about["uuid"] = uuid;
+
+            // 🔴 Written from here on, so nobody has to open a translation to draw a row. ⚠ The
+            // mark says they were LOOKED FOR, which is not the same as found — a file naming no
+            // language is an answer, and must not send the next draw back to the disk.
+            var (from, into) = LanguagesIn(source);
+            about["languages"] = true;
+            about["source_language"] = from;
+            about["target_language"] = into;
 
             File.WriteAllText(Path.Combine(directory, Backups.AboutFileName),
                               about.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));

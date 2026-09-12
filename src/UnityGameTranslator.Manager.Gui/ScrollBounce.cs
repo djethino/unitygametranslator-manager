@@ -6,7 +6,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media.Transformation;
 using Avalonia.VisualTree;
-using UnityGameTranslator.Manager.Core.Interaction;
+using UnityGameTranslator.Common;
 
 namespace UnityGameTranslator.Manager.Gui;
 

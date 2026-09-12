@@ -42,6 +42,7 @@ internal static class Program
         DownloadOriginsChecks.WhereADownloadMayLand();
         EdgeGiveChecks.HowFarOneNotchLeans();
         EdgeGiveChecks.TheWheelHoldsTheEdgeWhileItTurns();
+        EdgeGiveChecks.WhetherItTremblesUnderARealWheel();
         EdgeGiveChecks.HowTheEdgeComesBack();
         EdgeGiveChecks.WhatAStalledWindowHandsBack();
         DetectionChecks.WhatMakesAFolderAGame();

@@ -23,28 +23,31 @@ internal static class EdgeGiveChecks
     {
         Program.Section("How far the edge gives");
 
+        // ⚠ These read `Want`, not `Offset`: the resistance and the ceiling are about where the
+        // wheel ASKS the edge to be. What is drawn follows it through a second spring, which is
+        // what the smoothness section below is about.
         var give = new EdgeGive();
         Program.Check(give.AtRest && give.Offset == 0,
             "a scroller that has not been pushed leans by nothing",
             "a view that leans while nobody is at the end is answering a question nobody asked");
 
         give.Push(1);
-        Program.Check(Math.Abs(give.Offset - EdgeGive.PerNotch) < 0.001,
-            "one notch from rest leans exactly PerNotch",
+        Program.Check(Math.Abs(give.Want - EdgeGive.PerNotch) < 0.001,
+            "one notch from rest asks for exactly PerNotch",
             "this is the figure the tool already leaned by; changing it silently changes the feel");
 
         // 🔴 The resistance, and the reason it is squared: the edge has to firm up under the hand
         // rather than arrive at a second wall.
-        var first = give.Offset;
+        var first = give.Want;
         give.Push(1);
-        var second = give.Offset - first;
+        var second = give.Want - first;
         Program.Check(second < EdgeGive.PerNotch && second > 0,
             "the second notch is worth less than the first, and still worth something",
             "a give with no resistance opens like a drawer; one that stops dead is a second wall");
 
         // Pushing for ever approaches the ceiling and never reaches it.
         for (var i = 0; i < 500; i++) give.Push(1);
-        Program.Check(give.Offset < EdgeGive.MaxPull && give.Offset > EdgeGive.MaxPull * 0.9,
+        Program.Check(give.Want < EdgeGive.MaxPull && give.Want > EdgeGive.MaxPull * 0.9,
             "five hundred notches approach the ceiling without reaching it",
             "an edge that can be opened indefinitely stops reading as an edge");
 
@@ -53,13 +56,13 @@ internal static class EdgeGiveChecks
         // a single large delta spending the whole of it at full give.
         var flick = new EdgeGive();
         flick.Push(9000);
-        Program.Check(flick.Offset <= EdgeGive.MaxPull,
+        Program.Check(flick.Want <= EdgeGive.MaxPull,
             "one enormous delta cannot push past the ceiling",
             "a free-spinning wheel sends deltas in the hundreds; overshooting here is what the spring then yanks back");
 
         var upward = new EdgeGive();
         upward.Push(-1);
-        Program.Check(Math.Abs(upward.Offset + EdgeGive.PerNotch) < 0.001,
+        Program.Check(Math.Abs(upward.Want + EdgeGive.PerNotch) < 0.001,
             "the other end gives exactly as much, the other way",
             "an edge that behaves differently at the top than at the bottom reads as a fault");
     }
@@ -75,12 +78,15 @@ internal static class EdgeGiveChecks
         var reversals = 0;
         var previous = 0.0;
 
+        // ⚠ The first frames are the edge OPENING, which is a climb and not a state. What is being
+        // measured here is the steady turn, so the climb is skipped — mixing the two would read the
+        // lowest point of a rising curve as a fall.
         for (var frame = 0; frame < 60; frame++)
         {
             give.Push(1);
             give.Advance(Frame);
 
-            if (frame > 0)
+            if (frame > 15)
             {
                 lowest = Math.Min(lowest, give.Offset);
                 if (give.Offset < previous - 0.001) reversals++;
@@ -112,7 +118,11 @@ internal static class EdgeGiveChecks
             detents.Advance(Frame);
             detents.Advance(Frame);
             detents.Advance(Frame);
-            if (notch > 0) floor = Math.Min(floor, detents.Offset);
+
+            // Again the steady turn, not the climb into it.
+            if (notch < 12) continue;
+
+            floor = Math.Min(floor, detents.Offset);
             ceiling = Math.Max(ceiling, detents.Offset);
         }
 
@@ -139,6 +149,61 @@ internal static class EdgeGiveChecks
             "waiting for the wheel to be declared stopped is what made the view look stuck");
     }
 
+    /// <summary>
+    /// 🔴 **Not "does it bounce" but "is it smooth", and they are different questions.**
+    ///
+    /// Reported after the ping-pong was fixed: *"it still trembles, less, but it is not smooth —
+    /// and the site does it too"*. A real wheel does not deliver one notch every N frames on the
+    /// dot; the gaps are uneven. If pushing and springing are two regimes that take turns, the edge
+    /// climbs on the frames a notch lands and falls on the frames none does — a sawtooth whose
+    /// teeth are a few pixels and whose rate is the rate of the wheel. Every single position in it
+    /// is defensible, which is why nothing but a sequence can see it.
+    ///
+    /// The measurement is the TOOTH: the biggest fall between two rises while the wheel is still
+    /// turning. A held edge has none worth seeing.
+    /// </summary>
+    internal static void WhetherItTremblesUnderARealWheel()
+    {
+        Program.Section("Whether it trembles under a real wheel");
+
+        // The gaps a hand actually produces: mostly two or three frames, sometimes one, sometimes
+        // four. Fixed rather than random so a failure is the same failure tomorrow.
+        int[] gaps = { 2, 1, 3, 2, 1, 2, 4, 1, 2, 3, 1, 2, 2, 3, 1, 2, 1, 3, 2, 2 };
+
+        var give = new EdgeGive();
+        var worstFall = 0.0;
+        var previous = 0.0;
+        var falling = 0.0;
+        var first = true;
+
+        foreach (var gap in gaps)
+        {
+            give.Push(1);
+            for (var f = 0; f < gap; f++)
+            {
+                give.Advance(Frame);
+
+                if (!first)
+                {
+                    // Accumulate a run of falls, so one long slide counts once and at full size.
+                    if (give.Offset < previous) falling += previous - give.Offset;
+                    else { worstFall = Math.Max(worstFall, falling); falling = 0; }
+                }
+
+                previous = give.Offset;
+                first = false;
+            }
+        }
+
+        worstFall = Math.Max(worstFall, falling);
+
+        // A fifth of a notch is under a pixel and a half here: the eye reads that as a held edge
+        // breathing, not as a shake. Anything at a whole notch is the sawtooth.
+        Program.Check(worstFall < EdgeGive.PerNotch / 5,
+            $"an uneven wheel does not saw the edge up and down (worst fall {worstFall:0.0}px)",
+            "pushing and springing taking turns is a tremble, however small each turn is");
+    }
+
     internal static void HowTheEdgeComesBack()
     {
         Program.Section("How the edge comes back");
@@ -148,7 +213,7 @@ internal static class EdgeGiveChecks
 
         // The frame that consumes the push. From the next one the spring has it.
         give.Advance(Frame);
-        var held = give.Offset;
+        var held = give.Want;
 
         var frames = 0;
         var crossings = 0;
@@ -161,7 +226,7 @@ internal static class EdgeGiveChecks
         }
 
         Program.Check(Math.Abs(held - EdgeGive.PerNotch) < 0.001,
-            "the frame that takes the push does not move the edge",
+            "the frame that takes the push leaves the asked-for edge alone",
             "the wheel decides where the edge sits for that frame; the spring may not net against it");
 
         Program.Check(crossings == 0,

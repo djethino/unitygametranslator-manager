@@ -55,18 +55,44 @@ public sealed class EdgeGive
     /// <summary>The longest step the spring is asked to solve, whatever the caller was handed.</summary>
     private const double LongestStep = 1.0 / 30;
 
+    /// <summary>
+    /// How fast what is DRAWN follows where the wheel asked the edge to be.
+    ///
+    /// 🔴 **This is the whole of the smoothness, and it is a second spring rather than a smaller
+    /// number.** A wheel is discrete and a spring is continuous, so the asked-for edge necessarily
+    /// climbs on the frames a notch lands and falls on the frames none does — a sawtooth measured
+    /// at 6.9px on an edge that only opens 8, which reads as a tremble however small each step is.
+    /// No single regime can fix that: the two behaviours are both correct, and they take turns.
+    ///
+    /// Drawing through a critically damped spring makes the drawn edge a low-pass filter of the
+    /// asked-for one. At this stiffness a sawtooth arriving twenty times a second comes through at
+    /// about a hundredth of its size, while a real return — which is slow — passes untouched.
+    ///
+    /// ⚠ Softer than <see cref="Omega"/> on purpose: it has to be well below the rate a hand turns
+    /// a wheel, and stiffening it back up is exactly how the tremble returns.
+    /// </summary>
+    public const double DrawOmega = 16;
+
     /// <summary>Below this it has arrived; anything smaller is a sub-pixel nobody can see.</summary>
     private const double Settled = 0.2;
 
+    private double _want;
+    private double _wantVelocity;
     private double _offset;
     private double _velocity;
     private bool _carried;
 
-    /// <summary>Pixels past the edge. Positive leans down (the top was pushed), negative up.</summary>
+    /// <summary>Pixels past the edge, as DRAWN. Positive leans down, negative up.</summary>
     public double Offset => _offset;
 
+    /// <summary>
+    /// Where the wheel has asked the edge to be. Not what anybody sees — <see cref="Offset"/> is —
+    /// but it is what a push moves, and the resistance is measured against it.
+    /// </summary>
+    public double Want => _want;
+
     /// <summary>Nothing to draw and nothing to integrate.</summary>
-    public bool AtRest => _offset == 0 && _velocity == 0;
+    public bool AtRest => _offset == 0 && _velocity == 0 && _want == 0 && _wantVelocity == 0;
 
     /// <summary>
     /// Takes a wheel notch at the edge. <paramref name="notches"/> is signed the way the wheel
@@ -87,10 +113,10 @@ public sealed class EdgeGive
     {
         if (notches == 0 || double.IsNaN(notches)) return;
 
-        var left = 1 - Math.Abs(_offset) / MaxPull;
+        var left = 1 - Math.Abs(_want) / MaxPull;
         var give = left > 0 ? left * left : 0;
 
-        _offset = Math.Clamp(_offset + notches * PerNotch * give, -MaxPull, MaxPull);
+        _want = Math.Clamp(_want + notches * PerNotch * give, -MaxPull, MaxPull);
         _carried = true;
     }
 
@@ -100,30 +126,34 @@ public sealed class EdgeGive
     /// </summary>
     public bool Advance(double seconds)
     {
-        // 🔴 While the wheel is still turning, the wheel decides where the edge sits. Being carried
-        // is not travelling, so the release starts from rest rather than from whatever the previous
-        // return had built up.
-        if (_carried)
-        {
-            _carried = false;
-            _velocity = 0;
-            return true;
-        }
-
         if (AtRest) return false;
 
         var dt = Math.Min(Math.Max(seconds, 0), LongestStep);
-        var steps = Math.Min(8, Math.Max(1, (int)Math.Ceiling(Omega * dt / MaxSubstep)));
-        var h = dt / steps;
 
-        // Critically damped, semi-implicit: velocity first, then position.
-        for (var i = 0; i < steps; i++)
+        // ── where the wheel asks the edge to be ────────────────────────────────────────────────
+        // 🔴 While the wheel is still turning, the wheel decides. Being carried is not travelling,
+        // so the release starts from rest rather than from whatever the previous return built up.
+        if (_carried)
         {
-            _velocity += (-Omega * Omega * _offset - 2 * Omega * _velocity) * h;
-            _offset += _velocity * h;
+            _carried = false;
+            _wantVelocity = 0;
+        }
+        else
+        {
+            Spring(ref _want, ref _wantVelocity, 0, Omega, dt);
+            if (Math.Abs(_want) < Settled && Math.Abs(_wantVelocity) < Settled * Omega)
+            {
+                _want = 0;
+                _wantVelocity = 0;
+            }
         }
 
-        if (Math.Abs(_offset) < Settled && Math.Abs(_velocity) < Settled * Omega)
+        // ── and what is actually drawn ─────────────────────────────────────────────────────────
+        // Always, every frame, whatever the wheel is doing. That is what makes the drawn edge a
+        // filter of the asked-for one rather than a copy of it — see DrawOmega.
+        Spring(ref _offset, ref _velocity, _want, DrawOmega, dt);
+
+        if (_want == 0 && Math.Abs(_offset) < Settled && Math.Abs(_velocity) < Settled * DrawOmega)
         {
             _offset = 0;
             _velocity = 0;
@@ -133,9 +163,30 @@ public sealed class EdgeGive
         return true;
     }
 
+    /// <summary>
+    /// One critically damped step toward <paramref name="target"/>.
+    ///
+    /// ⚠ Substepped: the integrator is explicit in the stiffness term, so it diverges past ω·h = 1
+    /// — and a window that was not drawing hands back a step far larger than a frame.
+    /// </summary>
+    private static void Spring(ref double position, ref double velocity, double target,
+                               double omega, double dt)
+    {
+        var steps = Math.Min(8, Math.Max(1, (int)Math.Ceiling(omega * dt / MaxSubstep)));
+        var h = dt / steps;
+
+        for (var i = 0; i < steps; i++)
+        {
+            velocity += (-omega * omega * (position - target) - 2 * omega * velocity) * h;
+            position += velocity * h;
+        }
+    }
+
     /// <summary>Hands the edge back at once — the scroller left, or the list closed under it.</summary>
     public void Release()
     {
+        _want = 0;
+        _wantVelocity = 0;
         _offset = 0;
         _velocity = 0;
         _carried = false;

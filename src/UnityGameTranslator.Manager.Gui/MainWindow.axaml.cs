@@ -471,6 +471,12 @@ public partial class MainWindow : Window
         notice.Click += (_, _) => OpenToolSettings(found);
 
         UpdateSlot.Content = notice;
+
+        // ⚠ It ARRIVES rather than appearing. This lands in a bar the reader is already looking at,
+        // minutes after the window opened, and a control that blinks into an unchanged row is
+        // indistinguishable from one that was always there — which is how an update notice goes
+        // unread. Same movement as any replaced content in this window; see Motion.
+        Motion.Arrive(notice);
     }
 
     // ---------------------------------------------------------------- scanning

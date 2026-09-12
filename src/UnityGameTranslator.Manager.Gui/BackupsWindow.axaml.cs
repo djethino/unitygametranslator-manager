@@ -218,12 +218,16 @@ public sealed class BackupsWindow : Window
             ? $"{_game.Name} is running, so its files are locked."
             : why ?? "Backs up the translation as it stands, with the fonts and images it uses.");
 
-        save.Click += (_, _) =>
+        // ⚠ Off the UI thread and behind a busy button, like the three verbs on each row. Copying a
+        // translation with its fonts and images is not instant, and it used to run right here —
+        // the window froze for the length of it and could not have drawn an indicator if it had
+        // had one.
+        Busy.OnClick(save, async () =>
         {
-            TranslationBackupStore.SaveCopy(_game.Path, _descriptor);
-            Touched = true;
+            var made = await Task.Run(() => TranslationBackupStore.SaveCopy(_game.Path, _descriptor));
+            if (made is not null) Touched = true;
             Redraw();
-        };
+        });
 
         var verb = new StackPanel
         {
@@ -411,8 +415,11 @@ public sealed class BackupsWindow : Window
                 return;
             }
 
-            await ActAsync(() => TranslationBackupStore.Restore(_game.Path, _descriptor, entry.Id),
-                           "This backup could not be put back");
+            // ⚠ Busy AFTER the confirmation, not around it: a button held busy while a dialog is
+            // open would say the program is working when it is waiting for an answer.
+            await Busy.While(restore, () =>
+                ActAsync(() => TranslationBackupStore.Restore(_game.Path, _descriptor, entry.Id),
+                         "This backup could not be put back"));
         };
 
         verbs.Children.Add(restore);
@@ -441,8 +448,9 @@ public sealed class BackupsWindow : Window
                     return;
                 }
 
-                await ActAsync(() => TranslationBackupStore.Delete(_game.Path, _descriptor, entry.Id),
-                               "This backup could not be deleted");
+                await Busy.While(delete, () =>
+                    ActAsync(() => TranslationBackupStore.Delete(_game.Path, _descriptor, entry.Id),
+                             "This backup could not be deleted"));
             };
             verbs.Children.Add(delete);
         }
@@ -472,9 +480,9 @@ public sealed class BackupsWindow : Window
                                    ?? $"Copies it into {Backups.SavedHeading}, so it stops ageing "
                                       + "out. This one stays where it is.");
 
-            keep.Click += async (_, _) =>
-                await ActAsync(() => TranslationBackupStore.Keep(_game.Path, _descriptor, entry.Id),
-                               "This backup could not be kept");
+            Busy.OnClick(keep, () =>
+                ActAsync(() => TranslationBackupStore.Keep(_game.Path, _descriptor, entry.Id),
+                         "This backup could not be kept"));
 
             verbs.Children.Add(keep);
         }
@@ -510,9 +518,22 @@ public sealed class BackupsWindow : Window
     /// ⚠ Touched only on success: it is what tells the caller the game has to be re-read, and a
     /// write that did not happen has nothing to re-read.
     /// </summary>
+    /// <summary>
+    /// Performs one of this window's writes and redraws what it changed.
+    ///
+    /// 🔴 **The write runs OFF the UI thread, and that is a correction rather than a refinement.**
+    /// This method was `async` and its body was entirely synchronous: `write()` copied files on the
+    /// thread that draws, so the window froze for the length of every restore, delete and keep.
+    /// Reported as "ça freeze plutôt que de me mettre notre loading" — and an indicator would not
+    /// have helped, because a frozen window draws nothing at all. That is the trap: the missing
+    /// spinner is the visible half of a defect whose other half is that it could not have shown.
+    ///
+    /// ⚠ What runs over there touches no control: TranslationBackupStore is files and nothing else.
+    /// The redraw is back here, after the await, on the thread that owns the window.
+    /// </summary>
     private async Task ActAsync(Func<bool> write, string couldNot)
     {
-        var done = write();
+        var done = await Task.Run(write);
         if (done) Touched = true;
 
         Redraw();

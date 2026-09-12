@@ -526,8 +526,12 @@ public sealed class GameModSettingsForm
             v => _draft.AiModel = v, ModSettingControls.Tag(_aiModel),
             _inGame.AiModel ?? _defaults.AiModel);
 
+        // ⚠ Held busy for the length of the request. There was already a gear beside the field and
+        // a line saying "Asking …", and it was still pressed four times in a row: sixteen pixels
+        // away from where the eye is at the moment of pressing is away. The button that was pressed
+        // is the thing that has to answer.
         var refresh = new Button { Content = "Refresh", FontSize = 11 };
-        refresh.Click += async (_, _) => await ListModelsAsync();
+        Busy.OnClick(refresh, ListModelsAsync);
 
         panel.Children.Add(Row("Model", _aiModel, refresh,
                                Origin(_draft.AiModel, _inGame.AiModel, () => _draft.AiModel = null)));

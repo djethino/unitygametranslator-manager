@@ -612,24 +612,24 @@ public sealed class SettingsWindow : Window
         };
 
         var refresh = new Button { Content = "Look for a local AI", FontSize = 12 };
-        refresh.Click += async (_, _) =>
+        Busy.OnClick(refresh, () =>
         {
             // Explicit means explicit: forget what we knew and sweep the ports again, even when
             // an address is already saved. This is how someone moves from an online provider back
             // to a server on their own machine.
             _aiServers.Forget();
-            await DiscoverAsync(asked: true);
-        };
+            return DiscoverAsync(asked: true);
+        });
 
         // Beside the list, because that is what it acts on. "Test connection" does the same
         // request, but it sits next to the API key and reads as "is this working" — not as
         // "show me what is on the server now", which is the question someone has after pulling a
         // model in another window.
         _refreshModels = new Button { Content = "Refresh", FontSize = 12 };
-        _refreshModels.Click += async (_, _) => await TestConnectionAsync(asRefresh: true);
+        Busy.OnClick(_refreshModels, () => TestConnectionAsync(asRefresh: true));
 
         _connectButton = new Button { Content = "Test connection", FontSize = 12 };
-        _connectButton.Click += async (_, _) => await TestConnectionAsync();
+        Busy.OnClick(_connectButton, () => TestConnectionAsync());
 
         _aiPanel = new StackPanel { Spacing = 10 };
         _aiPanel.Children.Add(new StackPanel

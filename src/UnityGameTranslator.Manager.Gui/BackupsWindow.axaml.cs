@@ -207,13 +207,18 @@ public sealed class BackupsWindow : Window
     }
 
     /// <summary>
-    /// A card, and the two things that say how much room it may be given: how many rows it holds,
-    /// and the panel those rows sit in — which, once measured, says what one row comes to here.
+    /// A card, and the parts that have to be measured before it can be told how much room it may
+    /// take: how many rows it holds, the panel those rows sit in, its heading block, and the verb
+    /// under its list when it has one.
     ///
-    /// ⚠ Both are needed because neither can be worked out from the other: the rows are ours to
-    /// count, what they come to on screen is the toolkit's to answer.
+    /// 🔴 **Each part separately, never the card as a whole.** Measuring the Border with an
+    /// unbounded height looks like the obvious way to ask what it would come to, and it answers the
+    /// chrome alone: the list sits in a star row, and a star row measured against infinity is given
+    /// nothing. Both cards then declared a height of one heading, and — the floor and the ceiling
+    /// being that same figure — stopped moving with the window entirely.
     /// </summary>
-    private readonly record struct Sized(Control Card, int Rows, Control RowsPanel);
+    private readonly record struct Sized(Control Card, int Rows, Control RowsPanel,
+                                         Control Chrome, Control? Verb);
 
     /// <summary>
     /// Says what each card holds and what it may be squeezed to, and lets the Grid do the dividing.
@@ -290,14 +295,20 @@ public sealed class BackupsWindow : Window
     {
         if (card.Rows <= 0) return null;
 
-        // Unbounded downwards on purpose: what comes back is the height the card WOULD take with
-        // nothing scrolling — its rows and every part of its chrome, whatever they turned out to be.
-        card.Card.Measure(new Avalonia.Size(width, double.PositiveInfinity));
+        // What is left inside the card's own border and padding — the width every part of it is
+        // measured against, because an introduction that wraps is part of what the card costs.
+        var inner = Math.Max(0, width - 2 * (CardPadding + CardBorder));
 
-        var whole = card.Card.DesiredSize.Height;
-        var rowSpace = card.RowsPanel.DesiredSize.Height / card.Rows;
+        var rows = Measured(card.RowsPanel, inner);
 
-        return ListRooms.Of(whole, card.Rows, rowSpace);
+        // Everything that is not the rows: the heading block, the verb under the list, the card's
+        // own border and padding, and the gap above it. Measured part by part — see Sized.
+        var chrome = Measured(card.Chrome, inner)
+                   + Measured(card.Verb, inner)
+                   + 2 * (CardPadding + CardBorder)
+                   + card.Card.Margin.Top;
+
+        return ListRooms.Of(chrome + rows, card.Rows, rows / card.Rows);
     }
 
     /// <summary>
@@ -342,10 +353,14 @@ public sealed class BackupsWindow : Window
         return control.DesiredSize.Height;
     }
 
-    /// <summary>The margins this window draws with, in one place because two of them are read back.</summary>
+    /// <summary>The margins this window draws with, in one place because they are read back.</summary>
     private const double BodyMargin = 24;
 
     private const double CardsGap = 16;
+
+    private const double CardPadding = 16;
+
+    private const double CardBorder = 1;
 
     /// <summary>
     /// The smallest this window ever goes, whatever its lists hold. Below it the head and the bar
@@ -416,9 +431,10 @@ public sealed class BackupsWindow : Window
         body.Children.Add(verb);
 
         var card = Card(Backups.SavedHeading,
-                        $"{saved} of {Backups.SavedKept} — these stay until you delete one.", body);
+                        $"{saved} of {Backups.SavedKept} — these stay until you delete one.", body,
+                        out var chrome);
 
-        return new Sized(card, kept.Count(e => e.IsSaved), rowsPanel);
+        return new Sized(card, kept.Count(e => e.IsSaved), rowsPanel, chrome, verb);
     }
 
     private Sized AutomaticCard(IReadOnlyList<BackupEntry> kept)
@@ -430,9 +446,9 @@ public sealed class BackupsWindow : Window
         var card = Card(Backups.AutomaticHeading,
                         $"The last {Backups.AutomaticKept} taken before something replaced this game's "
                         + "translation — the oldest goes as a new one arrives. Keep holds on to one.",
-                        body);
+                        body, out var chrome);
 
-        return new Sized(card, kept.Count(e => !e.IsSaved), rowsPanel);
+        return new Sized(card, kept.Count(e => !e.IsSaved), rowsPanel, chrome, Verb: null);
     }
 
     /// <summary>
@@ -878,7 +894,11 @@ public sealed class BackupsWindow : Window
     /// is the point at which it should become one control, and that refactor belongs to all three
     /// at once rather than to whichever window is being written today.
     /// </summary>
-    private static Control Card(string title, string? intro, Control content)
+    /// <param name="chrome">
+    /// The heading block, handed back so <see cref="RoomFor"/> can ask what it comes to instead of
+    /// declaring a figure for it — the two cards do not carry the same one.
+    /// </param>
+    private static Control Card(string title, string? intro, Control content, out Control chrome)
     {
         var body = new StackPanel { Spacing = 10 };
 
@@ -919,13 +939,15 @@ public sealed class BackupsWindow : Window
         grid.Children.Add(top);
         grid.Children.Add(content);
 
+        chrome = top;
+
         return new Border
         {
             Background = Brush("SurfaceCard"),
             BorderBrush = Brush("BorderSubtle"),
-            BorderThickness = new Avalonia.Thickness(1),
+            BorderThickness = new Avalonia.Thickness(CardBorder),
             CornerRadius = new Avalonia.CornerRadius(8),
-            Padding = new Avalonia.Thickness(16),
+            Padding = new Avalonia.Thickness(CardPadding),
             Child = grid,
         };
     }

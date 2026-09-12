@@ -113,6 +113,17 @@ public sealed class BackupsWindow : Window
         body.Children.Add(head);
         body.Children.Add(_cards);
 
+        // 🔴 **No SizeChanged here, and never again.** Dividing the room again on every size change
+        // looks obvious and is a layout loop: ShareTheHeight rewrites the grid's RowDefinitions,
+        // which is itself a layout change, which raises SizeChanged. Dragging the window taller
+        // made the second card vanish, then took the window off the screen entirely with no way
+        // back. Reported, and caught in one gesture.
+        //
+        // ⚠ Nothing is lost by leaving it out: the rows are Auto for a list that fits and a
+        // weighted star for one that does not, so the layout follows a resize on its own. Only the
+        // moment a list stops needing to scroll would be worth recomputing, and that is not worth
+        // a re-entrant layout.
+
         var close = new Button { Content = "Close", IsDefault = true, IsCancel = true,
                                  Classes = { "primary" } };
         close.Click += (_, _) => Close();
@@ -203,10 +214,12 @@ public sealed class BackupsWindow : Window
         if (savedRows > 0) wants.Add(RowSpace * savedRows + CardChrome);
         if (autoRows > 0) wants.Add(RowSpace * autoRows + CardChrome);
 
-        // Not laid out yet: ListShares answers "each asks for its own content", which is what a
-        // window that has not been measured should do.
-        var room = _cards.Bounds.Height;
-        var shares = ListShares.Split(wants, room);
+        // 🔴 **Never zero, or the cards ask for everything they hold.** This runs before the grid
+        // has been laid out, and a share computed on "no room" gives each list its whole content —
+        // two Auto rows taller than the window, so the window itself scrolls and the buttons go
+        // under the fold. The declared height stands in until there is a real one.
+        var room = _cards.Bounds.Height > 1 ? _cards.Bounds.Height : Height - 260;
+        var shares = ListShares.Split(wants, Math.Max(RowSpace * 2, room), RowSpace);
 
         var rows = new RowDefinitions();
         var next = 0;
@@ -225,7 +238,13 @@ public sealed class BackupsWindow : Window
     {
         if (!hasRows || share.Weight <= 0) return new RowDefinition(GridLength.Auto);
 
-        return new RowDefinition(new GridLength(share.Weight, GridUnitType.Star));
+        // ⚠ MinHeight on the row itself, not only in the share: a star row is free to be given
+        // nothing when the window is small, and a card squeezed to nothing shows its heading over
+        // no rows at all. Shrinking the window then hid the top card entirely.
+        return new RowDefinition(new GridLength(share.Weight, GridUnitType.Star))
+        {
+            MinHeight = share.Preferred,
+        };
     }
 
     /// <summary>What one row comes to, and the card's own heading and padding around the list.</summary>

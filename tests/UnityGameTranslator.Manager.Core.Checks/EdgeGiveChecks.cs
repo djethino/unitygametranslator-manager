@@ -308,8 +308,13 @@ internal static class EdgeGiveChecks
             "it comes back without ever overshooting",
             "critically damped on purpose: a wobble reads as a bug, a single soft return as a material");
 
-        Program.Check(frames > 0 && frames * Frame < 0.45,
-            $"and it is home in well under half a second (took {frames * Frame:0.00}s)",
+        // ⚠ **A ceiling, not a target, and it was loosened on purpose on 2026-09-12.** The edge is
+        // meant to read as damped — the run-out of a free-spinning wheel — so a long settle is what
+        // was asked for rather than a cost to be tuned away. What this still refuses is an edge that
+        // HANGS: at a second and a half somebody has started scrolling again before it closed, and
+        // the give stops being an answer to a gesture and becomes a state the view is in.
+        Program.Check(frames > 0 && frames * Frame < 0.8,
+            $"and it is home inside a second (took {frames * Frame:0.00}s)",
             "an edge that hangs open is the shape that made the page feel stuck");
 
         Program.Check(give.AtRest && give.Offset == 0,

@@ -90,8 +90,17 @@ public sealed class EdgeGive
     ///
     /// ⚠ Softer than <see cref="Omega"/> on purpose: it has to be well below the rate a hand turns
     /// a wheel, and stiffening it back up is exactly how the tremble returns.
+    ///
+    /// 🔴 **Softened again on 2026-09-12, deliberately, and the reference is a free-spinning wheel.**
+    /// Asked for in those words: a flick of an unratcheted wheel has a velocity and a long, smooth
+    /// run-out, and the edge should read as DAMPED rather than as sprung. Softer here buys exactly
+    /// that — and it buys the last of the tremble with it, since every bit of stiffness is a bit
+    /// more of the wheel's own rate coming through.
+    ///
+    /// ⚠ It costs the return, which is now past half a second. That is a trade made on purpose:
+    /// a long settle is the thing being asked for, not a side effect to be tuned away.
     /// </summary>
-    public const double DrawOmega = 16;
+    public const double DrawOmega = 10;
 
     /// <summary>Below this it has arrived; anything smaller is a sub-pixel nobody can see.</summary>
     private const double Settled = 0.2;

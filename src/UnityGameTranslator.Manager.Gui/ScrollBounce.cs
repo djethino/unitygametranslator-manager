@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Avalonia;
+using Avalonia.Animation;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -70,6 +71,51 @@ public static class ScrollBounce
         public readonly EdgeGive Give = new();
         public bool Running;
         public long Last;
+
+        /// <summary>
+        /// The RenderTransform transition taken off the content for the length of a bounce, and the
+        /// control it was taken from. See <see cref="Park"/>.
+        /// </summary>
+        public ITransition? Parked;
+        public Control? ParkedOn;
+    }
+
+    /// <summary>
+    /// 🔴 **Two things must never animate one property, and this is how that ends.**
+    ///
+    /// `Motion.Arrive` puts a 160 ms TransformOperationsTransition on the content it makes arrive —
+    /// which for the game card is the very StackPanel inside DetailScroll. This loop writes
+    /// RenderTransform once a frame, so every write was being interpolated over 160 ms and replaced
+    /// 16 ms later: the tabs stopped bouncing altogether while every other scroller was fine.
+    ///
+    /// ⚠ It used to work by coincidence. The old shape wrote ONE value and came back to it 90 ms
+    /// later — exactly the régime a transition exists for. A per-frame simulation is the opposite,
+    /// and the two cannot share the property.
+    ///
+    /// So the transition is taken off for the length of the bounce and put back at the end. Only
+    /// that one: the Opacity transition beside it is left alone, since nothing here writes opacity.
+    /// </summary>
+    private static void Park(Control content, Edge edge)
+    {
+        if (edge.ParkedOn is not null || content.Transitions is not { } transitions) return;
+
+        var held = transitions.FirstOrDefault(
+            t => t is TransformOperationsTransition { Property: var p } && p == Visual.RenderTransformProperty);
+
+        if (held is null) return;
+
+        transitions.Remove(held);
+        edge.Parked = held;
+        edge.ParkedOn = content;
+    }
+
+    private static void Unpark(Edge edge)
+    {
+        if (edge.ParkedOn is { Transitions: { } transitions } && edge.Parked is { } held)
+            transitions.Add(held);
+
+        edge.Parked = null;
+        edge.ParkedOn = null;
     }
 
     /// <summary>
@@ -178,6 +224,7 @@ public static class ScrollBounce
             {
                 edge.Give.Release();
                 edge.Running = false;
+                Unpark(edge);
                 return;
             }
 
@@ -193,12 +240,16 @@ public static class ScrollBounce
         if (scroll.Content is not Control content) return;
 
         // Handed back completely at rest, rather than set to a translation of zero: the stylesheet
-        // is then the only thing describing this control again.
+        // is then the only thing describing this control again — and whoever else animates this
+        // property gets it back.
         if (edge.Give.Offset == 0)
         {
             content.RenderTransform = null;
+            Unpark(edge);
             return;
         }
+
+        Park(content, edge);
 
         // ⚠ Built rather than parsed. The string form is a CSS-like literal, so on a machine whose
         // decimal separator is a comma a fractional value stops being a number — and this now runs

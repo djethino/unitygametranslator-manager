@@ -56,6 +56,26 @@ public sealed class EdgeGive
     private const double LongestStep = 1.0 / 30;
 
     /// <summary>
+    /// How much of a new frame time is believed at once.
+    ///
+    /// 🔴 **Frames are not even, and integrating on uneven steps IS the fast tremble.** A window
+    /// hands back 12ms, then 20, then 14 — that is scheduling, not frame rate. A spring solved on
+    /// those steps moves by an uneven amount each time, and an uneven amount per frame is a shake
+    /// whatever the model above does. Measured on a real jitter pattern: the change in speed
+    /// between two frames went from about 12px/s on a perfect clock to 14.9px/s, i.e. the jitter
+    /// alone was the larger half of what was left.
+    ///
+    /// ⚠ This is the one thing a simulation on a perfect 16.67ms clock can never show, which is why
+    /// the jitter is written into the cases rather than assumed away.
+    ///
+    /// ⚠ Smoothed, not clamped to the real step: clamping to what actually arrived puts the jitter
+    /// straight back. The simulated clock therefore drifts a little from the wall — which is
+    /// invisible over the 300ms this ever runs for, and is why nothing else here is allowed to read
+    /// it. A real change of cadence (60Hz to 30Hz) is followed in about eight frames.
+    /// </summary>
+    private const double ClockBlend = 0.2;
+
+    /// <summary>
     /// How fast what is DRAWN follows where the wheel asked the edge to be.
     ///
     /// 🔴 **This is the whole of the smoothness, and it is a second spring rather than a smaller
@@ -80,6 +100,7 @@ public sealed class EdgeGive
     private double _wantVelocity;
     private double _offset;
     private double _velocity;
+    private double _clock;
     private bool _carried;
 
     /// <summary>Pixels past the edge, as DRAWN. Positive leans down, negative up.</summary>
@@ -128,7 +149,12 @@ public sealed class EdgeGive
     {
         if (AtRest) return false;
 
-        var dt = Math.Min(Math.Max(seconds, 0), LongestStep);
+        var arrived = Math.Min(Math.Max(seconds, 0), LongestStep);
+
+        // The step the springs are actually solved on — see ClockBlend. The first frame has nothing
+        // to average with and is believed as it stands.
+        _clock = _clock == 0 ? arrived : _clock + (arrived - _clock) * ClockBlend;
+        var dt = _clock;
 
         // ── where the wheel asks the edge to be ────────────────────────────────────────────────
         // 🔴 While the wheel is still turning, the wheel decides. Being carried is not travelling,
@@ -189,6 +215,7 @@ public sealed class EdgeGive
         _wantVelocity = 0;
         _offset = 0;
         _velocity = 0;
+        _clock = 0;
         _carried = false;
     }
 }

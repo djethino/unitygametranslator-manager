@@ -202,6 +202,81 @@ internal static class EdgeGiveChecks
         Program.Check(worstFall < EdgeGive.PerNotch / 5,
             $"an uneven wheel does not saw the edge up and down (worst fall {worstFall:0.0}px)",
             "pushing and springing taking turns is a tremble, however small each turn is");
+
+        // 🔴 **And the second kind of tremble, which the first measurement cannot see.** Reported
+        // after the filter went in: *"it still trembles a little, very fast"*. Not a fall — a jolt.
+        // The asked-for edge still JUMPS on each notch, and a second-order filter softens a jump
+        // rather than removing it, so a step comes through at the rate the wheel turns.
+        //
+        // What the eye reads as a jolt is the change in SPEED, not the speed: an edge moving at a
+        // steady rate looks calm however fast it goes. So the measurement is how much the per-frame
+        // step changes from one frame to the next, in the steady turn.
+        var steady = new EdgeGive();
+        var previousStep = 0.0;
+        var at = 0.0;
+        var worstJolt = 0.0;
+
+        for (var notch = 0; notch < 40; notch++)
+        {
+            steady.Push(1);
+            for (var f = 0; f < 3; f++)
+            {
+                steady.Advance(Frame);
+                var step = steady.Offset - at;
+                at = steady.Offset;
+
+                if (notch >= 12) worstJolt = Math.Max(worstJolt, Math.Abs(step - previousStep));
+                previousStep = step;
+            }
+        }
+
+        // A twentieth of a notch per frame of CHANGE is 0.4px — below what reads as motion at all
+        // when it is spread over a frame.
+        Program.Check(worstJolt < EdgeGive.PerNotch / 20,
+            $"and it does not jolt on each notch either (worst change {worstJolt:0.00}px/frame)",
+            "a step in the asked-for edge comes through the filter as a jolt at the wheel's own rate");
+
+        // 🔴 **And the condition the two measurements above quietly cheat on: frames are not even.**
+        // A window hands back 12ms, then 20, then 14 — scheduling, not frame rate. Integrating a
+        // spring on those steps moves the edge by an uneven amount each time, and an uneven amount
+        // per frame IS the fast tremble, whatever the model does. This is the one thing a simulation
+        // on a perfect 16.67ms clock can never show, which is why it is written out here.
+        double[] jitter = { 0.012, 0.020, 0.014, 0.018, 0.011, 0.023, 0.016, 0.013, 0.021, 0.015 };
+
+        var uneven = new EdgeGive();
+        var unevenStep = 0.0;
+        var unevenAt = 0.0;
+        var unevenJolt = 0.0;
+        var tick = 0;
+
+        for (var notch = 0; notch < 40; notch++)
+        {
+            uneven.Push(1);
+            for (var f = 0; f < 3; f++)
+            {
+                uneven.Advance(jitter[tick++ % jitter.Length]);
+
+                // 🔴 Measured per FRAME and not per second, and that distinction is the whole point.
+                // A screen shows its frames on its own even beat; the uneven number above is when
+                // the callback happened to RUN, which nobody sees. What the eye integrates is the
+                // sequence of positions it is shown, so what must be even is the STEP between them
+                // — dividing by the callback's own jitter would measure the clock, not the motion.
+                var step = uneven.Offset - unevenAt;
+                unevenAt = uneven.Offset;
+
+                if (notch >= 12) unevenJolt = Math.Max(unevenJolt, Math.Abs(step - unevenStep));
+                unevenStep = step;
+            }
+        }
+
+        // 🔴 Compared with the perfect clock rather than against a number of its own, because that
+        // is the actual claim: **uneven frames must not make the motion any less smooth than even
+        // ones**. An absolute bar loose enough to be safe would pass either way — measured 0.24
+        // without the smoothing and 0.19 with it, both under a fifth of a notch — so it would have
+        // defended nothing.
+        Program.Check(unevenJolt <= worstJolt * 1.15,
+            $"and uneven frames do not shake it either ({unevenJolt:0.00} against {worstJolt:0.00}px/frame)",
+            "scheduling jitter turns a smooth spring into an uneven one, and that is the fast tremble");
     }
 
     internal static void HowTheEdgeComesBack()

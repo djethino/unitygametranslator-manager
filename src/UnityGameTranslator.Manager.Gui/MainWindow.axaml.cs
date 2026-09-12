@@ -7100,9 +7100,16 @@ public partial class MainWindow : Window
     /// installing a two-year-old build because a page timed out is precisely the failure this
     /// whole change exists to end.
     /// </summary>
-    private Control BuildChooser(GameReport report, ComboBox loaderPicker)
+    private Control BuildChooser(GameReport report, SearchPicker loaderPicker)
     {
-        var builds = new ComboBox { Width = 300, IsEnabled = false };
+        // ⚠ The builds themselves are the entries — no wrapper, because a build already knows how
+        // to describe itself and the caller wants the build back, not a tag standing for one.
+        var builds = new SearchPicker
+        {
+            Width = 300,
+            IsEnabled = false,
+            TextOf = item => (item as LoaderBuild)?.Describe() ?? "",
+        };
         var note = new TextBlock
         {
             FontSize = 11,
@@ -7196,10 +7203,10 @@ public partial class MainWindow : Window
 
             foreach (var build in found)
             {
-                builds.Items.Add(new ComboBoxItem { Content = build.Describe(), Tag = build });
+                builds.Items.Add(build);
             }
 
-            builds.SelectedIndex = 0;
+            builds.Reselect(found.Count > 0 ? found[0] : null);
             builds.IsEnabled = found.Count > 1;
 
             // ⚠ **`loaded` only when the answer came from the publisher.** A pinned fallback means
@@ -7236,9 +7243,7 @@ public partial class MainWindow : Window
         // this expander is folded by default, so every ordinary install fell back to the pinned
         // 6.0.0-pre.2. The receipt then said pre.2 and the binaries read be.697, while the screen
         // had said 785. The caller now keeps the plan's own resolved build when nothing is picked.
-        _chosenBuild = () => expander.IsExpanded
-            ? (builds.SelectedItem as ComboBoxItem)?.Tag as LoaderBuild
-            : null;
+        _chosenBuild = () => expander.IsExpanded ? builds.SelectedItem as LoaderBuild : null;
 
         return expander;
     }
@@ -7253,7 +7258,7 @@ public partial class MainWindow : Window
 
         // Which loader is offered first is an ordering, not a decision made for the user: some
         // games work with one and not another for reasons no probe can see.
-        ComboBox? loaderPicker = null;
+        SearchPicker? loaderPicker = null;
 
         // ⚠ Cleared before anything can set it, and BuildChooser reinstates it below. A build
         // picked on the previous game's card must not follow the reader here: the loaders differ,
@@ -7336,26 +7341,23 @@ public partial class MainWindow : Window
         }
         else if (report.EligibleLoaders.Count > 0)
         {
-            loaderPicker = new ComboBox { Width = 260 };
-            foreach (var loader in report.EligibleLoaders)
+            // 🔴 No "(recommended)", and no word in its place. We recommend nothing: the order
+            // comes from an integer in the catalog whose only documentation is "higher wins", and
+            // calling that a recommendation claims a judgement nobody made.
+            //
+            // ⚠ "(default)" was considered and is worse, for a reason that does not show: the word
+            // promises a SETTING, so the reader goes looking for where it is configured — and being
+            // honest would then mean building one per case, Mono against IL2CPP, x86 against x64,
+            // on top of the BepInEx 6 channel. The line above the control already says "we would
+            // use"; the suffix was redundant and opened that door.
+            //
+            // ⚠ **No version where the version depends on a channel we have not resolved.**
+            // loader.Version is what the catalog PINS — 6.0.0-pre.2 for BepInEx 6 — and printing it
+            // beside a game set to Bleeding Edge stated the opposite of what installing would do.
+            // So: the resolved version when the background pass has brought it in, the pinned one
+            // when the loader has no channel to be wrong about, and the bare name in between.
+            string Describe(LoaderDescriptor loader)
             {
-                // 🔴 No "(recommended)", and no word in its place. We recommend nothing: the order
-                // comes from an integer in the catalog whose only documentation is "higher wins",
-                // and calling that a recommendation claims a judgement nobody made.
-                //
-                // ⚠ "(default)" was considered and is worse, for a reason that does not show: the
-                // word promises a SETTING, so the reader goes looking for where it is configured —
-                // and being honest would then mean building one per case, Mono against IL2CPP,
-                // x86 against x64, on top of the BepInEx 6 channel. The line above the control
-                // already says "we would use"; the suffix was redundant and opened that door.
-                // ⚠ **No version where the version depends on a channel we have not resolved.**
-                // loader.Version is what the catalog PINS — 6.0.0-pre.2 for BepInEx 6 — and
-                // printing it beside a game set to Bleeding Edge stated the opposite of what
-                // installing would do. Resolving here would ask two publishers on every card
-                // drawn; naming the loader and letting "Use another build" answer costs nothing
-                // and cannot be wrong.
-                // The resolved version when the background pass has brought it in, the pinned one
-                // when the loader has no channel to be wrong about, and the bare name in between.
                 var channel = loader.Id.StartsWith("bepinex6", StringComparison.OrdinalIgnoreCase)
                     ? _settings.Current.BepInEx6Channel
                     : null;
@@ -7363,14 +7365,20 @@ public partial class MainWindow : Window
                 var version = LoaderBuildResolver.Known(loader, channel)?.Version
                               ?? (loader.Sources.Count > 1 ? null : loader.Version);
 
-                loaderPicker.Items.Add(new ComboBoxItem
-                {
-                    Content = version is null ? loader.Display : $"{loader.Display} {version}",
-                    Tag = loader,
-                });
+                return version is null ? loader.Display : $"{loader.Display} {version}";
             }
-            loaderPicker.SelectedIndex = Math.Max(0,
-                report.EligibleLoaders.ToList().IndexOf(report.RecommendedLoader!));
+
+            // ⚠ The loaders themselves are the entries: the caller wants a loader back, not a tag
+            // standing for one, and the words are computed above.
+            loaderPicker = new SearchPicker
+            {
+                Width = 260,
+                TextOf = item => item is LoaderDescriptor l ? Describe(l) : "",
+            };
+
+            foreach (var loader in report.EligibleLoaders) loaderPicker.Items.Add(loader);
+
+            loaderPicker.Reselect(report.RecommendedLoader ?? report.EligibleLoaders[0]);
 
             var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
             row.Children.Add(new TextBlock
@@ -7398,7 +7406,7 @@ public partial class MainWindow : Window
         // Read back by every action on this card and by the bar below it, so the loader somebody
         // picked here is the loader that gets installed. Reset on each render, because the picker
         // it closes over belongs to this rendering of this game.
-        _chosenLoader = () => (loaderPicker?.SelectedItem as ComboBoxItem)?.Tag as LoaderDescriptor;
+        _chosenLoader = () => loaderPicker?.SelectedItem as LoaderDescriptor;
 
         // ⚠ Its own verb, exactly as the section below has one. The decision was "each section
         // carries its own version and its own verb, and the one-click orchestrates both" — only

@@ -40,6 +40,10 @@ internal static class Program
         InstallLedgerChecks.WhatTheToolRemembersDoing();
         DownloadOriginsChecks.WhereADownloadMayStart();
         DownloadOriginsChecks.WhereADownloadMayLand();
+        EdgeGiveChecks.HowFarOneNotchLeans();
+        EdgeGiveChecks.TheWheelHoldsTheEdgeWhileItTurns();
+        EdgeGiveChecks.HowTheEdgeComesBack();
+        EdgeGiveChecks.WhatAStalledWindowHandsBack();
         DetectionChecks.WhatMakesAFolderAGame();
         DetectionChecks.HowFarBelowAFolderWeLook();
         DetectionChecks.WhatAStoreManifestNames();

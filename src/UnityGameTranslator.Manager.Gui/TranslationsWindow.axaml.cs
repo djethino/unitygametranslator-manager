@@ -60,8 +60,8 @@ public sealed class TranslationsWindow : Window
 
     private StackPanel _list = null!;
     private TextBlock _status = null!;
-    private ComboBox _target = null!;
-    private ComboBox _source = null!;
+    private SearchPicker _target = null!;
+    private SearchPicker _source = null!;
     private SpinningGear _searching = null!;
 
     /// <summary>Everything published for this game, whatever the languages. Feeds the pickers.</summary>
@@ -175,6 +175,12 @@ public sealed class TranslationsWindow : Window
         _everything = Collect();
         ApplyDefaults();
         ShowTranslations(_everything);
+
+        // ⚠ Asked for by name, where it used to happen by accident: preparing the two filters
+        // raised a selection each, and each one searched. The local list above is what the game
+        // scan already knows; this is the server's answer for the languages now on screen, and the
+        // two are meant to arrive in that order.
+        _ = SearchAsync();
 
         var close = new Button { Content = "Close", IsCancel = true };
         close.Click += (_, _) => Close();
@@ -290,8 +296,8 @@ public sealed class TranslationsWindow : Window
     /// </summary>
     private Control Filters()
     {
-        _target = new ComboBox { Width = 220 };
-        _source = new ComboBox { Width = 220 };
+        _target = new SearchPicker { Width = 220 };
+        _source = new SearchPicker { Width = 220 };
 
         _target.SelectionChanged += async (_, _) => await SearchAsync();
         _source.SelectionChanged += async (_, _) => await SearchAsync();
@@ -381,7 +387,7 @@ public sealed class TranslationsWindow : Window
     /// (name, name) pair below rather than a lookup: the code would be an extra thing to resolve
     /// and to get wrong, for a picker whose value never leaves this window.
     /// </summary>
-    private static void Fill(ComboBox box, IEnumerable<string?> languages)
+    private static void Fill(SearchPicker box, IEnumerable<string?> languages)
     {
         LanguageMark.Fill(box,
             languages
@@ -394,13 +400,22 @@ public sealed class TranslationsWindow : Window
     }
 
     /// <summary>The language a filter is on, or null for "any".</summary>
-    private static string? Chosen(ComboBox box)
+    private static string? Chosen(SearchPicker box)
     {
         var code = (box.SelectedItem as LanguageChoice)?.Code;
         return string.IsNullOrEmpty(code) ? null : code;
     }
 
-    private static void Select(ComboBox box, string? language)
+    /// <summary>
+    /// Puts a filter on a language without calling it a choice.
+    ///
+    /// 🔴 **Reselect, and that is what removed two network calls from opening this window.** Setting
+    /// the selection on the old control raised SelectionChanged, which searched the server — so
+    /// preparing the two filters fired two searches nobody had asked for, on top of the local list
+    /// shown a line later. Filling a form in is not somebody answering it; the search that follows
+    /// is now asked for by name.
+    /// </summary>
+    private static void Select(SearchPicker box, string? language)
     {
         // "" is the "any language" entry; null asks for it.
         var wanted = language ?? "";
@@ -409,12 +424,12 @@ public sealed class TranslationsWindow : Window
         {
             if (string.Equals(item.Code, wanted, StringComparison.OrdinalIgnoreCase))
             {
-                box.SelectedItem = item;
+                box.Reselect(item);
                 return;
             }
         }
 
-        box.SelectedItem = box.Items.Count > 0 ? box.Items[0] : null;
+        box.Reselect(box.Items.Count > 0 ? box.Items[0] : null);
     }
 
     /// <summary>

@@ -157,10 +157,9 @@
       <Setter Property="Padding" Value="12,7" />
     </Style>
 
-    <Style Selector="ComboBox">
-      <Setter Property="CornerRadius" Value="{DynamicResource RadiusControl}" />
-      <Setter Property="Padding" Value="12,6" />
-    </Style>
+    <!-- ⚠ No ComboBox rule any more: every dropdown in this program is a SearchPicker, whose face
+         is a Button and therefore already wears the corner and the padding declared above. -->
+
 
     <!--
       Filter chips.
@@ -348,7 +347,7 @@
       </Setter>
     </Style>
 
-    <Style Selector="TextBox, ComboBox">
+    <Style Selector="TextBox">
       <Setter Property="Transitions">
         <Transitions>
           <BrushTransition Property="BorderBrush" Duration="0:0:0.12" Easing="CubicEaseOut" />
@@ -362,8 +361,8 @@
       🔴 **Declared here rather than called per window, and that is the whole point.** It was hooked
       up by hand in the main window, and the eight other windows that scroll had nothing — so the
       give was a property of one screen instead of a property of scrolling. A style reaches every
-      scroller there is, every one added later, and the ones built inside a ListBox's or a
-      ComboBox's own template, which no call site can reach at all.
+      scroller there is, every one added later, and the ones built inside a ListBox's own template,
+      which no call site can reach at all.
 
       See ScrollBounce for what it does and why it leans the CONTENT rather than the scroller.
     -->

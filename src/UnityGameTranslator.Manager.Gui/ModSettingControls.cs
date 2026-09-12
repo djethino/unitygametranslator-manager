@@ -29,58 +29,10 @@ namespace UnityGameTranslator.Manager.Gui;
 public static class ModSettingControls
 {
     /// <summary>
-    /// The value behind the selected row, or null when nothing is selected.
-    ///
-    /// ⚠ Two shapes. A language picker holds a LanguageChoice rather than a ComboBoxItem, because
-    /// a ComboBox draws its selected entry a SECOND time in its closed box — and a control belongs
-    /// to one place in the tree, so a flag handed to both would appear in one and vanish from the
-    /// other. Everything else here is still a plain item.
-    /// </summary>
-    public static string? Tag(ComboBox box) => box.SelectedItem switch
-    {
-        ComboBoxItem item => item.Tag as string,
-        LanguageChoice choice => choice.Code,
-        _ => null,
-    };
-
-    /// <summary>
-    /// Selects the row carrying this value, falling back to the first rather than to nothing.
-    ///
-    /// An empty selection reads as "not set" while the file says otherwise, and it is what once
-    /// made a settings screen claim a pending change on a form nobody had touched.
-    /// </summary>
-    public static void Select(ComboBox box, string? value)
-    {
-        foreach (var item in box.Items)
-        {
-            var code = item switch
-            {
-                ComboBoxItem entry => entry.Tag as string,
-                LanguageChoice choice => choice.Code,
-                _ => null,
-            };
-
-            if (string.Equals(code, value, StringComparison.OrdinalIgnoreCase))
-            {
-                box.SelectedItem = item;
-                return;
-            }
-        }
-
-        box.SelectedItem ??= box.Items.Count > 0 ? box.Items[0] : null;
-    }
-
-    /// <summary>
     /// Every language the ecosystem knows, plus "follow the system" naming what that resolves to.
     ///
     /// ⚠ The list comes from the shared catalogue, never from a literal here — it is the same table
     /// the mod compiles in and the site publishes under, and the NAME is the upload contract.
-    /// </summary>
-    /// <summary>
-    /// ⚠ A <see cref="SearchPicker"/> rather than a ComboBox, and only because the list is long:
-    /// about a hundred and eighty languages is past what anybody scans, and its dropdown did not
-    /// answer the wheel. Every short list here stays a ComboBox — a search field over four entries
-    /// is furniture.
     /// </summary>
     public static SearchPicker LanguagePicker(IPlatform platform, double width, bool followSystem = true)
     {
@@ -104,15 +56,17 @@ public static class ModSettingControls
     }
 
     /// <summary>
-    /// The value behind the selected row of a searchable picker.
+    /// The value behind the selected row.
     ///
-    /// ⚠ Two shapes, like the ComboBox above: a language is a LanguageChoice because it carries a
-    /// flag, an AI model is its own name and nothing else. A model list holds no second field to
-    /// wrap it in, and wrapping it in one would invent a distinction that does not exist.
+    /// ⚠ Three shapes, and each is the smallest thing that says what it is. A language is a
+    /// LanguageChoice because it carries a flag; an AI model is its own name and nothing else, so
+    /// wrapping it would invent a distinction that does not exist; everything else is a
+    /// <see cref="Choice"/> — a stored value and the words for it, which differ.
     /// </summary>
     public static string? Tag(SearchPicker box) => box.SelectedItem switch
     {
         LanguageChoice choice => choice.Code,
+        Choice choice => choice.Tag,
         string text => text,
         _ => null,
     };
@@ -130,6 +84,7 @@ public static class ModSettingControls
             var code = item switch
             {
                 LanguageChoice choice => choice.Code,
+                Choice choice => choice.Tag,
                 string text => text,
                 _ => null,
             };
@@ -150,16 +105,16 @@ public static class ModSettingControls
     /// ⚠ "llm", never "ai". The mod matches on "llm"; a tool that wrote its own screen wording into
     /// the file produced games that translated nothing and said nothing about why.
     /// </summary>
-    public static ComboBox BackendPicker(double width)
+    public static SearchPicker BackendPicker(double width)
     {
         // 🔴 **The order is the product's positioning, not the order they were written.** What
         // costs nothing comes first — community work, an AI on your own machine, writing the lines
         // yourself — and what costs the reader money comes last: Google, DeepL and the online
         // models run on their own key, at their own expense, and are an addition rather than the
         // point. Nothing here depends on the index; Select matches on the tag.
-        var box = new ComboBox { Width = width };
-        box.Items.Add(new ComboBoxItem { Content = "Community translations only", Tag = "none" });
-        box.Items.Add(new ComboBoxItem { Content = "AI (local or cloud)", Tag = "llm" });
+        var box = new SearchPicker { Width = width };
+        box.Items.Add(new Choice("none", "Community translations only"));
+        box.Items.Add(new Choice("llm", "AI (local or cloud)"));
 
         // 🔴 **Translating by hand is a CHOICE, and it had no name.** The mod captures the game's
         // text as it meets it and its editor lets somebody write each line — the way every
@@ -170,36 +125,36 @@ public static class ModSettingControls
         // ⚠ It also lets the rest of this program tell the two apart. A game set up under this
         // answer is complete; one set up on community work that does not exist is not, and the
         // one-click can now say so instead of installing everything for a result nobody wanted.
-        box.Items.Add(new ComboBoxItem { Content = "Captures only (translate by hand)", Tag = "capture" });
+        box.Items.Add(new Choice("capture", "Captures only (translate by hand)"));
 
         // Last, and that is the whole point of the order above: these are the reader's own keys and
         // the reader's own money. They work, they are supported, and they are not what this is for.
-        box.Items.Add(new ComboBoxItem { Content = "Google / DeepL (your own key)", Tag = "google" });
+        box.Items.Add(new Choice("google", "Google / DeepL (your own key)"));
         return box;
     }
 
     /// <summary>One choice on screen, two values in the file — exactly as the mod stores it.</summary>
-    public static ComboBox ProviderPicker(double width)
+    public static SearchPicker ProviderPicker(double width)
     {
-        var box = new ComboBox { Width = width };
-        box.Items.Add(new ComboBoxItem { Content = "Google Translate", Tag = "google" });
-        box.Items.Add(new ComboBoxItem { Content = "DeepL", Tag = "deepl" });
+        var box = new SearchPicker { Width = width };
+        box.Items.Add(new Choice("google", "Google Translate"));
+        box.Items.Add(new Choice("deepl", "DeepL"));
         return box;
     }
 
     /// <summary>What the mod does when a translation and somebody's own edits both moved.</summary>
-    public static ComboBox MergeStrategyPicker(double width)
+    public static SearchPicker MergeStrategyPicker(double width)
     {
-        var box = new ComboBox { Width = width };
-        box.Items.Add(new ComboBoxItem { Content = "Ask me every time", Tag = "ask" });
-        box.Items.Add(new ComboBoxItem { Content = "Keep my own version", Tag = "local" });
-        box.Items.Add(new ComboBoxItem { Content = "Take the newer one", Tag = "remote" });
+        var box = new SearchPicker { Width = width };
+        box.Items.Add(new Choice("ask", "Ask me every time"));
+        box.Items.Add(new Choice("local", "Keep my own version"));
+        box.Items.Add(new Choice("remote", "Take the newer one"));
         return box;
     }
 
-    public static ComboBox NoticePositionPicker(double width)
+    public static SearchPicker NoticePositionPicker(double width)
     {
-        var box = new ComboBox { Width = width };
+        var box = new SearchPicker { Width = width };
 
         foreach (var (tag, label) in new[]
                  {
@@ -207,18 +162,18 @@ public static class ModSettingControls
                      ("bottom-right", "Bottom right"), ("bottom-left", "Bottom left"),
                  })
         {
-            box.Items.Add(new ComboBoxItem { Content = label, Tag = tag });
+            box.Items.Add(new Choice(tag, label));
         }
 
         return box;
     }
 
     /// <summary>Which plugin builds get installed, and what the mod announces from inside a game.</summary>
-    public static ComboBox ChannelPicker(double width)
+    public static SearchPicker ChannelPicker(double width)
     {
-        var box = new ComboBox { Width = width };
-        box.Items.Add(new ComboBoxItem { Content = "Stable", Tag = "stable" });
-        box.Items.Add(new ComboBoxItem { Content = "Beta (test releases)", Tag = "beta" });
+        var box = new SearchPicker { Width = width };
+        box.Items.Add(new Choice("stable", "Stable"));
+        box.Items.Add(new Choice("beta", "Beta (test releases)"));
         return box;
     }
 

@@ -64,21 +64,21 @@ public sealed class GameModSettingsForm
 
     private readonly AiServerProbe _probe = new();
 
-    private ComboBox _backend = null!;
+    private SearchPicker _backend = null!;
     private TextBox _aiUrl = null!;
     private TextBox _aiKey = null!;
-    private ComboBox _aiModel = null!;
-    private ComboBox _provider = null!;
+    private SearchPicker _aiModel = null!;
+    private SearchPicker _provider = null!;
     private TextBox _providerKey = null!;
     private CheckBox _deeplFree = null!;
-    private ComboBox _channel = null!;
+    private SearchPicker _channel = null!;
     private CheckBox _modOnline = null!;
     private CheckBox _checkModUpdates = null!;
     private CheckBox _notifyUpdates = null!;
     private CheckBox _autoDownload = null!;
-    private ComboBox _mergeStrategy = null!;
+    private SearchPicker _mergeStrategy = null!;
     private CheckBox _notificationsEnabled = null!;
-    private ComboBox _noticePosition = null!;
+    private SearchPicker _noticePosition = null!;
 
     private Control _aiCard = null!;
     private Control _apiCard = null!;
@@ -510,13 +510,16 @@ public sealed class GameModSettingsForm
         // ⚠ Never empty. The list is filled with whatever this game is set to before anything is
         // fetched, so the field says what it is rather than nothing while a request is in flight —
         // or for ever, on a machine that is offline.
-        _aiModel = new ComboBox { Width = 220, FontSize = 12 };
+        // ⚠ The same control and the same shape as the model list in Mod defaults. It was a plain
+        // ComboBox here and a SearchPicker there — the same question asked twice, answered by two
+        // different controls, one of which did not respond to the wheel.
+        _aiModel = new SearchPicker { Width = 220, FontSize = 12, TextOf = name => name as string ?? "" };
 
         var model = EffectiveText(o => o.AiModel, _defaults.AiModel);
         if (!string.IsNullOrWhiteSpace(model))
         {
-            _aiModel.Items.Add(new ComboBoxItem { Content = model, Tag = model });
-            _aiModel.SelectedIndex = 0;
+            _aiModel.Items.Add(model);
+            _aiModel.Reselect(model);
         }
 
         _aiModel.SelectionChanged += (_, _) => Answer(
@@ -602,7 +605,7 @@ public sealed class GameModSettingsForm
 
         _populating = true;
         _aiModel.Items.Clear();
-        foreach (var name in models) _aiModel.Items.Add(new ComboBoxItem { Content = name, Tag = name });
+        foreach (var name in models) _aiModel.Items.Add(name);
 
         // ⚠ The saved value is never quietly replaced by another model. Left unselected, the choice
         // is visibly theirs to make — swapping one in would leave somebody believing they are
@@ -994,10 +997,6 @@ public sealed class GameModSettingsForm
     /// plain text would leave every configured game looking as though it had no language set, and
     /// the form would then offer to "set" one it already has.
     /// </summary>
-    private static void Select(ComboBox box, string? value) =>
-        ModSettingControls.Select(box, Code(value));
-
-    /// <summary>The same, through the searchable picker the language list now uses.</summary>
     private static void Select(SearchPicker box, string? value) =>
         ModSettingControls.Select(box, Code(value));
 

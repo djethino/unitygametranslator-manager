@@ -33,7 +33,7 @@ public sealed class ToolSettingsWindow : Window
     private readonly InstallerSettings _draft;
 
     private StackPanel _accountPanel = null!;
-    private ComboBox _proxyMode = null!;
+    private SearchPicker _proxyMode = null!;
     private TextBox _proxyUrl = null!;
     private TextBox _proxyUser = null!;
     private TextBox _proxyPassword = null!;
@@ -45,13 +45,13 @@ public sealed class ToolSettingsWindow : Window
     private TextBlock _saved = null!;
     private CancellationTokenSource? _signIn;
 
-    private ComboBox _toolChannel = null!;
+    private SearchPicker _toolChannel = null!;
     private CheckBox _checkToolUpdates = null!;
     private StackPanel _updatePanel = null!;
-    private ComboBox _bepinex6Channel = null!;
+    private SearchPicker _bepinex6Channel = null!;
     private CheckBox _checkContentUpdates = null!;
-    private ComboBox _preferMono = null!;
-    private ComboBox _preferIl2cpp = null!;
+    private SearchPicker _preferMono = null!;
+    private SearchPicker _preferIl2cpp = null!;
 
     /// <summary>
     /// The loader catalog, so this screen can say what each BepInEx 6 channel currently offers.
@@ -420,11 +420,11 @@ public sealed class ToolSettingsWindow : Window
 
     private Control NetworkCard()
     {
-        _proxyMode = new ComboBox { Width = 310 };
-        _proxyMode.Items.Add(new ComboBoxItem { Content = "Normal (whatever this computer uses)", Tag = "default" });
-        _proxyMode.Items.Add(new ComboBoxItem { Content = "Follow the system proxy settings", Tag = "system" });
-        _proxyMode.Items.Add(new ComboBoxItem { Content = "Never use a proxy", Tag = "none" });
-        _proxyMode.Items.Add(new ComboBoxItem { Content = "Use this proxy", Tag = "custom" });
+        _proxyMode = new SearchPicker { Width = 310 };
+        _proxyMode.Items.Add(new Choice("default", "Normal (whatever this computer uses)"));
+        _proxyMode.Items.Add(new Choice("system", "Follow the system proxy settings"));
+        _proxyMode.Items.Add(new Choice("none", "Never use a proxy"));
+        _proxyMode.Items.Add(new Choice("custom", "Use this proxy"));
         Select(_proxyMode, _draft.ProxyMode);
 
         _proxyUrl = new TextBox { Width = 300, Watermark = "http://proxy.company.com:8080", Text = _draft.ProxyUrl ?? "" };
@@ -580,15 +580,9 @@ public sealed class ToolSettingsWindow : Window
     {
         var panel = new StackPanel { Spacing = 10 };
 
-        _bepinex6Channel = new ComboBox
-        {
-            Width = 320,
-            ItemsSource = new[]
-            {
-                new ComboBoxItem { Content = "Bleeding Edge", Tag = "be" },
-                new ComboBoxItem { Content = "GitHub release", Tag = "github" },
-            },
-        };
+        _bepinex6Channel = new SearchPicker { Width = 320 };
+        _bepinex6Channel.Items.Add(new Choice("be", "Bleeding Edge"));
+        _bepinex6Channel.Items.Add(new Choice("github", "GitHub release"));
         Select(_bepinex6Channel, _draft.BepInEx6Channel);
 
         panel.Children.Add(Row("BepInEx 6 builds", _bepinex6Channel));
@@ -642,19 +636,20 @@ public sealed class ToolSettingsWindow : Window
     /// on its own, and one withdrawn stops being offered. The empty entry comes first because it
     /// is the default and the answer most people should keep.
     /// </summary>
-    private ComboBox LoaderChoice(string runtime)
+    private SearchPicker LoaderChoice(string runtime)
     {
-        var box = new ComboBox { Width = 320 };
-        box.Items.Add(new ComboBoxItem { Content = "Let the catalog decide", Tag = "" });
+        var box = new SearchPicker { Width = 320 };
+        box.Items.Add(new Choice("", "Let the catalog decide"));
 
         foreach (var loader in _catalog?.Loaders ?? new List<LoaderDescriptor>())
         {
             if (!loader.Runtimes.Contains(runtime, StringComparer.OrdinalIgnoreCase)) continue;
-            box.Items.Add(new ComboBoxItem { Content = loader.Display, Tag = loader.Id });
+            box.Items.Add(new Choice(loader.Id, loader.Display));
         }
 
+        // ⚠ Select already falls back to the first row rather than to nothing — "let the catalog
+        // decide" here, which is the right answer for a preference nobody has expressed.
         Select(box, runtime == "il2cpp" ? _draft.PreferredLoaderIl2cpp : _draft.PreferredLoaderMono);
-        if (box.SelectedIndex < 0) box.SelectedIndex = 0;
 
         return box;
     }
@@ -714,15 +709,9 @@ public sealed class ToolSettingsWindow : Window
                 + "self-hosted setup or a build made for testing.", "StatusWarning"));
         }
 
-        _toolChannel = new ComboBox
-        {
-            Width = 220,
-            ItemsSource = new[]
-            {
-                new ComboBoxItem { Content = "Stable releases", Tag = "stable" },
-                new ComboBoxItem { Content = "Also test builds (beta)", Tag = "beta" },
-            },
-        };
+        _toolChannel = new SearchPicker { Width = 220 };
+        _toolChannel.Items.Add(new Choice("stable", "Stable releases"));
+        _toolChannel.Items.Add(new Choice("beta", "Also test builds (beta)"));
         Select(_toolChannel, _draft.ToolChannel);
 
         panel.Children.Add(Row("Updates", _toolChannel));
@@ -1191,12 +1180,10 @@ public sealed class ToolSettingsWindow : Window
     /// <summary>Through Palette, which will not let an unknown key pass unnoticed.</summary>
     private static IBrush? Brush(string key) => Palette.Of(key);
 
-    private static string? Tag(ComboBox box) => (box.SelectedItem as ComboBoxItem)?.Tag as string;
+    private static string? Tag(SearchPicker box) => ModSettingControls.Tag(box);
 
-    private static void Select(ComboBox box, string? value) =>
-        box.SelectedItem = box.Items.OfType<ComboBoxItem>()
-            .FirstOrDefault(item => string.Equals(item.Tag as string, value, StringComparison.OrdinalIgnoreCase))
-            ?? box.Items.OfType<ComboBoxItem>().FirstOrDefault();
+    private static void Select(SearchPicker box, string? value) =>
+        ModSettingControls.Select(box, value);
 
     private static TextBlock Note(string text, string colour) => new()
     {

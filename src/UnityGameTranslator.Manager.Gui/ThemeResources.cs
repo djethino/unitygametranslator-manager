@@ -159,29 +159,10 @@ internal static class ThemeResources
         r["TextControlPlaceholderForegroundPointerOver"] = Brush(Theme.TextMuted);
         r["TextControlPlaceholderForegroundFocused"] = Brush(Theme.TextMuted);
 
-        // The picker sits in the same toolbar and answers the same kind of question, so it wears
-        // the same shade.
-        r["ComboBoxBackground"] = Brush(Theme.SurfaceRaised);
-        r["ComboBoxBackgroundPointerOver"] = Brush(Theme.SurfaceHover);
-        r["ComboBoxBackgroundPressed"] = Brush(Theme.SurfaceHover);
-        r["ComboBoxBackgroundFocused"] = Brush(Theme.SurfaceHover);
-        r["ComboBoxBorderBrush"] = Brush(Theme.BorderStrong);
-        r["ComboBoxBorderBrushPointerOver"] = Brush(Theme.SurfaceHover);
-        r["ComboBoxBorderBrushPressed"] = Brush(Theme.AccentEdge);
-        r["ComboBoxBorderBrushFocused"] = Brush(Theme.AccentEdge);
-        r["ComboBoxForeground"] = Brush(Theme.TextPrimary);
-        r["ComboBoxForegroundPointerOver"] = Brush(Theme.TextPrimary);
-        r["ComboBoxForegroundPressed"] = Brush(Theme.TextPrimary);
-        r["ComboBoxForegroundFocused"] = Brush(Theme.TextPrimary);
-        r["ComboBoxDropDownBackground"] = Brush(Theme.SurfaceCard);
-        r["ComboBoxDropDownBorderBrush"] = Brush(Theme.BorderSubtle);
-        r["ComboBoxDropDownForeground"] = Brush(Theme.TextPrimary);
-        r["ComboBoxItemBackgroundPointerOver"] = Brush(Theme.SurfaceRaised);
-        r["ComboBoxItemBackgroundSelected"] = Brush(Theme.RowSelected);
-        r["ComboBoxItemBackgroundSelectedPointerOver"] = Brush(Theme.RowRelated);
-        r["ComboBoxItemForeground"] = Brush(Theme.TextSecondary);
-        r["ComboBoxItemForegroundSelected"] = Brush(Theme.TextPrimary);
-        r["ComboBoxItemForegroundPointerOver"] = Brush(Theme.TextPrimary);
+        // ⚠ Nothing here dresses a ComboBox any more, and the twenty-one brushes that did are gone
+        // with it: every dropdown in this program is a SearchPicker, which is a Button, a TextBox
+        // and a ListBox in a Popup — so it wears the shades already declared for those, and there
+        // is one description of a list rather than two that could drift apart.
     }
 
     private static Color Colour(Rgb c) => Color.FromRgb(c.R, c.G, c.B);

@@ -45,7 +45,7 @@ public sealed class SettingsWindow : Window
     private readonly InstallerSettings _draft;
 
     private SearchPicker _language = null!;
-    private ComboBox _backend = null!;
+    private SearchPicker _backend = null!;
     private TextBox _aiUrl = null!;
 
     /// <summary>
@@ -70,14 +70,14 @@ public sealed class SettingsWindow : Window
     private SearchPicker _testFrom = null!;
     private HotkeyEditor _hotkey = null!;
     private TextBlock _hotkeyProblem = null!;
-    private ComboBox _channel = null!;
+    private SearchPicker _channel = null!;
     private CheckBox _modOnline = null!;
     private CheckBox _autoDownload = null!;
     private CheckBox _notifyUpdates = null!;
     private CheckBox _checkModUpdates = null!;
-    private ComboBox _mergeStrategy = null!;
+    private SearchPicker _mergeStrategy = null!;
     private CheckBox _notificationsEnabled = null!;
-    private ComboBox _notificationPosition = null!;
+    private SearchPicker _notificationPosition = null!;
 
     private TextBox _apiKey = null!;
     private TextBlock _metrics = null!;
@@ -95,7 +95,7 @@ public sealed class SettingsWindow : Window
     /// </summary>
     private Control _testCard = null!;
     private Control _apiCard = null!;
-    private ComboBox _provider = null!;
+    private SearchPicker _provider = null!;
     private TextBox _providerKey = null!;
     private CheckBox _deeplFree = null!;
     private StackPanel _testOutput = null!;
@@ -2500,15 +2500,18 @@ public sealed class SettingsWindow : Window
     /// </summary>
     private void WatchForChanges()
     {
-        foreach (var box in new[] { _backend, _channel })
-            box.SelectionChanged += (_, _) => RefreshApplyButton();
-
-        // ⚠ Listed apart, not forgotten: a SearchPicker raises a plain event where a ComboBox
-        // raises one carrying selection args, so the two cannot share an array. Same subscription,
-        // and these must stay in step with the line above — a picker missing from either is a
-        // change the Apply button never notices.
-        foreach (var picker in new[] { _language, _aiModel })
+        // ⚠ One list, and it was two until every dropdown in the program became the same control —
+        // a ComboBox raised an event carrying selection args where a SearchPicker raises a plain
+        // one, so they could not share an array, and a picker missing from either list was a change
+        // the Apply button never noticed.
+        foreach (var picker in new[]
+                 {
+                     _language, _backend, _aiModel, _channel, _mergeStrategy, _notificationPosition,
+                     _provider,
+                 })
+        {
             picker.SelectionChanged += (_, _) => RefreshApplyButton();
+        }
 
         foreach (var field in new[] { _aiUrl, _apiKey })
             field.TextChanged += (_, _) => RefreshApplyButton();
@@ -2520,10 +2523,7 @@ public sealed class SettingsWindow : Window
         _modOnline.IsCheckedChanged += (_, _) => RefreshApplyButton();
         foreach (var box in new[] { _autoDownload, _notifyUpdates, _checkModUpdates, _notificationsEnabled })
             box.IsCheckedChanged += (_, _) => RefreshApplyButton();
-        foreach (var combo in new[] { _mergeStrategy, _notificationPosition })
-            combo.SelectionChanged += (_, _) => RefreshApplyButton();
         _deeplFree.IsCheckedChanged += (_, _) => RefreshApplyButton();
-        _provider.SelectionChanged += (_, _) => RefreshApplyButton();
         _providerKey.TextChanged += (_, _) => RefreshApplyButton();
     }
 
@@ -2533,46 +2533,17 @@ public sealed class SettingsWindow : Window
     private static IBrush? Brush(string key) => Palette.Of(key);
 
     /// <summary>
-    /// What the selected entry stands for.
+    /// What the selected entry stands for, and which row carries a value.
     ///
-    /// ⚠ Two shapes, because the language pickers hold a LanguageChoice — a ComboBox draws the
-    /// selected entry a second time in its closed box, so a language picker must go through a
-    /// template rather than a Control per item. Everything else here is still a plain
-    /// ComboBoxItem, and both keep working.
+    /// ⚠ One shape now: every dropdown in this window is a SearchPicker, so both of these are the
+    /// shared pair and nothing here decides anything of its own. They were duplicated while half
+    /// the lists were ComboBoxes — the same rule written twice, which is how two screens end up
+    /// disagreeing about what a stored value means.
     /// </summary>
-    private static string? Tag(ComboBox box) => box.SelectedItem switch
-    {
-        ComboBoxItem item => item.Tag as string,
-        LanguageChoice choice => choice.Code,
-        _ => null,
-    };
-
-    /// <summary>The same, for the one list long enough to need searching — see SearchPicker.</summary>
     private static string? Tag(SearchPicker box) => ModSettingControls.Tag(box);
 
     private static void Select(SearchPicker box, string? value) =>
         ModSettingControls.Select(box, value);
-
-    private static void Select(ComboBox box, string? value)
-    {
-        foreach (var item in box.Items)
-        {
-            var code = item switch
-            {
-                ComboBoxItem entry => entry.Tag as string,
-                LanguageChoice choice => choice.Code,
-                _ => null,
-            };
-
-            if (string.Equals(code, value, StringComparison.OrdinalIgnoreCase))
-            {
-                box.SelectedItem = item;
-                return;
-            }
-        }
-
-        box.SelectedItem ??= box.Items.Count > 0 ? box.Items[0] : null;
-    }
 
     /// <summary>
     /// A control with its word above it, for the places where several sit side by side on one row

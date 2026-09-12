@@ -107,9 +107,11 @@ public sealed class SearchPicker : UserControl
         // ⚠ **Hidden, never Disabled.** Disabled does not merely hide the bar: it constrains the
         // content to the viewport's width. Inside a popup that sizes itself to its content that is
         // a circle with one solution — zero — and the list opened as an empty square in the corner.
+        // ⚠ **No height here.** How tall a list may be depends on the window it opens in, so it is
+        // measured when it opens — see Open. A constant would be a list that covers a small window
+        // whole and wastes a large one.
         _scroll = new ScrollViewer
         {
-            MaxHeight = 260,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             Content = _list,
@@ -212,67 +214,44 @@ public sealed class SearchPicker : UserControl
         var wide = double.IsNaN(Width) ? Bounds.Width : Width;
         if (wide > 0) _shell.MinWidth = wide;
 
+        // 🔴 **How tall, and whether there is a search field at all, are both decided by the
+        // CONTENT** — which is what makes one control able to be every dropdown in the program. A
+        // list of four answers and a list of a hundred and eighty languages are not two designs,
+        // they are the same design measured against two lists.
+        var room = TopLevel.GetTopLevel(this)?.ClientSize.Height ?? 0;
+        _scroll.MaxHeight = room > 0 ? Math.Max(RowGuess * 4, room * 0.45) : RowGuess * 9;
+
+        // ⚠ A search field over four entries is furniture: it costs a line of screen, a focus stop
+        // and a decision, to filter something already entirely visible. So it appears exactly when
+        // it becomes the only way through — when the list is taller than the room it has.
+        _search.IsVisible = _items.Count * RowGuess > _scroll.MaxHeight;
+
         _popup.IsOpen = true;
 
-        // 🔴 **The wheel has to be carried in by hand, and this is an Avalonia bug, not a choice.**
-        // AvaloniaUI/Avalonia#16646, open, Windows only: a wheel turned over a Popup never reaches
-        // what is inside it — the event stops at the LightDismissOverlayLayer. So a list in a
-        // dropdown cannot be scrolled with the wheel, which on a hundred and eighty languages is
-        // not a detail but the only way through.
-        //
-        // ⚠ Hooked on the TOP LEVEL, not on the popup: the popup's tree is precisely where the
-        // event never arrives. handledEventsToo, because the overlay has already marked it handled
-        // by the time it passes here.
-        if (TopLevel.GetTopLevel(this) is { } top)
-        {
-            // ⚠ Taken off first: a click on the face while the list is already open dismisses it
-            // and reopens in one gesture, and a second copy of this handler would scroll twice as
-            // far per notch for the rest of the session.
-            top.RemoveHandler(InputElement.PointerWheelChangedEvent, OnWheelWhileOpen);
-
-            top.AddHandler(InputElement.PointerWheelChangedEvent, OnWheelWhileOpen,
-                           RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
-        }
+        // The wheel has to be carried into a popup by hand — an Avalonia bug, not a choice. See
+        // PopupWheel, which is where that lives for the whole program.
+        PopupWheel.Follow(this, () => _popup.IsOpen, () => _scroll);
 
         // ⚠ Posted: the popup's tree is not there to take focus until it has been laid out, and a
         // search field that needs clicking before it accepts a letter is a search field nobody uses.
-        Dispatcher.UIThread.Post(() => _search.Focus(), DispatcherPriority.Loaded);
+        // ⚠ And the LIST takes it when there is no search field, or the arrows would do nothing
+        // until somebody had clicked a row first.
+        Dispatcher.UIThread.Post(
+            () => { if (_search.IsVisible) _search.Focus(); else _list.Focus(); },
+            DispatcherPriority.Loaded);
     }
 
     /// <summary>
-    /// Scrolls the open list, because nothing else will. See the note in <see cref="Open"/>.
+    /// What one row comes to before any of them has been laid out.
     ///
-    /// ⚠ Only while the list is open, and taken off the top level as soon as it closes — a handler
-    /// left behind would eat the wheel for the whole window.
-    ///
-    /// ⚠ Three lines per notch, the figure Windows itself reports for a wheel detent. Scrolling by
-    /// a fixed pixel count would move a different distance in this list than in every other.
+    /// ⚠ Only ever used to decide how tall the list may be and whether it needs searching, both of
+    /// which are asked BEFORE the popup exists. Once it is on screen the real heights are measured
+    /// — see PopupWheel.RowOf.
     /// </summary>
-    private void OnWheelWhileOpen(object? sender, PointerWheelEventArgs e)
-    {
-        if (!_popup.IsOpen) return;
-
-        var reach = Math.Max(0, _scroll.Extent.Height - _scroll.Viewport.Height);
-        if (reach <= 0) return;
-
-        var before = _scroll.Offset.Y;
-        var moved = Math.Clamp(before - e.Delta.Y * 3 * RowHeight, 0, reach);
-
-        _scroll.Offset = new Vector(_scroll.Offset.X, moved);
-
-        // ⚠ The same give the rest of the program has at the end of a scroll, played from here
-        // because it cannot be played from where it listens: the wheel never reaches inside a popup,
-        // which is why this method exists at all. Nothing moved means the end was already reached.
-        if (Math.Abs(moved - before) < 0.5) ScrollBounce.Nudge(_scroll, e.Delta.Y > 0);
-
-        e.Handled = true;
-    }
-
-    /// <summary>About one row, used to turn a wheel notch into a distance.</summary>
-    private const double RowHeight = 28;
+    private const double RowGuess = 28;
 
     /// <summary>
-    /// Takes the wheel handler back off, however the list was closed.
+    /// Lets go of the wheel and of the edge, however the list was closed.
     ///
     /// 🔴 **Hung on the popup's own Closed, never on the paths that close it.** A light dismiss —
     /// a click anywhere else — closes it without passing through any of them, and a handler left
@@ -280,8 +259,12 @@ public sealed class SearchPicker : UserControl
     /// </summary>
     private void OnClosed(object? sender, EventArgs e)
     {
-        if (TopLevel.GetTopLevel(this) is { } top)
-            top.RemoveHandler(InputElement.PointerWheelChangedEvent, OnWheelWhileOpen);
+        PopupWheel.Drop(this);
+
+        // ⚠ And the edge is handed back rather than left leaning. The list is torn down with the
+        // popup, so nothing would ever draw the spring's return — and the next time it opened it
+        // would open already leaning, from a gesture made a quarter of an hour earlier.
+        ScrollBounce.Settle(_scroll);
     }
 
     private void Refill()

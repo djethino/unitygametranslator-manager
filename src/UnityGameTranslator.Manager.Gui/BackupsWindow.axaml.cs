@@ -177,7 +177,61 @@ public sealed class BackupsWindow : Window
 
         _cards.Children.Add(saved);
         _cards.Children.Add(automatic);
+
+        ShareTheHeight(kept);
     }
+
+    /// <summary>
+    /// Gives each card the height it has content for, and the leftover to whichever list is still
+    /// scrolling.
+    ///
+    /// 🔴 **The two rows used to be `*,*` — strictly equal, whatever they held.** Three saved
+    /// copies took half a tall window and drew a gap under the third, while the eight automatic
+    /// ones beside them were still scrolling. The rule for who deserves what is in the socle
+    /// (ListShares), because the mod's panel asks it of the same two lists; only the rows are ours.
+    ///
+    /// ⚠ `Auto` for a list that fits, a weighted `*` for one that does not, and a final `*` that
+    /// collects what neither needs — without that last row the layout hands the spare height back
+    /// to the cards, which is the gap again.
+    /// </summary>
+    private void ShareTheHeight(IReadOnlyList<BackupEntry> kept)
+    {
+        var savedRows = kept.Count(e => e.IsSaved);
+        var autoRows = kept.Count - savedRows;
+
+        var wants = new List<double>();
+        if (savedRows > 0) wants.Add(RowSpace * savedRows + CardChrome);
+        if (autoRows > 0) wants.Add(RowSpace * autoRows + CardChrome);
+
+        // Not laid out yet: ListShares answers "each asks for its own content", which is what a
+        // window that has not been measured should do.
+        var room = _cards.Bounds.Height;
+        var shares = ListShares.Split(wants, room);
+
+        var rows = new RowDefinitions();
+        var next = 0;
+
+        rows.Add(Row(savedRows > 0 ? shares[next++] : default, savedRows > 0));
+        rows.Add(Row(autoRows > 0 ? shares[next] : default, autoRows > 0));
+
+        // ⚠ Only when nobody is scrolling: a spare row beside a list that still has rows to show
+        // would take room away from the one thing that needs it.
+        if (shares.TrueForAll(s => s.Weight <= 0)) rows.Add(new RowDefinition(GridLength.Star));
+
+        _cards.RowDefinitions = rows;
+    }
+
+    private static RowDefinition Row(ListShare share, bool hasRows)
+    {
+        if (!hasRows || share.Weight <= 0) return new RowDefinition(GridLength.Auto);
+
+        return new RowDefinition(new GridLength(share.Weight, GridUnitType.Star));
+    }
+
+    /// <summary>What one row comes to, and the card's own heading and padding around the list.</summary>
+    private const double RowSpace = 62;
+
+    private const double CardChrome = 96;
 
     /// <param name="lines">
     /// What the game holds right now. ⚠ It decides whether Backup may be pressed, and the socle

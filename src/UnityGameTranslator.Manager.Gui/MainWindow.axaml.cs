@@ -6270,13 +6270,13 @@ public partial class MainWindow : Window
         }
 
         // A frozen contribution can no longer be described either — the server refuses the write,
-        // so offering the form would only produce an error once it is filled in.
+        // so offering the form would only produce an error once it is filled in. The wall is the
+        // socle's, the same words the mod's card and button use; forking is the game's act.
         if (lineage.BranchFrozen)
         {
             await ConfirmationWindow.TellAsync(this, "This contribution is frozen",
-                "The translation you contribute to no longer accepts contributions, so this can "
-                + "no longer be sent or described.\n\nYour lines are safe. Open the game and use "
-                + "Fork in the mod to carry on with them.");
+                (lineage.Wall ?? "This contribution can no longer be sent or described.")
+                + "\n\n" + Uploads.OnlyInTheGame);
             return;
         }
 

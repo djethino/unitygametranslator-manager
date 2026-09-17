@@ -5714,7 +5714,8 @@ public partial class MainWindow : Window
         try
         {
             var api = new CatalogApiClient();
-            var remote = await api.DownloadAsync(published.Id, _settings.Current.ApiToken);
+            // The copy this game already holds, read to compare: not a download.
+            var remote = await api.DownloadAsync(published.Id, _settings.Current.ApiToken, update: true);
 
             if (remote is null)
             {
@@ -10403,7 +10404,9 @@ public partial class MainWindow : Window
         Status("Downloading the translation...");
 
         var api = new CatalogApiClient();
-        var json = await api.DownloadAsync(translation.Id, _settings.Current.ApiToken);
+        // A take, unless this game already holds the lineage and is only refreshing its copy.
+        bool refreshing = report.LocalTranslation?.Uuid is { } held && held == translation.Uuid;
+        var json = await api.DownloadAsync(translation.Id, _settings.Current.ApiToken, update: refreshing);
 
         if (json is null)
             return $"The translation could not be downloaded ({api.LastError ?? "no reason given"}). Everything else is in place.";

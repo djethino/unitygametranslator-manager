@@ -535,15 +535,20 @@ public sealed class CatalogApiClient
     /// public for everything published, and resolves the caller when a token is sent so its
     /// author can fetch their own work.
     /// </summary>
+    /// <param name="update">
+    /// The game already holds this lineage and its copy is being refreshed or compared, not
+    /// taken. Said to the site, which then counts no download: "downloads" there counts players
+    /// who took a lineage, not the times a copy was refreshed.
+    /// </param>
     public async Task<string?> DownloadAsync(int translationId, string? apiToken = null,
-                                             CancellationToken ct = default)
+                                             CancellationToken ct = default, bool update = false)
     {
         LastError = null;
         LastStatus = null;
 
         try
         {
-            var url = $"{BuildInfo.ApiBaseUrl}/translations/{translationId}/download";
+            var url = $"{BuildInfo.ApiBaseUrl}/translations/{translationId}/download" + (update ? "?update=1" : "");
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
 
             if (!string.IsNullOrWhiteSpace(apiToken))

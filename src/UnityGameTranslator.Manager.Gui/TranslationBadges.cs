@@ -69,6 +69,20 @@ public static class TranslationBadges
         return strip;
     }
 
+    /// <summary>
+    /// What a listed translation is to the reader — the one this game holds, and their own side
+    /// of its lineage — in the socle's chips, the same ones the mod's community list shows on the
+    /// same row. Nothing when neither is true, or when the library has not been read.
+    /// </summary>
+    public static Control? InListing(bool installed, bool? yoursIsMain)
+    {
+        var badges = Badges.InListing(installed, yoursIsMain);
+        if (badges.Count == 0) return null;
+        var strip = Strip(badges);
+        strip.Margin = new Avalonia.Thickness(0);
+        return strip;
+    }
+
     /// <summary>The file on this machine, on a game's page.</summary>
     public static Control ForLocal(GameReport report, TagCounts counts)
     {

@@ -536,8 +536,6 @@ public sealed class TranslationsWindow : Window
         pair.Children.Add(LanguageMark.Named(translation.TargetLanguage,
                                              translation.TargetLanguage ?? "?"));
 
-        body.Children.Add(pair);
-
         // Where this account stands on THIS card, which "installed" does not answer: a file can sit
         // in the game without being one's own, and one's own can be published without being on this
         // machine at all.
@@ -552,14 +550,21 @@ public sealed class TranslationsWindow : Window
         // position that is not this card, on this card's lineage, is a contribution you made to it.
         var contributesHere = !isYours && lineage is { IsMain: false };
 
+        // What this card is to the reader, in the socle's chips on the first line — Installed,
+        // Main (you), Branch (you) — the same three the mod's community list shows on the same
+        // row. They used to be words on the author's line ("you have a branch of this",
+        // "installed"), which said the same facts in another form than the mod's.
+        if (TranslationBadges.InListing(installed, isYours ? true : contributesHere ? false : (bool?)null) is { } marks)
+            pair.Children.Add(marks);
+
+        body.Children.Add(pair);
+
         // Badges work by being rare, and each says something written nowhere else on the card.
         // ⚠ "(you)" comes from the shared rule and is part of the name itself, so the separate
         // "· yours" chip that used to follow would now say it twice.
         var by = $"by {People.MentionOf(translation.Author, _settings.Current.ApiUser)}";
-        if (contributesHere) by += "  ·  you have a branch of this";
         if (IsNew(translation)) by += "  ·  new";
         if (IsFurthest(translation, all)) by += "  ·  goes furthest";
-        if (installed) by += "  ·  installed";
 
         body.Children.Add(new TextBlock
         {

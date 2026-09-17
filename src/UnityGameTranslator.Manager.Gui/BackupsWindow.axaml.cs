@@ -667,7 +667,7 @@ public sealed class BackupsWindow : Window
             // open would say the program is working when it is waiting for an answer.
             await Busy.While(restore, () =>
                 ActAsync(() => TranslationBackupStore.Restore(_game.Path, _descriptor, entry.Id),
-                         "This backup could not be put back"));
+                         "Restore failed"));
         };
 
         verbs.Children.Add(restore);
@@ -730,7 +730,7 @@ public sealed class BackupsWindow : Window
 
             Busy.OnClick(keep, () =>
                 ActAsync(() => TranslationBackupStore.Keep(_game.Path, _descriptor, entry.Id),
-                         "This backup could not be kept"));
+                         "Backup failed"));
 
             verbs.Children.Add(keep);
         }

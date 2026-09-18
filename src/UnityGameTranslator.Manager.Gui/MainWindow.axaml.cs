@@ -5134,6 +5134,23 @@ public partial class MainWindow : Window
         // same sentence with a Dismiss. Dismissed there, silent here: the game records it, and
         // this tool reads the game's config rather than keeping a second opinion. Not on a
         // walled branch: a road that is closed is the whole story.
+        // The Main published since this branch last merged from it: the mod's notification
+        // ("The Main was updated by @x") and its live Merge with Main, said here where the act
+        // itself stays the game's. Not over a wall — a Main nobody can be merged from is not news.
+        if (report.MainMovedSinceMerge
+            && position is { MainMissing: not true, MainAbandoned: not true, BranchFrozen: not true })
+        {
+            yield return new TextBlock
+            {
+                Text = "The Main was updated by " + People.Mention(report.MatchingOnline!.Author!)
+                     + " since this branch last merged from it. Merge with Main is done in the game.",
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("StatusWarning"),
+                Margin = new Avalonia.Thickness(0, 2, 0, 0),
+            };
+        }
+
         if (position is { MainIgnoring: true, MainMissing: not true, MainAbandoned: not true, BranchFrozen: not true }
             && !report.MainIgnoringDismissed)
         {

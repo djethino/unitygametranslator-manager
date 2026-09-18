@@ -303,6 +303,12 @@ public static class SituationReader
         else if (report.MyPosition is { MainIgnoring: true } && !report.MainIgnoringDismissed)
             parts.Add("contribution not taken in — the Main has moved on without it");
 
+        // The Main published since this branch last merged from it — the mod's corner
+        // notification, on the row. Last of the chain: a wall says the road is closed, and a
+        // Main nobody can be merged from any more is not news.
+        else if (report.MainMovedSinceMerge)
+            parts.Add("the Main was updated — merge it in from the game");
+
         if (branchesWaiting is > 0 and var waiting)
             parts.Add(waiting == 1 ? "1 contribution waiting" : $"{waiting} contributions waiting");
 

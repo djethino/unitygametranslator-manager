@@ -402,6 +402,7 @@ public static class LocalTranslationProbe
 
             var entryCount = 0;
             string? uuid = null, gameName = null, steamId = null, sourceHash = null;
+            string? mergedMainHash = null;
             string? sourceLanguage = null, targetLanguage = null;
             var localChanges = 0;
             int human = 0, validated = 0, ai = 0, captured = 0, skipped = 0;
@@ -429,6 +430,9 @@ public static class LocalTranslationProbe
                         // file that is still the server's from one somebody has worked on.
                         if (property.Value.TryGetProperty("hash", out var hash))
                             sourceHash = hash.GetString();
+                        // The Main at the branch's last merge — what says whether the Main moved.
+                        if (property.Value.TryGetProperty("main_hash", out var mainHash))
+                            mergedMainHash = mainHash.GetString();
                         break;
                     case "_game" when property.Value.ValueKind == JsonValueKind.Object:
                         if (property.Value.TryGetProperty("name", out var n)) gameName = n.GetString();
@@ -466,6 +470,7 @@ public static class LocalTranslationProbe
                 // and only when the mod left a snapshot to compare against.
                 ChangedSinceAncestor = CountChangedSinceAncestor(gamePath, descriptor),
                 SourceHash = sourceHash,
+                MergedMainHash = mergedMainHash,
                 Counts = new TagCounts(human, validated, ai, captured, skipped),
                 LastWrite = File.GetLastWriteTimeUtc(path),
             };

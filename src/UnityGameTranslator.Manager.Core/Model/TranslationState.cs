@@ -1,3 +1,4 @@
+using System;
 ﻿using System.Text.Json.Serialization;
 using UnityGameTranslator.Common;
 
@@ -92,6 +93,15 @@ public sealed class LocalTranslation
     /// honest answer about a local file is that we do not know.
     /// </summary>
     public string? SourceHash { get; init; }
+
+    /// <summary>
+    /// The Main's hash at this branch's last merge from it, from _source.main_hash. Null on a
+    /// Main, on a branch that never merged, or on a file that predates the field.
+    ///
+    /// It is what lets a branch tell "the Main published since I last took it in" — the mod's
+    /// HasMainUpdate, read from the same key, compared against the same public hash.
+    /// </summary>
+    public string? MergedMainHash { get; init; }
 
     /// <summary>
     /// The language this file says it is written FROM (`_source_language`), or null when it does
@@ -707,6 +717,22 @@ public sealed class GameReport
     /// <summary>The key the mod files a dismissed "not taking it in" notice under, for this file's lineage.</summary>
     public bool MainIgnoringDismissed =>
         LocalTranslation?.Uuid is { Length: > 0 } uuid && DismissedNotices.Contains("main-ignoring:" + uuid);
+
+    /// <summary>
+    /// The Main this branch contributes to has published since the branch last merged from it.
+    ///
+    /// 🔴 The mod's rule, to the letter (`HasMainUpdate`): the hash the branch last merged
+    /// against the Main's current one, and NEVER the branch's content against the Main's — a
+    /// branch differs from its Main permanently, that is what being one means. Unknown on either
+    /// side — never merged, an older file, no listing — answers false: this tool stays quiet
+    /// rather than crying wolf. The game said it and this card did not (2026-09-18): the corner
+    /// notification and a live Merge with Main there, "up to date" here.
+    /// </summary>
+    public bool MainMovedSinceMerge =>
+        MyPosition is { IsMain: false }
+        && LocalTranslation?.MergedMainHash is { Length: > 0 } merged
+        && MatchingOnline?.FileHash is { Length: > 0 } main
+        && !string.Equals(merged, main, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Where the translation here stands against the published one — the same verdict the mod

@@ -26,12 +26,13 @@ internal static class SituationChecks
         Verdict = moddable ? ModdabilityVerdict.Ok : ModdabilityVerdict.AntiCheat,
     };
 
-    private static LocalTranslation Local(int localChanges = 0, string? uuid = "u-1") => new()
+    private static LocalTranslation Local(int localChanges = 0, string? uuid = "u-1", string? mergedMainHash = null) => new()
     {
         Path = @"C:\games\a-game\translations.json",
         Uuid = uuid,
         EntryCount = 400,
         LocalChanges = localChanges,
+        MergedMainHash = mergedMainHash,
     };
 
     /// <summary>
@@ -241,6 +242,56 @@ internal static class SituationChecks
             new GameReport { Game = Game(), MyPosition = new LineagePosition { Uuid = "u-1", IsMain = false, MainIgnoring = true, BranchFrozen = true } }, null);
         Program.Check(walled is not null && walled.Contains("frozen", StringComparison.Ordinal) && !walled.Contains("not taken in", StringComparison.Ordinal),
             "a wall outranks the judgement", "a closed road is the whole story");
+
+        // 🔴 The Main moved since the last merge: the mod's rule, hash against hash, never content.
+        var mainNow = new OnlineTranslation { FileHash = "b2", Author = "alice" };
+        var moved = SituationReader.Signals(
+            new GameReport
+            {
+                Game = Game(),
+                LocalTranslation = Local(uuid: "u-1", mergedMainHash: "a1"),
+                OnlineTranslations = new[] { mainNow },
+                MatchingOnline = mainNow,
+                MyPosition = new LineagePosition { Uuid = "u-1", IsMain = false },
+            }, null);
+        Program.Check(moved is not null && moved.Contains("the Main was updated", StringComparison.Ordinal),
+            "a branch whose Main published since its last merge says so", "the mod's corner notification, on the row");
+
+        var inStep = SituationReader.Signals(
+            new GameReport
+            {
+                Game = Game(),
+                LocalTranslation = Local(uuid: "u-1", mergedMainHash: "b2"),
+                OnlineTranslations = new[] { mainNow },
+                MatchingOnline = mainNow,
+                MyPosition = new LineagePosition { Uuid = "u-1", IsMain = false },
+            }, null);
+        Program.Check(inStep is null, "and nothing when the Main is where the branch last merged it",
+            "an act with no effect is not offered");
+
+        var neverMerged = SituationReader.Signals(
+            new GameReport
+            {
+                Game = Game(),
+                LocalTranslation = Local(uuid: "u-1"),
+                OnlineTranslations = new[] { mainNow },
+                MatchingOnline = mainNow,
+                MyPosition = new LineagePosition { Uuid = "u-1", IsMain = false },
+            }, null);
+        Program.Check(neverMerged is null, "nor when the branch never merged: unknown is not moved",
+            "quiet rather than crying wolf, as the mod");
+
+        var onAMain = SituationReader.Signals(
+            new GameReport
+            {
+                Game = Game(),
+                LocalTranslation = Local(uuid: "u-1", mergedMainHash: "a1"),
+                OnlineTranslations = new[] { mainNow },
+                MatchingOnline = mainNow,
+                MyPosition = new LineagePosition { Uuid = "u-1", IsMain = true },
+            }, null);
+        Program.Check(onAMain is null, "and never on a Main, whatever the file carries",
+            "a Main has no upstream to merge from");
 
         // ⚠ Not knowing is not the same as none — announcing "nobody is waiting" on the strength of
         // an unasked question is a guess dressed as a fact.

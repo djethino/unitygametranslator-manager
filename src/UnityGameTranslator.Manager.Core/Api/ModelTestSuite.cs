@@ -299,7 +299,7 @@ public static class ModelTestSuite
         summary.Append(corrected == 0
             ? $"Nothing had to be asked twice — the mod allows up to "
               + $"{Placeholders.MaxAttempts} tries per line before giving up on it."
-            : $"{corrected} line(s) of {lines.Count} had to be asked again, out of the "
+            : $"{Composition.Amount(corrected, "line", "lines")} of {lines.Count} had to be asked again, out of the "
               + $"{Placeholders.MaxAttempts} tries the mod allows before leaving a line "
               + "alone. Each extra try spends that time and that graphics card over again, while "
               + "the game is running.");

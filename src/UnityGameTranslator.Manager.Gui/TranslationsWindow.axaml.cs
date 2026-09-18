@@ -485,7 +485,7 @@ public sealed class TranslationsWindow : Window
             return;
         }
 
-        _status.Text = $"{all.Count} translation(s) for this game, in the order the site ranks them.";
+        _status.Text = $"{Composition.Amount(all.Count, "translation", "translations")} for this game, in the order the site ranks them.";
 
         foreach (var translation in all) _list.Children.Add(Card(translation, all));
     }

@@ -128,7 +128,7 @@ public sealed class OllamaProbe
         if (models is not null)
         {
             return new OllamaStatus(OllamaState.Running, FindExecutable(),
-                $"already serving {models.Count} model(s)");
+                $"already serving {Composition.Amount(models.Count, "model", "models")}");
         }
 
         var executable = FindExecutable();

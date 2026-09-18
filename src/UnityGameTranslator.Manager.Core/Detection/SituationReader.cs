@@ -152,7 +152,7 @@ public static class SituationReader
         if (inLanguage.Count > 0)
         {
             var best = inLanguage[0];
-            var others = inLanguage.Count > 1 ? $", {inLanguage.Count - 1} other(s)" : "";
+            var others = inLanguage.Count > 1 ? $", {Composition.Amount(inLanguage.Count - 1, "other", "others")}" : "";
 
             // "complete" is repeated as the author's word, with the date next to it: complete
             // and last touched fourteen months ago is a different proposition from complete
@@ -179,7 +179,7 @@ public static class SituationReader
             Situation.NotTranslatedYet,
             $"No {Languages.NameOf(targetLanguage)} translation yet — be the first",
             report.OnlineTranslations.Count > 0
-                ? $"{report.OnlineTranslations.Count} translation(s) in other languages"
+                ? $"{Composition.Amount(report.OnlineTranslations.Count, "translation", "translations")} in other languages"
                 : null,
             "Install and translate");
     }
@@ -450,8 +450,8 @@ public static class SituationReader
             0 => "updated today",
             1 => "updated yesterday",
             < 30 => $"updated {days} days ago",
-            < 365 => $"updated {days / 30} month(s) ago",
-            _ => $"updated {days / 365} year(s) ago",
+            < 365 => $"updated {Composition.Amount(days / 30, "month", "months")} ago",
+            _ => $"updated {Composition.Amount(days / 365, "year", "years")} ago",
         };
         return prefix + text;
     }

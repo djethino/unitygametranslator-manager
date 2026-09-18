@@ -5445,7 +5445,7 @@ public partial class MainWindow : Window
             yield return new TextBlock
             {
                 Text = "Nothing translated yet — the mod has met "
-                     + $"{counts.Captured} line(s) and is waiting on a translation for them.",
+                     + $"{Composition.Amount(counts.Captured, "line", "lines")} and is waiting on a translation for them.",
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("TextSecondary"),
@@ -6752,10 +6752,10 @@ public partial class MainWindow : Window
                     SyncDirection.Download => "The published version has moved on. Nothing of yours "
                                             + "is at risk — this game holds no unpublished change.",
                     SyncDirection.Upload => Unpublished(report) is { } up
-                        ? $"This game holds {up} line(s) the published version does not."
+                        ? $"This game holds {Composition.Amount(up, "line", "lines")} the published version does not."
                         : "This game holds changes the published version does not.",
                     _ => Unpublished(report) is { } mine
-                        ? $"Both have moved: {mine} line(s) here are unpublished, and the published "
+                        ? $"Both have moved: {Composition.Amount(mine, "line", "lines")} here {(mine == 1 ? "is" : "are")} unpublished, and the published "
                           + "version changed too. Settling that is done line by line."
                         : "Both this file and the published one have moved. Settling that is done "
                           + "line by line.",
@@ -6928,7 +6928,7 @@ public partial class MainWindow : Window
                 standing.CanWriteLocally);
 
             ToolTip.SetTip(takeTheirs, Unpublished(report) is { } dropped
-                ? $"Replaces this game's file with the published one. The {dropped} line(s) not "
+                ? $"Replaces this game's file with the published one. The {Composition.Amount(dropped, "line", "lines")} not "
                   + "published are set aside, not merged."
                 : "Replaces this game's file with the published one, as it stands.");
 
@@ -7676,7 +7676,7 @@ public partial class MainWindow : Window
                                            enabled: false);
 
             ToolTip.SetTip(putBack,
-                $"{missing.Count} file(s) this game had before UnityGameTranslator Manager "
+                $"{Composition.Amount(missing.Count, "file", "files")} this game had before UnityGameTranslator Manager "
                 + "replaced them are missing — its previous mod loader, most often. This writes "
                 + "them back. Nothing is deleted: anything already in place is left alone.");
 
@@ -10356,7 +10356,7 @@ public partial class MainWindow : Window
         {
             yield return new TextBlock
             {
-                Text = $"You have {local.LocalChanges} line(s) here that have never been uploaded. "
+                Text = $"You have {Composition.Amount(local.LocalChanges, "line", "lines")} here that {(local.LocalChanges == 1 ? "has" : "have")} never been uploaded. "
                      + "A copy is kept aside, but this game will stop using them.",
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("StatusWarning"),
@@ -10377,7 +10377,7 @@ public partial class MainWindow : Window
         {
             yield return new TextBlock
             {
-                Text = $"The {local.EntryCount} line(s) already here will be replaced. A copy is kept aside.",
+                Text = $"The {Composition.Amount(local.EntryCount, "line", "lines")} already here will be replaced. A copy is kept aside.",
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("TextSecondary"),
             };
@@ -11111,7 +11111,7 @@ public partial class MainWindow : Window
         // refusal into something checkable rather than something to take on trust.
         if (theirs.ForeignPluginCount > 0)
         {
-            lines.Add($"{theirs.ForeignPluginCount} other mod(s) sit beside ours in "
+            lines.Add($"{Composition.Amount(theirs.ForeignPluginCount, "other mod", "other mods")} {(theirs.ForeignPluginCount == 1 ? "sits" : "sit")} beside ours in "
                     + $"{theirs.PluginDir}/. Removing the loader removes those too.");
         }
 
@@ -11539,7 +11539,7 @@ public partial class MainWindow : Window
             ScopeMark.SetLabel(apply, count > 0 ? $"Apply ({count})" : "Apply");
 
             ToolTip.SetTip(apply, count > 0
-                ? $"Writes these {count} setting(s) into the game."
+                ? $"Writes {(count == 1 ? "this" : "these")} {Composition.Amount(count, "setting", "settings")} into the game."
                 : "Nothing has been changed here.");
 
             // Last, so the refusal replaces the tooltip above rather than the reverse.
@@ -12090,12 +12090,12 @@ public partial class MainWindow : Window
                 : "🔴 It has never been published, so the copy set aside here is the only one left.";
 
         var unpublished = report.LocalTranslation?.ChangedSinceAncestor;
-        var changed = unpublished is > 0
-            ? $" {unpublished} line(s) differ from what was last synced."
+        var changed = unpublished is int differing and > 0
+            ? $" {Composition.Amount(differing, "line", "lines")} {(differing == 1 ? "differs" : "differ")} from what was last synced."
             : "";
 
         if (!await ConfirmAsync($"Remove the local translation from {report.Game.Name}?",
-                $"{lines} line(s) will be moved out of the game.{changed} {stake}"
+                $"{Composition.Amount(lines, "line", "lines")} will be moved out of the game.{changed} {stake}"
                 + Environment.NewLine + Environment.NewLine
                 + $"A copy is kept aside — the last {TranslationInstaller.BackupsKept} are, and "
                 + "Restore local brings them back.",
@@ -12216,7 +12216,7 @@ public partial class MainWindow : Window
             var names = loaderFiles.Take(3).Select(f => f.Path.Replace('\\', '/'));
             var loaderSummary = new TextBlock
             {
-                Text = $"{loaderFiles.Count} file(s): {string.Join(", ", names)}"
+                Text = $"{Composition.Amount(loaderFiles.Count, "file", "files")}: {string.Join(", ", names)}"
                      + (loaderFiles.Count > 3 ? $", and {loaderFiles.Count - 3} more" : ""),
                 FontSize = 11,
                 TextWrapping = TextWrapping.Wrap,
@@ -12237,7 +12237,7 @@ public partial class MainWindow : Window
         {
             content.Children.Add(new TextBlock
             {
-                Text = $"{loaderName} stays: {foreign.Count} other mod(s) need it — "
+                Text = $"{loaderName} stays: {Composition.Amount(foreign.Count, "other mod", "other mods")} {(foreign.Count == 1 ? "needs" : "need")} it — "
                      + string.Join(", ", foreign.Take(6))
                      + (foreign.Count > 6 ? $", and {foreign.Count - 6} more" : "")
                      + ". They are never touched.",
@@ -12298,12 +12298,12 @@ public partial class MainWindow : Window
             var history = chosenData.Count(UserDataInventory.IsBackup);
 
             var summary = history == 0
-                ? $"{chosenData.Count} file(s) will be deleted from {report.Game.Name}, including "
+                ? $"{Composition.Amount(chosenData.Count, "file", "files")} will be deleted from {report.Game.Name}, including "
                   + "anything captured while playing that was never uploaded.\n\nThe translation is "
                   + $"backed up one last time first, and this game's {Backups.ScreenTitle.ToLowerInvariant()} "
                   + "stay where they are."
-                : $"{chosenData.Count} file(s) will be deleted from {report.Game.Name}, including "
-                  + $"{history} backup file(s) and anything captured while playing that was never "
+                : $"{Composition.Amount(chosenData.Count, "file", "files")} will be deleted from {report.Game.Name}, including "
+                  + $"{Composition.Amount(history, "backup file", "backup files")} and anything captured while playing that was never "
                   + "uploaded.\n\nNothing is kept aside. This cannot be undone.";
 
             if (!await ConfirmAsync("Delete this game's data?", summary, "Delete them")) return;
@@ -12452,7 +12452,7 @@ public partial class MainWindow : Window
                 IsThreeState = true,
                 Content = new TextBlock
                 {
-                    Text = $"{group.Label} - {group.Items.Count} file(s), "
+                    Text = $"{group.Label} - {Composition.Amount(group.Items.Count, "file", "files")}, "
                          + UserDataInventory.Describe(group.Bytes),
                     FontSize = 12,
                     FontWeight = FontWeight.SemiBold,

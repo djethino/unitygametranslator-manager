@@ -617,7 +617,7 @@ public sealed class GameModSettingsForm
         ModSettingControls.Select(_aiModel, chosen);
         _populating = false;
 
-        Say($"{url} answered — {models.Count} model(s).", "StatusSuccess");
+        Say($"{url} answered — {Composition.Amount(models.Count, "model", "models")}.", "StatusSuccess");
     }
 
     private void Say(string text, string colour)
@@ -929,7 +929,7 @@ public sealed class GameModSettingsForm
         _apply.IsEnabled = count > 0;
 
         ToolTip.SetTip(_apply, count > 0
-            ? $"Writes these {count} setting(s) into the game."
+            ? $"Writes {(count == 1 ? "this" : "these")} {Composition.Amount(count, "setting", "settings")} into the game."
             : "This game already holds every setting answered here.");
 
         // Last, and it overrules both: a count of pending answers says nothing about whether they

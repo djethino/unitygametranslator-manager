@@ -410,7 +410,7 @@ public sealed class UninstallEngine
             var foreign = CountForeignMods(game, receipt);
             if (foreign > 0)
             {
-                kept.Add($"{loader.Id} (kept: {foreign} other mod(s) still use it)");
+                kept.Add($"{loader.Id} (kept: {Composition.Amount(foreign, "other mod", "other mods")} still use it)");
             }
             else
             {
@@ -471,14 +471,14 @@ public sealed class UninstallEngine
 
         var message = removed.Count == 0
             ? "Nothing was removed."
-            : $"Removed {removed.Count} item(s).";
+            : $"Removed {Composition.Amount(removed.Count, "item", "items")}.";
         if (kept.Count > 0) message += $" {kept.Count} left in place — see the details.";
 
         // ⚠ Said, not done. These are files this game had before we replaced them: leaving them
         // in a hidden folder without a word would be losing them by silence.
         if (waiting > 0)
         {
-            message += $" {waiting} file(s) this game had before are kept aside — "
+            message += $" {Composition.Amount(waiting, "file", "files")} this game had before {(waiting == 1 ? "is" : "are")} kept aside — "
                      + "\"Put back what was here before\" restores them.";
         }
 
@@ -623,7 +623,7 @@ public sealed class UninstallEngine
             restored.Count > 0,
             restored.Count == 0
                 ? "There is nothing to put back: this game had no file of its own where ours went."
-                : $"Put back {restored.Count} file(s) this game had before.",
+                : $"Put back {Composition.Amount(restored.Count, "file", "files")} this game had before.",
             restored);
     }
 

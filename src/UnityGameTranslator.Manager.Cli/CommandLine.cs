@@ -229,7 +229,7 @@ public static class CommandLine
         }
 
         Console.WriteLine();
-        Console.WriteLine($"{shown} game(s) shown out of {games.Count} Unity game(s) found in {elapsed.TotalSeconds:F1}s.");
+        Console.WriteLine($"{shown} shown out of {Composition.Amount(games.Count, "Unity game", "Unity games")} found in {elapsed.TotalSeconds:F1}s.");
 
         // Timed and printed because the window repeats it on a clock: a sweep whose cost nobody
         // measured is a promise that it is cheap, and this is the number that keeps the promise.
@@ -528,7 +528,7 @@ public static class CommandLine
 
         if (report.InstalledLoader is { ForeignPluginCount: > 0 })
         {
-            Console.WriteLine($"              {report.InstalledLoader.ForeignPluginCount} other mod(s) alongside — the loader will never be removed.");
+            Console.WriteLine($"              {Composition.Amount(report.InstalledLoader.ForeignPluginCount, "other mod", "other mods")} alongside — the loader will never be removed.");
         }
 
         if (report.LoaderStanding is { } loaderStanding) Console.WriteLine($"              {Standing(loaderStanding)}");
@@ -569,7 +569,7 @@ public static class CommandLine
         {
             var count = local.EntryCount < 0 ? "unreadable file" : $"{local.EntryCount} entries";
             Console.WriteLine($"Local trans.: {count}"
-                              + (local.LocalChanges > 0 ? $", {local.LocalChanges} unsynced change(s)" : "")
+                              + (local.LocalChanges > 0 ? $", {Composition.Amount(local.LocalChanges, "unsynced change", "unsynced changes")}" : "")
                               + (local.Uuid is null ? "" : $"  [{local.Uuid}]"));
         }
         else
@@ -615,7 +615,7 @@ public static class CommandLine
 
         if (report.OnlineTranslations.Count > 0)
         {
-            Console.WriteLine($"Online      : {report.OnlineTranslations.Count} community translation(s)");
+            Console.WriteLine($"Online      : {Composition.Amount(report.OnlineTranslations.Count, "community translation", "community translations")}");
 
             if (report.MatchingOnline is { } mine)
             {
@@ -1204,7 +1204,7 @@ public static class CommandLine
         if (marks.Count > 0)
         {
             Console.WriteLine($"Self-assessment: {marks.Average():F1}/10 on average, over "
-                              + $"{marks.Count} answer(s) — the model grading its own work, not a verdict.");
+                              + $"{Composition.Amount(marks.Count, "answer", "answers")} — the model grading its own work, not a verdict.");
         }
 
         var helped = outcomes.Count(r => r.Test.UnlocksOption is null && r.PassedWithHelp);
@@ -1633,7 +1633,7 @@ public static class CommandLine
 
             var unverified = loader.Assets.Count(a => string.IsNullOrEmpty(a.Sha256));
             if (unverified > 0)
-                Console.WriteLine($"    {unverified}/{loader.Assets.Count} pinned asset(s) without a checksum.");
+                Console.WriteLine($"    {unverified}/{loader.Assets.Count} pinned {(loader.Assets.Count == 1 ? "asset" : "assets")} without a checksum.");
 
             // What each source offers RIGHT NOW, beside what the catalog pins. This is the whole
             // point of schema 5, and printing it is also how the resolvers get exercised against
@@ -1651,7 +1651,7 @@ public static class CommandLine
                 }
 
                 Console.WriteLine($"    {source.Channel,-8} -> {builds[0].Describe()}  ({source.Label}, "
-                                  + $"{builds[0].Assets.Count} archive(s), "
+                                  + $"{Composition.Amount(builds[0].Assets.Count, "archive", "archives")}, "
                                   + $"{builds[0].Assets.Count(a => !string.IsNullOrEmpty(a.Sha256))} with a checksum)");
 
                 foreach (var older in builds.Skip(1))

@@ -10,7 +10,7 @@ namespace UnityGameTranslator.Manager.Core.Api;
 public sealed record AiServer(string Url, string Product, IReadOnlyList<string> Models)
 {
     public override string ToString() =>
-        $"{Product} at {Url} ({Models.Count} model(s))";
+        $"{Product} at {Url} ({Composition.Amount(Models.Count, "model", "models")})";
 }
 
 /// <summary>How a translation attempt went, in the terms that matter to a player.</summary>

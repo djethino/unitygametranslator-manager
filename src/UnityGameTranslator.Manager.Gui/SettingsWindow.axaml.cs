@@ -997,7 +997,7 @@ public sealed class SettingsWindow : Window
         if (stillThere)
         {
             Select(_aiModel, saved);
-            SayWorked($"{_draft.AiUrl} answered — {models.Count} model(s), "
+            SayWorked($"{_draft.AiUrl} answered — {Composition.Amount(models.Count, "model", "models")}, "
                       + $"and {saved} is still there.");
         }
         else if (!string.IsNullOrWhiteSpace(saved))
@@ -1006,12 +1006,12 @@ public sealed class SettingsWindow : Window
             // would leave someone believing they are running the one they chose. The selection is
             // left empty so the choice is visibly theirs to make.
             SayFailed($"{_draft.AiUrl} answered, but \"{saved}\" is not among the "
-                      + $"{models.Count} model(s) it offers any more. Nothing was changed — "
+                      + $"{Composition.Amount(models.Count, "model", "models")} it offers any more. Nothing was changed — "
                       + "pick one below, or put that model back.");
         }
         else
         {
-            SayWorked($"{_draft.AiUrl} answered — {models.Count} model(s). Choose one.");
+            SayWorked($"{_draft.AiUrl} answered — {Composition.Amount(models.Count, "model", "models")}. Choose one.");
         }
 
         _testButton.IsEnabled = _aiModel.SelectedItem is not null;
@@ -1058,7 +1058,7 @@ public sealed class SettingsWindow : Window
         var chosen = Tag(_backend) == "llm";
         if (chosen && (asked || string.IsNullOrWhiteSpace(_aiUrl.Text))) _aiUrl.Text = server.Url;
 
-        SayWorked($"{server.Product} answered at {server.Url} — {server.Models.Count} model(s).");
+        SayWorked($"{server.Product} answered at {server.Url} — {Composition.Amount(server.Models.Count, "model", "models")}.");
 
         // A server with nothing loaded is the state a fresh Ollama is left in, and the one that
         // reads as "it worked" while translating nothing. Offering a model here is the difference
@@ -1851,8 +1851,8 @@ public sealed class SettingsWindow : Window
         }
 
         SayWorked(asRefresh
-            ? $"{models.Count} model(s) on the server."
-            : $"Connected — {models.Count} model(s) offered.");
+            ? $"{Composition.Amount(models.Count, "model", "models")} on the server."
+            : $"Connected — {Composition.Amount(models.Count, "model", "models")} offered.");
         foreach (var name in models)
             _aiModel.Items.Add(name);
 
@@ -2102,7 +2102,7 @@ public sealed class SettingsWindow : Window
             {
                 _testOutput.Children.Add(new TextBlock
                 {
-                    Text = $"{echoed} answer(s) repeated the instructions back. On its own, a reason "
+                    Text = $"{Composition.Amount(echoed, "answer", "answers")} repeated the instructions back. On its own, a reason "
                          + "not to use this model: the mod prints what comes back into the game, "
                          + "word for word.",
                     FontSize = 11,

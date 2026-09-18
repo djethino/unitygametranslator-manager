@@ -117,6 +117,8 @@ public static class TranslationBadges
             sync: report.Sync,
             stage: counts.Stage,
             completeness: counts.Completeness,
+            // Nothing translated: the socle's one chip in place of the two measurements.
+            captureOnly: counts.IsCaptureOnly,
 
             // ⚠ Votes and downloads are the SITE's tally, so they are read from the published
             // entry — never from the local file, which has none and would report zero as if it
@@ -160,6 +162,7 @@ public static class TranslationBadges
             sync: null,
             stage: counts.Stage,
             completeness: translation.Completeness ?? counts.Completeness,
+            captureOnly: counts.IsCaptureOnly,
             votes: translation.VoteCount,
             downloads: translation.DownloadCount,
 

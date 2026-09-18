@@ -249,12 +249,16 @@ public sealed class TranslationsWindow : Window
         // are contributing to.
         if (_report.MyPosition is { } position)
         {
+            // The colour follows the sentence, as on the game card: green is "nothing to do", and
+            // an owner with contributions waiting is not being told that. A branch always has
+            // something to mind. The role itself is the chip's, in the socle's tone.
+            var waiting = position.IsMain ? (position.BranchesWithWork ?? position.BranchesCount ?? 0) : 0;
             card.Children.Add(new TextBlock
             {
                 Text = position.Describe(_report.MatchingOnline?.Author),
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
-                Foreground = Brush(position.IsMain ? "StatusSuccess" : "StatusWarning"),
+                Foreground = Brush(position.IsMain && waiting == 0 ? "StatusSuccess" : "StatusWarning"),
             });
 
             if (position.MainMissing == true)

@@ -297,6 +297,12 @@ public static class SituationReader
         else if (report.MyPosition is { MainAbandoned: true })
             parts.Add("contribution stranded — the Main's account is gone");
 
+        // A judgement, not a wall: the Main was told and worked on since without taking it in.
+        // Kept out of the chain above — a wall says the road is closed, this says nobody is
+        // walking it — and silent once the person put the notice away in the game.
+        else if (report.MyPosition is { MainIgnoring: true } && !report.MainIgnoringDismissed)
+            parts.Add("contribution not taken in — the Main has moved on without it");
+
         if (branchesWaiting is > 0 and var waiting)
             parts.Add(waiting == 1 ? "1 contribution waiting" : $"{waiting} contributions waiting");
 

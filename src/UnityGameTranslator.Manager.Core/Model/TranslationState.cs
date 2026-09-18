@@ -353,6 +353,14 @@ public sealed class LineagePosition
     public bool? MainAbandoned { get; init; }
 
     /// <summary>
+    /// The Main was told of this branch and has worked on its translation since without taking
+    /// any of it in. A judgement about somebody, not a fact about the file: said as a notice
+    /// the person may put away (in the game, whose dismissal this tool honours), never as a
+    /// wall. Null when the site did not say.
+    /// </summary>
+    public bool? MainIgnoring { get; init; }
+
+    /// <summary>
     /// The published hash of THIS account's row. What the game's file is compared with when the
     /// account holds a row in the lineage: a branch is in step with its own published copy, not
     /// with the Main it contributes to — the mod's verdict, and this tool said "Update available"
@@ -688,6 +696,17 @@ public sealed class GameReport
     /// read — see LocalTranslationProbe.ReadSiteAccount.
     /// </summary>
     public (string? User, string? Server) SiteAccount { get; set; }
+
+    /// <summary>
+    /// The notices the person put away in the game, as the mod records them in the game's own
+    /// config (`sync.dismissed_notices`, `main-ignoring:<uuid>`). Read, never written: a
+    /// dismissal is the game's to record, and this tool says nothing the game was told to drop.
+    /// </summary>
+    public IReadOnlyCollection<string> DismissedNotices { get; set; } = Array.Empty<string>();
+
+    /// <summary>The key the mod files a dismissed "not taking it in" notice under, for this file's lineage.</summary>
+    public bool MainIgnoringDismissed =>
+        LocalTranslation?.Uuid is { Length: > 0 } uuid && DismissedNotices.Contains("main-ignoring:" + uuid);
 
     /// <summary>
     /// Where the translation here stands against the published one — the same verdict the mod

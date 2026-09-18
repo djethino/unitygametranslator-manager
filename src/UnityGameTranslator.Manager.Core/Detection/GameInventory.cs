@@ -260,6 +260,7 @@ public sealed class GameInventory
             CollectRequirements(report, descriptor, game);
 
             report.SiteAccount = LocalTranslationProbe.ReadSiteAccount(game.Path, descriptor);
+            report.DismissedNotices = LocalTranslationProbe.ReadDismissedNotices(game.Path, descriptor);
             report.LoaderStanding = ReadLoaderStanding(report);
             report.PluginStanding = HeldPluginStanding(report);
         }

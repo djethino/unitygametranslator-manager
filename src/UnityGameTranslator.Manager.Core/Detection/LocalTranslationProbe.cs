@@ -313,6 +313,33 @@ public static class LocalTranslationProbe
     /// is the whole of the interest we take in the other one.
     /// </summary>
     /// <returns>The account name and the server that issued it, or (null, null).</returns>
+    /// <summary>
+    /// The notices the person put away in the game — `sync.dismissed_notices` of the game's own
+    /// config, as the mod writes them. Empty when there is no config, or none.
+    /// </summary>
+    public static IReadOnlyCollection<string> ReadDismissedNotices(string gamePath, LoaderDescriptor descriptor)
+    {
+        var path = DataFile(gamePath, descriptor, ConfigFileName);
+        if (path is null || !File.Exists(path)) return Array.Empty<string>();
+
+        try
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(path));
+            if (!document.RootElement.TryGetProperty("sync", out var sync) || sync.ValueKind != JsonValueKind.Object) return Array.Empty<string>();
+            if (!sync.TryGetProperty("dismissed_notices", out var list) || list.ValueKind != JsonValueKind.Array) return Array.Empty<string>();
+
+            var notices = new List<string>();
+            foreach (var item in list.EnumerateArray())
+                if (item.ValueKind == JsonValueKind.String && item.GetString() is { Length: > 0 } key) notices.Add(key);
+            return notices;
+        }
+        catch
+        {
+            // A config we cannot parse is reported elsewhere; here it simply means nothing was put away.
+            return Array.Empty<string>();
+        }
+    }
+
     public static (string? User, string? Server) ReadSiteAccount(string gamePath,
                                                                  LoaderDescriptor descriptor)
     {

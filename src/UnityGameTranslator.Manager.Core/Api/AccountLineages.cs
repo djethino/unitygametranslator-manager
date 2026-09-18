@@ -195,6 +195,7 @@ public sealed class AccountLineages
 
                     MainMissing = Flag(entry, "main_missing"),
                     MainAbandoned = Flag(entry, "main_abandoned"),
+                    MainIgnoring = Flag(entry, "main_ignoring"),
                     FileHash = Text(entry, "file_hash"),
                     AcceptsBranches = Flag(entry, "accepts_branches"),
                     BranchFrozen = Flag(entry, "branch_frozen"),

@@ -5129,6 +5129,24 @@ public partial class MainWindow : Window
             Foreground = Brush("StatusWarning"),
             Margin = new Avalonia.Thickness(0, 2, 0, 0),
         };
+
+        // The one judgement among the notices, in the socle's words — the mod's card says the
+        // same sentence with a Dismiss. Dismissed there, silent here: the game records it, and
+        // this tool reads the game's config rather than keeping a second opinion. Not on a
+        // walled branch: a road that is closed is the whole story.
+        if (position is { MainIgnoring: true, MainMissing: not true, MainAbandoned: not true, BranchFrozen: not true }
+            && !report.MainIgnoringDismissed)
+        {
+            yield return new TextBlock
+            {
+                Text = StatusCards.MainIgnoringText,
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("StatusWarning"),
+                Opacity = 0.9,
+                Margin = new Avalonia.Thickness(0, 2, 0, 0),
+            };
+        }
     }
 
     private Control Translations(GameReport report)

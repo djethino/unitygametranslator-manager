@@ -219,6 +219,29 @@ internal static class SituationChecks
                 $"a stranded contribution says \"{fragment}\"", "reached through MyPosition");
         }
 
+        // The judgement: said while the person has not put it away in the game, and never over a
+        // wall — a closed road is the whole story.
+        var ignored = SituationReader.Signals(
+            new GameReport { Game = Game(), MyPosition = new LineagePosition { Uuid = "u-1", IsMain = false, MainIgnoring = true } }, null);
+        Program.Check(ignored is not null && ignored.Contains("not taken in", StringComparison.Ordinal),
+            "a contribution the Main moved on without says so", "reached through MyPosition");
+
+        var putAway = SituationReader.Signals(
+            new GameReport
+            {
+                Game = Game(),
+                LocalTranslation = Local(uuid: "u-1"),
+                MyPosition = new LineagePosition { Uuid = "u-1", IsMain = false, MainIgnoring = true },
+                DismissedNotices = new[] { "main-ignoring:u-1" },
+            }, null);
+        Program.Check(putAway is null,
+            "and nothing once the game's config says it was put away", "the game records the dismissal, this tool reads it");
+
+        var walled = SituationReader.Signals(
+            new GameReport { Game = Game(), MyPosition = new LineagePosition { Uuid = "u-1", IsMain = false, MainIgnoring = true, BranchFrozen = true } }, null);
+        Program.Check(walled is not null && walled.Contains("frozen", StringComparison.Ordinal) && !walled.Contains("not taken in", StringComparison.Ordinal),
+            "a wall outranks the judgement", "a closed road is the whole story");
+
         // ⚠ Not knowing is not the same as none — announcing "nobody is waiting" on the strength of
         // an unasked question is a guess dressed as a fact.
         var unknown = SituationReader.Signals(new GameReport { Game = Game() }, null);

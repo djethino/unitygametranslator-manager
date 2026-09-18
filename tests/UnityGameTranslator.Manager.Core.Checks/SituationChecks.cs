@@ -248,4 +248,29 @@ internal static class SituationChecks
                       && both.Contains("2 contributions waiting", StringComparison.Ordinal),
             "signals are joined, never ranked", "one line, every signal");
     }
+
+    /// <summary>The sentence a branch's card says about where it stands.</summary>
+    internal static void WhatABranchSays()
+    {
+        Program.Section("The sentence on a branch");
+
+        // 🔴 Each wall changes what the sentence promises: "reviewed by X" once the Main is gone,
+        // its owner's account is, or contributions are closed, kept somebody working towards a
+        // review that would never come. The abandoned one said exactly that (2026-09-18).
+        foreach (var (position, fragment, never) in new[]
+        {
+            (new LineagePosition { Uuid = "u-1", IsMain = false, MainMissing = true }, "is gone", "reviewed by"),
+            (new LineagePosition { Uuid = "u-1", IsMain = false, MainAbandoned = true }, "account behind the Main was deleted", "reviewed by"),
+            (new LineagePosition { Uuid = "u-1", IsMain = false, BranchFrozen = true }, "no longer takes contributions", "reviewed by"),
+        })
+        {
+            var said = position.Describe("alice");
+            Program.Check(said.Contains(fragment, StringComparison.Ordinal) && !said.Contains(never, StringComparison.Ordinal),
+                $"a walled branch says \"{fragment}\" and never \"{never}\"", "the wall changes the promise");
+        }
+
+        var open = new LineagePosition { Uuid = "u-1", IsMain = false }.Describe("alice");
+        Program.Check(open.Contains("reviewed by alice", StringComparison.Ordinal),
+            "an open branch names its reviewer", "the ordinary case");
+    }
 }

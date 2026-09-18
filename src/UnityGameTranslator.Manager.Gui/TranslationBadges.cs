@@ -142,9 +142,12 @@ public static class TranslationBadges
             // Read from the published entry, like the two declarations above: a local file carries
             // no record of what it was forked from — the mod severs that link on purpose. Silent
             // offline, which is the ordinary "we do not know" of this whole strip.
-            origin: online?.Origin is { } from
-                ? from.ToOrigin()
-                : null));
+            // ⚠ And silent on a branch: the published entry is the MAIN, and the Main's origin is
+            // not this file's. The game's card credited the Main's source under the branch held
+            // here, where the mod credited nobody (2026-09-18).
+            origin: mine is { IsMain: false }
+                ? null
+                : online?.Origin is { } from ? from.ToOrigin() : (Origin?)null));
     }
 
     /// <summary>A published translation, in the community list.</summary>

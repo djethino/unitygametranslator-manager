@@ -25,6 +25,7 @@ internal static class Program
         SituationChecks.SituationsAGameCanBeIn();
         SituationChecks.SomethingHereThatCannotRun();
         SituationChecks.WhatASecondLineSays();
+        SituationChecks.WhatABranchSays();
         StandingChecks.WhereThisAccountStands();
         PluginWriteChecks.WhenTheModWouldBeWritten();
         TranslationChoiceChecks.WhichTranslationAGameWouldGet();

@@ -353,6 +353,14 @@ public sealed class LineagePosition
     public bool? MainAbandoned { get; init; }
 
     /// <summary>
+    /// The published hash of THIS account's row. What the game's file is compared with when the
+    /// account holds a row in the lineage: a branch is in step with its own published copy, not
+    /// with the Main it contributes to — the mod's verdict, and this tool said "Update available"
+    /// on a branch the mod called up to date (2026-09-18).
+    /// </summary>
+    public string? FileHash { get; init; }
+
+    /// <summary>
     /// Whether this lineage takes contributions: this account's own answer on a Main, its Main's
     /// answer on a branch. Null on a site that predates the question — and null is not "no".
     /// </summary>
@@ -387,9 +395,24 @@ public sealed class LineagePosition
     {
         if (!IsMain)
         {
-            // 🔴 Said first, because it changes what the rest of the sentence promises: "reviewed
-            // by its owner" is no longer true once they have closed, and leaving it there would
-            // keep somebody working towards a review that will never come.
+            // 🔴 The three walls first, because each changes what the rest of the sentence
+            // promises: "reviewed by its owner" is no longer true once the Main is gone, its
+            // owner's account is, or they have closed — and leaving it there kept somebody
+            // working towards a review that would never come. The facts are the socle's walls
+            // (Uploads.Wall), said here in this card's own shape.
+            if (MainMissing == true)
+            {
+                return "This is your branch, and the Main it contributed to is gone: it can no "
+                     + "longer be sent anywhere. Turn it into your own translation to carry on.";
+            }
+
+            if (MainAbandoned == true)
+            {
+                return "This is your branch, and the account behind the Main was deleted: nobody "
+                     + "will read contributions any more. The Main itself is still published. Turn "
+                     + "it into your own translation to carry on.";
+            }
+
             if (BranchFrozen == true)
             {
                 return mainOwner is null
@@ -443,20 +466,6 @@ public sealed class LineagePosition
     /// <summary>What the contributions hold, in pieces, for a screen that draws them.</summary>
     public WorkKind[] Kinds => Contributions.KindsOfWork(LinesNew, LinesDiffering);
 
-    /// <summary>
-    /// Said only when <see cref="MainMissing"/> is true. Null is "we do not know" — an older site
-    /// does not send the field — and reading silence as reassurance would be the one mistake that
-    /// matters here.
-    /// </summary>
-    /// <remarks>
-    /// ⚠ **Rewritten on 2026-08-27, because the sentence had become false.** It used to end with
-    /// "publishing it would give this translation a head again" — true while the next upload into a
-    /// headless lineage silently took it over. That is refused now: an orphaned branch cannot
-    /// publish at all, and the way on is a fork, which starts a lineage of its own.
-    /// </remarks>
-    public const string OrphanNote =
-        "The Main it contributed to is gone. Your work is untouched, but it can no longer be sent "
-        + "anywhere — open the game and use Fork in the mod to carry on with it.";
 }
 
 /// <summary>Everything we know about a game, gathered in one place for display and decisions.</summary>

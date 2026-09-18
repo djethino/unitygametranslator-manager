@@ -5119,7 +5119,8 @@ public partial class MainWindow : Window
 
         // A branch. The Main's name is not in the account's own listing — but the published entry
         // of this very lineage IS the Main, and the community search already carries who published
-        // it. Read from there rather than asked for again.
+        // it. Read from there rather than asked for again. The sentence carries the three walls
+        // itself (Describe): a Main gone, its owner's account gone, contributions closed.
         yield return new TextBlock
         {
             Text = position.Describe(report.MatchingOnline?.Author),
@@ -5128,21 +5129,6 @@ public partial class MainWindow : Window
             Foreground = Brush("StatusWarning"),
             Margin = new Avalonia.Thickness(0, 2, 0, 0),
         };
-
-        // Only when the server said so. Null means the site is older than the field, and an
-        // installer that read silence as "the Main is fine" would reassure people wrongly.
-        if (position.MainMissing == true)
-        {
-            yield return new TextBlock
-            {
-                Text = LineagePosition.OrphanNote,
-                FontSize = 12,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = Brush("StatusWarning"),
-                Opacity = 0.9,
-                Margin = new Avalonia.Thickness(0, 2, 0, 0),
-            };
-        }
     }
 
     private Control Translations(GameReport report)

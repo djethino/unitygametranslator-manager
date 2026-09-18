@@ -297,12 +297,13 @@ public sealed class GameInventory
             report.MatchingOnline = MatchingLineage(report);
         }
 
-        ApplySync(report, game, descriptor);
-
         // Deliberately outside the community lookup: whether this account leads or contributes to
         // the lineage of the local file is a fact about the account, and it holds even when the
         // catalog search failed or the game is not published anywhere.
+        // ⚠ And BEFORE the sync verdict: on a branch, the verdict is read against this row.
         report.MyPosition = Lineages?.For(report.LocalTranslation?.Uuid);
+
+        ApplySync(report, game, descriptor);
 
         return report;
     }
@@ -411,7 +412,15 @@ public sealed class GameInventory
     /// </param>
     private static void ApplySync(GameReport report, GameInstall game, LoaderDescriptor? loader)
     {
-        if (report.MatchingOnline is not { FileHash.Length: > 0 } published
+        // 🔴 The published copy a file is in step with is the account's OWN row when it holds
+        // one — a branch is compared with its own published branch, as the mod compares it — and
+        // the lineage's Main otherwise. Read against the Main alone, a branch in step with itself
+        // was told "Update available" here while the game said "Up to date" (2026-09-18).
+        var publishedHash = report.MyPosition is { FileHash.Length: > 0 } mine
+            ? mine.FileHash
+            : report.MatchingOnline?.FileHash;
+
+        if (string.IsNullOrEmpty(publishedHash)
             || report.LocalTranslation is not { } local
             || loader is null)
         {
@@ -428,7 +437,7 @@ public sealed class GameInventory
         // direction is the one that refuses to overwrite.
         report.Sync = Common.Sync.Decide(
             LocalTranslationProbe.ContentHashOf(game.Path, loader),
-            published.FileHash,
+            publishedHash,
             local.SourceHash,
             local.HasLocalWork ?? true);
     }

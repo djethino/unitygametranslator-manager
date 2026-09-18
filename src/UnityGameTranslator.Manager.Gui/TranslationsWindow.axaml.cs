@@ -260,18 +260,6 @@ public sealed class TranslationsWindow : Window
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush(position.IsMain && waiting == 0 ? "StatusSuccess" : "StatusWarning"),
             });
-
-            if (position.MainMissing == true)
-            {
-                card.Children.Add(new TextBlock
-                {
-                    Text = LineagePosition.OrphanNote,
-                    FontSize = 12,
-                    TextWrapping = TextWrapping.Wrap,
-                    Opacity = 0.9,
-                    Foreground = Brush("StatusWarning"),
-                });
-            }
         }
 
         return new Border

@@ -159,6 +159,11 @@ public static class TranslationBadges
     {
         var counts = TagCounts.From(translation);
 
+        // 🔴 **No publication chip in a list of published translations** (2026-09-18). It said
+        // "Published" on the row this game runs and "Not downloaded" on every other, neither of
+        // which is news: everything listed here is published by definition, and the one already
+        // in the game wears "Installed" from InListing just above. The mod's community list has
+        // dropped it from the start; this one wore it on every row.
         return Strip(Badges.For(
             publication: Publications.Of(hereOnDisk: installed, onTheSite: true),
 
@@ -190,6 +195,8 @@ public static class TranslationBadges
             // from scratch — and whose work it started from is part of choosing between them.
             origin: translation.Origin is { } from
                 ? from.ToOrigin()
-                : null));
+                : null)
+            .Where(badge => badge.Kind != BadgeKind.Publication)
+            .ToList());
     }
 }

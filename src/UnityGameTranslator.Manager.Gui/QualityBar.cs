@@ -107,20 +107,18 @@ public sealed class QualityBar : Border
         var total = counts.Sum(entry => entry.Count);
         if (total <= 0) return null;
 
+        // The socle's arithmetic: whole percents adding up to 100, the last band holding anything
+        // taking the remainder. It was this window's own loop, and the mod's own loop beside it
+        // said 99% where this one said 98% on the same file (2026-09-18).
+        var shares = Composition.Shares(counts.Select(entry => entry.Count).ToArray());
+
         var panel = new WrapPanel { Orientation = Orientation.Horizontal };
-        var running = 0;
-        var shown = counts.Where(entry => entry.Count > 0).ToList();
 
-        for (var i = 0; i < shown.Count; i++)
+        for (var i = 0; i < counts.Length; i++)
         {
-            var (count, colour, band) = shown[i];
-
-            // The last entry takes what is left rather than its own rounding, which is what keeps
-            // the total at exactly 100.
-            var percent = i == shown.Count - 1
-                ? 100 - running
-                : (int)Math.Round(count * 100.0 / total);
-            running += percent;
+            var (count, colour, band) = counts[i];
+            if (count <= 0) continue;
+            var percent = shares[i];
 
             var entry = new StackPanel
             {

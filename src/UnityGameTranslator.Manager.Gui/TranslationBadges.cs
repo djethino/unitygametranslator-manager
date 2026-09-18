@@ -29,7 +29,9 @@ public static class TranslationBadges
         BadgeTone.Attention => "StatusWarning",
         BadgeTone.Wrong => "StatusError",
         BadgeTone.Quiet => "TextMuted",
-        _ => "TextSecondary",
+        // Plain in the primary text colour, as in the mod: the ordinary fact must not read
+        // dimmer than the amber beside it.
+        _ => "TextPrimary",
     };
 
     private static Control Chip(Badge badge)

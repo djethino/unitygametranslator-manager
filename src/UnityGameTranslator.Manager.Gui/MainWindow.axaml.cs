@@ -6945,11 +6945,17 @@ public partial class MainWindow : Window
 
         // Contributing and forking are the game's acts — see Uploads. Said under the button, with
         // the wall when there is one, so a grey verb is never a verb without a reason.
+        //
+        // ⚠ The wall's WAY OUT, not the whole: this card already states the fact — the "Solo
+        // work" chip for a Main working alone, the sentence under the name for a branch whose
+        // Main is gone, ownerless or closed. Whole, the same fact stood twice ten centimetres
+        // apart, which is the one event told once per screen rule (2026-09-18). The dialog that
+        // refuses a click keeps the whole: it is a window with no card.
         var inTheGame = Uploads.DecidedInTheGame(act)
-            ? Uploads.Wall(publication, onABranch, theirEntry?.Author,
-                           myRow?.AcceptsBranches ?? theirEntry?.AcceptsBranches,
-                           myRow?.MainMissing, myRow?.MainAbandoned, myRow?.BranchFrozen) is { } wall
-                ? wall + " " + Uploads.OnlyInTheGame
+            ? Uploads.WallOf(publication, onABranch, theirEntry?.Author,
+                             myRow?.AcceptsBranches ?? theirEntry?.AcceptsBranches,
+                             myRow?.MainMissing, myRow?.MainAbandoned, myRow?.BranchFrozen)?.WayOut is { } wayOut
+                ? wayOut + " " + Uploads.OnlyInTheGame
                 : Uploads.OnlyInTheGame
             : null;
 

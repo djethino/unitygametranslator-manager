@@ -126,7 +126,11 @@ public static class TranslationBadges
             // entry — never from the local file, which has none and would report zero as if it
             // were a result.
             votes: mine is not null && online is not null ? online.VoteCount : 0,
-            downloads: mine is not null && online is not null ? online.DownloadCount : 0,
+            // ⚠ Downloads are the MAIN's tally, and a branch is not downloaded by anybody: on a
+            // branch the published entry is the Main, so its count was worn by the branch's card
+            // here where the game's card, reading the branch's own row, showed none (2026-09-18).
+            // Votes stay: a branch author rates the Main, and both cards show that tally.
+            downloads: mine is { IsMain: true } && online is not null ? online.DownloadCount : 0,
 
             // ⚠ The author's own word, from the published entry — a local file carries no such
             // declaration, and null shows nothing rather than inventing "still writing".

@@ -117,7 +117,13 @@ public sealed class QualityBar : Border
         for (var i = 0; i < counts.Length; i++)
         {
             var (count, colour, band) = counts[i];
-            if (count <= 0) continue;
+
+            // The first three bands are drawn even empty, as the mod and the website draw them:
+            // "AI: 0 (0%)" on a file written by hand is the information. Kept-as-is and Captured
+            // appear only when there are some — a permanent "Captured 0%" is noise (2026-09-18:
+            // this key hid every empty band, so a file of five human lines showed one entry here
+            // and three in the game).
+            if (count <= 0 && band is TagBand.Skipped or TagBand.Captured) continue;
             var percent = shares[i];
 
             var entry = new StackPanel

@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using UnityGameTranslator.Common;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
 
@@ -289,6 +290,10 @@ public sealed class GamePreferences : PerGameStore<GamePreference>
         // the box, so it IS a decision and it survives untouched. Undoing both would throw away the
         // one answer in the file that was genuinely given.
         if (value.Schema < 2 && value.ApplyModDefaults == true) value.ApplyModDefaults = null;
+
+        // One spelling of this machine for an address answered for this game — see
+        // Endpoints.Canonical. At every load, like the mod: it can be typed again.
+        if (value.Mod is { } own) own.AiUrl = Endpoints.Canonical(own.AiUrl);
 
         value.Schema = GamePreference.Current;
     }

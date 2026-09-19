@@ -87,6 +87,11 @@ public sealed class SettingsStore
                     // the user to notice and redo it.
                     if (loaded.TranslationBackend == "ai") loaded.TranslationBackend = "llm";
 
+                    // One spelling of this machine, same reasoning: an address typed before the
+                    // rule would otherwise be written into every game as "localhost" and show up as
+                    // a difference against a game already saying 127.0.0.1. Endpoints.Canonical.
+                    loaded.AiUrl = Endpoints.Canonical(loaded.AiUrl);
+
                     ApplyNetworkSettings(loaded);
                     return loaded;
                 }

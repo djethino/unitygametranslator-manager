@@ -199,7 +199,9 @@ public sealed class GameConfigWriter
             {
                 TargetLanguage = Text(root, null, TargetLanguageKey),
                 TranslationBackend = Text(root, null, "translation_backend"),
-                AiUrl = Text(root, null, "ai_url"),
+                // Read as the mod will read it — respelled (Endpoints.Canonical, spec/config) — so a
+                // game still carrying "localhost" is not shown as disagreeing with 127.0.0.1.
+                AiUrl = Endpoints.Canonical(Text(root, null, "ai_url")),
                 AiModel = Text(root, null, "ai_model"),
 
                 // Read into the CLEAR fields, then handed straight back to ProtectSecrets when
@@ -494,7 +496,9 @@ public sealed class GameConfigWriter
 
         if (settings.TranslationBackend == "llm")
         {
-            intents.Add(new Intent(null, "ai_url", settings.AiUrl, "AI server"));
+            // Written in the one spelling whatever was typed — the host only; the port and the
+            // path somebody chose are theirs (Endpoints.Canonical).
+            intents.Add(new Intent(null, "ai_url", Endpoints.Canonical(settings.AiUrl), "AI server"));
             intents.Add(new Intent(null, "ai_model", settings.AiModel, "AI model"));
 
             // Encrypted with the same scheme, the same constants and the same machine identity as
@@ -767,6 +771,10 @@ public sealed class GameConfigWriter
             // offering — it is how "your game never learned your hotkey" shows up — but it is
             // worded as absence rather than as a wrong value.
             var inGame = node is null ? null : Read(node, intent.Secret);
+
+            // Read as the mod reads it: an older "localhost" is respelled at the mod's next load
+            // anyway, and offering to "fix" it here would be asking somebody to approve a spelling.
+            if (intent.Parent is null && intent.Key == "ai_url") inGame = Endpoints.Canonical(inGame);
 
             // ⚠ "not set" on our side too when the intent is to remove the key — the same words the
             // left-hand side uses for an absent value, so a line reads the same way whichever end

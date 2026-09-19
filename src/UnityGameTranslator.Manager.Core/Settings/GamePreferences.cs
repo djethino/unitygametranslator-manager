@@ -174,6 +174,44 @@ public sealed class GamePreference
     [JsonPropertyName("let_wizard_ask")] public bool LetWizardAsk { get; set; }
 
     /// <summary>
+    /// The answers that end up in the game's config.json — by name, so a check can hold every rule
+    /// that has to know them to this list (<c>PreferenceFieldsChecks</c>).
+    ///
+    /// 🔴 **Written because the list lived in the Manager's window, by hand, and was short four
+    /// times** (2026-09-19): the one-click stayed grey over a change the card showed, once per
+    /// field somebody added and forgot there — `GameContext`, `StartTranslation`, `ReplaceHotkey`,
+    /// then `LetWizardAsk`. A field added to this class now fails the check until it is placed in
+    /// this list or in <see cref="NotForTheConfig"/>, which is the moment to decide.
+    /// </summary>
+    public static readonly IReadOnlyList<string> ForTheConfig = new[]
+    {
+        nameof(Mod), nameof(StartTranslation), nameof(GameContext), nameof(ReplaceHotkey),
+        nameof(LetWizardAsk),
+    };
+
+    /// <summary>
+    /// Everything else this class holds — what the config.json knows nothing about, or (for
+    /// <see cref="ApplyModDefaults"/>) what decides WHICH values go in rather than being one.
+    /// </summary>
+    public static readonly IReadOnlyList<string> NotForTheConfig = new[]
+    {
+        nameof(Schema), nameof(ApplyModDefaults), nameof(InstalledTranslationId),
+        nameof(InstallTranslation), nameof(AdoptLoader),
+    };
+
+    /// <summary>
+    /// Whether this game holds any answer of its own for its config.json — material for a write,
+    /// which is not yet work: whether the file already says it is the writer's comparison.
+    /// Every field of <see cref="ForTheConfig"/>, and the check holds that to be so.
+    /// </summary>
+    public bool HasAnswersForTheConfig =>
+        Mod is { IsEmpty: false }
+        || StartTranslation is not null
+        || !string.IsNullOrWhiteSpace(GameContext)
+        || ReplaceHotkey
+        || LetWizardAsk;
+
+    /// <summary>
     /// Settles "Set it up in the game" once the game has been set up in it: this game then keeps
     /// its own settings, and what the Setup answered is what they are. True when anything changed.
     ///

@@ -9268,28 +9268,15 @@ public partial class MainWindow : Window
         // Answers of its own are written whatever the box says — the Reviewed guard is about not
         // deciding FOR somebody, and a game they answered themselves is not that.
         //
-        // ⚠ **All of them, not just the settings form.** "Translate while I play" and "what is this
-        // game about" are answered in their own block and land in their own fields; testing only
-        // `Mod` left those two out, so changing them lit their own Apply and nothing else. The
-        // hotkey is the same kind of answer, asked in a third block again.
+        // 🔴 **Asked of the preference, never listed here.** This line was a hand-written list of
+        // fields and it was short four times, each a field added to the class and forgotten here:
+        // the one-click stayed grey over a change the card was showing. The list now lives beside
+        // the fields (GamePreference.ForTheConfig), and PreferenceFieldsChecks fails on a field
+        // nobody placed.
         //
-        // ⚠ Saying "there is material" is not saying "there is work": these fields survive being
-        // written, unlike Mod. SettingsWouldChangeAnything is what compares them with the file, so
-        // an answer already in place produces no step.
-        if (preference.Mod is { IsEmpty: false }) return true;
-        if (preference.StartTranslation is not null) return true;
-        if (!string.IsNullOrWhiteSpace(preference.GameContext)) return true;
-        if (preference.ReplaceHotkey) return true;
-
-        // 🔴 **"Set it up in the game" is an answer too, and it was the one left out** (2026-09-19).
-        // On a configured game it writes the latch open — GameConfigWriter.Intended removes
-        // first_run_completed — so the block's own Apply lit up for it while this said "nothing to
-        // write", and the one-click stayed grey over a change the card was showing. The same
-        // omission as the three fields above, one answer further along.
-        //
-        // ⚠ Material, not work: SettingsWouldChangeAnything still compares with the file, so a
-        // latch already open produces no step.
-        if (preference.LetWizardAsk) return true;
+        // ⚠ Saying "there is material" is not saying "there is work": SettingsWouldChangeAnything
+        // is what compares the answers with the file, so an answer already in place produces no step.
+        if (preference.HasAnswersForTheConfig) return true;
 
         return _settings.Current.Reviewed
                && (!config.IsConfigured || preference.UsesModDefaults(config));
@@ -10275,8 +10262,10 @@ public partial class MainWindow : Window
                 return;
             }
 
-            // The answers reached a game, so they stop being pending.
-            ValidatePending(report, _preferences.Read(report.Game.Path));
+            // The answers are settled, so they stop being pending — when this act weighed them. On a
+            // game set up by another account it did not (MaySetUp), and they stay as they were.
+            // Same rule as RunInstallAsync; see InstallPlan.SettingsWeighed.
+            if (plan.SettingsWeighed) ValidatePending(report, _preferences.Read(report.Game.Path));
             RememberDefaultsWereWritten(report, plan, configBefore);
 
             var message = outcome.Message;
@@ -10434,10 +10423,12 @@ public partial class MainWindow : Window
     private void RememberDefaultsWereWritten(GameReport report, InstallPlan plan,
                                              GameConfigSnapshot before)
     {
+        // ⚠ First, not after the forgetting: an install that wrote no config has put none of this
+        // game's answers in its file, and "they are in the config.json now" would be untrue.
+        if (!plan.WritesSettings) return;
+
         // Both install paths come through here, so it is where the answers stop being remembered.
         ForgetWrittenAnswers(report);
-
-        if (plan.Settings is null || plan.TargetLanguage is null) return;
 
         var preference = _preferences.Read(report.Game.Path);
         if (preference.ApplyModDefaults is not null) return;
@@ -10935,6 +10926,10 @@ public partial class MainWindow : Window
             // one-click rewrote a current mod on every click while its own confirmation dialog —
             // built from PluginWriteOffered — said nothing about the mod at all.
             InstallPlugin = plugin && (force || report.PluginWriteOffered),
+
+            // Weighed: asked, and answered by WouldWriteSettings/SettingsWouldChangeAnything —
+            // whichever way. See InstallPlan.SettingsWeighed.
+            SettingsWeighed = settings,
 
             // Which BUILD of that loader: the one somebody picked by hand, and otherwise the one
             // Plan() resolved for the chosen channel — the very build this card names.
@@ -12206,8 +12201,7 @@ public partial class MainWindow : Window
         var stages = new List<(InstallStage Stage, string Line)>();
         if (plan.InstallLoader) stages.Add((InstallStage.Loader, $"Install {plan.Loader.Display}"));
         if (plan.InstallPlugin) stages.Add((InstallStage.Plugin, "Install the mod"));
-        if (plan.Settings is not null && plan.TargetLanguage is not null)
-            stages.Add((InstallStage.Settings, "Apply the settings"));
+        if (plan.WritesSettings) stages.Add((InstallStage.Settings, "Apply the settings"));
 
         void OnStage(InstallStage stage) =>
             Dispatcher.UIThread.Post(() => Work.Begin(stages.FindIndex(s => s.Stage == stage)));
@@ -12228,12 +12222,15 @@ public partial class MainWindow : Window
             engine.Stage -= OnStage;
             Work.Finish(outcome.Success, outcome.Success ? "Done" : "Nothing was changed");
 
-            if (outcome.Success)
-            {
-                // Now, and only now: the answers reached a game.
+            // 🔴 **Only by an act that weighed the settings — which a success alone does not say.**
+            // The loader's own button leaves them out (settings: false), and promoting on its
+            // success filed "Set it up in the game" away with the Setup never reopened; the next
+            // pass then read the closed latch as a Setup already answered and dropped the choice.
+            // An act that left the answers out leaves them pending. See InstallPlan.SettingsWeighed.
+            if (outcome.Success && plan.SettingsWeighed)
                 ValidatePending(report, _preferences.Read(report.Game.Path));
-                RememberDefaultsWereWritten(report, plan, configBefore);
-            }
+
+            if (outcome.Success) RememberDefaultsWereWritten(report, plan, configBefore);
 
             await MessageAsync(outcome.Success ? "Installed" : "Nothing was changed", outcome.Message);
         }

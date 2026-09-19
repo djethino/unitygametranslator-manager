@@ -82,6 +82,29 @@ public sealed record InstallPlan(
     /// </summary>
     public string? TargetLanguage { get; init; }
 
+    /// <summary>
+    /// Whether this plan writes the game's config.json at all.
+    ///
+    /// ⚠ ONE answer, named. The engine asked it as a pair of null tests, and the screens that must
+    /// know whether an install CARRIED the answers given for this game asked it again by hand —
+    /// three copies of a condition whose third reader was missing: the loader's own button
+    /// promoted "Set it up in the game" to disk after an install that wrote no config, so the
+    /// Setup was never reopened and the choice was then read as done and dropped.
+    /// </summary>
+    [System.Diagnostics.CodeAnalysis.MemberNotNullWhen(true, nameof(Settings), nameof(TargetLanguage))]
+    public bool WritesSettings => Settings is not null && TargetLanguage is not null;
+
+    /// <summary>
+    /// Whether the act behind this plan weighed this game's settings at all — as opposed to
+    /// leaving them out by construction, like the loader's own button.
+    ///
+    /// 🔴 **What decides whether the answers given for this game are settled by the act.** Weighed,
+    /// they are: either they were written, or there was nothing to write because the game already
+    /// says what they say. Left out, they were never looked at, and filing them away as done is
+    /// how "Set it up in the game" was stored after a loader install and then dropped unseen.
+    /// </summary>
+    public bool SettingsWeighed { get; init; }
+
     /// <summary>Human-readable summary shown before anything is written.</summary>
     public IEnumerable<string> Describe()
     {
@@ -318,7 +341,7 @@ public sealed class InstallEngine
             // we did not create, and a failure to write settings is not a reason to undo a
             // perfectly good install — it is a reason to say so and let the mod's own wizard ask.
             ConfigWriteResult? configured = null;
-            if (plan.Settings is not null && plan.TargetLanguage is not null)
+            if (plan.WritesSettings)
             {
                 Stage?.Invoke(InstallStage.Settings);
                 Status?.Invoke("Applying your settings...");

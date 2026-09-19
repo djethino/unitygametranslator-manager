@@ -960,6 +960,10 @@ public partial class MainWindow : Window
 
         foreach (var game in _games)
         {
+            // Before the row is read, so it is drawn from the settled answer. See SettleSetupWay:
+            // at launch this is the first place to see a Setup answered while the tool was closed.
+            SettleSetupWay(game);
+
             var (situation, mine, account) = ReadSituation(game);
             _situations[game.Path] = situation;
             if (mine) _mine.Add(game.Path);
@@ -1850,6 +1854,12 @@ public partial class MainWindow : Window
         // follow overwrite what they are read from.
         var before = FactsFor(game);
         var mineBefore = _mine.Contains(game.Path);
+
+        // 🔴 The moment "Set it up in the game" is most often completed: the game has just closed
+        // on a Setup that was answered in it. Settled before the re-read, so the row and the card
+        // are drawn from the new way — and a card whose tab shows the way is redrawn even when the
+        // row says nothing new.
+        if (SettleSetupWay(game)) redraw = true;
 
         var (now, mine, account) = await Task.Run(() => ReadSituation(game));
 
@@ -3405,6 +3415,9 @@ public partial class MainWindow : Window
 
         // The user may have clicked elsewhere while we were reading.
         if (!ReferenceEquals(_selected, game)) return;
+
+        // Before anything on the card reads the preference — see SettleSetupWay.
+        SettleSetupWay(game);
 
         // 🔴 **The row is re-read from the SAME report, here, for every caller.**
         //
@@ -10382,6 +10395,40 @@ public partial class MainWindow : Window
         // and leaving it behind would have the one-click go on offering to write what is already
         // in the file — the stale rival source this method exists to remove, by another door.
         _pendingMod.Remove(report.Game.Path);
+    }
+
+    /// <summary>
+    /// Moves a game whose in-game Setup has been answered to "Set it up here" — see
+    /// <see cref="GamePreference.SettleAfterSetup"/>, where the rule and its reasons live.
+    ///
+    /// ⚠ Called wherever a game is read again — the list's pass over every game, a game that has
+    /// just closed, the card — because any of them can be the first to see the latch closed: the
+    /// Setup may have been answered while this program was not running at all.
+    ///
+    /// ⚠ Never over a way picked on the card and not applied: that is somebody's live choice, and
+    /// a game that already asked its questions is exactly where "ask them again" gets picked.
+    /// </summary>
+    /// <returns>True when the game was moved, so a caller can redraw what showed the old way.</returns>
+    private bool SettleSetupWay(GameInstall game)
+    {
+        // The cheap question first: this runs for every game on every pass over the list, and
+        // only a game still asking for its Setup has anything to settle.
+        var stored = _preferences.Read(game.Path);
+        if (!stored.LetWizardAsk) return false;
+        if (_pendingWay.ContainsKey(game.Path)) return false;
+
+        var report = _inventory.BuildReport(game);
+        if (InstalledDescriptor(report) is null) return false;
+
+        if (!stored.SettleAfterSetup(GameConfig(report))) return false;
+
+        _preferences.Set(game.Path, stored);
+
+        // The held drafts of the same answers go too, for the reason ForgetWrittenAnswers gives:
+        // left behind, they would offer to write back over what the Setup just answered.
+        _pendingMod.Remove(game.Path);
+        _pendingPlan.Remove(game.Path);
+        return true;
     }
 
     private void RememberDefaultsWereWritten(GameReport report, InstallPlan plan,

@@ -40,6 +40,7 @@ internal static class Program
         MomentsContractChecks.WhatTheFileSaysAfterEachMoment();
         InstallLedgerChecks.WhatTheToolRemembersDoing();
         ProbeMemoryChecks.WhatARememberedReadAnswers();
+        SetupWayChecks.WhenTheSetupHasBeenAnswered();
         DownloadOriginsChecks.WhereADownloadMayStart();
         DownloadOriginsChecks.WhereADownloadMayLand();
         // ⚠ The scroll edge is NOT checked here any more: it moved to the socle on 2026-09-12, so

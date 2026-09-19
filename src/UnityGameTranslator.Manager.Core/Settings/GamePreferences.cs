@@ -173,6 +173,42 @@ public sealed class GamePreference
     [JsonPropertyName("let_wizard_ask")] public bool LetWizardAsk { get; set; }
 
     /// <summary>
+    /// Settles "Set it up in the game" once the game has been set up in it: this game then keeps
+    /// its own settings, and what the Setup answered is what they are. True when anything changed.
+    ///
+    /// 🔴 **A one-off act, not a standing setting** — the user's decision, 2026-09-19: *"on lance
+    /// le jeu, répond aux questions et quand on revient au Manager on doit être passé à 'set it up
+    /// here' avec tout déjà ok."* Kept as it was, the answer went on asking for the latch to open,
+    /// so once the mod closed it the card offered to reopen the Setup every time.
+    ///
+    /// ⚠ **Read from the game, never from an event.** The latch closed while this preference still
+    /// asks for it open can mean only one thing: the Setup ran after it was opened. The Manager may
+    /// have been closed throughout, which is why nothing here waits for the game to stop.
+    ///
+    /// ⚠ **And what the config.json carries belongs to the config.json** — the rule of
+    /// ForgetWrittenAnswers. The Setup has just answered the translator, the key and what the game
+    /// is about; an answer remembered here from before would be offered back over them as a change
+    /// to write. What the file knows nothing of — the loader, the installed translation — stays.
+    ///
+    /// ⚠ Stored answers only: a way somebody has just picked and not applied is held elsewhere, and
+    /// the caller must not settle over it.
+    /// </summary>
+    public bool SettleAfterSetup(GameConfigSnapshot config)
+    {
+        if (!LetWizardAsk || !config.FirstRunCompleted) return false;
+
+        LetWizardAsk = false;
+        ApplyModDefaults = false;
+
+        Mod = null;
+        StartTranslation = null;
+        GameContext = null;
+        ReplaceHotkey = false;
+
+        return true;
+    }
+
+    /// <summary>
     /// A detached copy, for asking a question about answers that are not decided yet.
     ///
     /// ⚠ Exists because <see cref="GamePreferences.Read"/> hands back the STORED object: a

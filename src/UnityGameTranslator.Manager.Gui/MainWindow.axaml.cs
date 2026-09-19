@@ -844,7 +844,10 @@ public partial class MainWindow : Window
                 var progress = done;
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
-                    RepublishRows();
+                    // 🔴 Requested, not run: answers arrive one per game, a whole batch at once,
+                    // and redrawing the list for each froze the window for seconds just after it
+                    // appeared. See RequestRepublishRows.
+                    RequestRepublishRows();
 
                     Status($"Checking community translations... {progress}/{ids.Count}");
                 });
@@ -892,6 +895,34 @@ public partial class MainWindow : Window
     /// the running-games clock only redraws the card when the game it is about has started or
     /// stopped.
     /// </summary>
+    /// <summary>
+    /// Asks for <see cref="RepublishRows"/> once, however many answers ask for it before it runs.
+    ///
+    /// 🔴 **Measured, and it was the freeze after the list appeared.** The community lookup answers
+    /// per game — forty callbacks for one batch — and each rebuilt every game's report and every
+    /// row on this thread: 250 ms a pass on 62 games, forty passes in a row. Any number of answers
+    /// now raises one flag, and one redraw serves them all.
+    ///
+    /// ⚠ Not a timer: the redraw is posted at Background priority, so it runs as soon as input and
+    /// painting are served — the answers that land meanwhile ride on it, and nothing waits.
+    ///
+    /// ⚠ The flag is lowered by the redraw itself, immediately before a pass that has no condition
+    /// left to refuse on — so a request cannot be swallowed. Interface thread only.
+    /// </summary>
+    private void RequestRepublishRows()
+    {
+        if (_rowsRepublishPending) return;
+        _rowsRepublishPending = true;
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            _rowsRepublishPending = false;
+            RepublishRows();
+        }, DispatcherPriority.Background);
+    }
+
+    private bool _rowsRepublishPending;
+
     private void RepublishRows()
     {
         RecomputeSituations();
@@ -12699,16 +12730,10 @@ public partial class MainWindow : Window
     /// file work in Task.Run; the engines' own awaits are not enough, since an archive already in
     /// the cache completes without ever yielding.
     ///
-    /// ⚠ What is under the veil is disabled as well as covered: the veil takes the pointer, but
-    /// Tab and Enter would still reach a button on the card of a game in the middle of changing.
-    ///
     /// Always paired with <see cref="WorkEnded"/>, in a finally.
     /// </summary>
     private void Working(string caption, IEnumerable<string>? steps = null)
     {
-        foreach (var child in Root.Children)
-            if (!ReferenceEquals(child, Work)) child.IsEnabled = false;
-
         // Status first: under a veil already up it would become the gear's second line and repeat
         // the caption right above it.
         Status(caption);
@@ -12719,10 +12744,6 @@ public partial class MainWindow : Window
     private void WorkEnded()
     {
         Work.Hide();
-
-        foreach (var child in Root.Children)
-            if (!ReferenceEquals(child, Work)) child.IsEnabled = true;
-
         Status("Ready.");
     }
 

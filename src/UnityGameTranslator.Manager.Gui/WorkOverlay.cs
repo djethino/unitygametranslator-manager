@@ -28,8 +28,8 @@ public enum WorkStepState
 /// ⚠ **Blocking is the point here, where <see cref="SpinningGear"/> on its own never blocks.** A
 /// gear beside a list of results says "more is coming, read on". This covers acts that WRITE a
 /// game — loader, mod, translation — and nothing on the card behind is true until they end: its
-/// buttons would act on a game in the middle of changing. The veil takes the pointer, and the
-/// window disables what is under it so the keyboard cannot reach it either.
+/// buttons would act on a game in the middle of changing. The veil takes the pointer, and disables
+/// what it covers so the keyboard cannot reach it either.
 ///
 /// ⚠ **It does not make the work asynchronous.** A window whose thread is busy draws nothing, veil
 /// included. Whoever shows this runs the work off the interface thread — see
@@ -99,6 +99,34 @@ public sealed class WorkOverlay : Border
     public bool IsShown => IsVisible;
 
     /// <summary>
+    /// The veil of <paramref name="window"/>, laid over its content the first time it is asked for.
+    ///
+    /// ⚠ For windows that build their content in code. The main window declares its own in XAML;
+    /// these get the same one without each having to rearrange its layout to make room for it.
+    /// Called once the window's Content is set, so the content can be wrapped.
+    /// </summary>
+    public static WorkOverlay On(Window window)
+    {
+        if (window.Content is Grid { Tag: WorkOverlay existing }) return existing;
+
+        var overlay = new WorkOverlay();
+        var content = window.Content as Control;
+
+        // Detached before being re-parented: a control belongs to one place in the tree.
+        window.Content = null;
+
+        var host = new Grid { Tag = overlay };
+        if (content is not null) host.Children.Add(content);
+        host.Children.Add(overlay);
+
+        window.Content = host;
+        return overlay;
+    }
+
+    /// <summary>What <see cref="Show"/> disabled, so <see cref="Hide"/> gives back exactly that.</summary>
+    private readonly List<Control> _disabled = new();
+
+    /// <summary>
     /// Puts the veil up, the gear turning under <paramref name="caption"/>.
     /// </summary>
     /// <param name="caption">What is being applied, in the words of the act — it does not move.</param>
@@ -148,6 +176,19 @@ public sealed class WorkOverlay : Border
         }
 
         _steps.IsVisible = _rows.Count > 0;
+
+        // ⚠ What the veil covers is disabled as well: the veil takes the pointer, but Tab and Enter
+        // would still reach a button under it. Only what was enabled is touched, so Hide cannot
+        // enable something that was disabled for a reason of its own.
+        if (_disabled.Count == 0 && Parent is Panel host)
+        {
+            foreach (var sibling in host.Children)
+            {
+                if (ReferenceEquals(sibling, this) || !sibling.IsEnabled) continue;
+                sibling.IsEnabled = false;
+                _disabled.Add(sibling);
+            }
+        }
 
         IsVisible = true;
         Opacity = 1;
@@ -208,6 +249,9 @@ public sealed class WorkOverlay : Border
         _steps.Children.Clear();
         _rows.Clear();
         _states.Clear();
+
+        foreach (var control in _disabled) control.IsEnabled = true;
+        _disabled.Clear();
 
         Opacity = 0;
         IsVisible = false;

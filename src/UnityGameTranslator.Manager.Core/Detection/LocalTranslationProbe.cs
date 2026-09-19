@@ -388,11 +388,71 @@ public static class LocalTranslationProbe
             : language;
     }
 
+    /// <summary>
+    /// What a game's translation file says about itself, remembered against the files it was read
+    /// from.
+    ///
+    /// 🔴 **The list of games asks this for every game on every answer that comes back**, and it
+    /// is three full parses — the file, then the file again with its ancestor to count what
+    /// changed. Measured on 62 games: 200-250 ms a pass, 78 ms for one 6 000-line file alone. The
+    /// community lookup answers once per game, so the window paid that forty times in a row just
+    /// after the list appeared, on its own thread, and froze for seconds.
+    ///
+    /// ⚠ Keyed on BOTH files' stamp and length, never on a duration — the reasoning of
+    /// <see cref="ContentHashOf"/>, which this follows. The mod rewrites the translation while
+    /// somebody plays and rewrites the ancestor at every sync; either moving is a different answer,
+    /// and a cache with a lifetime would describe a file that has since changed.
+    ///
+    /// ⚠ Sharing the answer is safe because <see cref="LocalTranslation"/> is init-only.
+    /// </summary>
     public static LocalTranslation? Read(string gamePath, LoaderDescriptor descriptor)
     {
         var path = DataFile(gamePath, descriptor, TranslationFileName);
+        if (path is null) return null;
 
-        if (path is null || !File.Exists(path)) return null;
+        var folder = UserDataInventory.DataFolder(gamePath, descriptor);
+        var ancestorPath = folder is null ? null : Path.Combine(folder, AncestorFileName);
+
+        FileStamp translation, ancestor;
+        try
+        {
+            translation = FileStamp.Of(path);
+            if (!translation.Exists) return null;
+            ancestor = ancestorPath is null ? default : FileStamp.Of(ancestorPath);
+        }
+        catch (Exception)
+        {
+            // Unreadable metadata: read afresh, remember nothing.
+            return ReadFresh(path, gamePath, descriptor);
+        }
+
+        if (_reads.TryGetValue(path, out var known)
+            && known.Translation == translation && known.Ancestor == ancestor)
+        {
+            return known.Read;
+        }
+
+        var read = ReadFresh(path, gamePath, descriptor);
+        _reads[path] = (translation, ancestor, read);
+        return read;
+    }
+
+    /// <summary>A file's identity for remembering what was read from it: absent, or stamp and length.</summary>
+    private readonly record struct FileStamp(bool Exists, DateTime Written, long Length)
+    {
+        public static FileStamp Of(string path)
+        {
+            var file = new FileInfo(path);
+            return file.Exists ? new FileStamp(true, file.LastWriteTimeUtc, file.Length) : default;
+        }
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<
+        string, (FileStamp Translation, FileStamp Ancestor, LocalTranslation? Read)> _reads = new();
+
+    private static LocalTranslation? ReadFresh(string path, string gamePath, LoaderDescriptor descriptor)
+    {
+        if (!File.Exists(path)) return null;
 
         try
         {

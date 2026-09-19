@@ -9,7 +9,7 @@
         Icon="avares://UnityGameTranslatorManager/Assets/app.ico"
         Background="{DynamicResource SurfaceBase}">
 
-  <Grid x:Name="Root" RowDefinitions="Auto,*,Auto">
+  <Grid RowDefinitions="Auto,*,Auto">
 
     <!-- Header -->
     <Border Grid.Row="0" Padding="16,12" Background="{DynamicResource SurfaceBar}"

@@ -1236,39 +1236,55 @@ public sealed class SettingsWindow : Window
             + $"{offer.SizeText} for the program, and a model on top of that.",
             "TextSecondary"));
 
+        // Where a failure is said once the veil is down — beside the button that can try again.
         var progress = Note("", "TextMuted");
         var install = new Button { Content = $"Install Ollama ({offer.SizeText})", FontSize = 12 };
 
-        var downloading = new SpinningGear("Starting the download...") { IsVisible = false };
+        // 🔴 Subscribed ONCE, outside the click: inside it, every retry stacked another handler.
+        //
+        // ⚠ The veil is asked for at the moment of use, never while this panel is being built —
+        // see WorkOverlay.On, which wraps whatever the window's Content is at that moment.
+        installer.Progress += (done, total) => Dispatcher.UIThread.Post(() =>
+            WorkOverlay.On(this).Report(total is { } t
+                ? done >= t
+                    // The download is whole; what runs now is Ollama's own installer, then the
+                    // wait for its server to answer. Said, so the last line is not "N of N MB"
+                    // standing still for as long as that takes.
+                    ? "Installing Ollama, then waiting for it to answer..."
+                    : $"Downloading... {done / 1024.0 / 1024:F0} of {t / 1024.0 / 1024:F0} MB"
+                : $"Downloading... {done / 1024.0 / 1024:F0} MB"));
 
         install.Click += async (_, _) =>
         {
-            install.IsEnabled = false;
-            downloading.IsVisible = true;
-            installer.Progress += (done, total) => Dispatcher.UIThread.Post(() =>
-                progress.Text = total is { } t
-                    ? $"Downloading... {done / 1024.0 / 1024:F0} of {t / 1024.0 / 1024:F0} MB"
-                    : $"Downloading... {done / 1024.0 / 1024:F0} MB");
+            // The window darkened while a program is installed on this machine — the same veil as
+            // an install into a game, and for the same reason: nothing here is worth pressing
+            // until it is known whether Ollama is there.
+            var veil = WorkOverlay.On(this);
+            veil.Show("Installing Ollama...");
 
-            var failure = await installer.InstallAsync(offer);
+            string? failure;
+            try
+            {
+                failure = await installer.InstallAsync(offer);
+            }
+            finally
+            {
+                veil.Hide();
+            }
 
             if (failure is null)
             {
                 progress.Text = "Installed. Looking for it now.";
-                downloading.Message = "Waiting for Ollama to answer...";
                 _aiServers.Forget();
                 await DiscoverAsync();
                 return;
             }
 
-            downloading.IsVisible = false;
             progress.Text = failure;
             progress.Foreground = Brush("StatusError");
-            install.IsEnabled = true;
         };
 
         _ollamaPanel.Children.Add(install);
-        _ollamaPanel.Children.Add(downloading);
         _ollamaPanel.Children.Add(progress);
     }
 

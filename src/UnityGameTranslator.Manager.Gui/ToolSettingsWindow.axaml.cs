@@ -853,22 +853,31 @@ public sealed class ToolSettingsWindow : Window
             Classes = { "primary" },
         };
 
+        // Where a failure is said once the veil is down — beside the button that can try again.
         var progress = Note("", "TextMuted");
-        var working = new SpinningGear("Downloading...") { IsVisible = false };
+
+        // 🔴 Subscribed ONCE, outside the click. It was added inside it, so every retry after a
+        // failure stacked one more handler and each chunk was reported that many times over.
+        //
+        // ⚠ The veil is asked for at the moment of use, never here: this card is built inside
+        // Build(), before the window's Content is set, and wrapping it now would wrap nothing.
+        updater.Progress += (done, total) => Dispatcher.UIThread.Post(() =>
+            WorkOverlay.On(this).Report(total is { } t
+                ? $"Downloading... {done / 1024d / 1024:F0} of {t / 1024d / 1024:F0} MB"
+                : $"Downloading... {done / 1024d / 1024:F0} MB"));
 
         apply.Click += async (_, _) =>
         {
-            apply.IsEnabled = false;
-            working.IsVisible = true;
-
-            updater.Progress += (done, total) => Dispatcher.UIThread.Post(() =>
-                progress.Text = total is { } t
-                    ? $"Downloading... {done / 1024d / 1024:F0} of {t / 1024d / 1024:F0} MB"
-                    : $"Downloading... {done / 1024d / 1024:F0} MB");
+            // The window darkened for the whole update: it replaces the program itself, and nothing
+            // in this window is worth pressing while it does. Same veil as the games' installs.
+            var veil = WorkOverlay.On(this);
+            veil.Show($"Updating UGT Manager to {offer.NewVersion}...");
 
             try
             {
-                var result = await updater.ApplyAsync(offer);
+                // Off this thread: the download yields, but the checksum over the archive and its
+                // extraction run wherever the last await left them.
+                var result = await Task.Run(() => updater.ApplyAsync(offer));
 
                 _updatePanel.Children.Clear();
                 _updatePanel.Children.Add(Note(
@@ -877,10 +886,12 @@ public sealed class ToolSettingsWindow : Window
             }
             catch (Exception ex)
             {
-                working.IsVisible = false;
                 progress.Text = ex.Message;
                 progress.Foreground = Brush("StatusError");
-                apply.IsEnabled = true;
+            }
+            finally
+            {
+                veil.Hide();
             }
         };
 
@@ -892,7 +903,6 @@ public sealed class ToolSettingsWindow : Window
         };
 
         _updatePanel.Children.Add(buttons);
-        _updatePanel.Children.Add(working);
         _updatePanel.Children.Add(progress);
     }
 

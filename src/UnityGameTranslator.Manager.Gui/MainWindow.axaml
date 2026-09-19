@@ -9,7 +9,7 @@
         Icon="avares://UnityGameTranslatorManager/Assets/app.ico"
         Background="{DynamicResource SurfaceBase}">
 
-  <Grid RowDefinitions="Auto,*,Auto">
+  <Grid x:Name="Root" RowDefinitions="Auto,*,Auto">
 
     <!-- Header -->
     <Border Grid.Row="0" Padding="16,12" Background="{DynamicResource SurfaceBar}"
@@ -179,5 +179,9 @@
         </StackPanel>
       </Grid>
     </Border>
+
+    <!-- Over everything, last so it draws on top: the window darkened while an act writes into a
+         game. Hidden the rest of the time. See WorkOverlay, and MainWindow.Working. -->
+    <ugt:WorkOverlay x:Name="Work" Grid.RowSpan="3" />
   </Grid>
 </Window>

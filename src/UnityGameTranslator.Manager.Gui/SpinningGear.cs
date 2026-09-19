@@ -115,7 +115,25 @@ public sealed class SpinningGear : StackPanel
             },
         };
 
-        animation.RunAsync(image);
+        // ⚠ Turning only while on screen. An infinite animation outlives the control it runs on:
+        // a gear thrown away with its panel keeps its clock ticking and the window redrawing for a
+        // mark nobody can see — the cost MainWindow.Busy measured on the progress bar (eighteen per
+        // cent of a core). Started on attach and cancelled on detach, so a gear that comes back
+        // into the tree turns again and one that leaves it costs nothing.
+        CancellationTokenSource? turning = null;
+
+        AttachedToVisualTree += (_, _) =>
+        {
+            turning?.Cancel();
+            turning = new CancellationTokenSource();
+            _ = animation.RunAsync(image, turning.Token);
+        };
+
+        DetachedFromVisualTree += (_, _) =>
+        {
+            turning?.Cancel();
+            turning = null;
+        };
 
         _label = new TextBlock
         {

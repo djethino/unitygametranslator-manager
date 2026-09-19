@@ -106,6 +106,15 @@ public static class Glyphs
         "M3,3.6 L6,3.6 L6,2.2 L10,2.2 L10,3.6 L13,3.6 L13,5.2 L3,5.2 Z "
         + "M4.3,6.3 L11.7,6.3 L11,14.2 L5,14.2 Z");
 
+    /// <summary>A tick, for a step that has been carried out.</summary>
+    public static Control Check(string? colour = null) => Shape(colour,
+        "M2.2,8.4 L3.6,7 L6.4,9.8 L12.4,3.8 L13.8,5.2 L6.4,12.6 Z");
+
+    /// <summary>A cross, for a step that failed.</summary>
+    public static Control Cross(string? colour = null) => Shape(colour,
+        "M3.4,2.4 L8,7 L12.6,2.4 L13.6,3.4 L9,8 L13.6,12.6 L12.6,13.6 L8,9 L3.4,13.6 "
+        + "L2.4,12.6 L7,8 L2.4,3.4 Z");
+
     // ── The three marks of the edit-scope switch ──────────────────────────────────────────────
     //
     // ⚠ **The same three pictures exist in the mod and on the website**, and somebody who learns

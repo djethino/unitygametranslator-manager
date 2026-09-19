@@ -5,6 +5,14 @@ using UnityGameTranslator.Manager.Core.Settings;
 
 namespace UnityGameTranslator.Manager.Core.Install;
 
+/// <summary>The parts of an install, in the order <see cref="InstallEngine.ApplyAsync"/> runs them.</summary>
+public enum InstallStage
+{
+    Loader,
+    Plugin,
+    Settings,
+}
+
 public sealed record InstallPlan(
     GameInstall Game,
     LoaderDescriptor Loader,
@@ -138,6 +146,16 @@ public sealed class InstallEngine
     public event Action<string>? Status;
 
     /// <summary>
+    /// Which part of the plan is being carried out now — raised as each one starts.
+    ///
+    /// ⚠ A fact beside <see cref="Status"/>, never parsed out of it. Status is a sentence for a
+    /// reader and changes wording at will; a screen following the steps of an install needs to
+    /// know WHICH step it is in, and reading that out of prose would break the day a sentence is
+    /// reworded. A part the plan does not include is never raised.
+    /// </summary>
+    public event Action<InstallStage>? Stage;
+
+    /// <summary>
     /// Which BepInEx 6 stream to install from — "be" or "github".
     ///
     /// 🔴 **Without it, the plan installs whatever the catalogue pins, whatever the screen said.**
@@ -251,6 +269,7 @@ public sealed class InstallEngine
 
             if (plan.InstallLoader)
             {
+                Stage?.Invoke(InstallStage.Loader);
                 Status?.Invoke(
                     $"Downloading {plan.Loader.Display} {plan.Build?.Version ?? plan.Loader.Version}...");
                 await InstallLoaderAsync(plan, files, receipt, staging, existing, ct).ConfigureAwait(false);
@@ -268,6 +287,7 @@ public sealed class InstallEngine
 
             if (plan.InstallPlugin)
             {
+                Stage?.Invoke(InstallStage.Plugin);
                 Status?.Invoke("Downloading the plugin...");
                 await InstallPluginAsync(plan, files, receipt, staging, ct).ConfigureAwait(false);
             }
@@ -300,6 +320,7 @@ public sealed class InstallEngine
             ConfigWriteResult? configured = null;
             if (plan.Settings is not null && plan.TargetLanguage is not null)
             {
+                Stage?.Invoke(InstallStage.Settings);
                 Status?.Invoke("Applying your settings...");
                 configured = new GameConfigWriter()
                     .Apply(plan.Game.Path, plan.Loader, plan.Settings, plan.TargetLanguage,

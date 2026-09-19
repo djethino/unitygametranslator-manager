@@ -10161,10 +10161,25 @@ public partial class MainWindow : Window
         preference = preference.Copy();
         ValidateInto(report, preference, save: false);
 
-        Busy(true, "Starting...");
+        // 🔴 **The steps just confirmed, followed as they run.** The same list the confirmation
+        // showed, in the same words, each ticked off as the engine reaches the next — so somebody
+        // who pressed one button for four acts can see which of the four the program is in, and,
+        // if one fails, which.
+        int StepOf(params OneClickAct[] acts) => steps.FindIndex(s => acts.Contains(s.Act));
+
+        void OnStage(InstallStage stage) => Dispatcher.UIThread.Post(() => Work.Begin(stage switch
+        {
+            InstallStage.Loader => StepOf(OneClickAct.InstallLoader, OneClickAct.UpdateLoader),
+            InstallStage.Plugin => StepOf(OneClickAct.InstallMod, OneClickAct.UpdateMod),
+            InstallStage.Settings => StepOf(OneClickAct.ApplySettings),
+            _ => -1,
+        }));
+
+        Working(OneClickCaption(steps, report.Game.Name), steps.Select(s => AsLine(s.Text)));
 
         var engine = new InstallEngine(_platform, _catalog);
         engine.Status += OnEngineStatus;
+        engine.Stage += OnStage;
 
         try
         {
@@ -10175,16 +10190,24 @@ public partial class MainWindow : Window
 
             if (plan is null)
             {
-                Busy(false, "Ready.");
+                Work.Finish(false, "Nothing was changed");
                 await MessageAsync("Nothing was changed",
                     report.RecommendationReason ?? "No plan could be made for this game.");
                 return;
             }
 
-            var outcome = await engine.ApplyAsync(plan);
+            // ⚠ Task.Run, and not only because it is tidier: an archive already in the cache is
+            // extracted and copied without a single await that yields, so the whole install ran on
+            // this thread and the window froze for its length.
+            var outcome = await Task.Run(() => engine.ApplyAsync(plan));
+
+            // ⚠ Detached before anything else touches the veil: a Stage posted late would restart
+            // a step after Finish has settled them.
+            engine.Stage -= OnStage;
+
             if (!outcome.Success)
             {
-                Busy(false, "Failed.");
+                Work.Finish(false, "Nothing was changed");
                 await MessageAsync("Nothing was changed", outcome.Message);
                 return;
             }
@@ -10194,10 +10217,16 @@ public partial class MainWindow : Window
             RememberDefaultsWereWritten(report, plan, configBefore);
 
             var message = outcome.Message;
+            var complete = true;
 
             if (translation is not null)
             {
-                message += Environment.NewLine + Environment.NewLine + await TakeTranslationAsync(report, plan.Loader, translation);
+                Work.Begin(StepOf(OneClickAct.TakeTranslation, OneClickAct.ReplaceTranslation,
+                                  OneClickAct.UpdateTranslation));
+
+                var (written, said) = await TakeTranslationAsync(report, plan.Loader, translation);
+                message += Environment.NewLine + Environment.NewLine + said;
+                complete = written;
 
                 // 🔴 **The language follows the translation HERE too, and it did not.** Taking a
                 // translation from the list aligned the game's `target_language`; setting a game up
@@ -10207,20 +10236,46 @@ public partial class MainWindow : Window
                 //
                 // ⚠ After the download, never before: the configuration written by the install is
                 // what this compares against, and the translation must have arrived for taking it
-                // to mean anything.
-                AlignGameLanguage(report, plan.Loader, translation);
+                // to mean anything — which is why a failed download aligns nothing.
+                if (written) AlignGameLanguage(report, plan.Loader, translation);
             }
 
-            Busy(false, "Done.");
+            // Everything the engine did is behind it now, including a last step it raised no
+            // Stage for — settings already matching are not a step, but the running one is done.
+            Work.Finish(complete, complete ? "Done" : "Partly done");
             await MessageAsync("Ready to play", message);
         }
         finally
         {
             engine.Status -= OnEngineStatus;
-            Busy(false, "Ready.");
+            engine.Stage -= OnStage;
+            WorkEnded();
         }
 
         await ShowSelectedAsync();
+    }
+
+    /// <summary>
+    /// What the veil says while the one-click runs, from the same reading as its button.
+    ///
+    /// ⚠ Follows <see cref="OneClickVerb"/> case for case: the button said "Update this Game", so
+    /// the wait says "Updating", never a word the button did not promise.
+    /// </summary>
+    private static string OneClickCaption(IReadOnlyList<OneClickStep> steps, string game)
+    {
+        if (steps.Any(s => s.Act is OneClickAct.InstallLoader or OneClickAct.InstallMod))
+            return $"Setting up {game}...";
+
+        if (steps.Any(s => s.Act is OneClickAct.UpdateLoader or OneClickAct.UpdateMod))
+            return $"Updating {game}...";
+
+        if (steps.Any(s => s.Act is OneClickAct.UpdateTranslation))
+            return $"Updating the translation of {game}...";
+
+        if (steps.Any(s => s.Act is OneClickAct.TakeTranslation or OneClickAct.ReplaceTranslation))
+            return $"Getting the translation for {game}...";
+
+        return $"Applying settings to {game}...";
     }
 
     /// <summary>
@@ -10425,8 +10480,8 @@ public partial class MainWindow : Window
     /// caller: a mod that installed correctly must not be reported as a failure because the
     /// download that followed it did not arrive.
     /// </summary>
-    private async Task<string> TakeTranslationAsync(GameReport report, LoaderDescriptor loader,
-                                                    OnlineTranslation translation)
+    private async Task<(bool Written, string Message)> TakeTranslationAsync(
+        GameReport report, LoaderDescriptor loader, OnlineTranslation translation)
     {
         Status("Downloading the translation...");
 
@@ -10436,19 +10491,25 @@ public partial class MainWindow : Window
         var json = await api.DownloadAsync(translation.Id, _settings.Current.ApiToken, update: refreshing);
 
         if (json is null)
-            return $"The translation could not be downloaded ({api.LastError ?? "no reason given"}). Everything else is in place.";
+            return (false, $"The translation could not be downloaded ({api.LastError ?? "no reason given"}). Everything else is in place.");
 
-        var result = new TranslationInstaller(_platform)
+        Status("Writing the translation...");
+
+        var mention = People.MentionOf(translation.Author, _settings.Current.ApiUser);
+
+        // Off the interface thread: the previous file is backed up and a large one rewritten, which
+        // froze the window for as long as the disk took.
+        var result = await Task.Run(() => new TranslationInstaller(_platform)
             .Install(report.Game, loader, json, translation.FileHash,
                      // Whose work is being put in place — it is what the backup row will read.
-                     People.MentionOf(translation.Author, _settings.Current.ApiUser),
+                     mention,
 
                      // ⚠ And WHICH translation it is. Without it a mod with nobody signed in has
                      // no id to ask about, so it can learn nothing about the file this just wrote.
-                     translation.Id);
+                     translation.Id));
 
         if (!result.Written)
-            return $"The translation could not be written ({result.Failure}). Everything else is in place.";
+            return (false, $"The translation could not be written ({result.Failure}). Everything else is in place.");
 
         // Remembered so the card can say which one this game runs, and so a later one-click does
         // not silently pick a different translation than the one already in place.
@@ -10469,7 +10530,7 @@ public partial class MainWindow : Window
         if (result.KeptPrevious)
             message += " What was here is kept under Backups.";
 
-        return message;
+        return (true, message);
     }
 
     /// <summary>
@@ -11710,16 +11771,28 @@ public partial class MainWindow : Window
                 return;
         }
 
-        Busy(true, "Downloading the translation...");
-        var message = await TakeTranslationAsync(report, descriptor, picked);
-        Busy(false, "Ready.");
+        Working($"Getting the translation for {report.Game.Name}...");
 
-        await MessageAsync("Translation", message);
+        try
+        {
+            var (written, message) = await TakeTranslationAsync(report, descriptor, picked);
+            Work.Finish(written, written ? "Done" : "Nothing was changed");
 
-        // ⚠ Done, not asked. Choosing a translation in another language is choosing to play this
-        // game in it; the confirmation that led here said so among its consequences, which is where
-        // somebody who picked the wrong row could still stop.
-        AlignGameLanguage(report, descriptor, picked);
+            // ⚠ Done, not asked. Choosing a translation in another language is choosing to play
+            // this game in it; the confirmation that led here said so among its consequences,
+            // which is where somebody who picked the wrong row could still stop.
+            //
+            // ⚠ Before the message now, not after it: the file is in place, and the language is
+            // part of taking it — the result window is where the act ends, not where half of it
+            // waits for a click.
+            if (written) AlignGameLanguage(report, descriptor, picked);
+
+            await MessageAsync("Translation", message);
+        }
+        finally
+        {
+            WorkEnded();
+        }
 
         await ShowSelectedAsync();
     }
@@ -12031,22 +12104,49 @@ public partial class MainWindow : Window
         // Mod defaults" is about to become unreadable from the game itself.
         var configBefore = GameConfig(report);
 
-        Busy(true, "Starting...");
+        // The parts this plan is made of, in the order the engine runs them — the same three the
+        // engine raises a Stage for, so each line is ticked by the fact and not by a sentence.
+        var stages = new List<(InstallStage Stage, string Line)>();
+        if (plan.InstallLoader) stages.Add((InstallStage.Loader, $"Install {plan.Loader.Display}"));
+        if (plan.InstallPlugin) stages.Add((InstallStage.Plugin, "Install the mod"));
+        if (plan.Settings is not null && plan.TargetLanguage is not null)
+            stages.Add((InstallStage.Settings, "Apply the settings"));
+
+        void OnStage(InstallStage stage) =>
+            Dispatcher.UIThread.Post(() => Work.Begin(stages.FindIndex(s => s.Stage == stage)));
+
+        // One part is not a list: a single line under the caption would only repeat it.
+        Working($"Installing into {report.Game.Name}...",
+                stages.Count > 1 ? stages.Select(s => s.Line) : null);
+
         engine.Status += OnEngineStatus;
+        engine.Stage += OnStage;
 
-        var outcome = await engine.ApplyAsync(plan);
-
-        engine.Status -= OnEngineStatus;
-        Busy(false, outcome.Success ? "Done." : "Failed.");
-
-        if (outcome.Success)
+        try
         {
-            // Now, and only now: the answers reached a game.
-            ValidatePending(report, _preferences.Read(report.Game.Path));
-            RememberDefaultsWereWritten(report, plan, configBefore);
+            // Off this thread for the reason given in RunOneClickAsync: a cached archive is
+            // installed without one await that yields.
+            var outcome = await Task.Run(() => engine.ApplyAsync(plan));
+
+            engine.Stage -= OnStage;
+            Work.Finish(outcome.Success, outcome.Success ? "Done" : "Nothing was changed");
+
+            if (outcome.Success)
+            {
+                // Now, and only now: the answers reached a game.
+                ValidatePending(report, _preferences.Read(report.Game.Path));
+                RememberDefaultsWereWritten(report, plan, configBefore);
+            }
+
+            await MessageAsync(outcome.Success ? "Installed" : "Nothing was changed", outcome.Message);
+        }
+        finally
+        {
+            engine.Status -= OnEngineStatus;
+            engine.Stage -= OnStage;
+            WorkEnded();
         }
 
-        await MessageAsync(outcome.Success ? "Installed" : "Nothing was changed", outcome.Message);
         await ShowSelectedAsync();
     }
 
@@ -12101,14 +12201,24 @@ public partial class MainWindow : Window
                 + "Restore local brings them back.",
                 "Remove it")) return;
 
-        Busy(true, "Removing the translation...");
-        var done = new TranslationInstaller(_platform).Remove(report.Game, descriptor);
-        Busy(false, "Ready.");
+        Working($"Removing the translation from {report.Game.Name}...");
 
-        if (!done.Written)
+        try
         {
-            await MessageAsync("Nothing was removed", done.Failure ?? "The file could not be moved.");
-            return;
+            // Off this thread: the file is backed up before it moves, and a large one took the
+            // window with it.
+            var done = await Task.Run(() => new TranslationInstaller(_platform).Remove(report.Game, descriptor));
+
+            if (!done.Written)
+            {
+                Work.Finish(false, "Nothing was removed");
+                await MessageAsync("Nothing was removed", done.Failure ?? "The file could not be moved.");
+                return;
+            }
+        }
+        finally
+        {
+            WorkEnded();
         }
 
         await ShowSelectedAsync();
@@ -12309,26 +12419,47 @@ public partial class MainWindow : Window
             if (!await ConfirmAsync("Delete this game's data?", summary, "Delete them")) return;
         }
 
-        Busy(true, "Removing...");
-        var outcome = engine.Apply(report.Game, new UninstallChoice(
+        // Read off the boxes HERE, on this thread: the work below runs elsewhere and must not reach
+        // back into controls.
+        var choice = new UninstallChoice(
             RemovePlugin: true,
             RemoveLoader: loaderBox.IsChecked == true,
             RemoveUserData: dataBox.IsChecked == true,
-            UserDataFiles: chosenData));
-        Busy(false, "Ready.");
+            UserDataFiles: chosenData);
 
-        var message = outcome.Message;
-        if (outcome.Kept.Count > 0)
-            message += Environment.NewLine + Environment.NewLine + "Left in place:" +
-                       Environment.NewLine + string.Join(Environment.NewLine, outcome.Kept.Select(k => "• " + k));
-        // ⚠ Names the place somebody can act from, not a folder on disk. A path is an instruction
-        // to open a file manager; "Backups" is a button they have already seen on this card.
-        if (outcome.LastBackupTaken)
-            message += Environment.NewLine + Environment.NewLine +
-                       "The translation was backed up one last time. It is under Backups, with the "
-                       + "fonts and images it used.";
+        Working(choice.RemoveLoader
+            ? $"Removing the mod loader and the mod from {report.Game.Name}..."
+            : $"Removing the mod from {report.Game.Name}...");
 
-        await MessageAsync("Uninstalled", message);
+        engine.Status += OnEngineStatus;
+
+        try
+        {
+            // Off this thread: an uninstall deletes a loader's whole tree and may back a
+            // translation up first — long enough to freeze the window when it ran here.
+            var outcome = await Task.Run(() => engine.Apply(report.Game, choice));
+            Work.Finish(true, "Done");
+
+            var message = outcome.Message;
+            if (outcome.Kept.Count > 0)
+                message += Environment.NewLine + Environment.NewLine + "Left in place:" +
+                           Environment.NewLine + string.Join(Environment.NewLine, outcome.Kept.Select(k => "• " + k));
+            // ⚠ Names the place somebody can act from, not a folder on disk. A path is an
+            // instruction to open a file manager; "Backups" is a button they have already seen on
+            // this card.
+            if (outcome.LastBackupTaken)
+                message += Environment.NewLine + Environment.NewLine +
+                           "The translation was backed up one last time. It is under Backups, with the "
+                           + "fonts and images it used.";
+
+            await MessageAsync("Uninstalled", message);
+        }
+        finally
+        {
+            engine.Status -= OnEngineStatus;
+            WorkEnded();
+        }
+
         await ShowSelectedAsync();
     }
 
@@ -12366,16 +12497,27 @@ public partial class MainWindow : Window
         if (!await ConfirmAsync($"Put back what {report.Game.Name} had before?", body, "Put them back"))
             return;
 
-        Busy(true, "Putting back...");
-        var outcome = new UninstallEngine(_platform, _catalog).PutBackWhatWasHere(report.Game);
-        Busy(false, "Ready.");
+        Working($"Putting back what {report.Game.Name} had before...");
 
-        var message = outcome.Message;
-        if (outcome.PutBack.Count > 0)
-            message += Environment.NewLine + Environment.NewLine +
-                       string.Join(Environment.NewLine, outcome.PutBack.Select(f => "• " + f));
+        try
+        {
+            // Off this thread: a mod loader's worth of files, written back one by one.
+            var outcome = await Task.Run(() =>
+                new UninstallEngine(_platform, _catalog).PutBackWhatWasHere(report.Game));
+            Work.Finish(true, "Done");
 
-        await MessageAsync("Put back", message);
+            var message = outcome.Message;
+            if (outcome.PutBack.Count > 0)
+                message += Environment.NewLine + Environment.NewLine +
+                           string.Join(Environment.NewLine, outcome.PutBack.Select(f => "• " + f));
+
+            await MessageAsync("Put back", message);
+        }
+        finally
+        {
+            WorkEnded();
+        }
+
         await ShowSelectedAsync();
     }
 
@@ -12547,9 +12689,54 @@ public partial class MainWindow : Window
         Status(message);
     }
 
+    /// <summary>
+    /// Darkens the window over an act that writes into a game, the gear turning under
+    /// <paramref name="caption"/> — and <paramref name="steps"/> listed when the act has several.
+    ///
+    /// 🔴 **Only for acts whose work runs OFF this thread.** The veil is drawn by the thread the
+    /// work would otherwise hold, so a write left on it would put the veil up and freeze the
+    /// window before it is ever painted — the very defect this replaces. Every caller wraps its
+    /// file work in Task.Run; the engines' own awaits are not enough, since an archive already in
+    /// the cache completes without ever yielding.
+    ///
+    /// ⚠ What is under the veil is disabled as well as covered: the veil takes the pointer, but
+    /// Tab and Enter would still reach a button on the card of a game in the middle of changing.
+    ///
+    /// Always paired with <see cref="WorkEnded"/>, in a finally.
+    /// </summary>
+    private void Working(string caption, IEnumerable<string>? steps = null)
+    {
+        foreach (var child in Root.Children)
+            if (!ReferenceEquals(child, Work)) child.IsEnabled = false;
+
+        // Status first: under a veil already up it would become the gear's second line and repeat
+        // the caption right above it.
+        Status(caption);
+        Work.Show(caption, steps);
+    }
+
+    /// <summary>Takes the veil down and gives the window back.</summary>
+    private void WorkEnded()
+    {
+        Work.Hide();
+
+        foreach (var child in Root.Children)
+            if (!ReferenceEquals(child, Work)) child.IsEnabled = true;
+
+        Status("Ready.");
+    }
+
+    /// <summary>A step's words as a line of its own — the one-click writes them to follow a colon.</summary>
+    private static string AsLine(string step) =>
+        step.Length == 0 ? step : char.ToUpperInvariant(step[0]) + step[1..];
+
     private void Status(string message)
     {
         StatusText.Text = message;
+
+        // The line under the veil's gear, while it is up: somebody watching the middle of a
+        // darkened window has no reason to look at the status bar under it.
+        if (Work.IsShown) Work.Report(message);
 
         // ⚠ Mirrored into the scanning panel while it is up, rather than each phase of the scan
         // setting the two separately. The status bar is at the far bottom of a wide window and the

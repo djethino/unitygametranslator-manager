@@ -9268,6 +9268,16 @@ public partial class MainWindow : Window
         if (!string.IsNullOrWhiteSpace(preference.GameContext)) return true;
         if (preference.ReplaceHotkey) return true;
 
+        // 🔴 **"Set it up in the game" is an answer too, and it was the one left out** (2026-09-19).
+        // On a configured game it writes the latch open — GameConfigWriter.Intended removes
+        // first_run_completed — so the block's own Apply lit up for it while this said "nothing to
+        // write", and the one-click stayed grey over a change the card was showing. The same
+        // omission as the three fields above, one answer further along.
+        //
+        // ⚠ Material, not work: SettingsWouldChangeAnything still compares with the file, so a
+        // latch already open produces no step.
+        if (preference.LetWizardAsk) return true;
+
         return _settings.Current.Reviewed
                && (!config.IsConfigured || preference.UsesModDefaults(config));
     }
@@ -10023,6 +10033,15 @@ public partial class MainWindow : Window
     private string SettingsStepText(GameReport report, GamePreference preference)
     {
         var changes = WrittenDifferences(report, preference).Count(d => d.Writes);
+        var counted = changes > 0 ? $" ({Composition.Amount(changes, "change", "changes")})" : "";
+
+        // ⚠ **The act, when the way chosen is "Set it up in the game".** Its write is the mod's
+        // Setup coming back, not settings going in — "apply the settings this game keeps" would
+        // name the one thing it does not do. Same words as the radio that chose it.
+        if (preference.LetWizardAsk && !preference.UsesModDefaults(GameConfig(report)))
+            return GameConfig(report).FirstRunCompleted
+                ? "show the mod's Setup again the next time the game starts"
+                : "let the mod show its Setup when the game starts";
 
         // ⚠ **Two sources when there are two, because "apply Mod defaults" was only half true.** A
         // game that answered for itself is set up from the defaults EXCEPT where it answered, and
@@ -10043,7 +10062,7 @@ public partial class MainWindow : Window
             ? "Mod defaults"
             : $"Mod defaults, with {own} set for this game";
 
-        return changes > 0 ? $"apply {source} ({changes} changes)" : $"apply {source}";
+        return $"apply {source}{counted}";
     }
 
     /// <summary>

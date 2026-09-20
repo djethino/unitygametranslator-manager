@@ -571,6 +571,11 @@ public static class CommandLine
             Console.WriteLine($"Local trans.: {count}"
                               + (local.LocalChanges > 0 ? $", {Composition.Amount(local.LocalChanges, "unsynced change", "unsynced changes")}" : "")
                               + (local.Uuid is null ? "" : $"  [{local.Uuid}]"));
+
+            // Where this file came from, on the same rule and in the same words as the window's
+            // chip: what the CLI reports is what the window shows, or one of the two is lying.
+            if (report.ForkOrigin is { } from)
+                Console.WriteLine($"              {Origins.Name(from)}");
         }
         else
         {

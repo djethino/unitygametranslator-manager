@@ -463,6 +463,7 @@ public static class LocalTranslationProbe
             var entryCount = 0;
             string? uuid = null, gameName = null, steamId = null, sourceHash = null;
             string? mergedMainHash = null;
+            int? forkedFromSiteId = null, forkedFromLines = null;
             string? sourceLanguage = null, targetLanguage = null;
             var localChanges = 0;
             int human = 0, validated = 0, ai = 0, captured = 0, skipped = 0;
@@ -494,6 +495,23 @@ public static class LocalTranslationProbe
                         if (property.Value.TryGetProperty("main_hash", out var mainHash))
                             mergedMainHash = mainHash.GetString();
                         break;
+                    // 🔴 **Where a fork came from, which this tool did not read at all** until
+                    // 2026-09-20 — on the belief, written into the badge strip, that "a local file
+                    // carries no record of what it was forked from". It always did: the mod severs
+                    // the SYNC link and writes this block in the same breath, precisely so the
+                    // credit survives the severing. So a fork nobody had published yet showed its
+                    // provenance on no screen at all, in either product.
+                    case "_forked_from" when property.Value.ValueKind == JsonValueKind.Object:
+                        if (property.Value.TryGetProperty("site_id", out var forkId)
+                            && forkId.TryGetInt32(out var forkIdValue))
+                            forkedFromSiteId = forkIdValue;
+                        // The count measured at the fork. Absent on a file forked before the key
+                        // existed, and absent is not zero.
+                        if (property.Value.TryGetProperty("resolved_lines", out var forkLines)
+                            && forkLines.TryGetInt32(out var forkLinesValue))
+                            forkedFromLines = forkLinesValue;
+                        break;
+
                     case "_game" when property.Value.ValueKind == JsonValueKind.Object:
                         if (property.Value.TryGetProperty("name", out var n)) gameName = n.GetString();
                         if (property.Value.TryGetProperty("steam_id", out var s))
@@ -531,6 +549,8 @@ public static class LocalTranslationProbe
                 ChangedSinceAncestor = CountChangedSinceAncestor(gamePath, descriptor),
                 SourceHash = sourceHash,
                 MergedMainHash = mergedMainHash,
+                ForkedFromSiteId = forkedFromSiteId,
+                ForkedFromLines = forkedFromLines,
                 Counts = new TagCounts(human, validated, ai, captured, skipped),
                 LastWrite = File.GetLastWriteTimeUtc(path),
             };

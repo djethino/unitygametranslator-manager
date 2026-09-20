@@ -104,6 +104,26 @@ public sealed class LocalTranslation
     public string? MergedMainHash { get; init; }
 
     /// <summary>
+    /// The row this file was forked from, from <c>_forked_from.site_id</c>. Null on anything that
+    /// is not a fork, and on a fork made before the mod wrote this block.
+    ///
+    /// 🔴 **The only trace a fork keeps of where it came from.** Forking clears <c>_source</c> on
+    /// purpose — a translation that left a lineage must stop offering to merge from it — and this
+    /// block is written in the same moment so that severing the sync does not also erase the
+    /// credit. It carries no name: a name is read live so that a rename follows it, and a name
+    /// written into a file would not.
+    /// </summary>
+    public int? ForkedFromSiteId { get; init; }
+
+    /// <summary>
+    /// How many lines were received at the fork, from <c>_forked_from.resolved_lines</c>.
+    ///
+    /// ⚠ A snapshot, never recomputed: the original goes on growing, so measuring later would
+    /// answer a different question. Null when the file does not say, which is not zero.
+    /// </summary>
+    public int? ForkedFromLines { get; init; }
+
+    /// <summary>
     /// The language this file says it is written FROM (`_source_language`), or null when it does
     /// not say. The mod writes it once somebody declared it at publication or the site stated it;
     /// until then the source is detected line by line and the file carries nothing.
@@ -733,6 +753,50 @@ public sealed class GameReport
         && LocalTranslation?.MergedMainHash is { Length: > 0 } merged
         && MatchingOnline?.FileHash is { Length: > 0 } main
         && !string.Equals(merged, main, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Where the translation this game holds was forked from, or null when it was forked from
+    /// nothing.
+    ///
+    /// 🔴 **Three sources, in this order, and the last one is the whole fix.**
+    ///
+    /// ① A BRANCH answers nothing: the published entry beside it is the MAIN, and the Main's
+    /// origin is not this file's. Crediting it here put the Main's source under the branch held
+    /// on this machine, where the mod credited nobody (2026-09-18).
+    ///
+    /// ② The site's own record for this row, when there is one. It is an inscription in the
+    /// database, with the account read live so a rename follows — the authority whenever it
+    /// exists.
+    ///
+    /// ③ **The file's own <c>_forked_from</c>, which is every fork until somebody publishes it.**
+    /// This tool read the site and nothing else, so provenance appeared at the exact moment the
+    /// site was already showing it. The name is looked up among the game's published translations
+    /// — a fork's source is a translation of the same game, so it is usually right there — and
+    /// stays unnamed rather than guessed when it is not, which is also what offline means.
+    /// </summary>
+    public Origin? ForkOrigin
+    {
+        get
+        {
+            if (MyPosition is { IsMain: false }) return null;
+
+            if (MatchingOnline?.Origin is { } recorded) return recorded.ToOrigin();
+
+            if (LocalTranslation?.ForkedFromSiteId is not { } from) return null;
+
+            var lines = LocalTranslation.ForkedFromLines;
+
+            foreach (var candidate in OnlineTranslations)
+            {
+                if (candidate.Id != from) continue;
+                // ⚠ An entry with no author is an account that went, which the socle words as
+                // such; not finding the row at all is a different fact and falls through below.
+                return new Origin(candidate.Author, lines);
+            }
+
+            return Origin.NotAsked(lines);
+        }
+    }
 
     /// <summary>
     /// Where the translation here stands against the published one — the same verdict the mod

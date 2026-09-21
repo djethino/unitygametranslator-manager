@@ -195,6 +195,16 @@ public sealed class InstallerSettings
     [JsonPropertyName("online_asked")] public bool OnlineAsked { get; set; }
 
     /// <summary>
+    /// The notice about downloading from Unity's server (Unity's terms, not affiliated) was shown in
+    /// full and accepted once on this machine — later confirmations name the source only. See
+    /// <see cref="Install.LocalCopies.WithNoticesRead"/>.
+    /// </summary>
+    [JsonPropertyName("unity_download_notice_read")] public bool UnityDownloadNoticeRead { get; set; }
+
+    /// <summary>The same, for the warning about copies taken from another game on this computer.</summary>
+    [JsonPropertyName("local_copy_notice_read")] public bool LocalCopyNoticeRead { get; set; }
+
+    /// <summary>
     /// The in-game hotkey. Part of the settings because the mod's first-run wizard asks for it,
     /// and we can only skip that wizard honestly once every one of its questions is answered.
     /// </summary>

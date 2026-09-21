@@ -7816,8 +7816,10 @@ public partial class MainWindow : Window
     /// the game.
     /// </summary>
     /// <param name="radios">Radios for the kind (the card); a drop-down otherwise (the confirmation).</param>
+    /// <param name="noticeRead">For a confirmation: whether this kind's warning was already read on this machine.</param>
     private Control SourceSelector(string group, IReadOnlyList<SourceOption> options, string? current,
-                                   bool radios, bool enabled, Action<string> picked)
+                                   bool radios, bool enabled, Action<string> picked,
+                                   Func<SourceKind, bool>? noticeRead = null)
     {
         var box = new StackPanel { Spacing = 4 };
 
@@ -7885,6 +7887,11 @@ public partial class MainWindow : Window
                         Foreground = Brush("TextPrimary"),
                     });
                 }
+
+                // ⚠ In a confirmation, a warning already read once on this machine is not said again:
+                // the kind and the source above still name where the files come from
+                // (LocalCopies.WithNoticesRead). The card always says it — it is where one chooses.
+                if (kind != SourceKind.Editor && noticeRead?.Invoke(kind) == true) return;
 
                 says.Text = selected.Says;
                 which.Children.Add(kind == SourceKind.Game ? Callout(says, Tone.Warning) : says);
@@ -7991,7 +7998,9 @@ public partial class MainWindow : Window
         if (!options.Any(o => o.Problem is null)) return box;
 
         box.Children.Add(new TextBlock { Text = title, FontSize = 12 });
-        box.Children.Add(SourceSelector(title, options, current, radios: false, enabled: true, picked));
+        var settings = _settings.Current;
+        box.Children.Add(SourceSelector(title, options, current, radios: false, enabled: true, picked,
+            noticeRead: kind => kind == SourceKind.UnityServer ? settings.UnityDownloadNoticeRead : settings.LocalCopyNoticeRead));
         return box;
     }
 
@@ -8019,7 +8028,7 @@ public partial class MainWindow : Window
             {
                 ClassLibrarySourceKind.UnityDownload =>
                     "Only the part of Unity's editor package that holds them is downloaded, a few hundred MB, "
-                    + "once for this Unity version. Unity's terms apply.",
+                    + "once for this Unity version. Unity's terms apply. " + LocalCopies.NotAffiliated,
                 ClassLibrarySourceKind.Game => LocalCopies.Disclaimer(signed: false),
                 _ when !candidate.Source.SameRelease =>
                     $"Another Unity release of the same generation, which this game's engine accepts ({candidate.Source.Version}).",
@@ -8050,7 +8059,8 @@ public partial class MainWindow : Window
             candidate.Source.Kind switch
             {
                 EngineModuleSourceKind.UnityDownload =>
-                    "Only the part of Unity's package that holds the modules is downloaded. Unity's terms apply.",
+                    "Only the part of Unity's package that holds the modules is downloaded. Unity's terms apply. "
+                    + LocalCopies.NotAffiliated,
                 EngineModuleSourceKind.Game when !candidate.Source.SameRelease =>
                     $"An older release of the same branch ({state.Need?.Modules?.Build} is the game's). " + LocalCopies.Disclaimer(signed: true),
                 EngineModuleSourceKind.Game => LocalCopies.Disclaimer(signed: true),
@@ -10833,6 +10843,7 @@ public partial class MainWindow : Window
 
             // Agreed to by the confirmation above, whose pickers named Unity's server and its terms.
             plan = plan with { UnityDownloadAccepted = plan.DownloadsFromUnity };
+            RecordNoticesRead(plan);
 
             // ⚠ Task.Run, and not only because it is tidier: an archive already in the cache is
             // extracted and copied without a single await that yields, so the whole install ran on
@@ -12775,9 +12786,22 @@ public partial class MainWindow : Window
         await RepublishAsync();
     }
 
+    /// <summary>
+    /// Remembers, once a confirmation was accepted, the source warnings it showed in full — the
+    /// install's or the one-click's, whichever came first (LocalCopies.WithNoticesRead).
+    /// </summary>
+    private void RecordNoticesRead(InstallPlan plan)
+    {
+        var settings = _settings.Current;
+        if (LocalCopies.RecordNoticesRead(settings, plan)) _settings.Save(settings);
+    }
+
     private async Task RunInstallAsync(GameReport report, InstallEngine engine, InstallPlan? plan)
     {
         if (plan is null) return;
+
+        // The warnings about where libraries come from, in full only until read once here.
+        plan = plan.WithNoticesRead(_settings.Current);
 
         // Nothing is written before this is shown and accepted. The notes are recomputed for the
         // loader actually chosen, which may not be the recommended one shown in the report.
@@ -12796,6 +12820,7 @@ public partial class MainWindow : Window
         // 🔴 **Agreed to by the confirmation just accepted, and by nothing else.** Its lines name
         // Unity's server and Unity's terms whenever the engine modules come from there (Describe).
         plan = plan with { UnityDownloadAccepted = plan.DownloadsFromUnity };
+        RecordNoticesRead(plan);
 
         // Same reading as the one-click, for the same reason: the answer to "does this game follow
         // Mod defaults" is about to become unreadable from the game itself.

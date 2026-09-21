@@ -31,6 +31,43 @@ public static class LocalCopies
         catch (System.Net.NetworkInformation.NetworkInformationException) { return true; }
     }
 
+    /// <summary>Said with the first download from Unity — the tool is a third party to Unity.</summary>
+    public const string NotAffiliated = "UnityGameTranslator is not affiliated with Unity Technologies.";
+
+    // ── Said in full once per machine ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The plan, told which of these notices were already read on this machine.
+    ///
+    /// 🔴 **In full the first time, then the source is simply named** (user's decision, 2026-09-21:
+    /// « on le propose une seule fois ? la première fois qu'on fait cette action, qu'elle vienne d'un
+    /// Apply ou d'un one-click »). The warning and Unity's terms are read once per kind of source —
+    /// a copy from another game, a download from Unity — whichever screen shows them first; every
+    /// later confirmation still names where the files come from.
+    /// </summary>
+    public static InstallPlan WithNoticesRead(this InstallPlan plan, Model.InstallerSettings settings) =>
+        plan with { UnityNoticeRead = settings.UnityDownloadNoticeRead, LocalCopyNoticeRead = settings.LocalCopyNoticeRead };
+
+    /// <summary>Records, once the plan's confirmation was accepted, the notices it showed. True when something changed.</summary>
+    public static bool RecordNoticesRead(Model.InstallerSettings settings, InstallPlan plan)
+    {
+        var changed = false;
+
+        if (plan.DownloadsFromUnity && !settings.UnityDownloadNoticeRead)
+        {
+            settings.UnityDownloadNoticeRead = true;
+            changed = true;
+        }
+
+        if (plan.CopiesFromAnotherGame && !settings.LocalCopyNoticeRead)
+        {
+            settings.LocalCopyNoticeRead = true;
+            changed = true;
+        }
+
+        return changed;
+    }
+
     /// <summary>What to do when nothing on this computer can serve and it is offline.</summary>
     public const string GoOnline =
         "No copy was found on this computer. Connect to the internet: they can then be downloaded from Unity's server.";

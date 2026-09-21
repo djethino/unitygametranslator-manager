@@ -73,6 +73,17 @@ public sealed record InstallPlan(
                                       && ((need.Missing.Count > 0 && ClassLibrarySource?.Kind == ClassLibrarySourceKind.UnityDownload)
                                           || (need.Modules is not null && ModuleSource?.Kind == EngineModuleSourceKind.UnityDownload));
 
+    /// <summary>Whether this plan copies anything from another game on this computer — what must be warned about first.</summary>
+    public bool CopiesFromAnotherGame => SupplyRuntimeLibraries && Game.RuntimeLibraries is { } need
+                                         && ((need.Missing.Count > 0 && ClassLibrarySource?.Kind == ClassLibrarySourceKind.Game)
+                                             || (need.Modules is not null && ModuleSource?.Kind == EngineModuleSourceKind.Game));
+
+    /// <summary>The notice about Unity's server was already read on this machine: <see cref="Describe"/> only names the source.</summary>
+    public bool UnityNoticeRead { get; init; }
+
+    /// <summary>The warning about copies from another game was already read on this machine.</summary>
+    public bool LocalCopyNoticeRead { get; init; }
+
     /// <summary>
     /// Whether the mod still runs its first-run wizard after this install.
     ///
@@ -176,7 +187,9 @@ public sealed record InstallPlan(
                                : libraries.SameRelease ? "" : $" - another release of the same generation ({libraries.Version})");
             }
 
-            if (need.Missing.Count > 0 && ClassLibrarySource is { Kind: ClassLibrarySourceKind.Game })
+            // ⚠ The warnings in full only until read once on this machine (LocalCopies.WithNoticesRead);
+            // the source stays named on the lines above either way.
+            if (!LocalCopyNoticeRead && need.Missing.Count > 0 && ClassLibrarySource is { Kind: ClassLibrarySourceKind.Game })
                 yield return "! " + LocalCopies.Disclaimer(signed: false);
 
             if (need.Modules is { } modules && ModuleSource is { } source)
@@ -184,14 +197,18 @@ public sealed record InstallPlan(
                 yield return $"Add Unity's {modules.Set.Count} engine modules for this game's version, from {source.Label}"
                            + (source.SameRelease ? "" : $" — an older release than the game's ({source.Version})");
 
-                if (source.Kind == EngineModuleSourceKind.Game)
+                if (!LocalCopyNoticeRead && source.Kind == EngineModuleSourceKind.Game)
                     yield return "! " + LocalCopies.Disclaimer(signed: true);
             }
 
-            if (DownloadsFromUnity)
+            if (DownloadsFromUnity && !UnityNoticeRead)
+            {
                 yield return $"Unity's terms apply to what is downloaded from Unity: {Catalog.RuntimeLibraryOrigins.UnityTermsUrl}";
+                yield return LocalCopies.NotAffiliated;
+            }
 
-            yield return $"They go into {LoaderSearchPath.Folder}/, and {Loader.Display} is told to read them first";
+            yield return $"They go into {LoaderSearchPath.Folder}/, and {Loader.Display} is told to read them first. "
+                       + "They can be removed at any time from UnityGameTranslator Manager";
         }
 
         if (!string.Equals(Loader.UserDataDir, Loader.PluginDir, StringComparison.OrdinalIgnoreCase))

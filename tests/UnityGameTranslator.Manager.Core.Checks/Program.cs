@@ -55,6 +55,7 @@ internal static class Program
         RuntimeLibrariesChecks.WhatGoesBesideAGame();
         RuntimeLibrariesChecks.WhichCopiesMayBeUsed();
         RuntimeLibrariesChecks.WhichRuntimeIsTooOld();
+        RuntimeLibrariesChecks.WhatIsSaidOnce();
         RuntimeLibrariesChecks.WhichProfileServesAGame();
         RuntimeLibrariesChecks.HowALoaderIsTold();
         RuntimeLibrariesChecks.WhatStillStandsAfterwards();

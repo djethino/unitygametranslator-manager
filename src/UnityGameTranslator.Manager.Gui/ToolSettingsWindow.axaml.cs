@@ -50,6 +50,8 @@ public sealed class ToolSettingsWindow : Window
     private StackPanel _updatePanel = null!;
     private SearchPicker _bepinex6Channel = null!;
     private CheckBox _checkContentUpdates = null!;
+    private CheckBox _showLocalCopyNotice = null!;
+    private CheckBox _showUnityNotice = null!;
     private SearchPicker _preferMono = null!;
     private SearchPicker _preferIl2cpp = null!;
 
@@ -614,6 +616,27 @@ public sealed class ToolSettingsWindow : Window
         // answered by the label on the field itself.
         panel.Children.Add(Note("Games already set up are not changed.", "TextMuted"));
 
+        // 🔴 **The two source warnings, said in full once, and here to see them again** (user,
+        // 2026-09-21: « dans settings on laisse la possibilité de cocher/décocher ? »). Ticked means
+        // the next confirmation shows the warning in full; accepting one unticks it — the same
+        // flags LocalCopies.WithNoticesRead reads. Built like the two checkboxes of Updates.
+        _showLocalCopyNotice = new CheckBox
+        {
+            Content = "Show the full warning before copying libraries from another game",
+            IsChecked = !_draft.LocalCopyNoticeRead,
+            FontSize = 12,
+        };
+        panel.Children.Add(_showLocalCopyNotice);
+
+        _showUnityNotice = new CheckBox
+        {
+            Content = "Show Unity's terms before downloading libraries from Unity",
+            IsChecked = !_draft.UnityDownloadNoticeRead,
+            FontSize = 12,
+        };
+        panel.Children.Add(_showUnityNotice);
+        panel.Children.Add(Note("Both are shown once, then only the source is named.", "TextMuted"));
+
         // Filled in as the answers arrive, so the screen is readable before the network is.
         var dates = new TextBlock
         {
@@ -1065,6 +1088,8 @@ public sealed class ToolSettingsWindow : Window
         _draft.CheckToolUpdates = _checkToolUpdates.IsChecked == true;
         _draft.CheckContentUpdates = _checkContentUpdates.IsChecked == true;
         _draft.BepInEx6Channel = Tag(_bepinex6Channel) ?? "be";
+        _draft.LocalCopyNoticeRead = _showLocalCopyNotice.IsChecked != true;
+        _draft.UnityDownloadNoticeRead = _showUnityNotice.IsChecked != true;
 
         // Empty means "let the catalog decide", and it is stored as null rather than as "": a
         // blank string would read as an answer nobody gave.
@@ -1088,6 +1113,8 @@ public sealed class ToolSettingsWindow : Window
         settings.CheckToolUpdates = edited.CheckToolUpdates;
         settings.CheckContentUpdates = edited.CheckContentUpdates;
         settings.BepInEx6Channel = edited.BepInEx6Channel;
+        settings.LocalCopyNoticeRead = edited.LocalCopyNoticeRead;
+        settings.UnityDownloadNoticeRead = edited.UnityDownloadNoticeRead;
         settings.PreferredLoaderMono = edited.PreferredLoaderMono;
         settings.PreferredLoaderIl2cpp = edited.PreferredLoaderIl2cpp;
 
@@ -1129,6 +1156,10 @@ public sealed class ToolSettingsWindow : Window
             changes.Add("look for updates to UGT Manager");
         if ((_checkContentUpdates.IsChecked == true) != saved.CheckContentUpdates)
             changes.Add("look for newer mod and loader builds");
+        if ((_showLocalCopyNotice.IsChecked != true) != saved.LocalCopyNoticeRead)
+            changes.Add("warning before copying from another game");
+        if ((_showUnityNotice.IsChecked != true) != saved.UnityDownloadNoticeRead)
+            changes.Add("Unity's terms before downloading");
 
         return changes;
     }
@@ -1164,6 +1195,8 @@ public sealed class ToolSettingsWindow : Window
         _toolChannel.SelectionChanged += (_, _) => RefreshApplyButton();
         _checkToolUpdates.IsCheckedChanged += (_, _) => RefreshApplyButton();
         _checkContentUpdates.IsCheckedChanged += (_, _) => RefreshApplyButton();
+        _showLocalCopyNotice.IsCheckedChanged += (_, _) => RefreshApplyButton();
+        _showUnityNotice.IsCheckedChanged += (_, _) => RefreshApplyButton();
 
         // ⚠ Every control on this window belongs in this list, and one missing does not break
         // saving — Collect and Save read it either way — it breaks the PROMISE: nothing is applied

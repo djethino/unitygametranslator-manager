@@ -262,6 +262,48 @@ internal static class RuntimeLibrariesChecks
         }
     }
 
+    /// <summary>
+    /// The warnings about where libraries come from are said in full once per machine, then the
+    /// source is only named — whichever screen showed them first (user's decision, 2026-09-21).
+    /// </summary>
+    public static void WhatIsSaidOnce()
+    {
+        Program.Section("Runtime libraries: warnings said in full once");
+
+        var game = new GameInstall
+        {
+            Name = "g", Path = @"C:\games\g",
+            RuntimeLibraries = new RuntimeLibraryNeed(new[] { "netstandard" }, false, "2021.3.6", null),
+        };
+        var loader = new LoaderDescriptor { Id = "bepinex5", Display = "BepInEx 5", PluginDir = "BepInEx/plugins", UserDataDir = "BepInEx/plugins" };
+        var fromUnity = new ClassLibrarySource(ClassLibrarySourceKind.UnityDownload, "unity", null,
+                                               UnityVersions.Parse("2021.3.6f1")!, true, null, "unityjit-win32");
+        var plan = new InstallPlan(game, loader, false, "plugin.zip", ReleaseChannel.Stable)
+        {
+            SupplyRuntimeLibraries = true,
+            ClassLibrarySource = fromUnity,
+        };
+
+        var settings = new InstallerSettings();
+        var first = plan.WithNoticesRead(settings).Describe().ToList();
+
+        Program.Check(first.Any(l => l.Contains(Catalog.RuntimeLibraryOrigins.UnityTermsUrl)) && first.Contains(LocalCopies.NotAffiliated),
+            "the first download from Unity shows its terms and that the tool is not Unity's",
+            "said before anything is fetched, the first time");
+
+        Program.Check(LocalCopies.RecordNoticesRead(settings, plan)
+                      && settings.UnityDownloadNoticeRead && !settings.LocalCopyNoticeRead,
+            "accepting it records that notice, and only that one",
+            "a copy from another game has its own warning, still unread");
+
+        var later = plan.WithNoticesRead(settings).Describe().ToList();
+        Program.Check(!later.Any(l => l.Contains(Catalog.RuntimeLibraryOrigins.UnityTermsUrl))
+                      && !later.Contains(LocalCopies.NotAffiliated)
+                      && later.Any(l => l.Contains(fromUnity.Label)),
+            "later, the source is named and the notice is not repeated",
+            "once per machine, from the install button or the one-click alike");
+    }
+
     public static void WhichProfileServesAGame()
     {
         Program.Section("Runtime libraries: which release and which profile");

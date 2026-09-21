@@ -877,6 +877,11 @@ public static class CommandLine
             Console.WriteLine();
         }
 
+        // The warnings about where libraries come from, in full only until read once on this machine
+        // — the same memory as the window's (LocalCopies.WithNoticesRead).
+        var noticeStore = new SettingsStore(platform);
+        plan = plan.WithNoticesRead(noticeStore.Current);
+
         // Nothing is written before this is shown and accepted.
         Console.WriteLine("This will:");
         foreach (var line in plan.Describe()) Console.WriteLine($"  - {line}");
@@ -890,6 +895,9 @@ public static class CommandLine
 
         // The lines above named Unity's server and terms when they apply; going on is agreeing.
         plan = plan with { UnityDownloadAccepted = plan.DownloadsFromUnity };
+
+        var noticeSettings = noticeStore.Current;
+        if (LocalCopies.RecordNoticesRead(noticeSettings, plan)) noticeStore.Save(noticeSettings);
 
         engine.Status += message => Console.WriteLine($"  {message}");
         var outcome = await engine.ApplyAsync(plan);

@@ -66,6 +66,18 @@ public static class ModdabilityProbe
         // Only Mono games have a managed corlib to strip; IL2CPP compiles it away entirely.
         game.RuntimeLibraries = null;
 
+        // 🔴 **Before any library is read, and on its own verdict** (user's remark, 2026-09-21: « le
+        // message est faux, on est juste pas compatible .NET 3.5 »). Judged as lacking libraries, such
+        // a game listed every 4.x library as missing and said they "cannot be added" — true word by
+        // word, and a false account of why: nothing is missing, the runtime is too old.
+        if (game.Runtime == UnityRuntime.Mono && MonoProfiles.RunsLegacyRuntime(game))
+        {
+            game.BrokenLoaderFamilies.Clear();
+            game.Verdict = ModdabilityVerdict.LegacyRuntime;
+            game.VerdictDetail = "the game runs Unity's old .NET 3.5 runtime";
+            return;
+        }
+
         if (game.Runtime == UnityRuntime.Mono)
         {
             var corlib = CorlibProbe.Check(game.DataDirectory);
@@ -128,6 +140,7 @@ public static class ModdabilityProbe
         ModdabilityVerdict.ArchitectureUnknown => true,
         ModdabilityVerdict.StrippedRuntime => true,
         ModdabilityVerdict.MissingRuntimeLibraries => true,
+        ModdabilityVerdict.LegacyRuntime => true,
         ModdabilityVerdict.StoreProtected => true,
         _ => false,
     };
@@ -143,6 +156,8 @@ public static class ModdabilityProbe
             "Without complete libraries, every mod loader fails at start on such a game. Uninstalling puts the game back.",
         ModdabilityVerdict.MissingRuntimeLibraries =>
             "The loader will start and the mod will not: it stops at load on the missing library. Uninstalling puts the game back.",
+        ModdabilityVerdict.LegacyRuntime =>
+            "The loader will start and the mod will not load. Uninstalling puts the game back.",
         ModdabilityVerdict.StoreProtected =>
             "The folder is usually read-only, so the install will most likely be refused by the system rather than by us.",
         _ => "",
@@ -228,6 +243,9 @@ public static class ModdabilityProbe
             $"Refused: this game lacks what the mod needs ({game.RuntimeLibraries?.Lacking}), and it cannot be " +
             $"added: {game.VerdictDetail}. The loader would start and the mod would stop at load. This is how the " +
             "game was built, not a limitation of the tool or of the mod.",
+        ModdabilityVerdict.LegacyRuntime =>
+            "Refused: this game runs Unity's old .NET 3.5 runtime. The mod needs .NET 4 or later. " +
+            "This is how the game was built, not a limitation of the tool.",
         ModdabilityVerdict.ArchitectureUnknown =>
             "Refused: could not read whether this game is 32-bit or 64-bit. A 64-bit loader in a " +
             "32-bit game does not crash, it simply never runs — which looks exactly like a broken mod.",

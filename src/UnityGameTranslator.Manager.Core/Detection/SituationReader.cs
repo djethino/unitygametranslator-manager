@@ -466,6 +466,7 @@ public static class SituationReader
         ModdabilityVerdict.ArchitectureUnknown => "Not identified — 32-bit or 64-bit could not be read",
         ModdabilityVerdict.StrippedRuntime => "Cannot be modded — the game ships a stripped runtime",
         ModdabilityVerdict.MissingRuntimeLibraries => "Cannot be modded — the game lacks libraries the mod needs",
+        ModdabilityVerdict.LegacyRuntime => "Cannot be modded — the game runs .NET 3.5",
         ModdabilityVerdict.NotUnity => "Not a Unity game",
         _ => "Cannot be modded",
     };

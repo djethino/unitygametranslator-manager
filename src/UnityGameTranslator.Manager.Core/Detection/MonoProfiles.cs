@@ -29,8 +29,8 @@ public static class MonoProfiles
             : "4.5";
 
     /// <summary>
-    /// The Mono runtime a game embeds, or null when it runs the older one (Unity's .NET 3.5
-    /// runtime, which the mod cannot run on and no copy here would fit).
+    /// The Mono runtime (4.x) a game embeds, or null when there is none where Unity puts it — the
+    /// old .NET 3.5 runtime (<see cref="RunsLegacyRuntime"/>) or a layout we do not know.
     /// </summary>
     public static string? MonoEngine(Model.GameInstall game)
     {
@@ -41,6 +41,26 @@ public static class MonoProfiles
 
         var linux = Path.Combine(game.DataDirectory, "MonoBleedingEdge", "x86_64", "libmonobdwgc-2.0.so");
         return File.Exists(linux) ? linux : null;
+    }
+
+    /// <summary>
+    /// Whether the game runs Unity's old .NET 3.5 runtime — read from the runtime it ships, never
+    /// inferred from the newer one being absent. Its three places on Windows, measured on four games
+    /// (2026-09-21): beside the executable (2018), and in the data folder with or without
+    /// `EmbedRuntime` (2017, and 5.x); on Linux its library in the data folder.
+    /// </summary>
+    public static bool RunsLegacyRuntime(Model.GameInstall game)
+    {
+        if (MonoEngine(game) is not null) return false;
+
+        if (File.Exists(Path.Combine(game.Path, "Mono", "EmbedRuntime", "mono.dll"))) return true;
+        if (game.DataDirectory is null) return false;
+
+        var mono = Path.Combine(game.DataDirectory, "Mono");
+        return File.Exists(Path.Combine(mono, "EmbedRuntime", "mono.dll"))
+               || File.Exists(Path.Combine(mono, "mono.dll"))
+               || File.Exists(Path.Combine(mono, "x86_64", "libmono.so"))
+               || File.Exists(Path.Combine(mono, "x86", "libmono.so"));
     }
 
     /// <summary>

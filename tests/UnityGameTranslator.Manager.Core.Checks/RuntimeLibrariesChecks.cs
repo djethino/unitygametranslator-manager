@@ -1,5 +1,6 @@
 using UnityGameTranslator.Manager.Core.Detection;
 using UnityGameTranslator.Manager.Core.Install;
+using UnityGameTranslator.Manager.Core.Model;
 
 namespace UnityGameTranslator.Manager.Core.Checks;
 
@@ -208,6 +209,57 @@ internal static class RuntimeLibrariesChecks
 
         Program.Check(RuntimeLibraries.NotSameFamily(new[] { "System.Net.Http" }, game, archive).Count == 0,
             "a library the game lacks cannot be compared, and is not refused for it", "");
+    }
+
+    /// <summary>
+    /// Unity's old .NET 3.5 runtime, told from the runtime a game ships — the four layouts measured
+    /// on real games (2026-09-21), and a 4.x game beside them that must not be taken for one.
+    /// </summary>
+    public static void WhichRuntimeIsTooOld()
+    {
+        Program.Section("Runtime libraries: the old .NET 3.5 runtime");
+
+        var root = Path.Combine(Path.GetTempPath(), "ugt-legacy-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            GameInstall Game(string name, params string[] files)
+            {
+                var path = Path.Combine(root, name);
+                var data = Path.Combine(path, name + "_Data");
+                Directory.CreateDirectory(data);
+                foreach (var file in files)
+                {
+                    var full = Path.Combine(path, file.Replace("{data}", name + "_Data"));
+                    Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+                    File.WriteAllBytes(full, Array.Empty<byte>());
+                }
+                return new GameInstall { Name = name, Path = path, DataDirectory = data, Runtime = UnityRuntime.Mono };
+            }
+
+            var beside = Game("beside", "Mono/EmbedRuntime/mono.dll");
+            var embedded = Game("embedded", "{data}/Mono/EmbedRuntime/mono.dll");
+            var flat = Game("flat", "{data}/Mono/mono.dll");
+            var linux = Game("linux", "{data}/Mono/x86_64/libmono.so");
+            var modern = Game("modern", "MonoBleedingEdge/EmbedRuntime/mono-2.0-bdwgc.dll");
+            var unknown = Game("unknown");
+
+            Program.Check(new[] { beside, embedded, flat, linux }.All(MonoProfiles.RunsLegacyRuntime),
+                "each place Unity put the old runtime is recognised",
+                "beside the executable, in the data folder with or without EmbedRuntime, and on Linux");
+            Program.Check(!MonoProfiles.RunsLegacyRuntime(modern),
+                "a game on the 4.x runtime is not one", "its runtime is read, not inferred from an absence");
+            Program.Check(!MonoProfiles.RunsLegacyRuntime(unknown),
+                "no runtime found at all is not one either", "an unknown layout is not proof of an old runtime");
+
+            ModdabilityProbe.Evaluate(flat);
+            Program.Check(flat is { Verdict: ModdabilityVerdict.LegacyRuntime, RuntimeLibraries: null },
+                "such a game is refused for its runtime, with no libraries said to be missing",
+                "nothing is missing that could be added: the runtime itself is too old");
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch (IOException) { }
+        }
     }
 
     public static void WhichProfileServesAGame()

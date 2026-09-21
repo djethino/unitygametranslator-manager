@@ -131,8 +131,10 @@ public static class ClassLibrarySources
         if (UnityVersions.Parse(build ?? game.UnityVersion) is null)
             return "the game's Unity version could not be read, so no matching copy can be chosen";
 
+        // ⚠ Not the old .NET 3.5 runtime — that has its own verdict, judged before any library is
+        // read (ModdabilityProbe). Here the game's runtime was simply not found where Unity puts it.
         if (MonoProfiles.MonoEngine(game) is null)
-            return "the game runs Unity's old .NET 3.5 runtime, which the mod cannot run on";
+            return "the game's Mono runtime could not be found, so no matching copy can be chosen";
 
         // Unity's download needs the build identified; without it, only a copy on this computer can
         // serve — an editor, or another game once the scan knows them all.

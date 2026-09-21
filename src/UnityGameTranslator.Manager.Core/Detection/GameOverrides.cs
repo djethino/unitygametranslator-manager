@@ -104,7 +104,7 @@ public sealed class GameOverrides : PerGameStore<GameOverride>
         return refused switch
         {
             ModdabilityVerdict.StrippedRuntime => receipt.Loader is not null,
-            ModdabilityVerdict.MissingRuntimeLibraries => receipt.Plugin is not null,
+            ModdabilityVerdict.MissingRuntimeLibraries or ModdabilityVerdict.LegacyRuntime => receipt.Plugin is not null,
             _ => receipt.Loader is not null || receipt.Plugin is not null,
         };
     }

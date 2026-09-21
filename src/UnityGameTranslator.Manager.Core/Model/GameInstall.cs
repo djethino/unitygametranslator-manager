@@ -65,6 +65,14 @@ public enum ModdabilityVerdict
     /// </summary>
     MissingRuntimeLibraries,
 
+    /// <summary>
+    /// The game runs Unity's old .NET 3.5 runtime (chosen per game until Unity 2018, removed in
+    /// 2019). The loader starts; the mod, built on .NET Standard 2.0, cannot load there — measured
+    /// 2026-09-21: `FileNotFoundException: netstandard, Version=2.0.0.0`. Nothing is missing that
+    /// could be added: it is the runtime itself that is too old.
+    /// </summary>
+    LegacyRuntime,
+
     /// <summary>Not a Unity game.</summary>
     NotUnity,
 }

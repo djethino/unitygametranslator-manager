@@ -200,6 +200,28 @@ public sealed class GameInventory
     private List<GameInstall>? _known;
 
     /// <summary>
+    /// Works out, ahead of any click, where each game lacking libraries would take them from.
+    ///
+    /// 🔴 **Measured 2026-09-21: 3 to 4 seconds on the first card of such a game** — reading the
+    /// editors, other games' libraries and players, and checking signatures — against a few
+    /// milliseconds for everything else on the card. The answers are memorised by the sources
+    /// themselves, so doing it once after the scan makes every card open at once. Disk only:
+    /// nothing here asks the network. Call it off the interface thread.
+    /// </summary>
+    public void WarmRuntimeLibrarySources()
+    {
+        var games = KnownGames();
+        var online = !Offline && Install.LocalCopies.NetworkAvailable();
+
+        // Half the cores: this runs while the window is being used, and must never be what makes it
+        // stutter — measured 6 s for the whole machine, against clicks that no longer wait at all.
+        var gentle = new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount / 2) };
+
+        Parallel.ForEach(games.Where(g => g.RuntimeLibraries is not null), gentle, game =>
+            Install.RuntimeLibrariesInstaller.StateOf(game, null, games, null, null, online).WarmSources());
+    }
+
+    /// <summary>
     /// This run was told to stay offline (`--offline`) — Unity's server is then not offered as a
     /// source, whatever the network says.
     /// </summary>
@@ -372,16 +394,25 @@ public sealed class GameInventory
     /// changes no rule. Anything worked out here that a row would also want belongs down there
     /// instead — that split is what stops the list and the card disagreeing.
     /// </summary>
+    /// <param name="step">
+    /// Told what is being read, as it is read — so a card that takes seconds says why, rather than
+    /// sitting still (2026-09-21). A <see cref="Progress{T}"/> brings each step back to the caller's
+    /// thread.
+    /// </param>
     public async Task<GameReport> BuildReportAsync(GameInstall game, bool offline = false,
-                                                   CancellationToken ct = default)
+                                                   CancellationToken ct = default, IProgress<string>? step = null)
     {
         var report = BuildReport(game);
 
         // The card shows where the missing libraries would come from, and finding that out reads
         // other games and editors — seconds, on the first look. Done here, off the caller's thread,
-        // so the window never waits on it (RuntimeLibrariesState.Sources).
+        // so the window never waits on it (RuntimeLibrariesState.Sources). Usually already done:
+        // see WarmRuntimeLibrarySources.
         if (report.RuntimeLibraries.Relevant)
+        {
+            step?.Report("Looking for the libraries this game lacks...");
             await Task.Run(report.RuntimeLibraries.WarmSources, ct).ConfigureAwait(false);
+        }
 
         var descriptor = ResolveDescriptor(report, game);
 
@@ -398,6 +429,8 @@ public sealed class GameInventory
         // whose translation was sitting on the site.
         if (_api is not null && (game.SteamAppId is not null || !string.IsNullOrWhiteSpace(game.Name)))
         {
+            step?.Report("Asking the community site...");
+
             report.OnlineTranslations = game.SteamAppId is not null
                 ? await _api.SearchBySteamIdAsync(game.SteamAppId, apiToken: _apiToken, ct: ct).ConfigureAwait(false)
                 : await _api.SearchByNameAsync(game.Name, apiToken: _apiToken, ct: ct).ConfigureAwait(false);

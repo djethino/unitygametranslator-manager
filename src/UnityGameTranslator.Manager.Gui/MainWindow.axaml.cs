@@ -622,6 +622,13 @@ public partial class MainWindow : Window
         ShowOverview();
         Busy(false, "Ready.");
 
+        // ⚠ Not in WarmInBackground: that list asks the network and waits for the person's answer
+        // about going online, and this reads the disk only. Nothing to republish either — no row
+        // shows where libraries come from; it only spares the first card of such a game its
+        // seconds of reading (GameInventory.WarmRuntimeLibrarySources).
+        var inventory = _inventory;
+        _ = Task.Run(inventory.WarmRuntimeLibrarySources);
+
         WarmInBackground();
     }
 
@@ -2402,7 +2409,8 @@ public partial class MainWindow : Window
     // ---------------------------------------------------------------- detail
 
     /// <summary>
-    /// The gear on the scanning panel while it is the panel, and null the rest of the time.
+    /// The gear on the right-hand panel while it is the panel — the scan's, or a card's while it is
+    /// being read — and null the rest of the time.
     ///
     /// Held so the status bar can feed its middle line — see <see cref="Status"/>. Null is what
     /// keeps that mirroring from reaching any other screen, which is why it is dropped by
@@ -3397,13 +3405,33 @@ public partial class MainWindow : Window
         //
         // ⚠ Only on a redraw of the SAME card. A different game is a different page, and landing
         // on it half way down would be the tool remembering something nobody asked it to.
-        var offset = _selected?.Path == game.Path ? DetailScroll.Offset : default;
+        var sameCard = _selected?.Path == game.Path && _shownReport is not null;
+        var offset = sameCard ? DetailScroll.Offset : default;
 
         _selected = game;
 
-        ClearDetail();
-        DetailPanel.Children.Add(new TextBlock { Text = game.Name, FontSize = 20, FontWeight = FontWeight.SemiBold });
-        DetailPanel.Children.Add(new TextBlock { Text = "Reading...", Opacity = 0.6 });
+        // 🔴 **A redraw of the card on screen swaps it in place** (user, 2026-09-21: « changer un
+        // radio bouton rafraîchit tout l'onglet… ça casse complètement l'UX »). Every act on a card
+        // comes back here — a radio, a checkbox, an install — and each one blanked the card, showed
+        // the reading placeholder and replayed the page's arrival: a jump for a one-line change. The
+        // card on screen now stays until the new one is built, then is replaced in one pass, with
+        // no motion and the scroll kept. Blanking and the gear are for opening ANOTHER game.
+        if (!sameCard)
+        {
+            ClearDetail();
+            DetailPanel.Children.Add(new TextBlock { Text = game.Name, FontSize = 20, FontWeight = FontWeight.SemiBold });
+
+            // 🔴 **The turning gear, not a grey word** (user, 2026-09-21: « on se demande pourquoi il
+            // ne se passe rien »). The scan's gear, under the game's name, with what is being read as
+            // its second line — the status mirrors into it (Status). Not the darkened veil: that one
+            // holds the window during a write, and here the list must stay clickable.
+            _scanGear = new SpinningGear($"Reading {game.Name}...", size: 48, stacked: true)
+            {
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                Margin = new Avalonia.Thickness(0, 48, 0, 0),
+            };
+            DetailPanel.Children.Add(_scanGear);
+        }
 
         Busy(true, $"Reading {game.Name}...");
 
@@ -3415,7 +3443,10 @@ public partial class MainWindow : Window
         // A failure is recorded rather than raised: not knowing one's role costs a line on a card,
         // and must never stand between someone and installing the mod.
         var lineages = _lineages.EnsureAsync(ApiTokenForLookups);
-        var building = _inventory.BuildReportAsync(game);
+        // Each step said under the gear — only while this game is still the one being opened, so a
+        // slow card left behind by a click elsewhere does not speak over the next one.
+        var step = new Progress<string>(what => { if (ReferenceEquals(_selected, game)) Status(what); });
+        var building = _inventory.BuildReportAsync(game, step: step);
 
         await Task.WhenAll(lineages, building);
 
@@ -3441,7 +3472,7 @@ public partial class MainWindow : Window
         // nobody was looking, where there is no report to reuse.
         RefreshRowFrom(report);
 
-        RenderReport(report);
+        RenderReport(report, inPlace: sameCard);
 
         // ⚠ Posted, and at Loaded: the content has only just been added, so it has no height yet
         // and an offset set now would be clamped straight back to zero.
@@ -3494,7 +3525,11 @@ public partial class MainWindow : Window
     /// </summary>
     private GameReport? _shownReport;
 
-    private void RenderReport(GameReport report)
+    /// <param name="inPlace">
+    /// The same card drawn again after an act on it: replaced without the page's arrival, and
+    /// without moving the scroll — see ShowSelectedAsync.
+    /// </param>
+    private void RenderReport(GameReport report, bool inPlace = false)
     {
         var game = report.Game;
         ClearDetail();
@@ -3574,7 +3609,7 @@ public partial class MainWindow : Window
                            && (ChosenTranslation(report.Game.Path) is not null
                                || _preferences.Read(report.Game.Path).InstallTranslation);
 
-        ShowTabBody(report);
+        ShowTabBody(report, inPlace);
 
         // ⚠ The bar belongs to EVERY tab, where it used to be written into each branch — and was
         // for a while missing from Home, on the argument that Home offers one way forward at a
@@ -3605,12 +3640,15 @@ public partial class MainWindow : Window
     /// working out the safe default again on a tab click would untick it under their hand. It is
     /// settled in RenderReport and nowhere else, which is what its own note says.
     /// </summary>
-    private void ShowTabBody(GameReport report)
+    private void ShowTabBody(GameReport report, bool inPlace = false)
     {
         DetailPanel.Children.Clear();
 
         foreach (var control in PageFor(_gameTab).Body(report))
             DetailPanel.Children.Add(control);
+
+        // The same page after an act on it: where the reader is stays, and nothing arrives.
+        if (inPlace) return;
 
         DetailScroll.Offset = default;
 

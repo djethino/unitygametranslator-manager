@@ -428,7 +428,7 @@ public static class RuntimeLibraries
     /// ⚠ An unreadable file answers "absent": a library the runtime cannot read either is one it
     /// cannot load, and the answer the mod gets is the same.
     /// </summary>
-    public static Func<string, AssemblyShape?> Folder(string directory)
+    public static Func<string, AssemblyShape?> Folder(params string[] directories)
     {
         var read = new Dictionary<string, AssemblyShape?>(StringComparer.OrdinalIgnoreCase);
 
@@ -436,10 +436,9 @@ public static class RuntimeLibraries
         {
             if (read.TryGetValue(name, out var known)) return known;
 
-            var path = Path.Combine(directory, name + ".dll");
             AssemblyShape? shape = null;
 
-            if (File.Exists(path))
+            if (FileIn(directories, name) is { } path)
             {
                 try { shape = AssemblyShape.Read(path); }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException or BadImageFormatException) { }
@@ -449,4 +448,12 @@ public static class RuntimeLibraries
             return shape;
         };
     }
+
+    /// <summary>
+    /// The first of these folders holding the library, or null — an editor's profile keeps its
+    /// facades (`netstandard`, `System.Runtime`…) in `Facades/` beside the rest, where a game's
+    /// Managed folder is flat.
+    /// </summary>
+    public static string? FileIn(IEnumerable<string> directories, string name) =>
+        directories.Select(d => Path.Combine(d, name + ".dll")).FirstOrDefault(File.Exists);
 }

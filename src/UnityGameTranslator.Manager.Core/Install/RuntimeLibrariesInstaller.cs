@@ -194,7 +194,7 @@ public static class RuntimeLibrariesInstaller
                            + $"from {classLibraries.Source!.Label}: {string.Join(", ", classLibraries.Chosen)}...");
 
             foreach (var name in classLibraries.Chosen)
-                files.PlaceFile(Path.Combine(classLibraries.Folder!, name + ".dll"), $"{LoaderSearchPath.Folder}/{name}.dll");
+                files.PlaceFile(RuntimeLibraries.FileIn(classLibraries.Folders!, name)!, $"{LoaderSearchPath.Folder}/{name}.dll");
         }
 
         // Kept as they were: the same files, the same record — nothing written, nothing to undo.
@@ -266,7 +266,8 @@ public static class RuntimeLibrariesInstaller
     // ── The .NET batch ───────────────────────────────────────────────────────────────────────
 
     /// <param name="Kept">The libraries already in place, left exactly as they are — null when a set is written.</param>
-    private sealed record ClassLibraryChoice(IReadOnlyList<string> Chosen, string? Folder, string Release,
+    /// <param name="Folders">Where the copies are, the profile folder first and its facades next.</param>
+    private sealed record ClassLibraryChoice(IReadOnlyList<string> Chosen, IReadOnlyList<string>? Folders, string Release,
                                              ClassLibrarySource? Source, IReadOnlyList<ReceiptFile>? Kept = null);
 
     /// <summary>
@@ -331,7 +332,9 @@ public static class RuntimeLibrariesInstaller
                          .ConfigureAwait(false);
         }
 
-        var copies = RuntimeLibraries.Folder(folder);
+        // An editor's profile keeps its facades in Facades/; what was downloaded is already flat.
+        var folders = new[] { folder, Path.Combine(folder, "Facades") };
+        var copies = RuntimeLibraries.Folder(folders);
 
         var selection = RuntimeLibraries.Select(needs, gameLibraries, copies);
         if (!selection.Complete)
@@ -362,7 +365,7 @@ public static class RuntimeLibrariesInstaller
                 $"The .NET libraries from {source.Label} do not match this game's own ({string.Join("; ", alien)}). Nothing was added.");
         }
 
-        return chosen.Count == 0 ? null : new ClassLibraryChoice(chosen, folder, release, source);
+        return chosen.Count == 0 ? null : new ClassLibraryChoice(chosen, folders, release, source);
     }
 
     /// <summary>

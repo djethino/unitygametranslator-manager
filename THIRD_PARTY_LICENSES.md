@@ -81,16 +81,17 @@ mirrored here.
 - **Source:** https://github.com/djethino/unitygametranslator
 - **License:** AGPL-3.0
 
+## Copied or downloaded from Unity, at the user's request
+
 ### Unity's .NET class libraries (Mono)
 
-- **Source:** https://unity.bepinex.dev/corlibs/ — BepInEx's archive of the class libraries each
-  Unity version ships, extracted from Unity's own editor builds
+- **Source:** a Unity editor installed on the same computer, or Unity's own editor package on
+  `download.unity3d.com`, read only as far as the libraries
 - **License:** MIT (Unity's fork of Mono: https://github.com/Unity-Technologies/mono)
 - **Copyright:** Mono contributors, Unity Technologies
+- **Never hosted, mirrored or redistributed by this project.**
 
-Downloaded only for a game that shipped without some of them, and only the files that game lacks.
-
-## Copied or downloaded from Unity, at the user's request
+Used only for a game that shipped without some of them, and only the files that game lacks.
 
 ### Unity engine modules (`UnityEngine.dll`, `UnityEngine.*Module.dll`)
 

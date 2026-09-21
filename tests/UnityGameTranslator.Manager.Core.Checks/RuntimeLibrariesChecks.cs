@@ -228,6 +228,25 @@ internal static class RuntimeLibrariesChecks
         Program.Check(MonoProfiles.Profile(windows, UnityVersions.Parse("2021.1.28f1")!) == "4.5"
                       && MonoProfiles.Profile(linux, UnityVersions.Parse("2018.4.36f1")!) == "4.5",
             "before 2021.2, the one profile every system used", "measured: a 2018 game ran on it");
+
+        // An editor's profile keeps its facades apart — missed once, found by a real install.
+        var profile = Path.Combine(Path.GetTempPath(), "ugt-profile-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(profile, "Facades"));
+            File.WriteAllText(Path.Combine(profile, "mscorlib.dll"), "");
+            File.WriteAllText(Path.Combine(profile, "Facades", "netstandard.dll"), "");
+
+            var folders = new[] { profile, Path.Combine(profile, "Facades") };
+            Program.Check(RuntimeLibraries.FileIn(folders, "netstandard") == Path.Combine(profile, "Facades", "netstandard.dll")
+                          && RuntimeLibraries.FileIn(folders, "mscorlib") == Path.Combine(profile, "mscorlib.dll")
+                          && RuntimeLibraries.FileIn(folders, "System.Nothing") is null,
+                "an editor's facades are found in Facades/", "netstandard sits there, and a game needs it beside the rest");
+        }
+        finally
+        {
+            try { Directory.Delete(profile, recursive: true); } catch { /* a temp folder left behind proves nothing */ }
+        }
     }
 
     public static void HowALoaderIsTold()

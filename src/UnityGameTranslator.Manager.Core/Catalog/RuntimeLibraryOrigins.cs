@@ -31,8 +31,15 @@ public static class RuntimeLibraryOrigins
     public static string UnityBuildFileUrl(string changeset, string relative) =>
         $"https://{UnityDownloadHost}/download_unity/{Uri.EscapeDataString(changeset)}/{relative.TrimStart('/')}";
 
-    /// <summary>Unity's terms, which the person accepts before anything is downloaded from Unity.</summary>
-    public const string UnityTermsUrl = "https://unity.com/legal/terms-of-service";
+    /// <summary>
+    /// Unity's terms, shown to the person before anything is downloaded from Unity — who downloads
+    /// is the person, from Unity's own server; this tool only fetches on their confirmation.
+    ///
+    /// ⚠ The Editor Software Terms, not the general Terms of Service (changed 2026-09-21): what is
+    /// downloaded is part of the editor's package, and these are the terms that govern it; they
+    /// supplement the general ones and link to them.
+    /// </summary>
+    public const string UnityTermsUrl = "https://unity.com/legal/editor-terms-of-service/software";
 
     /// <summary>Hosts, outside GitHub, that a download for these libraries may start from and land on.</summary>
     public static IReadOnlyCollection<string> Hosts { get; } = [UnityDownloadHost];

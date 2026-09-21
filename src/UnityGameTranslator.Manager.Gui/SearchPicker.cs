@@ -280,7 +280,16 @@ public sealed class SearchPicker : UserControl
                            || Reads(item).Contains(needle, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
-        _list.ItemTemplate = ItemTemplate;
+        // 🔴 **Without a template, a row reads as what TextOf says — never as the object itself.**
+        // The ListBox otherwise prints ToString(), which for a record is every field it holds: the
+        // library-source picker showed ids, paths and whole warnings across the screen (2026-09-22).
+        // The closed face already read TextOf; the rows now read the same words.
+        _list.ItemTemplate = ItemTemplate ?? new FuncDataTemplate<object>((item, _) => new TextBlock
+        {
+            Text = Reads(item),
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
         _list.ItemsSource = rows;
 
         // The row in force, so opening the list lands on it rather than at the top of a hundred and

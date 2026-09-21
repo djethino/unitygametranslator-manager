@@ -10773,6 +10773,27 @@ public partial class MainWindow : Window
         string? pickedLibraries = null;
         string? pickedModules = null;
 
+        // 🔴 **The box to tick follows the pickers** (user's decision, 2026-09-22): shown while the
+        // source picked for a batch is Unity's server or another game AND that notice was never
+        // accepted on this machine — the pickers below show the notice itself in that case.
+        var (unityBox, localBox) = AcceptanceBoxes();
+        var runtime0 = report.RuntimeLibraries;
+        var libraryOptions = runtime0.Need is { Missing.Count: > 0 } ? ClassLibraryOptions(runtime0) : Array.Empty<SourceOption>();
+        var moduleOptions = runtime0.Need?.Modules is not null ? ModuleOptions(runtime0) : Array.Empty<SourceOption>();
+        var libraryKind = libraryOptions.FirstOrDefault(o => o.Id == runtime0.ClassLibrarySource?.Source.Id)?.Kind;
+        var moduleKind = moduleOptions.FirstOrDefault(o => o.Id == runtime0.ModuleSource?.Source.Id)?.Kind;
+        var suppliesLibraries = steps.Any(s => s.Act is OneClickAct.AddRuntimeLibraries);
+
+        void ShowAcceptances()
+        {
+            var read = _settings.Current;
+            bool Uses(SourceKind kind) => suppliesLibraries && (libraryKind == kind || moduleKind == kind);
+            unityBox.IsVisible = Uses(SourceKind.UnityServer) && !read.UnityDownloadNoticeRead;
+            localBox.IsVisible = Uses(SourceKind.Game) && !read.LocalCopyNoticeRead;
+        }
+
+        ShowAcceptances();
+
         // ⚠ One block per step rather than one paragraph, so the settings step can carry its own
         // detail. It used to be a single joined string, and "apply your settings" was therefore a
         // sentence with nothing behind it: the one act about to rewrite a file the player has been
@@ -10797,12 +10818,22 @@ public partial class MainWindow : Window
                 var state = report.RuntimeLibraries;
 
                 if (state.Need is { Missing.Count: > 0 })
-                    body.Children.Add(SourcePicker(".NET libraries from", ClassLibraryOptions(state),
-                                                   state.ClassLibrarySource?.Source.Id, id => pickedLibraries = id));
+                    body.Children.Add(SourcePicker(".NET libraries from", libraryOptions,
+                                                   state.ClassLibrarySource?.Source.Id, id =>
+                                                   {
+                                                       pickedLibraries = id;
+                                                       libraryKind = libraryOptions.FirstOrDefault(o => o.Id == id)?.Kind;
+                                                       ShowAcceptances();
+                                                   }));
 
                 if (state.Need?.Modules is not null)
-                    body.Children.Add(SourcePicker("Engine modules from", ModuleOptions(state),
-                                                   state.ModuleSource?.Source.Id, id => pickedModules = id));
+                    body.Children.Add(SourcePicker("Engine modules from", moduleOptions,
+                                                   state.ModuleSource?.Source.Id, id =>
+                                                   {
+                                                       pickedModules = id;
+                                                       moduleKind = moduleOptions.FirstOrDefault(o => o.Id == id)?.Kind;
+                                                       ShowAcceptances();
+                                                   }));
             }
         }
 
@@ -10828,7 +10859,8 @@ public partial class MainWindow : Window
                 body.Children.Add(warning);
         }
 
-        if (!await ConfirmAsync($"Set up {report.Game.Name}?", body, "Set it up")) return;
+        if (!await ConfirmAsync($"Set up {report.Game.Name}?", body, "Set it up",
+                                acceptances: new[] { unityBox, localBox })) return;
 
         // ⚠ Read BEFORE anything is written: applying the settings makes this game "configured",
         // and what we need to know afterwards is what it was beforehand.
@@ -12862,7 +12894,14 @@ public partial class MainWindow : Window
         }
 
         var body = string.Join(Environment.NewLine, lines);
-        if (!await ConfirmAsync($"Install into {report.Game.Name}?", body, "Install")) return;
+
+        // The boxes, only while the full notice is shown — the first time for each kind of source.
+        var (unityBox, localBox) = AcceptanceBoxes();
+        unityBox.IsVisible = plan.DownloadsFromUnity && !plan.UnityNoticeRead;
+        localBox.IsVisible = plan.CopiesFromAnotherGame && !plan.LocalCopyNoticeRead;
+
+        if (!await ConfirmAsync($"Install into {report.Game.Name}?", body, "Install",
+                                acceptances: new[] { unityBox, localBox })) return;
 
         // 🔴 **Agreed to by the confirmation just accepted, and by nothing else.** Its lines name
         // Unity's server and Unity's terms whenever the engine modules come from there (Describe).
@@ -13512,9 +13551,28 @@ public partial class MainWindow : Window
     }
 
     private Task<bool> ConfirmAsync(string title, string body, string confirmLabel,
-                                    string? declineLabel = null) =>
+                                    string? declineLabel = null, IReadOnlyList<CheckBox>? acceptances = null) =>
         ConfirmAsync(title, new TextBlock { Text = body, TextWrapping = TextWrapping.Wrap },
-                     confirmLabel, declineLabel);
+                     confirmLabel, declineLabel, acceptances);
+
+    /// <summary>
+    /// The two boxes a confirmation asks to be ticked the first time files come from outside this
+    /// tool — Unity's server, another game — hidden until shown by the caller. Once accepted, the
+    /// notice is read (LocalCopies.RecordNoticesRead) and neither box is asked again; Settings can
+    /// bring them back.
+    /// </summary>
+    private static (CheckBox Unity, CheckBox LocalCopy) AcceptanceBoxes() =>
+    (
+        Acceptance("I understand these files are downloaded from Unity's server, under Unity's terms."),
+        Acceptance("I understand these files are copied from another game, and UnityGameTranslator is not responsible for them.")
+    );
+
+    private static CheckBox Acceptance(string text) => new()
+    {
+        Content = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap },
+        FontSize = 12,
+        IsVisible = false,
+    };
 
     /// <summary>
     /// A modal confirmation. Written by hand rather than pulled from a dialog package: one
@@ -13530,8 +13588,13 @@ public partial class MainWindow : Window
     /// they were calling something off, and the one question they asked out loud was what it would
     /// actually do.
     /// </param>
+    /// <param name="acceptances">
+    /// Boxes to tick before the confirm button lights — the first time files come from Unity's server
+    /// or from another game (AcceptanceBoxes). Only the VISIBLE ones count: the one-click shows or
+    /// hides them as its source pickers change.
+    /// </param>
     private async Task<bool> ConfirmAsync(string title, Control body, string confirmLabel,
-                                          string? declineLabel = null)
+                                          string? declineLabel = null, IReadOnlyList<CheckBox>? acceptances = null)
     {
         var result = false;
 
@@ -13568,6 +13631,26 @@ public partial class MainWindow : Window
         });
 
         layout.Children.Add(body);
+
+        // 🔴 **Ticked before the button lights, and the button says why it is grey** (user's
+        // decision, 2026-09-22). Greyed without a reason is a dead end; the tooltip names it.
+        if (acceptances is { Count: > 0 })
+        {
+            foreach (var box in acceptances) layout.Children.Add(box);
+
+            void Refresh() => confirm.IsEnabled = acceptances.Where(b => b.IsVisible).All(b => b.IsChecked == true);
+
+            foreach (var box in acceptances)
+            {
+                box.IsCheckedChanged += (_, _) => Refresh();
+                box.PropertyChanged += (_, e) => { if (e.Property == Visual.IsVisibleProperty) Refresh(); };
+            }
+
+            ToolTip.SetShowOnDisabled(confirm, true);
+            ToolTip.SetTip(confirm, "Tick the box to agree first.");
+            Refresh();
+        }
+
         layout.Children.Add(buttons);
 
         var dialog = new Window

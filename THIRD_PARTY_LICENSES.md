@@ -20,6 +20,15 @@ Shipped inside the executable so the tool runs without asking the user to instal
 
 Used on Windows to locate Steam and GOG installations.
 
+### System.Security.Cryptography.Pkcs
+
+- **Source:** https://github.com/dotnet/runtime
+- **License:** MIT
+- **Copyright:** .NET Foundation and Contributors
+
+Reads the Authenticode signature of Unity's engine modules, so that none is copied into a game
+unless Unity signed it.
+
 ### Avalonia
 
 - **Source:** https://github.com/AvaloniaUI/Avalonia
@@ -72,8 +81,30 @@ mirrored here.
 - **Source:** https://github.com/djethino/unitygametranslator
 - **License:** AGPL-3.0
 
+### Unity's .NET class libraries (Mono)
+
+- **Source:** https://unity.bepinex.dev/corlibs/ — BepInEx's archive of the class libraries each
+  Unity version ships, extracted from Unity's own editor builds
+- **License:** MIT (Unity's fork of Mono: https://github.com/Unity-Technologies/mono)
+- **Copyright:** Mono contributors, Unity Technologies
+
+Downloaded only for a game that shipped without some of them, and only the files that game lacks.
+
+## Copied or downloaded from Unity, at the user's request
+
+### Unity engine modules (`UnityEngine.dll`, `UnityEngine.*Module.dll`)
+
+- **Owner:** Unity Technologies — proprietary, covered by Unity's terms of service
+- **Never hosted, mirrored or redistributed by this project.**
+
+Needed only by a game whose build stripped its own engine modules. The tool either copies them
+from another Unity game or Unity editor already installed on the same computer, or downloads
+them from Unity's own servers (`download.unity3d.com`) after saying so and showing Unity's terms.
+A module is used only when its Authenticode signature by Unity Technologies verifies.
+
 ## Notes
 
-Games are never modified beyond adding the loader and plugin files, all of which are recorded in
-an install receipt so they can be removed exactly. No game asset is ever copied, redistributed or
-altered.
+Games are never modified beyond adding the loader and plugin files, and — for a game that lacks
+them — the libraries and engine modules above, all of which are recorded in an install receipt so
+they can be removed exactly. They go in a folder of their own; none of the game's own files is
+replaced or altered.

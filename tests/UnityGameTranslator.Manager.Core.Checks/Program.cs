@@ -57,6 +57,8 @@ internal static class Program
         RuntimeLibrariesChecks.WhichArchiveServesAGame();
         RuntimeLibrariesChecks.HowALoaderIsTold();
         RuntimeLibrariesChecks.WhatStillStandsAfterwards();
+        UnitySignatureChecks.WhatCountsAsSignedByUnity();
+        UnitySignatureChecks.WhoIsUnity();
 
         Console.WriteLine();
         if (_failures == 0)

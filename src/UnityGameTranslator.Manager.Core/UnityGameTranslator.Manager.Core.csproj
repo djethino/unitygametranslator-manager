@@ -27,6 +27,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Authenticode verification of Unity's engine modules before one is copied into a game
+         (Install/UnitySignature.cs). Microsoft's own, MIT; not part of the shared framework. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="8.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- The rules this tool shares with the mod, held in one place rather than in two copies
          that drift. It targets netstandard2.0 because the mod runs on Unity; net8.0 consumes
          that without trouble, and the other direction would not work at all. -->

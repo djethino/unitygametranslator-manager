@@ -27,8 +27,12 @@ public sealed record EngineModuleSource(EngineModuleSourceKind Kind, string Id, 
     {
         EngineModuleSourceKind.Editor => $"the Unity {Version} editor on this computer",
         EngineModuleSourceKind.Game => $"{Name} (Unity {Version}) on this computer",
+        _ when Cached => $"Unity's download server ({RuntimeLibraryOrigins.UnityDownloadHost}), already downloaded",
         _ => $"Unity's download server ({RuntimeLibraryOrigins.UnityDownloadHost})",
     };
+
+    /// <summary>A download from Unity already made and kept on this machine — see ClassLibrarySource.Cached.</summary>
+    public bool Cached { get; init; }
 }
 
 /// <summary>A source and what stands against it — nothing, when it can be used.</summary>

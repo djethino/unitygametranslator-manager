@@ -7789,16 +7789,22 @@ public partial class MainWindow : Window
     /// <summary>The three kinds of place a batch can come from — what the person chooses first.</summary>
     private enum SourceKind { Editor, Game, UnityServer }
 
-    private static string KindLabel(SourceKind kind) => kind switch
+    /// <param name="cached">
+    /// Unity's download already made and kept here: it must not read as hundreds of megabytes to be
+    /// fetched again (user, 2026-09-22).
+    /// </param>
+    private static string KindLabel(SourceKind kind, bool cached = false) => kind switch
     {
         SourceKind.Editor => "Unity editor on this computer",
         SourceKind.Game => "Another game on this computer",
+        _ when cached => "From Unity's server (already downloaded)",
         _ => "Download from Unity's server",
     };
 
     /// <summary>One place a batch could come from, as the card and the one-click show it.</summary>
     /// <param name="Problem">Why it cannot be used, or null when it can.</param>
-    private sealed record SourceOption(string Id, SourceKind Kind, string Label, string Says, string? Problem);
+    /// <param name="Cached">Unity's download, already made and kept on this computer — nothing is fetched again.</param>
+    private sealed record SourceOption(string Id, SourceKind Kind, string Label, string Says, string? Problem, bool Cached = false);
 
     /// <summary>
     /// Where a batch comes from, and the way to choose another source — the same control for the
@@ -7830,6 +7836,8 @@ public partial class MainWindow : Window
         var kinds = usable.Select(o => o.Kind).Distinct().OrderBy(k => k).ToList();
 
         var chosen = usable.FirstOrDefault(o => o.Id == current) ?? usable.FirstOrDefault();
+
+        bool CachedKind(SourceKind kind) => usable.Any(o => o.Kind == kind && o.Cached);
 
         if (chosen is not null)
         {
@@ -7910,7 +7918,7 @@ public partial class MainWindow : Window
 
             if (kinds.Count == 1)
             {
-                box.Children.Add(Muted($"Source: {KindLabel(chosen.Kind)}"));
+                box.Children.Add(Muted($"Source: {KindLabel(chosen.Kind, CachedKind(chosen.Kind))}"));
             }
             else if (radios)
             {
@@ -7920,7 +7928,7 @@ public partial class MainWindow : Window
                 {
                     var radio = new RadioButton
                     {
-                        Content = KindLabel(kind),
+                        Content = KindLabel(kind, CachedKind(kind)),
                         GroupName = group,
                         IsChecked = kind == chosen.Kind,
                         IsEnabled = enabled,
@@ -7950,7 +7958,7 @@ public partial class MainWindow : Window
                     FontSize = 12,
                 };
 
-                foreach (var kind in kinds) kindChoice.Items.Add(new Choice(kind.ToString(), KindLabel(kind)));
+                foreach (var kind in kinds) kindChoice.Items.Add(new Choice(kind.ToString(), KindLabel(kind, CachedKind(kind))));
                 kindChoice.Reselect(kindChoice.Items.OfType<Choice>().First(c => c.Tag == chosen.Kind.ToString()));
 
                 kindChoice.SelectionChanged += (_, _) =>
@@ -8060,9 +8068,21 @@ public partial class MainWindow : Window
         {
             ClassLibrarySourceKind.Editor => $"Unity {source.Version} editor",
             ClassLibrarySourceKind.Game => source.Name ?? "Another game",
+            _ when source.Cached => "Unity's server, already downloaded",
             _ => "Unity's server",
         }
         + (source.SameRelease ? " — same Unity version" : " — same .NET runtime");
+
+    /// <summary>
+    /// What a download from Unity says — the batch named, and whether anything is actually fetched.
+    /// ⚠ Already kept on this computer, it says so: nobody must think they are about to spend
+    /// hundreds of megabytes again (user, 2026-09-22). The terms still apply to the files.
+    /// </summary>
+    private static string FromUnitySays(bool cached, string whatIsDownloaded) =>
+        (cached
+            ? "Already downloaded from Unity's server and kept on this computer: nothing is downloaded again. "
+            : whatIsDownloaded + " ")
+        + "Unity's terms apply. " + LocalCopies.NotAffiliated;
 
     /// <summary>The .NET libraries' sources as the card and the one-click show them — one wording for both.</summary>
     private static IReadOnlyList<SourceOption> ClassLibraryOptions(RuntimeLibrariesState state) =>
@@ -8077,15 +8097,15 @@ public partial class MainWindow : Window
             NetLabel(candidate.Source),
             candidate.Source.Kind switch
             {
-                ClassLibrarySourceKind.UnityDownload =>
-                    "Only the part of Unity's editor package that holds them is downloaded, a few hundred MB, "
-                    + "once for this Unity version. Unity's terms apply. " + LocalCopies.NotAffiliated,
+                ClassLibrarySourceKind.UnityDownload => FromUnitySays(candidate.Source.Cached,
+                    "Only the part of Unity's editor package that holds them is downloaded, a few hundred MB, once for this Unity version."),
                 ClassLibrarySourceKind.Game => LocalCopies.Disclaimer(signed: false),
                 _ when !candidate.Source.SameRelease =>
                     $"Unity {candidate.Source.Version} ships the same .NET runtime as this game, so its libraries fit.",
                 _ => "Same Unity version as the game.",
             },
-            candidate.Usable ? null : candidate.Problems[0])).ToList();
+            candidate.Usable ? null : candidate.Problems[0],
+            candidate.Source.Cached)).ToList();
 
     /// <summary>Where the missing engine modules come from — an editor, another game, or Unity's package.</summary>
     private Control ModuleSourceChoice(GameReport report, bool running)
@@ -8109,9 +8129,8 @@ public partial class MainWindow : Window
             candidate.Source.Label,
             candidate.Source.Kind switch
             {
-                EngineModuleSourceKind.UnityDownload =>
-                    "Only the part of Unity's package that holds the modules is downloaded. Unity's terms apply. "
-                    + LocalCopies.NotAffiliated,
+                EngineModuleSourceKind.UnityDownload => FromUnitySays(candidate.Source.Cached,
+                    "Only the part of Unity's package that holds the modules is downloaded, a few MB."),
                 EngineModuleSourceKind.Game when !candidate.Source.SameRelease =>
                     $"An older release of the same branch ({state.Need?.Modules?.Build} is the game's). " + LocalCopies.Disclaimer(signed: true),
                 EngineModuleSourceKind.Game => LocalCopies.Disclaimer(signed: true),
@@ -8119,7 +8138,8 @@ public partial class MainWindow : Window
                     $"An older release of the same branch. Checked, but not the game's own version ({state.Need?.Modules?.Build}).",
                 _ => "Same Unity release as the game. Checked: signed by Unity, complete, and fits this game's engine.",
             },
-            candidate.Usable ? null : candidate.Problems[0])).ToList();
+            candidate.Usable ? null : candidate.Problems[0],
+            candidate.Source.Cached)).ToList();
 
     /// <summary>Adds the libraries alone: the loader and the mod stay exactly as they are.</summary>
     private async Task RunRuntimeLibrariesInstallAsync(GameReport report)

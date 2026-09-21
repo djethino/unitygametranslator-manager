@@ -36,6 +36,36 @@ public sealed class ArchiveCache
     public ArchiveCache(string root) => _root = root;
 
     /// <summary>
+    /// The cache of this machine — beside the tool's other state, not in a game: what is cached is
+    /// the same file for every game, and a copy per game would be the opposite of the point.
+    /// </summary>
+    public static ArchiveCache For(string userDataDirectory) => new(Path.Combine(userDataDirectory, "cache", "archives"));
+
+    /// <summary>
+    /// Whether an entry for this exact version is kept — read from its record, without hashing the
+    /// archive. ⚠ For what a SCREEN says ("already downloaded"), never for what an install trusts:
+    /// the install goes through <see cref="TryPath"/>, which checks the bytes and downloads again
+    /// when they no longer match.
+    /// </summary>
+    public bool Holds(ArchiveCacheKey key, string extension)
+    {
+        try
+        {
+            var folder = FolderFor(key);
+            var entry = Path.Combine(folder, EntryFileName);
+            if (!File.Exists(Path.Combine(folder, "archive" + extension)) || !File.Exists(entry)) return false;
+
+            var lines = File.ReadAllLines(entry);
+            return lines.Length >= 2 && string.Equals(lines[0], key.Version, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Unreadable: said as not downloaded — the install then finds out, and downloads.
+            return false;
+        }
+    }
+
+    /// <summary>
     /// The cached archive for this exact version, or null — the file being absent, stale, or no
     /// longer matching what it was stored as.
     /// </summary>

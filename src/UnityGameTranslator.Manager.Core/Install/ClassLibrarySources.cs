@@ -21,8 +21,15 @@ public sealed record ClassLibrarySource(ClassLibrarySourceKind Kind, string Id, 
     {
         ClassLibrarySourceKind.Editor => $"the Unity {Version} editor on this computer",
         ClassLibrarySourceKind.Game => $"{Name} (Unity {Version}) on this computer",
+        _ when Cached => $"Unity's {Version} editor package ({RuntimeLibraryOrigins.UnityDownloadHost}), already downloaded",
         _ => $"Unity's {Version} editor package ({RuntimeLibraryOrigins.UnityDownloadHost})",
     };
+
+    /// <summary>
+    /// A download from Unity already made and kept on this machine (ArchiveCache): nothing is
+    /// fetched again, and every screen says so rather than promising the download once more.
+    /// </summary>
+    public bool Cached { get; init; }
 }
 
 /// <summary>A source and what stands against it — nothing, when it can be used.</summary>

@@ -183,7 +183,9 @@ public sealed record InstallPlan(
             {
                 yield return $"Add the .NET libraries this game lacks ({string.Join(", ", need.Missing)}), from {libraries.Label}"
                            + (libraries.Kind == ClassLibrarySourceKind.UnityDownload
-                               ? " - only the part of the package that holds them is downloaded, once for this Unity version"
+                               ? libraries.Cached
+                                   ? " - nothing is downloaded again"
+                                   : " - only the part of the package that holds them is downloaded, once for this Unity version"
                                : libraries.SameRelease ? "" : $" - another release of the same generation ({libraries.Version})");
             }
 
@@ -741,8 +743,7 @@ public sealed class InstallEngine
     /// ⚠ Beside the tool's other state, not in the game: what is cached is the same file for every
     /// game on this machine, and a copy per game would be the opposite of the point.
     /// </summary>
-    public ArchiveCache ArchivesCache() =>
-        new(Path.Combine(_platform.UserDataDirectory, "cache", "archives"));
+    public ArchiveCache ArchivesCache() => ArchiveCache.For(_platform.UserDataDirectory);
 
     /// <summary>Copies an extracted archive into the game, preserving its internal layout.</summary>
     private static void CopyTree(string sourceRoot, string targetPrefix, FileOperations files)

@@ -28,8 +28,21 @@ public static class RuntimeLibrariesInstaller
     /// <param name="chosenModuleSource">The modules' source a person chose for this game (<see cref="Settings.GamePreference.ModuleSource"/>).</param>
     /// <param name="chosenClassLibrarySource">The .NET libraries' source a person chose (<see cref="Settings.GamePreference.ClassLibrarySource"/>).</param>
     /// <param name="online">Whether this computer can reach Unity's server now.</param>
+    /// <summary>Where Unity's .NET libraries for a build are kept once downloaded — ONE key, read by the install and the screens.</summary>
+    public static ArchiveCacheKey ClassLibrariesKey(string profile, string build) =>
+        new($"unity-class-libraries-{profile}-{build}", build);
+
+    /// <summary>Where Unity's engine modules for a build are kept once downloaded.</summary>
+    public static ArchiveCacheKey ModulesKey(EngineModules.Platform platform, string build) =>
+        new($"unity-engine-modules-{platform.ToString().ToLowerInvariant()}-{build}", build);
+
+    /// <param name="cache">
+    /// This machine's archive cache — so a download from Unity already made says so rather than
+    /// promising hundreds of megabytes again (user, 2026-09-22). Null: nothing is said to be kept.
+    /// </param>
     public static RuntimeLibrariesState StateOf(GameInstall game, DetectedLoader? loader, IEnumerable<GameInstall> games,
-                                                string? chosenModuleSource, string? chosenClassLibrarySource, bool online)
+                                                string? chosenModuleSource, string? chosenClassLibrarySource, bool online,
+                                                ArchiveCache? cache = null)
     {
         var need = game.RuntimeLibraries;
         var installed = ReceiptStore.Read(game.Path)?.RuntimeLibraries;
@@ -40,12 +53,24 @@ public static class RuntimeLibrariesInstaller
 
             var candidates = need?.Modules is { } modules
                 ? EngineModuleSources.Find(game, modules, others, online)
-                : Array.Empty<EngineModuleCandidate>();
+                    .Select(c => c.Source is { Kind: EngineModuleSourceKind.UnityDownload } s && cache is not null
+                                 && EngineModules.PlatformOf(game) is { } platform && modules.Build is { } moduleBuild
+                                 && cache.Holds(ModulesKey(platform, moduleBuild), ".zip")
+                        ? c with { Source = s with { Cached = true } }
+                        : c)
+                    .ToList()
+                : (IReadOnlyList<EngineModuleCandidate>)Array.Empty<EngineModuleCandidate>();
             var source = EngineModuleSources.Choose(candidates, chosenModuleSource);
 
             var libraries = need is { Missing.Count: > 0 }
                 ? ClassLibrarySources.Find(game, need.Build, need.Changeset, others, online)
-                : Array.Empty<ClassLibraryCandidate>();
+                    .Select(c => c.Source is { Kind: ClassLibrarySourceKind.UnityDownload } s && cache is not null
+                                 && need.Build is { } libraryBuild
+                                 && cache.Holds(ClassLibrariesKey(s.Profile, libraryBuild), ".zip")
+                        ? c with { Source = s with { Cached = true } }
+                        : c)
+                    .ToList()
+                : (IReadOnlyList<ClassLibraryCandidate>)Array.Empty<ClassLibraryCandidate>();
             var library = ClassLibrarySources.Choose(libraries, chosenClassLibrarySource);
 
             return new RuntimeLibrariesState.SourceChoice(
@@ -392,7 +417,7 @@ public static class RuntimeLibrariesInstaller
         if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
         Directory.CreateDirectory(folder);
 
-        var key = new ArchiveCacheKey($"unity-class-libraries-{profile}-{build}", build);
+        var key = ClassLibrariesKey(profile, build);
         if (cache.TryPath(key, null, ".zip") is { } cached)
         {
             ZipFile.ExtractToDirectory(cached, folder);
@@ -552,7 +577,7 @@ public static class RuntimeLibrariesInstaller
         if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
         Directory.CreateDirectory(folder);
 
-        var key = new ArchiveCacheKey($"unity-engine-modules-{platform.ToString().ToLowerInvariant()}-{build}", build);
+        var key = ModulesKey(platform, build);
         if (cache.TryPath(key, null, ".zip") is { } cached)
         {
             ZipFile.ExtractToDirectory(cached, folder);

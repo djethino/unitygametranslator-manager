@@ -325,7 +325,8 @@ public sealed class GameInventory
             // A pick made on the card this session, not yet acted on, before what an act settled.
             Install.SourcePicks.ModulesFor(game.Path) ?? preference.ModuleSource,
             Install.SourcePicks.LibrariesFor(game.Path) ?? preference.ClassLibrarySource,
-            online: !Offline && Install.LocalCopies.NetworkAvailable());
+            online: !Offline && Install.LocalCopies.NetworkAvailable(),
+            cache: Install.ArchiveCache.For(_platform.UserDataDirectory));
 
         var descriptor = ResolveDescriptor(report, game);
         if (descriptor is not null)

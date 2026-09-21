@@ -52,7 +52,14 @@ public abstract class PerGameStore<T> where T : class
         BeforeSave(value);
         Entries[Key(gamePath)] = value;
         Save();
+        Written(gamePath, value);
     }
+
+    /// <summary>
+    /// Told after an entry was set by this process — what a store remembering something for the
+    /// session only reads. Does nothing here.
+    /// </summary>
+    protected virtual void Written(string gamePath, T value) { }
 
     /// <summary>
     /// A last pass over one entry before it is serialised. Does nothing here; a store holding

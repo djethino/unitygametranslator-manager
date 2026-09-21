@@ -12715,10 +12715,23 @@ public partial class MainWindow : Window
             Foreground = Brush("StatusWarning"),
         });
 
+        // How long the choice lasts — GameOverrides.Apply.
+        body.Children.Add(new TextBlock
+        {
+            Text = "This lasts until the Manager is closed. After that, only while something installed here stays installed.",
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 12,
+            Foreground = Brush("TextMuted"),
+        });
+
         if (!await ConfirmAsync($"Proceed with {report.Game.Name} anyway?", body, "Let me try"))
             return;
 
-        _inventory.Overrides.Set(report.Game.Path, new GameOverride { IgnoreVerdict = true });
+        // ⚠ Added to what was already said about this game, never in place of it: a runtime or an
+        // architecture the person told us earlier is a fact, and a fresh entry used to erase it.
+        var overrule = _inventory.Overrides.For(report.Game.Path) ?? new GameOverride();
+        overrule.IgnoreVerdict = true;
+        _inventory.Overrides.Set(report.Game.Path, overrule);
         _inventory.Overrides.Apply(report.Game);
 
         await RepublishAsync();

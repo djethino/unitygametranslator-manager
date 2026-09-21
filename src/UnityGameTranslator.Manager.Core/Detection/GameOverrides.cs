@@ -53,6 +53,20 @@ public sealed class GameOverrides : PerGameStore<GameOverride>
 
         ModdabilityProbe.Evaluate(game);
 
+        // 🔴 **An overrule lasts for the session, and beyond only while what it let in is still
+        // installed** (user's decision, 2026-09-21: « il devrait être sur la session, sauf si loader
+        // et/ou mod pas désinstallé »). It was kept for ever, so a game tried once and cleaned up
+        // stayed "ready to install" long after anybody remembered why. Read from the receipt at each
+        // load — the state, never a flag remembering a transition.
+        if (value.IgnoreVerdict
+            && !GivenThisSession(game.Path)
+            && !StillHoldsWhatItLetIn(game.Path, game.Verdict))
+        {
+            value.IgnoreVerdict = false;
+            if (value.Runtime is null && value.Architecture is null) Clear(game.Path);
+            else Set(game.Path, value);
+        }
+
         // The verdict override comes last, and only for refusals that cost nothing but time.
         if (value.IgnoreVerdict && ModdabilityProbe.CanBeOverridden(game.Verdict))
         {
@@ -61,4 +75,44 @@ public sealed class GameOverrides : PerGameStore<GameOverride>
             game.Verdict = ModdabilityVerdict.Ok;
         }
     }
+
+    /// <summary>
+    /// Overrules given by this process. Static because the window rebuilds its inventory — and
+    /// with it this store — whenever the settings change, and a session outlives that.
+    /// </summary>
+    private static readonly HashSet<string> ThisSession = new(StringComparer.OrdinalIgnoreCase);
+
+    protected override void Written(string gamePath, GameOverride value)
+    {
+        lock (ThisSession)
+        {
+            if (value.IgnoreVerdict) ThisSession.Add(Canonical(gamePath));
+            else ThisSession.Remove(Canonical(gamePath));
+        }
+    }
+
+    /// <summary>
+    /// Whether the part the refusal was about is still in the game — the loader when no loader can
+    /// start on it, the mod when the mod cannot load, either for the rest (a runtime or an
+    /// architecture we could not read, a locked folder).
+    /// </summary>
+    private static bool StillHoldsWhatItLetIn(string gamePath, ModdabilityVerdict refused)
+    {
+        var receipt = Install.ReceiptStore.Read(gamePath);
+        if (receipt is null) return false;
+
+        return refused switch
+        {
+            ModdabilityVerdict.StrippedRuntime => receipt.Loader is not null,
+            ModdabilityVerdict.MissingRuntimeLibraries => receipt.Plugin is not null,
+            _ => receipt.Loader is not null || receipt.Plugin is not null,
+        };
+    }
+
+    private static bool GivenThisSession(string gamePath)
+    {
+        lock (ThisSession) return ThisSession.Contains(Canonical(gamePath));
+    }
+
+    private static string Canonical(string gamePath) => Path.GetFullPath(gamePath);
 }

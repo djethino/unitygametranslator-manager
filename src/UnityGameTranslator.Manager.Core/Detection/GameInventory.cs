@@ -322,7 +322,9 @@ public sealed class GameInventory
         report.RuntimeLibraries = Install.RuntimeLibrariesInstaller.StateOf(
             game, report.InstalledLoader,
             game.RuntimeLibraries is null ? Array.Empty<GameInstall>() : Deferred(KnownGames),
-            preference.ModuleSource, preference.ClassLibrarySource,
+            // A pick made on the card this session, not yet acted on, before what an act settled.
+            Install.SourcePicks.ModulesFor(game.Path) ?? preference.ModuleSource,
+            Install.SourcePicks.LibrariesFor(game.Path) ?? preference.ClassLibrarySource,
             online: !Offline && Install.LocalCopies.NetworkAvailable());
 
         var descriptor = ResolveDescriptor(report, game);

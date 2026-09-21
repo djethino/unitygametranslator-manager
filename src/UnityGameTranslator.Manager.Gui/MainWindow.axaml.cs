@@ -7988,19 +7988,38 @@ public partial class MainWindow : Window
         return picker;
     }
 
-    /// <summary>The card's source block: a pick is remembered for this game, and the card redrawn.</summary>
+    /// <summary>
+    /// The card's source block: a pick is held for this session and the card redrawn — written into
+    /// the game's preferences only by the install that uses it (SourcePicks, SettleSourcePicks).
+    /// </summary>
     private Control SourceChoice(GameReport report, bool running, string group, IReadOnlyList<SourceOption> options,
-                                 string? current, Action<GamePreference, string> remember) =>
+                                 string? current, Action<string> pick) =>
         SourceSelector(group + "-" + report.Game.Path, options, current, radios: true, enabled: !running, picked: async id =>
         {
             if (id == current) return;
 
-            var preference = _preferences.Read(report.Game.Path);
-            remember(preference, id);
-            _preferences.Set(report.Game.Path, preference);
-
+            pick(id);
             await ShowSelectedAsync();
         });
+
+    /// <summary>
+    /// Once an install has been agreed to, the sources it uses become this game's preferences, and
+    /// the session's picks are done with — the one place a source choice is kept across sessions.
+    /// </summary>
+    private void SettleSourcePicks(InstallPlan plan)
+    {
+        var path = plan.Game.Path;
+
+        if (plan.SupplyRuntimeLibraries && (plan.ClassLibrarySource is not null || plan.ModuleSource is not null))
+        {
+            var preference = _preferences.Read(path);
+            if (plan.ClassLibrarySource is { } libraries) preference.ClassLibrarySource = libraries.Id;
+            if (plan.ModuleSource is { } modules) preference.ModuleSource = modules.Id;
+            _preferences.Set(path, preference);
+        }
+
+        SourcePicks.Settled(path);
+    }
 
     /// <summary>
     /// One batch's source in the one-click's confirmation — the card's control with drop-downs:
@@ -8024,7 +8043,7 @@ public partial class MainWindow : Window
         var state = report.RuntimeLibraries;
 
         return SourceChoice(report, running, "libraries", ClassLibraryOptions(state), state.ClassLibrarySource?.Source.Id,
-                            (preference, id) => preference.ClassLibrarySource = id);
+                            id => SourcePicks.PickLibraries(report.Game.Path, id));
     }
 
     /// <summary>
@@ -8074,7 +8093,7 @@ public partial class MainWindow : Window
         var state = report.RuntimeLibraries;
 
         return SourceChoice(report, running, "modules", ModuleOptions(state), state.ModuleSource?.Source.Id,
-                            (preference, id) => preference.ModuleSource = id);
+                            id => SourcePicks.PickModules(report.Game.Path, id));
     }
 
     /// <summary>The engine modules' sources as the card and the one-click show them — one wording for both.</summary>
@@ -10865,17 +10884,13 @@ public partial class MainWindow : Window
             if (pickedModules is not null && runtime.ModuleSources.FirstOrDefault(c => c.Source.Id == pickedModules) is { Usable: true } module)
                 plan = plan with { ModuleSource = module.Source };
 
-            if (pickedLibraries is not null || pickedModules is not null)
-            {
-                var remembered = _preferences.Read(report.Game.Path);
-                if (pickedLibraries is not null) remembered.ClassLibrarySource = pickedLibraries;
-                if (pickedModules is not null) remembered.ModuleSource = pickedModules;
-                _preferences.Set(report.Game.Path, remembered);
-            }
-
             // Agreed to by the confirmation above, whose pickers named Unity's server and its terms.
             plan = plan with { UnityDownloadAccepted = plan.DownloadsFromUnity };
             RecordNoticesRead(plan);
+
+            // The sources this install uses — picked in the confirmation or on the card — now
+            // become this game's preferences.
+            SettleSourcePicks(plan);
 
             // ⚠ Task.Run, and not only because it is tidier: an archive already in the cache is
             // extracted and copied without a single await that yields, so the whole install ran on
@@ -12853,6 +12868,7 @@ public partial class MainWindow : Window
         // Unity's server and Unity's terms whenever the engine modules come from there (Describe).
         plan = plan with { UnityDownloadAccepted = plan.DownloadsFromUnity };
         RecordNoticesRead(plan);
+        SettleSourcePicks(plan);
 
         // Same reading as the one-click, for the same reason: the answer to "does this game follow
         // Mod defaults" is about to become unreadable from the game itself.

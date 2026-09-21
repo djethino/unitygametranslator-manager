@@ -67,10 +67,16 @@ public static class RuntimeLibrariesInstaller
             if (installed.Files.Count == 0)
                 return With(RuntimeLibrariesStatus.Missing, "the .NET libraries were never added");
 
-            if (!string.Equals(release, installed.Unity, StringComparison.OrdinalIgnoreCase))
+            // 🔴 **What decides is the Mono generation, not the Unity version** (the user's remark,
+            // 2026-09-21) — the rule the sources are chosen by (ClassLibrarySources.Find). A game
+            // updated within the same generation keeps libraries that still fit; it used to be told
+            // they no longer did. Judged on our mscorlib when we added one; without one there is
+            // nothing to read the generation from, and only the same release is trusted.
+            if (!string.Equals(release, installed.Unity, StringComparison.OrdinalIgnoreCase)
+                && !StillSameGeneration(game, installed))
             {
                 return With(RuntimeLibrariesStatus.WrongVersion,
-                    $".NET libraries chosen for Unity {installed.Unity}, the game is now on {release ?? "an unreadable version"}");
+                    "the .NET libraries added no longer fit this game's Mono runtime (the game was updated)");
             }
         }
 
@@ -504,6 +510,23 @@ public static class RuntimeLibrariesInstaller
     }
 
     /// <summary>Every recorded file present and still the bytes we wrote.</summary>
+    /// <summary>
+    /// Whether the mscorlib we added is still of a generation the game's Mono runtime accepts —
+    /// false when we added none, since then nothing tells the generation.
+    /// </summary>
+    private static bool StillSameGeneration(GameInstall game, ReceiptRuntimeLibraries installed)
+    {
+        if (MonoProfiles.MonoEngine(game) is not { } engine) return false;
+
+        var ours = installed.Files.FirstOrDefault(f =>
+            string.Equals(Path.GetFileName(f.Path), "mscorlib.dll", StringComparison.OrdinalIgnoreCase));
+
+        return ours is not null
+               && new FileOperations(game.Path).TryResolveInsideGame(ours.Path, out var path)
+               && File.Exists(path)
+               && ClassLibrarySources.SameGeneration(path, engine);
+    }
+
     private static bool Intact(GameInstall game, IEnumerable<ReceiptFile> recorded)
     {
         var files = new FileOperations(game.Path);

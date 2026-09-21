@@ -192,7 +192,7 @@ public static class ClassLibrarySources
     }
 
     /// <summary>Whether a `mscorlib` is of a generation the game's engine accepts.</summary>
-    private static bool SameGeneration(string mscorlib, string engine) =>
+    public static bool SameGeneration(string mscorlib, string engine) =>
         MonoProfiles.CorlibVersionOf(mscorlib) is { } generation && MonoProfiles.Carries(engine, generation);
 
     private static int Distance(UnityVersion a, UnityVersion b) =>

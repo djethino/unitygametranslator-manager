@@ -7673,7 +7673,10 @@ public partial class MainWindow : Window
         // another game says which game. Two batches, two sources, two lines.
         if (need is { Missing.Count: > 0 })
         {
-            panel.Children.Add(Muted($".NET libraries: {string.Join(", ", need.Missing)}, for Unity {need.Release}."));
+            // ⚠ No Unity version here: what the libraries must match is the game's Mono runtime, and
+            // another release of the same generation serves (ClassLibrarySources.Find). The source
+            // below names its own version when it is not the game's.
+            panel.Children.Add(Muted($".NET libraries: {string.Join(", ", need.Missing)}."));
             if (need.CannotSupply is null) panel.Children.Add(ClassLibrarySourceChoice(report, running));
         }
 

@@ -180,7 +180,11 @@ public sealed record RuntimeLibrariesState(RuntimeLibrariesStatus Status, Runtim
         _ => null,
     };
 
-    /// <summary>What of ours is in place, and from where: "4 .NET libraries for Unity 2018.4.36; 36 engine modules from ...".</summary>
+    /// <summary>
+    /// What of ours is in place, and from where: "4 .NET libraries from the Unity 2021.3.6f1 editor;
+    /// 36 engine modules of Unity 2021.3.6 from ...". ⚠ No Unity version on the .NET half: the
+    /// source names its own, and what they must match is the game's Mono runtime, not a release.
+    /// </summary>
     public string InstalledSummary
     {
         get
@@ -192,7 +196,7 @@ public sealed record RuntimeLibrariesState(RuntimeLibrariesStatus Status, Runtim
             {
                 // An address is what the copies of an earlier release recorded (BepInEx's archive).
                 var from = Installed.Source.Contains("://", StringComparison.Ordinal) ? "" : $" from {Installed.Source}";
-                parts.Add($"{Installed.Files.Count} .NET libraries for Unity {Installed.Unity}{from}");
+                parts.Add($"{Installed.Files.Count} .NET libraries{from}");
             }
             if (Installed.Modules is { } modules)
                 parts.Add($"{modules.Files.Count} engine modules of Unity {modules.Unity} from {modules.Source}");

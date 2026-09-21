@@ -25,9 +25,10 @@ public static class RuntimeLibrariesInstaller
     /// stands.
     /// </summary>
     /// <param name="games">The other games on this computer — possible sources of engine modules.</param>
-    /// <param name="chosenModuleSource">The source a person chose for this game (<see cref="Settings.GamePreference.ModuleSource"/>).</param>
-    public static RuntimeLibrariesState StateOf(GameInstall game, DetectedLoader? loader,
-                                                IEnumerable<GameInstall> games, string? chosenModuleSource)
+    /// <param name="chosenModuleSource">The modules' source a person chose for this game (<see cref="Settings.GamePreference.ModuleSource"/>).</param>
+    /// <param name="chosenClassLibrarySource">The .NET libraries' source a person chose (<see cref="Settings.GamePreference.ClassLibrarySource"/>).</param>
+    public static RuntimeLibrariesState StateOf(GameInstall game, DetectedLoader? loader, IEnumerable<GameInstall> games,
+                                                string? chosenModuleSource, string? chosenClassLibrarySource)
     {
         var need = game.RuntimeLibraries;
         var installed = ReceiptStore.Read(game.Path)?.RuntimeLibraries;
@@ -37,12 +38,20 @@ public static class RuntimeLibrariesInstaller
             : Array.Empty<EngineModuleCandidate>();
         var source = EngineModuleSources.Choose(candidates, chosenModuleSource);
 
+        var libraries = need is { Missing.Count: > 0 }
+            ? ClassLibrarySources.Find(game, need.Build, need.Changeset)
+            : Array.Empty<ClassLibrarySource>();
+        var library = ClassLibrarySources.Choose(libraries, chosenClassLibrarySource);
+
         RuntimeLibrariesState With(RuntimeLibrariesStatus status, string? detail = null) =>
             new(status, need, installed, detail)
             {
                 ModuleSources = candidates,
                 ModuleSource = source,
-                ChosenSourceGone = chosenModuleSource is not null && candidates.Count > 0 && source?.Source.Id != chosenModuleSource,
+                ClassLibrarySources = libraries,
+                ClassLibrarySource = library,
+                ChosenSourceGone = (chosenModuleSource is not null && candidates.Count > 0 && source?.Source.Id != chosenModuleSource)
+                                   || (chosenClassLibrarySource is not null && libraries.Count > 0 && library?.Id != chosenClassLibrarySource),
             };
 
         if (installed is null) return need is null ? RuntimeLibrariesState.None : With(RuntimeLibrariesStatus.Missing);
@@ -50,15 +59,15 @@ public static class RuntimeLibrariesInstaller
 
         if (need.Missing.Count > 0)
         {
-            var archive = RuntimeLibraries.ArchiveName(game.UnityVersion);
+            var release = RuntimeLibraries.ReleaseName(need.Build ?? game.UnityVersion);
 
             if (installed.Files.Count == 0)
                 return With(RuntimeLibrariesStatus.Missing, "the .NET libraries were never added");
 
-            if (!string.Equals(archive, installed.Unity, StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(release, installed.Unity, StringComparison.OrdinalIgnoreCase))
             {
                 return With(RuntimeLibrariesStatus.WrongVersion,
-                    $".NET libraries chosen for Unity {installed.Unity}, the game is now on {archive ?? "an unreadable version"}");
+                    $".NET libraries chosen for Unity {installed.Unity}, the game is now on {release ?? "an unreadable version"}");
             }
         }
 
@@ -109,7 +118,10 @@ public static class RuntimeLibrariesInstaller
 
     // ── Adding them ──────────────────────────────────────────────────────────────────────────
 
-    /// <summary>What the person agreed to, for this install: which source of engine modules, and whether it may be Unity's server.</summary>
+    /// <summary>What the person agreed to, for this install: where each batch comes from, and whether that may be Unity's server.</summary>
+    /// <param name="ClassLibrarySource">
+    /// The .NET libraries' source the plan announced. Like the modules', used as announced or refused.
+    /// </param>
     /// <param name="ModuleSource">
     /// The source the plan announced. The install uses THAT one or refuses — it never quietly
     /// switches to another, since the source is what was agreed to. Null only where nothing was
@@ -118,9 +130,10 @@ public static class RuntimeLibrariesInstaller
     /// <param name="UnityDownloadAccepted">The person saw that Unity's server and terms are involved, and went on.</param>
     /// <param name="RestoreOnly">
     /// Nobody asked for these — a loader was put back, dropping our entry. What was there is put
-    /// back; engine modules that were never added are not decided here.
+    /// back; what was never added is not decided here.
     /// </param>
-    public sealed record Agreement(EngineModuleSource? ModuleSource, bool UnityDownloadAccepted, bool RestoreOnly = false);
+    public sealed record Agreement(ClassLibrarySource? ClassLibrarySource, EngineModuleSource? ModuleSource,
+                                   bool UnityDownloadAccepted, bool RestoreOnly = false);
 
     /// <summary>
     /// Chooses, checks and writes what this game lacks. Returns what the receipt should record — the
@@ -165,7 +178,8 @@ public static class RuntimeLibrariesInstaller
         using var http = Http.Create(TimeSpan.FromMinutes(10));
 
         // ── Everything is chosen and checked first; nothing is written until both batches hold ──
-        var classLibraries = await ChooseClassLibrariesAsync(game, managed, needs, staging, cache, status, ct).ConfigureAwait(false);
+        var classLibraries = await ChooseClassLibrariesAsync(game, managed, needs, agreement, previous, http, staging, cache, status, ct)
+                                       .ConfigureAwait(false);
         var modules = await ChooseModulesAsync(game, managed, needs, agreement, previous?.Modules, http, staging, cache, status, ct)
                                 .ConfigureAwait(false);
 
@@ -174,16 +188,18 @@ public static class RuntimeLibrariesInstaller
         var before = files.WrittenFiles.Count;
         var dirsBefore = files.CreatedDirectories.Count;
 
-        if (classLibraries is not null)
+        if (classLibraries is { Kept: null })
         {
-            status?.Invoke($"Adding {Composition.Amount(classLibraries.Chosen.Count, ".NET library", ".NET libraries")}: "
-                           + string.Join(", ", classLibraries.Chosen.Select(c => c.Name)) + "...");
+            status?.Invoke($"Adding {Composition.Amount(classLibraries.Chosen.Count, ".NET library", ".NET libraries")} "
+                           + $"from {classLibraries.Source!.Label}: {string.Join(", ", classLibraries.Chosen)}...");
 
-            foreach (var (name, folder) in classLibraries.Chosen)
-                files.PlaceFile(Path.Combine(folder, name + ".dll"), $"{LoaderSearchPath.Folder}/{name}.dll");
+            foreach (var name in classLibraries.Chosen)
+                files.PlaceFile(Path.Combine(classLibraries.Folder!, name + ".dll"), $"{LoaderSearchPath.Folder}/{name}.dll");
         }
 
-        var classFiles = files.WrittenFiles.Skip(before).ToList();
+        // Kept as they were: the same files, the same record — nothing written, nothing to undo.
+        var classFiles = classLibraries?.Kept?.ToList() ?? files.WrittenFiles.Skip(before).ToList();
+        var classWritten = classLibraries is { Kept: null } ? classFiles.Count : 0;
 
         if (modules is { Kept: null })
         {
@@ -195,7 +211,7 @@ public static class RuntimeLibrariesInstaller
         }
 
         // Kept as they were: the same files, the same record — nothing written, nothing to undo.
-        var moduleFiles = modules?.Kept?.Files ?? files.WrittenFiles.Skip(before + classFiles.Count).ToList();
+        var moduleFiles = modules?.Kept?.Files ?? files.WrittenFiles.Skip(before + classWritten).ToList();
         var created = files.CreatedDirectories.Skip(dirsBefore).ToList();
 
         // ⚠ Through PlaceFile so a failure after this point puts the loader's file back — but NOT
@@ -221,8 +237,9 @@ public static class RuntimeLibrariesInstaller
 
         return new ReceiptRuntimeLibraries
         {
-            Unity = classLibraries?.ArchiveName ?? "",
-            Source = classLibraries?.Sources ?? "",
+            Unity = classLibraries?.Release ?? "",
+            Source = classLibraries is null ? "" : classLibraries.Source?.Label ?? previous?.Source ?? "",
+            SourceId = classLibraries is null ? "" : classLibraries.Source?.Id ?? previous?.SourceId ?? "",
             Files = classFiles,
             Modules = modules is null ? null : modules.Kept ?? new ReceiptEngineModules
             {
@@ -248,20 +265,21 @@ public static class RuntimeLibrariesInstaller
 
     // ── The .NET batch ───────────────────────────────────────────────────────────────────────
 
-    private sealed record ClassLibraryChoice(IReadOnlyList<(string Name, string Folder)> Chosen, string ArchiveName, string Sources);
+    /// <param name="Kept">The libraries already in place, left exactly as they are — null when a set is written.</param>
+    private sealed record ClassLibraryChoice(IReadOnlyList<string> Chosen, string? Folder, string Release,
+                                             ClassLibrarySource? Source, IReadOnlyList<ReceiptFile>? Kept = null);
 
     /// <summary>
-    /// The smallest set of .NET libraries that makes the mod's references resolve, and the folder
-    /// each copy comes from. Null when the game lacks none.
+    /// The smallest set of .NET libraries that makes the mod's references resolve, from the source
+    /// the person agreed to. Null when the game lacks none.
     ///
-    /// ⚠ **File by file between two sources** (user's decision, 2026-09-21): BepInEx's archive of
-    /// the game's exact Unity version first; our lot of the Windows build for the few files the
-    /// archive carries only in their Linux build. Never a copy from another game: .NET libraries are
-    /// not signed, so nothing could tell a genuine one from a planted one.
+    /// ⚠ **Unity's, and nothing else** (user's decisions, 2026-09-21) — see <see cref="ClassLibrarySources"/>:
+    /// an editor on this computer, or Unity's editor package for the game's build. Never another
+    /// game: these libraries carry no signature, so nothing could tell a genuine copy from a planted one.
     /// </summary>
     private static async Task<ClassLibraryChoice?> ChooseClassLibrariesAsync(
-        GameInstall game, string managed, IReadOnlyList<TypeUse> needs, string staging, ArchiveCache cache,
-        Action<string>? status, CancellationToken ct)
+        GameInstall game, string managed, IReadOnlyList<TypeUse> needs, Agreement agreement, ReceiptRuntimeLibraries? previous,
+        HttpClient http, string staging, ArchiveCache cache, Action<string>? status, CancellationToken ct)
     {
         var gameLibraries = RuntimeLibraries.Folder(managed);
 
@@ -270,105 +288,141 @@ public static class RuntimeLibrariesInstaller
             && game.RuntimeLibraries?.LoaderCannotStart != true)
             return null;
 
-        var archiveName = RuntimeLibraries.ArchiveName(game.UnityVersion)
+        var need = game.RuntimeLibraries;
+        var release = RuntimeLibraries.ReleaseName(need?.Build ?? game.UnityVersion)
             ?? throw new InvalidOperationException(
-                "The game's Unity version could not be read, so no matching .NET libraries can be chosen.");
+                "The game's Unity version could not be read, so no matching .NET libraries can be chosen. Nothing was added.");
 
-        var lot = game.IsWindowsBuild && RuntimeLibraries.PerPlatform(archiveName) ? ClassLibraryLots.For(game) : null;
-
-        var url = RuntimeLibraryOrigins.ClassLibrariesUrl(archiveName);
-        status?.Invoke($"Downloading the .NET libraries for Unity {archiveName} from {RuntimeLibraryOrigins.ClassLibrariesHost}...");
-
-        string? archiveFolder = null;
-        try
+        // 🔴 **What is in place and intact stays, unless another source was asked for** — the same
+        // rule as the modules', for the same reason: a loader put back must not fetch from Unity
+        // again, under an agreement nobody is being asked for.
+        if (previous is { Files.Count: > 0 }
+            && (agreement.ClassLibrarySource is null || agreement.ClassLibrarySource.Id == previous.SourceId)
+            && string.Equals(previous.Unity, release, StringComparison.OrdinalIgnoreCase)
+            && Intact(game, previous.Files))
         {
-            // No checksum is published for these. What makes them acceptable is checked below, on
-            // the files themselves, against the game's own.
-            archiveFolder = (await new ArchiveFetcher(Path.Combine(staging, "corlibs"), cache: cache)
-                .FetchAsync(url, null, "corlibs",
-                            // One entry per Unity version: a machine with games on two versions
-                            // would otherwise download them in turn, for ever.
-                            new ArchiveCacheKey($"corlibs-{archiveName}", archiveName), null, ct)
-                .ConfigureAwait(false)).ExtractedPath;
-        }
-        catch (HttpRequestException e) when (e.StatusCode == HttpStatusCode.NotFound && lot is not null)
-        {
-            // Our lot alone may do: it carries every library of its generation.
-        }
-        catch (HttpRequestException e) when (e.StatusCode == HttpStatusCode.NotFound)
-        {
-            throw new InvalidOperationException(
-                $"No copy of Unity {archiveName}'s .NET libraries is published, so the ones this game lacks cannot be added.");
+            return new ClassLibraryChoice(Array.Empty<string>(), null, release, null, previous.Files);
         }
 
-        string? lotFolder = null;
-        if (lot is not null)
-        {
-            status?.Invoke($"Downloading the Windows build of the .NET libraries (Unity {lot.TakenFrom})...");
-            lotFolder = (await new ArchiveFetcher(Path.Combine(staging, "class-libraries"), cache: cache)
-                .FetchAsync(lot.Url, lot.Sha256, "class-libraries",
-                            new ArchiveCacheKey($"class-libraries-{lot.CorlibVersion}", lot.Sha256), lot.Size, ct)
-                .ConfigureAwait(false)).ExtractedPath;
+        if (agreement.RestoreOnly) return null;
 
-            // The checksum said these are the bytes published; this says they are the generation
-            // they were published for — the one the game's engine will check.
-            var lotCorlib = Path.Combine(lotFolder, "mscorlib.dll");
-            if (!File.Exists(lotCorlib)
-                || !string.Equals(ClassLibraryLots.CorlibVersionOf(lotCorlib), lot.CorlibVersion, StringComparison.OrdinalIgnoreCase))
+        var source = agreement.ClassLibrarySource
+            ?? throw new InvalidOperationException(
+                "No source was chosen for this game's .NET libraries. Choose one in its Compatibility card. Nothing was added.");
+
+        string folder;
+        if (source.Kind == ClassLibrarySourceKind.Editor)
+        {
+            folder = source.Folder!;
+        }
+        else
+        {
+            if (!agreement.UnityDownloadAccepted)
             {
                 throw new InvalidOperationException(
-                    "The Windows .NET libraries downloaded are not the generation they are listed for. Nothing was added.");
+                    $"This game's .NET libraries would be downloaded from Unity ({RuntimeLibraryOrigins.UnityDownloadHost}), "
+                    + "which was not agreed to. Nothing was added.");
             }
+
+            if (need?.Build is null || need.Changeset is null)
+                throw new InvalidOperationException("This game's Unity build could not be identified, so Unity's download cannot be found. Nothing was added.");
+
+            folder = await DownloadClassLibrariesAsync(need.Build, need.Changeset, source.Profile, http, staging, cache, status, ct)
+                         .ConfigureAwait(false);
         }
 
-        var fromArchive = archiveFolder is null ? (_ => null) : RuntimeLibraries.Folder(archiveFolder);
-        var fromLot = lotFolder is null ? (_ => null) : RuntimeLibraries.Folder(lotFolder);
+        var copies = RuntimeLibraries.Folder(folder);
 
-        // The archive's copy, unless it is a Linux build (or absent) and the lot has one.
-        bool TakesLot(string name) =>
-            lotFolder is not null && fromLot(name) is not null
-            && (fromArchive(name) is not { } shape || (game.IsWindowsBuild && shape.NativeImports.Any(RuntimeLibraries.IsUnixShim)));
-
-        AssemblyShape? Source(string name) => TakesLot(name) ? fromLot(name) : fromArchive(name);
-
-        var selection = RuntimeLibraries.Select(needs, gameLibraries, Source);
+        var selection = RuntimeLibraries.Select(needs, gameLibraries, copies);
         if (!selection.Complete)
         {
             var lacking = selection.Unresolved.Select(s => s.Use.Member is null ? s.Use.Type : $"{s.Use.Type}.{s.Use.Member}")
                                               .Distinct().Take(3);
             throw new InvalidOperationException(
-                $"Even with the .NET libraries published for Unity {archiveName}, the mod would lack "
-                + $"{string.Join(", ", lacking)}. Nothing was added.");
+                $"Even with the .NET libraries from {source.Label}, the mod would lack {string.Join(", ", lacking)}. Nothing was added.");
         }
 
         // The loader needs mscorlib even when the mod does not ask for it by name.
         var chosen = selection.Chosen.ToList();
         if (game.RuntimeLibraries?.LoaderCannotStart == true && !chosen.Contains("mscorlib", StringComparer.OrdinalIgnoreCase)
-            && Source("mscorlib") is not null)
+            && copies("mscorlib") is not null)
             chosen.Add("mscorlib");
 
-        if (game.IsWindowsBuild && RuntimeLibraries.UnixOnly(chosen, Source) is { Count: > 0 } linux)
+        // A profile of another system is a mistake no editor should allow — held here all the same.
+        if (game.IsWindowsBuild && RuntimeLibraries.UnixOnly(chosen, copies) is { Count: > 0 } linux)
         {
             throw new InvalidOperationException(
-                $"For Unity {archiveName}, the only copy of {string.Join(", ", linux)} published is built for Linux, "
-                + "and this game is built for Windows. Nothing was added.");
+                $"The copies of {string.Join(", ", linux)} from {source.Label} are built for Linux, and this game is built "
+                + "for Windows. Nothing was added.");
         }
 
-        if (RuntimeLibraries.NotSameFamily(chosen, gameLibraries, Source) is { Count: > 0 } alien)
+        if (RuntimeLibraries.NotSameFamily(chosen, gameLibraries, copies) is { Count: > 0 } alien)
         {
             throw new InvalidOperationException(
-                $"The .NET libraries published for Unity {archiveName} do not match this game's own "
-                + $"({string.Join("; ", alien)}). Nothing was added.");
+                $"The .NET libraries from {source.Label} do not match this game's own ({string.Join("; ", alien)}). Nothing was added.");
         }
 
-        if (chosen.Count == 0) return null;
+        return chosen.Count == 0 ? null : new ClassLibraryChoice(chosen, folder, release, source);
+    }
 
-        var sources = new List<string>();
-        if (chosen.Any(n => !TakesLot(n))) sources.Add(url);
-        if (chosen.Any(TakesLot)) sources.Add(lot!.Url);
+    /// <summary>
+    /// The .NET profile of this build, from Unity's server: the build's index, then the start of the
+    /// macOS editor package, read until the profile has gone by (see <see cref="UnityPackage.ExtractClassLibraries"/>).
+    ///
+    /// ⚠ Kept in the archive cache as a zip of the profile, keyed on the profile and the build: a
+    /// second game on the same release reads it from disk, and the few hundred megabytes are read once.
+    /// </summary>
+    private static async Task<string> DownloadClassLibrariesAsync(string build, string changeset, string profile, HttpClient http,
+                                                                  string staging, ArchiveCache cache, Action<string>? status,
+                                                                  CancellationToken ct)
+    {
+        var folder = Path.Combine(staging, "class-libraries");
+        if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
+        Directory.CreateDirectory(folder);
 
-        return new ClassLibraryChoice(chosen.Select(n => (n, TakesLot(n) ? lotFolder! : archiveFolder!)).ToList(),
-                                      archiveName, string.Join(" + ", sources));
+        var key = new ArchiveCacheKey($"unity-class-libraries-{profile}-{build}", build);
+        if (cache.TryPath(key, null, ".zip") is { } cached)
+        {
+            ZipFile.ExtractToDirectory(cached, folder);
+            return folder;
+        }
+
+        var package = await UnityPackageOf(build, changeset, new[] { "Unity" }, http, status, ct).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Unity does not list an editor package for {build}. Nothing was added.");
+
+        status?.Invoke($"Reading the .NET libraries from Unity's {build} editor package ({RuntimeLibraryOrigins.UnityDownloadHost}) - "
+                       + "only the part that holds them is downloaded...");
+
+        await using (var stream = await Download.OpenAsync(http, RuntimeLibraryOrigins.UnityBuildFileUrl(changeset, package.Url),
+                                                            package.Size, null, ct).ConfigureAwait(false))
+        {
+            // The reads are synchronous inside; the stream is a network one, so off this thread.
+            await Task.Run(() => UnityPackage.ExtractClassLibraries(stream, folder, profile), ct).ConfigureAwait(false);
+        }
+
+        var zip = Path.Combine(staging, "class-libraries.zip");
+        if (File.Exists(zip)) File.Delete(zip);
+        ZipFile.CreateFromDirectory(folder, zip);
+        cache.Store(key, zip, FileOperations.HashFile(zip), ".zip");
+
+        return folder;
+    }
+
+    /// <summary>The first package one of these sections of the build's index names, or null.</summary>
+    private static async Task<UnityBuildIndex.Package?> UnityPackageOf(string build, string changeset, IEnumerable<string> sections,
+                                                                        HttpClient http, Action<string>? status, CancellationToken ct)
+    {
+        status?.Invoke($"Reading Unity's list of downloads for {build}...");
+
+        string index;
+        await using (var stream = await Download.OpenAsync(http, RuntimeLibraryOrigins.UnityBuildIndexUrl(build, changeset), null, null, ct)
+                                                .ConfigureAwait(false))
+        using (var reader = new StreamReader(stream))
+        {
+            index = await reader.ReadToEndAsync(ct).ConfigureAwait(false);
+        }
+
+        return sections.Select(section => UnityBuildIndex.Section(index, section)).FirstOrDefault(p => p is not null);
     }
 
     // ── The engine-module batch ──────────────────────────────────────────────────────────────
@@ -476,18 +530,8 @@ public static class RuntimeLibrariesInstaller
             return folder;
         }
 
-        status?.Invoke($"Reading Unity's list of downloads for {build}...");
-
-        string index;
-        await using (var stream = await Download.OpenAsync(http, RuntimeLibraryOrigins.UnityBuildIndexUrl(build, need.Changeset!), null, null, ct)
-                                                .ConfigureAwait(false))
-        using (var reader = new StreamReader(stream))
-        {
-            index = await reader.ReadToEndAsync(ct).ConfigureAwait(false);
-        }
-
-        var package = EngineModules.PackageSections(platform).Select(section => UnityBuildIndex.Section(index, section))
-                                                             .FirstOrDefault(p => p is not null)
+        var package = await UnityPackageOf(build, need.Changeset!, EngineModules.PackageSections(platform), http, status, ct)
+                          .ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Unity does not list a {platform} Build Support package for {build}. Nothing was added.");
 
         status?.Invoke($"Downloading Unity's engine modules for {build} from {RuntimeLibraryOrigins.UnityDownloadHost}...");

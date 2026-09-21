@@ -56,6 +56,12 @@ public sealed record InstallPlan(
     public EngineModuleSource? ModuleSource { get; init; }
 
     /// <summary>
+    /// Where the .NET libraries this game lacks come from — the report's
+    /// <see cref="RuntimeLibrariesState.ClassLibrarySource"/>, named in <see cref="Describe"/>.
+    /// </summary>
+    public ClassLibrarySource? ClassLibrarySource { get; init; }
+
+    /// <summary>
     /// The person was told the engine modules come from Unity's server, under Unity's terms, and
     /// went on. False by default: only a screen that said so may set it, and an install needing it
     /// without it refuses before downloading anything.
@@ -63,8 +69,9 @@ public sealed record InstallPlan(
     public bool UnityDownloadAccepted { get; init; }
 
     /// <summary>Whether this plan downloads anything from Unity — what a screen must say, and have agreed to, first.</summary>
-    public bool DownloadsFromUnity => SupplyRuntimeLibraries && Game.RuntimeLibraries?.Modules is not null
-                                      && ModuleSource?.Kind == EngineModuleSourceKind.UnityDownload;
+    public bool DownloadsFromUnity => SupplyRuntimeLibraries && Game.RuntimeLibraries is { } need
+                                      && ((need.Missing.Count > 0 && ClassLibrarySource?.Kind == ClassLibrarySourceKind.UnityDownload)
+                                          || (need.Modules is not null && ModuleSource?.Kind == EngineModuleSourceKind.UnityDownload));
 
     /// <summary>
     /// Whether the mod still runs its first-run wizard after this install.
@@ -159,22 +166,24 @@ public sealed record InstallPlan(
 
         if (SupplyRuntimeLibraries && Game.RuntimeLibraries is { } need)
         {
-            if (need.Missing.Count > 0)
+            // ⚠ Each source, named — a copy from another game on this computer is only as trustworthy
+            // as that game, and a download from Unity is under Unity's terms. Both are said before.
+            if (need.Missing.Count > 0 && ClassLibrarySource is { } libraries)
             {
-                yield return $"Add the .NET libraries this game lacks ({string.Join(", ", need.Missing)}), "
-                           + $"downloaded from {Catalog.RuntimeLibraryOrigins.ClassLibrariesHost}";
+                yield return $"Add the .NET libraries this game lacks ({string.Join(", ", need.Missing)}), from {libraries.Label}"
+                           + (libraries.Kind == ClassLibrarySourceKind.UnityDownload
+                               ? " - only the part of the package that holds them is downloaded, once for this Unity version"
+                               : libraries.SameRelease ? "" : $" - another release of the same generation ({libraries.Version})");
             }
 
-            // ⚠ The source, named — a copy from another game on this computer is only as trustworthy
-            // as that game, and a download from Unity is under Unity's terms. Both are said before.
             if (need.Modules is { } modules && ModuleSource is { } source)
             {
                 yield return $"Add Unity's {modules.Set.Count} engine modules for this game's version, from {source.Label}"
                            + (source.SameRelease ? "" : $" — an older release than the game's ({source.Version})");
-
-                if (source.Kind == EngineModuleSourceKind.UnityDownload)
-                    yield return $"Unity's terms apply to what is downloaded from Unity: {Catalog.RuntimeLibraryOrigins.UnityTermsUrl}";
             }
+
+            if (DownloadsFromUnity)
+                yield return $"Unity's terms apply to what is downloaded from Unity: {Catalog.RuntimeLibraryOrigins.UnityTermsUrl}";
 
             yield return $"They go into {LoaderSearchPath.Folder}/, and {Loader.Display} is told to read them first";
         }
@@ -292,6 +301,7 @@ public sealed class InstallEngine
             Preference = preference,
             SupplyRuntimeLibraries = report.RuntimeLibraries.WriteOffered,
             ModuleSource = report.RuntimeLibraries.ModuleSource?.Source,
+            ClassLibrarySource = report.RuntimeLibraries.ClassLibrarySource,
 
             // 🔴 The build the screens announced, read from the SAME place they read it — the
             // resolver's cache. Filled here rather than by each caller so that no path can be
@@ -400,7 +410,7 @@ public sealed class InstallEngine
                     : LoaderProbe.Detect(plan.Game.Path, _catalog)?.Version;
 
                 var agreement = new RuntimeLibrariesInstaller.Agreement(
-                    plan.ModuleSource, plan.UnityDownloadAccepted, RestoreOnly: !plan.SupplyRuntimeLibraries);
+                    plan.ClassLibrarySource, plan.ModuleSource, plan.UnityDownloadAccepted, RestoreOnly: !plan.SupplyRuntimeLibraries);
 
                 receipt.RuntimeLibraries = await RuntimeLibrariesInstaller.ApplyAsync(
                     plan.Game, plan.Loader, loaderVersion, files, existing?.RuntimeLibraries, staging,

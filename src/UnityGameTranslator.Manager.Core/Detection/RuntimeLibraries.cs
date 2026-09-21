@@ -275,63 +275,19 @@ public static class RuntimeLibraries
         return mismatched;
     }
 
-    // ── Which archive, and whether one can serve ──────────────────────────────────────────────
+    // ── Which release ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// The name BepInEx's archive files a Unity version under: "2018.4.36f1" → "2018.4.36".
-    ///
-    /// Final and patch releases share their base number there; alphas and betas keep their suffix
-    /// ("2021.2.0a10"), because that is how the archive lists them. Null when the version cannot be
-    /// read — and then nothing is guessed.
+    /// A Unity release as the receipt records the .NET copies' one: "2018.4.36f1" → "2018.4.36".
+    /// Alphas and betas keep their suffix. Null when the version cannot be read — and then nothing
+    /// is guessed.
     /// </summary>
-    public static string? ArchiveName(string? unityVersion) => UnityVersions.Parse(unityVersion) switch
+    public static string? ReleaseName(string? unityVersion) => UnityVersions.Parse(unityVersion) switch
     {
         null => null,
         { Kind: 'a' or 'b' } v => v.ToString(),
         { } v => v.Release,
     };
-
-    /// <summary>
-    /// Whether this Unity version's class libraries differ per platform — 2021.2 and later.
-    ///
-    /// ⚠ What makes the archive useless for part of a Windows game from then on: it carries one
-    /// build, and that build is Linux's (measured on seven versions, 2021.2.0 to 6000.2.6).
-    /// </summary>
-    public static bool PerPlatform(string unityVersion) =>
-        UnityVersions.Parse(unityVersion) is { } v && (v.Major > 2021 || (v.Major == 2021 && v.Minor >= 2));
-
-    /// <summary>
-    /// The libraries a per-platform archive carries in their Linux build only — the ones that call
-    /// `System.Native`. Measured on 2021.3.14 (2026-09-21); the install reads the real files and
-    /// refuses on what it finds, so this list only has to be right enough to FORECAST.
-    /// </summary>
-    public static readonly IReadOnlyList<string> LinuxBoundWhenPerPlatform = new[] { "mscorlib", "System", "System.Core" };
-
-    /// <summary>
-    /// Whether the missing libraries can be supplied, said before anything is downloaded — null when
-    /// they can (to be confirmed on the files at install), the reason otherwise.
-    /// </summary>
-    /// <param name="windowsBuild">True for a Windows build of the game, including one run through Proton.</param>
-    /// <param name="lotServes">
-    /// Whether one of our Windows lots fits this game's Mono (<see cref="Catalog.ClassLibraryLots"/>)
-    /// — asked only when the archive's Linux-only copies would be needed, since it reads the engine.
-    /// </param>
-    public static string? CannotSupply(IReadOnlyCollection<string> missing, string? unityVersion, bool windowsBuild,
-                                       Func<bool>? lotServes = null)
-    {
-        if (missing.Count == 0) return null;
-
-        if (ArchiveName(unityVersion) is null)
-            return "the game's Unity version could not be read, so no matching copy can be chosen";
-
-        if (!windowsBuild || !PerPlatform(unityVersion!)) return null;
-
-        var bound = missing.Where(m => LinuxBoundWhenPerPlatform.Contains(m, StringComparer.OrdinalIgnoreCase)).ToList();
-        if (bound.Count == 0 || lotServes?.Invoke() == true) return null;
-
-        return $"for Unity {ArchiveName(unityVersion)}, the only copy of {string.Join(", ", bound)} published is "
-             + "built for Linux, and this game is built for Windows";
-    }
 
     // ── The mod's own needs, when no build of it is at hand ───────────────────────────────────
 
@@ -424,10 +380,19 @@ public static class RuntimeLibraries
 
         if (all.Count == 0 && modules is null) return null;
 
-        return new Model.RuntimeLibraryNeed(all, loaderCannotStart, ArchiveName(game.UnityVersion),
-                                            CannotSupply(all, game.UnityVersion, game.IsWindowsBuild,
-                                                         () => Catalog.ClassLibraryLots.For(game) is not null),
-                                            modules);
+        // The build and its changeset, which Unity's downloads are filed under — read from the player
+        // only for a game that lacks .NET libraries (the modules' reading has its own).
+        var build = all.Count == 0 || EngineModules.PlayerBinary(game.Path, game.ExecutablePath) is not { } player
+            ? null
+            : EngineModules.BuildOf(player, game.UnityVersion);
+
+        return new Model.RuntimeLibraryNeed(all, loaderCannotStart, ReleaseName(build?.Version ?? game.UnityVersion),
+                                            Install.ClassLibrarySources.CannotSupply(game, all, build?.Version, build?.Changeset),
+                                            modules)
+        {
+            Build = build?.Version,
+            Changeset = build?.Changeset,
+        };
     }
 
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, IReadOnlyList<string>> MissingMemo = new();

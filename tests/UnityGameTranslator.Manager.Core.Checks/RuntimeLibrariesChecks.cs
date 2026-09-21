@@ -210,31 +210,24 @@ internal static class RuntimeLibrariesChecks
             "a library the game lacks cannot be compared, and is not refused for it", "");
     }
 
-    public static void WhichArchiveServesAGame()
+    public static void WhichProfileServesAGame()
     {
-        Program.Section("Runtime libraries: which archive, and whether it can serve");
+        Program.Section("Runtime libraries: which release and which profile");
 
-        Program.Check(RuntimeLibraries.ArchiveName("2018.4.36f1") == "2018.4.36", "a final release drops its suffix", "the archive files it that way");
-        Program.Check(RuntimeLibraries.ArchiveName("2021.2.0a10") == "2021.2.0a10", "an alpha keeps it", "so does the archive");
-        Program.Check(RuntimeLibraries.ArchiveName("2019.4.40p1") == "2019.4.40", "a patch release uses its base", "");
-        Program.Check(RuntimeLibraries.ArchiveName(null) is null && RuntimeLibraries.ArchiveName("banana") is null,
-            "an unreadable version names no archive", "nothing is guessed");
+        Program.Check(RuntimeLibraries.ReleaseName("2018.4.36f1") == "2018.4.36", "a final release drops its suffix", "what the receipt records");
+        Program.Check(RuntimeLibraries.ReleaseName("2021.2.0a10") == "2021.2.0a10", "an alpha keeps it", "");
+        Program.Check(RuntimeLibraries.ReleaseName("2019.4.40p1") == "2019.4.40", "a patch release uses its base", "");
+        Program.Check(RuntimeLibraries.ReleaseName(null) is null && RuntimeLibraries.ReleaseName("banana") is null,
+            "an unreadable version names no release", "nothing is guessed");
 
-        Program.Check(!RuntimeLibraries.PerPlatform("2021.1.28") && RuntimeLibraries.PerPlatform("2021.2.0")
-                      && RuntimeLibraries.PerPlatform("6000.0.50f1"),
-            "per-platform from 2021.2 on", "measured on seven versions");
-
-        Program.Check(RuntimeLibraries.CannotSupply(new[] { "netstandard", "System.Net.Http" }, "2021.3.14f1", windowsBuild: true) is null,
-            "2021.3, Windows, only neutral libraries: can be supplied", "the case a Linux-only archive still serves");
-        Program.Check(RuntimeLibraries.CannotSupply(new[] { "netstandard", "System" }, "2021.3.6f1", windowsBuild: true) is { } refused
-                      && refused.Contains("System"),
-            "2021.3, Windows, needing System: cannot, and says which", "the refusal kept for such a game");
-        Program.Check(RuntimeLibraries.CannotSupply(new[] { "System" }, "2018.4.36f1", windowsBuild: true) is null,
-            "before 2021.2 the one build serves Windows", "");
-        Program.Check(RuntimeLibraries.CannotSupply(new[] { "System" }, "2021.3.6f1", windowsBuild: false) is null,
-            "a Linux build of the game takes the Linux copy", "");
-        Program.Check(RuntimeLibraries.CannotSupply(new[] { "System" }, null, windowsBuild: true) is not null,
-            "no Unity version: cannot", "no copy can be chosen");
+        var windows = EngineModules.Platform.Windows;
+        var linux = EngineModules.Platform.Linux;
+        Program.Check(MonoProfiles.Profile(windows, UnityVersions.Parse("2021.3.6f1")!) == "unityjit-win32"
+                      && MonoProfiles.Profile(linux, UnityVersions.Parse("6000.0.50f1")!) == "unityjit-linux",
+            "from 2021.2, the profile of the game's own system", "the Linux one calls System.Native, no Windows machine has it");
+        Program.Check(MonoProfiles.Profile(windows, UnityVersions.Parse("2021.1.28f1")!) == "4.5"
+                      && MonoProfiles.Profile(linux, UnityVersions.Parse("2018.4.36f1")!) == "4.5",
+            "before 2021.2, the one profile every system used", "measured: a 2018 game ran on it");
     }
 
     public static void HowALoaderIsTold()
@@ -324,15 +317,18 @@ internal static class RuntimeLibrariesChecks
             var loader = new Model.DetectedLoader { Id = "bepinex5", Display = "BepInEx 5", PluginDir = "BepInEx/plugins" };
 
             Model.RuntimeLibrariesState State(Model.DetectedLoader? by) =>
-                RuntimeLibrariesInstaller.StateOf(game, by, Array.Empty<Model.GameInstall>(), null);
+                RuntimeLibrariesInstaller.StateOf(game, by, Array.Empty<Model.GameInstall>(), null, null);
 
             Program.Check(State(loader).Status == Model.RuntimeLibrariesStatus.InPlace,
                 "added, and the loader told: in place", "");
 
             File.WriteAllText(configPath, shipped);
             var afterLoaderUpdate = State(loader);
-            Program.Check(afterLoaderUpdate is { Status: Model.RuntimeLibrariesStatus.Missing, BlocksTheMod: true, WriteOffered: true },
-                "the loader rewrote its configuration: missing again, and offered",
+            // Offered exactly when a source exists — none for this made-up game, which has neither a
+            // Mono engine nor an editor of its release on this computer.
+            Program.Check(afterLoaderUpdate is { Status: Model.RuntimeLibrariesStatus.Missing, BlocksTheMod: true }
+                          && afterLoaderUpdate.WriteOffered == (afterLoaderUpdate.ClassLibrarySource is not null),
+                "the loader rewrote its configuration: missing again, offered where a source exists",
                 "a loader update drops our entry without a word");
 
             File.WriteAllText(configPath, LoaderSearchPath.Add(shipped, setting, LoaderSearchPath.Folder));

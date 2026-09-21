@@ -186,6 +186,13 @@ public sealed class GamePreference
     [JsonPropertyName("module_source")] public string? ModuleSource { get; set; }
 
     /// <summary>
+    /// Where this game's missing .NET libraries are taken from, when somebody chose — the id of an
+    /// <see cref="Install.ClassLibrarySource"/>. Null follows the default order (an editor on this
+    /// computer, then Unity's editor package). Same rules as <see cref="ModuleSource"/>.
+    /// </summary>
+    [JsonPropertyName("class_library_source")] public string? ClassLibrarySource { get; set; }
+
+    /// <summary>
     /// The answers that end up in the game's config.json — by name, so a check can hold every rule
     /// that has to know them to this list (<c>PreferenceFieldsChecks</c>).
     ///
@@ -208,7 +215,7 @@ public sealed class GamePreference
     public static readonly IReadOnlyList<string> NotForTheConfig = new[]
     {
         nameof(Schema), nameof(ApplyModDefaults), nameof(InstalledTranslationId),
-        nameof(InstallTranslation), nameof(AdoptLoader), nameof(ModuleSource),
+        nameof(InstallTranslation), nameof(AdoptLoader), nameof(ModuleSource), nameof(ClassLibrarySource),
     };
 
     /// <summary>
@@ -280,6 +287,7 @@ public sealed class GamePreference
         AdoptLoader = AdoptLoader,
         LetWizardAsk = LetWizardAsk,
         ModuleSource = ModuleSource,
+        ClassLibrarySource = ClassLibrarySource,
     };
 }
 

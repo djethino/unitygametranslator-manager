@@ -8,8 +8,9 @@ using System.Xml.Linq;
 namespace UnityGameTranslator.Manager.Core.Install;
 
 /// <summary>
-/// Reads Unity's engine modules out of Unity's own "Windows Build Support (Mono)" package, as the
-/// download server hands it over — and stops as soon as it has them.
+/// Reads what a game lacks out of Unity's own packages, as the download server hands them over —
+/// engine modules from a build support package, .NET class libraries from the editor's — and stops
+/// as soon as it has them.
 ///
 /// ⚠ **The format, as read on 2026-09-21** (2021.3.6f1, `…-Windows-Mono-Support-for-Editor-….pkg`):
 ///   · a xar archive: "xar!", a big-endian header, a zlib-compressed XML table of contents, then a
@@ -20,10 +21,9 @@ namespace UnityGameTranslator.Manager.Core.Install;
 ///     550 MB package. Same modules as the player variations (same IL, measured byte for byte
 ///     outside the build stamp and the signature), signed by Unity.
 ///
-/// ⚠ **Nothing in the archive decides where a file is written.** Only an engine module's own file
-/// name is taken from an entry, matched against a strict pattern; a path, a link or anything else is
-/// read past. The files are then held to the same checks as any other source (signature included)
-/// before one goes near a game.
+/// ⚠ **Nothing in the archive decides where a file is written.** Only a wanted file's own name is
+/// taken from an entry, matched against a strict pattern; a path, a link or anything else is read
+/// past. The files are then held to the same checks as any other source before one goes near a game.
 /// </summary>
 public static class UnityPackage
 {
@@ -41,10 +41,48 @@ public static class UnityPackage
         RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     /// <summary>
-    /// Reads <paramref name="package"/> until the engine modules have gone by, writing each one
-    /// into <paramref name="destination"/>. Returns their names ("UnityEngine.CoreModule").
+    /// Reads a build support package until the engine modules have gone by, writing each one into
+    /// <paramref name="destination"/>. Returns their names ("UnityEngine.CoreModule").
     /// </summary>
-    public static IReadOnlyList<string> ExtractEngineModules(Stream package, string destination)
+    public static IReadOnlyList<string> ExtractEngineModules(Stream package, string destination) =>
+        Extract(package, destination,
+                parent => ModuleFolder.IsMatch(parent) ? parent : null,
+                ModuleFile.IsMatch,
+                "engine modules");
+
+    /// <summary>
+    /// Reads Unity's macOS EDITOR package until one .NET profile has gone by — `unityjit-win32`,
+    /// `unityjit-linux`, or `4.5` before 2021.2 — writing its class libraries, facades included, flat
+    /// into <paramref name="destination"/>, as a game's Managed folder holds them.
+    ///
+    /// ⚠ **Why the macOS editor** (measured 2026-09-21): every editor carries the profiles of all
+    /// three systems, and this one is the gzip-and-cpio package this class already reads — the Linux
+    /// editor is `.tar.xz`, which .NET cannot open, and the Windows one an installer program. Its
+    /// `unityjit-win32` is byte for byte the Windows editor's, and has gone by after 496 MB of
+    /// 2.9 GB (2021.3.6); `4.5` after 234 MB of 990 MB (2018.4.36). The rest is never downloaded.
+    /// </summary>
+    /// <param name="profile">The folder under `MonoBleedingEdge/lib/mono/`.</param>
+    public static IReadOnlyList<string> ExtractClassLibraries(Stream package, string destination, string profile)
+    {
+        var folder = new Regex($@"^(?<root>(?:.*/)?MonoBleedingEdge/lib/mono/{Regex.Escape(profile)})(?:/Facades)?$",
+                               RegexOptions.CultureInvariant);
+
+        return Extract(package, destination,
+                       parent => folder.Match(parent) is { Success: true } match ? match.Groups["root"].Value : null,
+                       file => ClassLibraryFile.IsMatch(file)
+                               && Detection.RuntimeLibraries.IsClassLibrary(Path.GetFileNameWithoutExtension(file)),
+                       ".NET libraries");
+    }
+
+    private static readonly Regex ClassLibraryFile = new(@"^[A-Za-z0-9_.\-]+\.dll$", RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Reads <paramref name="package"/> up to the end of the first group of folders it wants, writing
+    /// the files it keeps by their name alone.
+    /// </summary>
+    /// <param name="groupOf">The group an entry's folder belongs to, or null when it is not wanted.</param>
+    private static IReadOnlyList<string> Extract(Stream package, string destination, Func<string, string?> groupOf,
+                                                 Func<string, bool> keeps, string what)
     {
         Directory.CreateDirectory(destination);
 
@@ -75,7 +113,7 @@ public static class UnityPackage
         using Stream stored = payload.ZlibEncoded ? new ZLibStream(slice, CompressionMode.Decompress) : slice;
         using var cpio = new GZipStream(stored, CompressionMode.Decompress);
 
-        return ReadModules(cpio, destination);
+        return ReadGroup(cpio, destination, groupOf, keeps, what);
     }
 
     private sealed record PayloadEntry(long Offset, long Length, bool ZlibEncoded);
@@ -102,13 +140,14 @@ public static class UnityPackage
     }
 
     /// <summary>
-    /// The cpio entries, up to the end of the first module folder met: its engine modules written
-    /// out, everything else read past.
+    /// The cpio entries, up to the end of the first wanted group met: its kept files written out,
+    /// everything else read past.
     /// </summary>
-    private static IReadOnlyList<string> ReadModules(Stream cpio, string destination)
+    private static IReadOnlyList<string> ReadGroup(Stream cpio, string destination, Func<string, string?> groupOf,
+                                                   Func<string, bool> keeps, string what)
     {
         var taken = new List<string>();
-        string? folder = null;
+        string? group = null;
 
         while (true)
         {
@@ -129,16 +168,16 @@ public static class UnityPackage
             var parent = slash < 0 ? "" : path[..slash];
             var fileName = path[(slash + 1)..];
 
-            // The folder is over once an entry outside it arrives: the modules have all gone by.
-            if (folder is not null && !parent.Equals(folder, StringComparison.OrdinalIgnoreCase) && taken.Count > 0) break;
+            var entryGroup = groupOf(parent);
 
-            if (ModuleFile.IsMatch(fileName) && ModuleFolder.IsMatch(parent)
-                && (folder is null || parent.Equals(folder, StringComparison.OrdinalIgnoreCase)))
+            // The group is over once an entry outside it arrives: what was wanted has all gone by.
+            if (group is not null && taken.Count > 0 && !string.Equals(entryGroup, group, StringComparison.Ordinal)) break;
+
+            if (entryGroup is not null && keeps(fileName) && (group is null || entryGroup == group))
             {
-                folder = parent;
+                group = entryGroup;
 
-                // A module is a few megabytes; an entry claiming more than the package's own table
-                // could hold is not one.
+                // A library is a few megabytes; an entry claiming more than that is not one.
                 if (fileSize > 256L * 1024 * 1024)
                     throw new InvalidDataException($"Unity's package lists {fileName} at an impossible size.");
 
@@ -153,7 +192,7 @@ public static class UnityPackage
         }
 
         if (taken.Count == 0)
-            throw new InvalidDataException("Unity's package holds no engine modules where this tool expects them.");
+            throw new InvalidDataException($"Unity's package holds no {what} where this tool expects them.");
 
         return taken;
     }

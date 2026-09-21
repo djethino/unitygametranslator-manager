@@ -83,8 +83,15 @@ public sealed class ReceiptRuntimeLibraries
     /// <summary>The Unity version the .NET copies were chosen for ("2018.4.36"); empty when none were needed.</summary>
     [JsonPropertyName("unity")] public string Unity { get; set; } = "";
 
-    /// <summary>Where the .NET copies came from — the archive's address, and our lot's when one served.</summary>
+    /// <summary>
+    /// Where the .NET copies came from, as it was named to the person — "the Unity 2021.3.6f1 editor
+    /// on this computer", Unity's editor package. (An address, for the copies of an earlier release
+    /// of this tool, which took them from BepInEx's archive.)
+    /// </summary>
     [JsonPropertyName("source")] public string Source { get; set; } = "";
+
+    /// <summary>The source's id (Install.ClassLibrarySource.Id); empty for copies from before sources had one.</summary>
+    [JsonPropertyName("source_id")] public string SourceId { get; set; } = "";
 
     /// <summary>The .NET libraries written.</summary>
     [JsonPropertyName("files")] public List<ReceiptFile> Files { get; set; } = new();

@@ -266,7 +266,7 @@ public sealed class GameInventory
         report.RuntimeLibraries = Install.RuntimeLibrariesInstaller.StateOf(
             game, report.InstalledLoader,
             game.RuntimeLibraries?.Modules is null ? Array.Empty<GameInstall>() : KnownGames(),
-            preference.ModuleSource);
+            preference.ModuleSource, preference.ClassLibrarySource);
 
         var descriptor = ResolveDescriptor(report, game);
         if (descriptor is not null)

@@ -7626,8 +7626,8 @@ public partial class MainWindow : Window
         // another game says which game. Two batches, two sources, two lines.
         if (need is { Missing.Count: > 0 })
         {
-            panel.Children.Add(Muted($".NET libraries: {string.Join(", ", need.Missing)}. "
-                                     + $"From {RuntimeLibraryOrigins.ClassLibrariesHost}, for Unity {need.Archive}."));
+            panel.Children.Add(Muted($".NET libraries: {string.Join(", ", need.Missing)}, for Unity {need.Release}."));
+            if (need.CannotSupply is null) panel.Children.Add(ClassLibrarySourceChoice(report, running));
         }
 
         if (need?.Modules is { } modules)
@@ -7729,8 +7729,13 @@ public partial class MainWindow : Window
         Foreground = Brush("TextSecondary"),
     };
 
+    /// <summary>One place a batch could come from, as the card shows it.</summary>
+    /// <param name="Problem">Why it cannot be used, or null when it can.</param>
+    private sealed record SourceOption(string Id, string Label, string Says, bool FromUnity, string? Problem);
+
     /// <summary>
-    /// Where the missing engine modules come from, and the way to choose another source.
+    /// Where a batch comes from, and the way to choose another source — the same block for the .NET
+    /// libraries and the engine modules.
     ///
     /// 🔴 **The person chooses, and every source says what it is** (user's requirement,
     /// 2026-09-21): a copy from another game on this computer is only as trustworthy as that game,
@@ -7742,34 +7747,25 @@ public partial class MainWindow : Window
     /// label, what it means underneath. The choice is a preference, read by the acts below and by
     /// the one-click; it writes nothing into the game.
     /// </summary>
-    private Control ModuleSourceChoice(GameReport report, bool running)
+    private Control SourceChoice(GameReport report, bool running, string group, IReadOnlyList<SourceOption> options,
+                                 string? current, Action<GamePreference, string> remember)
     {
-        var state = report.RuntimeLibraries;
         var box = new StackPanel { Spacing = 4 };
 
-        var usable = state.ModuleSources.Where(c => c.Usable).ToList();
-        var refused = state.ModuleSources.Where(c => !c.Usable).ToList();
-
-        string Says(EngineModuleSource source) => source.Kind switch
-        {
-            EngineModuleSourceKind.UnityDownload =>
-                "Only the part of Unity's package that holds the modules is downloaded. Unity's terms apply.",
-            _ when !source.SameRelease =>
-                $"An older release of the same branch. Checked, but not the game's own version ({report.RuntimeLibraries.Need?.Modules?.Build}).",
-            _ => "Same Unity release as the game. Checked: signed by Unity, complete, and fits this game's engine.",
-        };
+        var usable = options.Where(o => o.Problem is null).ToList();
+        var refused = options.Where(o => o.Problem is not null).ToList();
 
         if (usable.Count > 0)
         {
             box.Children.Add(Muted(usable.Count == 1 ? "Source:" : "Source (choose one):"));
 
-            foreach (var candidate in usable)
+            foreach (var option in usable)
             {
                 var text = new StackPanel { Spacing = 1 };
-                text.Children.Add(new TextBlock { Text = candidate.Source.Label, FontSize = 12, Foreground = Brush("TextPrimary") });
+                text.Children.Add(new TextBlock { Text = option.Label, FontSize = 12, Foreground = Brush("TextPrimary") });
                 text.Children.Add(new TextBlock
                 {
-                    Text = Says(candidate.Source),
+                    Text = option.Says,
                     FontSize = 11,
                     TextWrapping = TextWrapping.Wrap,
                     Foreground = Brush("TextMuted"),
@@ -7778,19 +7774,18 @@ public partial class MainWindow : Window
                 var radio = new RadioButton
                 {
                     Content = text,
-                    GroupName = "modules-" + report.Game.Path,
-                    IsChecked = candidate == state.ModuleSource,
+                    GroupName = group + "-" + report.Game.Path,
+                    IsChecked = option.Id == current,
                     IsEnabled = !running,
                     FontSize = 12,
                 };
 
-                var id = candidate.Source.Id;
                 radio.IsCheckedChanged += async (_, _) =>
                 {
-                    if (radio.IsChecked != true || id == state.ModuleSource?.Source.Id) return;
+                    if (radio.IsChecked != true || option.Id == current) return;
 
                     var preference = _preferences.Read(report.Game.Path);
-                    preference.ModuleSource = id;
+                    remember(preference, option.Id);
                     _preferences.Set(report.Game.Path, preference);
 
                     await ShowSelectedAsync();
@@ -7798,7 +7793,7 @@ public partial class MainWindow : Window
 
                 box.Children.Add(radio);
 
-                if (candidate.Source.Kind == EngineModuleSourceKind.UnityDownload)
+                if (option.FromUnity)
                 {
                     var terms = new Button { Content = "Unity's terms", FontSize = 11, Margin = new Avalonia.Thickness(28, 0, 0, 0) };
                     ToolTip.SetTip(terms, RuntimeLibraryOrigins.UnityTermsUrl);
@@ -7808,20 +7803,62 @@ public partial class MainWindow : Window
             }
         }
 
-        if (state.ChosenSourceGone)
-            box.Children.Add(Muted("The source chosen before is no longer usable, so the first usable one is used."));
-
         // ⚠ Said on the card, not in a hover: a copy somebody can see on their disk and not in this
         // list needs its reason where the eye already is.
-        foreach (var candidate in refused)
+        foreach (var option in refused)
         {
-            var line = Muted($"Not usable: {candidate.Source.Label}. {candidate.Problems[0]}.");
+            var line = Muted($"Not usable: {option.Label}. {option.Problem}.");
             line.FontSize = 11;
             line.Foreground = Brush("TextMuted");
             box.Children.Add(line);
         }
 
         return box;
+    }
+
+    /// <summary>Where the missing .NET libraries come from — an editor on this computer, or Unity's editor package.</summary>
+    private Control ClassLibrarySourceChoice(GameReport report, bool running)
+    {
+        var state = report.RuntimeLibraries;
+
+        var options = state.ClassLibrarySources.Select(source => new SourceOption(
+            source.Id, source.Label,
+            source.Kind switch
+            {
+                ClassLibrarySourceKind.UnityDownload =>
+                    "Only the part of Unity's editor package that holds them is downloaded, a few hundred MB, "
+                    + "once for this Unity version. Unity's terms apply.",
+                _ when !source.SameRelease =>
+                    $"Another Unity release of the same generation, which this game's engine accepts ({source.Version}).",
+                _ => "Same Unity release as the game.",
+            },
+            source.Kind == ClassLibrarySourceKind.UnityDownload,
+            null)).ToList();
+
+        return SourceChoice(report, running, "libraries", options, state.ClassLibrarySource?.Id,
+                            (preference, id) => preference.ClassLibrarySource = id);
+    }
+
+    /// <summary>Where the missing engine modules come from — an editor, another game, or Unity's package.</summary>
+    private Control ModuleSourceChoice(GameReport report, bool running)
+    {
+        var state = report.RuntimeLibraries;
+
+        var options = state.ModuleSources.Select(candidate => new SourceOption(
+            candidate.Source.Id, candidate.Source.Label,
+            candidate.Source.Kind switch
+            {
+                EngineModuleSourceKind.UnityDownload =>
+                    "Only the part of Unity's package that holds the modules is downloaded. Unity's terms apply.",
+                _ when !candidate.Source.SameRelease =>
+                    $"An older release of the same branch. Checked, but not the game's own version ({state.Need?.Modules?.Build}).",
+                _ => "Same Unity release as the game. Checked: signed by Unity, complete, and fits this game's engine.",
+            },
+            candidate.Source.Kind == EngineModuleSourceKind.UnityDownload,
+            candidate.Usable ? null : candidate.Problems[0])).ToList();
+
+        return SourceChoice(report, running, "modules", options, state.ModuleSource?.Source.Id,
+                            (preference, id) => preference.ModuleSource = id);
     }
 
     /// <summary>Adds the libraries alone: the loader and the mod stay exactly as they are.</summary>

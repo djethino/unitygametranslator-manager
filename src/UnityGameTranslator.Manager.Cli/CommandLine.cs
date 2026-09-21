@@ -139,6 +139,8 @@ public static class CommandLine
             --runtime mono|il2cpp   tell us what we could not read
             --arch x86|x64          tell us what we could not read
             --force                 proceed despite a refusal (never for an anti-cheat)
+            --libraries-from N      (install) take the .NET libraries a game lacks from source N,
+                                    as numbered by `report`
             --modules-from N        (install) take the Unity engine modules a game lacks from
                                     source N, as numbered by `report`
             --yes skips the confirmation prompt.
@@ -150,27 +152,43 @@ public static class CommandLine
     }
 
     /// <summary>
-    /// The places a game's missing engine modules could come from, numbered, with the one an
-    /// install would use marked and each refusal said. ASCII only, like the rest of `report`.
+    /// The places a game's missing .NET libraries and engine modules could come from, numbered as
+    /// `--libraries-from` and `--modules-from` take them, with the one an install would use marked
+    /// and each refusal said. ASCII only, like the rest of `report`.
     /// </summary>
-    private static void PrintModuleSources(RuntimeLibrariesState state, TextWriter? output = null)
+    private static void PrintSources(RuntimeLibrariesState state, TextWriter? output = null)
     {
         output ??= Console.Out;
-        if (state.ModuleSources.Count == 0) return;
 
-        for (var i = 0; i < state.ModuleSources.Count; i++)
+        if (state.ClassLibrarySources.Count > 0)
         {
-            var candidate = state.ModuleSources[i];
-            var mark = candidate == state.ModuleSource ? "*" : " ";
-            var older = candidate.Source.SameRelease ? "" : " [older release]";
+            output.WriteLine("  .NET from :");
+            for (var i = 0; i < state.ClassLibrarySources.Count; i++)
+            {
+                var source = state.ClassLibrarySources[i];
+                var mark = source == state.ClassLibrarySource ? "*" : " ";
+                var other = source.SameRelease ? "" : " [another release of the same generation]";
+                output.WriteLine($"            {mark} [{i + 1}] {source.Label}{other}");
+            }
+        }
 
-            output.WriteLine(candidate.Usable
-                ? $"            {mark} [{i + 1}] {candidate.Source.Label}{older}"
-                : $"              [{i + 1}] {candidate.Source.Label}{older} - not usable: {candidate.Problems[0]}");
+        if (state.ModuleSources.Count > 0)
+        {
+            output.WriteLine("  modules from:");
+            for (var i = 0; i < state.ModuleSources.Count; i++)
+            {
+                var candidate = state.ModuleSources[i];
+                var mark = candidate == state.ModuleSource ? "*" : " ";
+                var older = candidate.Source.SameRelease ? "" : " [older release]";
+
+                output.WriteLine(candidate.Usable
+                    ? $"            {mark} [{i + 1}] {candidate.Source.Label}{older}"
+                    : $"              [{i + 1}] {candidate.Source.Label}{older} - not usable: {candidate.Problems[0]}");
+            }
         }
 
         if (state.ChosenSourceGone)
-            output.WriteLine("              the source chosen for this game is no longer usable - the first usable one is used");
+            output.WriteLine("              a source chosen for this game is no longer usable - the first usable one is used");
     }
 
     private static int Unknown(string command)
@@ -590,9 +608,9 @@ public static class CommandLine
         // issue somebody opens, and this line is the answer to paste back.
         if (report.RuntimeLibraries.Headline is { } libraries) Console.WriteLine($"Libraries   : {libraries}");
 
-        // Where the engine modules would come from, numbered as `install --modules-from N` takes
-        // them — the same list, in the same order, as the window's Compatibility card.
-        PrintModuleSources(report.RuntimeLibraries);
+        // Where each batch would come from, numbered as `install --libraries-from N` and
+        // `--modules-from N` take them — the same lists, in the same order, as the window's card.
+        PrintSources(report.RuntimeLibraries);
 
         Console.WriteLine($"Recommends  : {report.RecommendedLoader?.Display ?? "nothing"}");
         if (report.RecommendationReason is not null) Console.WriteLine($"              {report.RecommendationReason}");
@@ -807,14 +825,27 @@ public static class CommandLine
             return 3;
         }
 
-        // Another source for the engine modules, for this run: the number `report` printed.
+        // Another source for either batch, for this run: the numbers `report` printed.
+        if (ValueOf(args, "--libraries-from") is { } libraryFrom)
+        {
+            var sources = report.RuntimeLibraries.ClassLibrarySources;
+            if (!int.TryParse(libraryFrom, out var index) || index < 1 || index > sources.Count)
+            {
+                Console.Error.WriteLine($"'--libraries-from {libraryFrom}' is not a source for this game. The sources:");
+                PrintSources(report.RuntimeLibraries, Console.Error);
+                return 1;
+            }
+
+            plan = plan with { ClassLibrarySource = sources[index - 1] };
+        }
+
         if (ValueOf(args, "--modules-from") is { } from)
         {
             var sources = report.RuntimeLibraries.ModuleSources;
             if (!int.TryParse(from, out var index) || index < 1 || index > sources.Count || !sources[index - 1].Usable)
             {
                 Console.Error.WriteLine($"'--modules-from {from}' is not a usable source for this game. The sources:");
-                PrintModuleSources(report.RuntimeLibraries, Console.Error);
+                PrintSources(report.RuntimeLibraries, Console.Error);
                 return 1;
             }
 

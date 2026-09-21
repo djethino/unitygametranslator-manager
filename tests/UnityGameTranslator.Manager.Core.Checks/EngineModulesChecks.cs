@@ -94,9 +94,9 @@ internal static class EngineModulesChecks
                       && !UnityVersions.OlderInBranch(UnityVersions.Parse("2022.3.63f1")!, game)
                       && !UnityVersions.OlderInBranch(UnityVersions.Parse("2021.3.40f1")!, game),
             "older in the branch; never newer, never another branch", "a newer patch crashed a game at start");
-        Program.Check(RuntimeLibraries.ArchiveName("2021.2.0a10") == "2021.2.0a10" && RuntimeLibraries.ArchiveName("2018.4.36f1") == "2018.4.36"
-                      && RuntimeLibraries.ArchiveName("nonsense") is null,
-            "one reader of versions for both batches", "the archive files alphas under their suffix");
+        Program.Check(RuntimeLibraries.ReleaseName("2021.2.0a10") == "2021.2.0a10" && RuntimeLibraries.ReleaseName("2018.4.36f1") == "2018.4.36"
+                      && RuntimeLibraries.ReleaseName("nonsense") is null,
+            "one reader of versions for both batches", "");
     }
 
     public static void WhatUnitysIndexSays()
@@ -144,6 +144,29 @@ internal static class EngineModulesChecks
                 "written by file name alone, inside the destination", "nothing in the archive decides where a file goes");
             Program.Check(read.Consumed < 1 << 20,
                 "reading stops once the modules have gone by", $"read {read.Consumed / 1024} KB of {package.Length / 1024} KB");
+
+            // The editor's package, for the .NET libraries of one profile.
+            var mono = "./Unity/Unity.app/Contents/MonoBleedingEdge/lib/mono";
+            var editor = Package(new (string, byte[])[]
+            {
+                ($"{mono}/unityjit-linux/mscorlib.dll", Encoding.ASCII.GetBytes("linux")),
+                ($"{mono}/unityjit-win32/mscorlib.dll", Encoding.ASCII.GetBytes("windows")),
+                ($"{mono}/unityjit-win32/ICSharpCode.SharpZipLib.dll", Encoding.ASCII.GetBytes("third party")),
+                ($"{mono}/unityjit-win32/Facades/netstandard.dll", Encoding.ASCII.GetBytes("facade")),
+                ($"{mono}/unityjit-win32/Facades/System.Runtime.dll", Encoding.ASCII.GetBytes("facade")),
+                ($"{mono}/xbuild/Something.dll", RandomNumberGenerator(4 << 20)),
+            });
+
+            var profile = Path.Combine(destination, "profile");
+            var readEditor = new CountingStream(new MemoryStream(editor));
+            var libraries = UnityPackage.ExtractClassLibraries(readEditor, profile, "unityjit-win32");
+
+            Program.Check(libraries.OrderBy(n => n, StringComparer.Ordinal).SequenceEqual(new[] { "System.Runtime", "mscorlib", "netstandard" })
+                          && File.ReadAllText(Path.Combine(profile, "mscorlib.dll")) == "windows",
+                "one profile's class libraries, facades flattened beside them",
+                "a game's Managed folder is flat; another system's profile and third-party libraries stay out");
+            Program.Check(readEditor.Consumed < 1 << 20,
+                "and reading stops once that profile has gone by", "measured: 496 MB of a 2.9 GB package");
         }
         finally
         {

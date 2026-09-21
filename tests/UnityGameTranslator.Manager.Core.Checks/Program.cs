@@ -54,7 +54,7 @@ internal static class Program
         RuntimeLibrariesChecks.WhatAGameLacks();
         RuntimeLibrariesChecks.WhatGoesBesideAGame();
         RuntimeLibrariesChecks.WhichCopiesMayBeUsed();
-        RuntimeLibrariesChecks.WhichArchiveServesAGame();
+        RuntimeLibrariesChecks.WhichProfileServesAGame();
         RuntimeLibrariesChecks.HowALoaderIsTold();
         RuntimeLibrariesChecks.WhatStillStandsAfterwards();
         UnitySignatureChecks.WhatCountsAsSignedByUnity();

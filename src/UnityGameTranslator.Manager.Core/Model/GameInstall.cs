@@ -83,16 +83,22 @@ public enum ModdabilityVerdict
 /// The game's mscorlib lacks what every loader calls (<see cref="Detection.CorlibProbe"/>), so the
 /// libraries are needed before anything at all can run, not only the mod.
 /// </param>
-/// <param name="Archive">The Unity version the .NET copies are chosen for ("2018.4.36"), or null when unreadable.</param>
+/// <param name="Release">The game's Unity release ("2018.4.36") the .NET copies are held to, or null when unreadable.</param>
 /// <param name="CannotSupply">
 /// Why no copy of the .NET libraries can serve this game, or null when one can — to be confirmed on
 /// the files.
 /// </param>
 /// <param name="Modules">The engine modules the game's build stripped of what the mod calls, or null.</param>
 public sealed record RuntimeLibraryNeed(IReadOnlyList<string> Missing, bool LoaderCannotStart,
-                                        string? Archive, string? CannotSupply,
+                                        string? Release, string? CannotSupply,
                                         EngineModuleNeed? Modules = null)
 {
+    /// <summary>The game's build as its engine states it ("2021.3.6f1"), read when .NET libraries are lacking.</summary>
+    public string? Build { get; init; }
+
+    /// <summary>That build's changeset, which Unity's downloads are filed under.</summary>
+    public string? Changeset { get; init; }
+
     /// <summary>Both batches can be supplied, as far as can be said without the files.</summary>
     public bool CanSupply => WhyNot is null;
 

@@ -244,77 +244,21 @@ public static class EngineModuleSources
     /// <summary>
     /// Every installed Unity editor carrying the Windows player's Mono modules, with its version,
     /// its modules folder and its player, for the game's architecture.
-    ///
-    /// ⚠ Found where the Hub installs them — its default folder, and the one the person moved it to
-    /// (the Hub writes that path to `secondaryInstallPath.json`, as a JSON string).
     /// </summary>
     public static IEnumerable<(UnityVersion Version, string Managed, string Player)> Editors(GameArchitecture architecture)
     {
         var variation = architecture == GameArchitecture.X86 ? "win32_player_nondevelopment_mono" : "win64_player_nondevelopment_mono";
 
-        foreach (var root in HubEditorFolders())
+        foreach (var (version, root) in UnityEditors.Installed())
         {
-            if (!Directory.Exists(root)) continue;
+            if (UnityEditors.PlaybackEngine(root, "windowsstandalonesupport") is not { } support) continue;
 
-            IEnumerable<string> editors;
-            try { editors = Directory.EnumerateDirectories(root).ToList(); }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { continue; }
+            var folder = Path.Combine(support, "Variations", variation);
+            var managed = Path.Combine(folder, "Data", "Managed");
+            var player = Path.Combine(folder, "UnityPlayer.dll");
 
-            foreach (var editor in editors)
-            {
-                if (UnityVersions.Parse(Path.GetFileName(editor)) is not { } version) continue;
-                if (PlaybackEngine(editor, "windowsstandalonesupport") is not { } support) continue;
-
-                var folder = Path.Combine(support, "Variations", variation);
-                var managed = Path.Combine(folder, "Data", "Managed");
-                var player = Path.Combine(folder, "UnityPlayer.dll");
-
-                if (File.Exists(Path.Combine(managed, "UnityEngine.CoreModule.dll")) && File.Exists(player))
-                    yield return (version, managed, player);
-            }
+            if (File.Exists(Path.Combine(managed, "UnityEngine.CoreModule.dll")) && File.Exists(player))
+                yield return (version, managed, player);
         }
-    }
-
-    /// <summary>A playback engine's folder, matched without regard to case (Linux editors spell it their own way).</summary>
-    private static string? PlaybackEngine(string editor, string name)
-    {
-        var engines = Path.Combine(editor, "Editor", "Data", "PlaybackEngines");
-        if (!Directory.Exists(engines)) return null;
-
-        try
-        {
-            return Directory.EnumerateDirectories(engines)
-                            .FirstOrDefault(d => Path.GetFileName(d).Equals(name, StringComparison.OrdinalIgnoreCase));
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            return null;
-        }
-    }
-
-    private static IEnumerable<string> HubEditorFolders()
-    {
-        if (OperatingSystem.IsWindows())
-            yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Unity", "Hub", "Editor");
-        else
-            yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Unity", "Hub", "Editor");
-
-        var settings = OperatingSystem.IsWindows()
-            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "UnityHub", "secondaryInstallPath.json")
-            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config", "UnityHub", "secondaryInstallPath.json");
-
-        string? secondary = null;
-        try
-        {
-            if (File.Exists(settings)) secondary = JsonSerializer.Deserialize<string>(File.ReadAllText(settings));
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
-        {
-            // The Hub's own file, in a state this tool did not produce: its moved folder is then
-            // not searched. Nothing is refused on that — the default folder still is, and the card
-            // lists what was found.
-        }
-
-        if (!string.IsNullOrWhiteSpace(secondary)) yield return secondary;
     }
 }

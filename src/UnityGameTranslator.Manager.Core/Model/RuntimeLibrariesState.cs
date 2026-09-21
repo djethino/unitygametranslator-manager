@@ -49,6 +49,12 @@ public sealed record RuntimeLibrariesState(RuntimeLibrariesStatus Status, Runtim
     /// <summary>The source an install would use: the one chosen for this game while usable, else the first usable one.</summary>
     public EngineModuleCandidate? ModuleSource { get; init; }
 
+    /// <summary>Every place the missing .NET libraries could come from, in the order they are preferred.</summary>
+    public IReadOnlyList<ClassLibrarySource> ClassLibrarySources { get; init; } = Array.Empty<ClassLibrarySource>();
+
+    /// <summary>The .NET libraries' source an install would use: the one chosen for this game while offered, else the first.</summary>
+    public ClassLibrarySource? ClassLibrarySource { get; init; }
+
     /// <summary>A source was chosen for this game and is no longer usable — the card says the default took its place.</summary>
     public bool ChosenSourceGone { get; init; }
 
@@ -57,13 +63,16 @@ public sealed record RuntimeLibrariesState(RuntimeLibrariesStatus Status, Runtim
 
     /// <summary>
     /// Adding them would change something and can be done — read by the promise and by the act, like
-    /// <see cref="GameReport.PluginWriteOffered"/>. For engine modules, that needs a usable source.
+    /// <see cref="GameReport.PluginWriteOffered"/>. Each lacking batch needs a source.
     /// </summary>
-    public bool WriteOffered => BlocksTheMod && Need is { CanSupply: true } && (Need.Modules is null || ModuleSource is not null);
+    public bool WriteOffered => BlocksTheMod && Need is { CanSupply: true }
+                                && (Need.Missing.Count == 0 || ClassLibrarySource is not null)
+                                && (Need.Modules is null || ModuleSource is not null);
 
     /// <summary>Adding them means downloading from Unity — what the person has to be told, and agree to, first.</summary>
-    public bool NeedsUnityDownload => WriteOffered && Need?.Modules is not null
-                                      && ModuleSource?.Source.Kind == EngineModuleSourceKind.UnityDownload;
+    public bool NeedsUnityDownload => WriteOffered
+                                      && ((Need!.Missing.Count > 0 && ClassLibrarySource?.Kind == ClassLibrarySourceKind.UnityDownload)
+                                          || (Need.Modules is not null && ModuleSource?.Source.Kind == EngineModuleSourceKind.UnityDownload));
 
     /// <summary>Something of ours is in place and may be taken out.</summary>
     public bool RemoveOffered => Installed is not null;
@@ -121,7 +130,11 @@ public sealed record RuntimeLibrariesState(RuntimeLibrariesStatus Status, Runtim
 
             var parts = new List<string>();
             if (Installed.Files.Count > 0)
-                parts.Add($"{Installed.Files.Count} .NET libraries for Unity {Installed.Unity}");
+            {
+                // An address is what the copies of an earlier release recorded (BepInEx's archive).
+                var from = Installed.Source.Contains("://", StringComparison.Ordinal) ? "" : $" from {Installed.Source}";
+                parts.Add($"{Installed.Files.Count} .NET libraries for Unity {Installed.Unity}{from}");
+            }
             if (Installed.Modules is { } modules)
                 parts.Add($"{modules.Files.Count} engine modules of Unity {modules.Unity} from {modules.Source}");
 

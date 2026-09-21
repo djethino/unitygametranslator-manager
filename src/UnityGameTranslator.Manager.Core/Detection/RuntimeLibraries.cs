@@ -358,7 +358,9 @@ public static class RuntimeLibraries
     /// The game's mscorlib lacks what loaders call (<see cref="CorlibProbe"/>): mscorlib is then
     /// needed whatever the mod asks, because nothing starts without it.
     /// </param>
-    public static Model.RuntimeLibraryNeed? NeedOf(Model.GameInstall game, bool loaderCannotStart)
+    /// <param name="games">The other games found, when known — possible lenders of .NET libraries.</param>
+    public static Model.RuntimeLibraryNeed? NeedOf(Model.GameInstall game, bool loaderCannotStart,
+                                                   IReadOnlyCollection<Model.GameInstall>? games = null)
     {
         if (game.Runtime != Model.UnityRuntime.Mono || game.DataDirectory is null) return null;
 
@@ -387,7 +389,7 @@ public static class RuntimeLibraries
             : EngineModules.BuildOf(player, game.UnityVersion);
 
         return new Model.RuntimeLibraryNeed(all, loaderCannotStart, ReleaseName(build?.Version ?? game.UnityVersion),
-                                            Install.ClassLibrarySources.CannotSupply(game, all, build?.Version, build?.Changeset),
+                                            Install.ClassLibrarySources.CannotSupply(game, all, build?.Version, build?.Changeset, games),
                                             modules)
         {
             Build = build?.Version,

@@ -116,7 +116,12 @@ public static class ClassLibrarySources
     /// Why no copy of the .NET libraries can EVER be found for this game — said at scan. Null when
     /// one may be. Being offline is not such a reason: it passes, and the card says what to do.
     /// </summary>
-    public static string? CannotSupply(GameInstall game, IReadOnlyCollection<string> missing, string? build, string? changeset)
+    /// <param name="games">
+    /// The other games found. Unknown while the scan is still walking (null): the game is then
+    /// judged on editors and Unity's download alone, and looked at again once the list is complete.
+    /// </param>
+    public static string? CannotSupply(GameInstall game, IReadOnlyCollection<string> missing, string? build, string? changeset,
+                                       IReadOnlyCollection<GameInstall>? games = null)
     {
         if (missing.Count == 0) return null;
 
@@ -129,10 +134,15 @@ public static class ClassLibrarySources
         if (MonoProfiles.MonoEngine(game) is null)
             return "the game runs Unity's old .NET 3.5 runtime, which the mod cannot run on";
 
-        // ⚠ Other games are not known at scan; an editor or Unity's download is. A game that could
-        // lend them while neither exists is so rare it is not waited for.
-        if (changeset is null && Find(game, build, changeset, Array.Empty<GameInstall>(), online: false).Count == 0)
-            return "this build could not be identified to download Unity's libraries, and no Unity editor of its generation is installed";
+        // Unity's download needs the build identified; without it, only a copy on this computer can
+        // serve — an editor, or another game once the scan knows them all.
+        if (changeset is null
+            && !Find(game, build, changeset, games ?? (IReadOnlyCollection<GameInstall>)Array.Empty<GameInstall>(), online: false)
+                   .Any(c => c.Usable))
+        {
+            return "this build could not be identified to download Unity's libraries, and no Unity editor or other game "
+                 + "on this computer can lend them";
+        }
 
         return null;
     }

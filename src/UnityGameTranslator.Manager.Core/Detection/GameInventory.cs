@@ -172,6 +172,16 @@ public sealed class GameInventory
                 Add(game);
         }
 
+        // 🔴 **Looked at again once every game is known** (the user's remark, 2026-09-21). A game is
+        // judged while the walk is still going, so a verdict "nothing on this computer can lend the
+        // .NET libraries" could not count the games found after it. Only those games are read again
+        // — their build unreadable, so Unity's download was never an option — now with the full list.
+        foreach (var game in games.Where(g => g.RuntimeLibraries is { CannotSupply: not null, Changeset: null }).ToList())
+        {
+            ModdabilityProbe.Evaluate(game, games);
+            Overrides.Apply(game);
+        }
+
         _known = games;
         return games;
     }

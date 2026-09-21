@@ -28,7 +28,12 @@ public static class ModdabilityProbe
         "start_protected_game.exe",
     };
 
-    public static void Evaluate(GameInstall game)
+    /// <param name="games">
+    /// The other games found, when the scan knows them — so that a game refused only because nothing
+    /// on this computer seemed able to lend it libraries is looked at again once everything is listed
+    /// (see <see cref="GameInventory.ScanAll"/>).
+    /// </param>
+    public static void Evaluate(GameInstall game, IReadOnlyCollection<GameInstall>? games = null)
     {
         if (!game.IsUnity)
         {
@@ -74,7 +79,7 @@ public static class ModdabilityProbe
             // own search path takes a complete mscorlib and everything starts. And a game whose
             // loader starts fine while the MOD lacks a library went unnoticed entirely: installed,
             // "ready", and dead at load (issue #28).
-            var need = RuntimeLibraries.NeedOf(game, loaderCannotStart: corlib.IsStripped);
+            var need = RuntimeLibraries.NeedOf(game, loaderCannotStart: corlib.IsStripped, games);
             game.RuntimeLibraries = need;
 
             // ⚠ The message is the one this refusal always had, on purpose: when no copy of the .NET

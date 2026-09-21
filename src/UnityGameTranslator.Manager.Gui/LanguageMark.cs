@@ -112,40 +112,23 @@ public static class LanguageMark
     }
 
     /// <summary>
-    /// Fill a ComboBox with languages, each shown with its flag.
+    /// Fill a language list, each language shown with its flag — the one filling every language
+    /// picker goes through (see <see cref="SearchPicker"/>).
     ///
-    /// 🔴 **A template, never a Control per item.** A ComboBox renders the SELECTED entry a second
-    /// time in its closed box, and a control belongs to one place in the tree — hand the same
-    /// instance to both and whichever claims it first goes empty. Every language picker in this
-    /// product goes through here so none of them can be written the other way by mistake.
+    /// 🔴 **A template, never a Control per item.** The picker draws the SELECTED entry a second
+    /// time on its closed face, and a control belongs to one place in the tree — hand the same
+    /// instance to both and whichever claims it first goes empty.
     ///
-    /// ⚠ The box is CLEARED first: these lists are rebuilt when their context changes (the test's
+    /// ⚠ The list is CLEARED first: these lists are rebuilt when their context changes (the test's
     /// source list depends on its target), and appending would stack the old one under the new.
+    ///
+    /// ⚠ The ComboBox overload that stood beside this one had no caller left, and was removed on
+    /// 2026-09-21: every dropdown here is a SearchPicker (ComboBox ignores the mouse wheel).
     /// </summary>
     /// <param name="extra">
     /// An entry that is not a language — "follow the system", "any language". Kept first, since it
-    /// is the answer most often wanted and the one the closed box then shows.
+    /// is the answer most often wanted and the one the closed face then shows.
     /// </param>
-    public static void Fill(ComboBox box, IEnumerable<(string Code, string Name)> languages,
-                            LanguageChoice? extra = null)
-    {
-        box.ItemTemplate = Rows();
-
-        box.Items.Clear();
-
-        if (extra is not null) box.Items.Add(extra);
-
-        foreach (var (code, name) in languages)
-            box.Items.Add(new LanguageChoice(code, name, name));
-    }
-
-    /// <summary>
-    /// The same list, in the picker that can be searched — see <see cref="SearchPicker"/>.
-    ///
-    /// ⚠ One filling for both shapes, deliberately: what goes in a language list, in what order,
-    /// with which extra entry first, is the same answer wherever it is shown. Two fillings is two
-    /// places for the "follow the system" row to be forgotten.
-    /// </summary>
     public static void Fill(SearchPicker picker, IEnumerable<(string Code, string Name)> languages,
                             LanguageChoice? extra = null)
     {

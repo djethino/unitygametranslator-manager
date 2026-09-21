@@ -7860,20 +7860,13 @@ public partial class MainWindow : Window
 
                 if (ofKind.Count > 1)
                 {
-                    var choice = new ComboBox
-                    {
-                        ItemsSource = ofKind.Select(o => o.Label).ToList(),
-                        SelectedIndex = ofKind.IndexOf(selected),
-                        HorizontalAlignment = HorizontalAlignment.Stretch,
-                        IsEnabled = enabled,
-                        FontSize = 12,
-                    };
+                    // 🔴 The program's own dropdown, never Avalonia's ComboBox: that one ignores the
+                    // mouse wheel, and every other list here scrolls (user, 2026-09-21).
+                    var choice = SourcePickerOf(ofKind, selected, enabled);
 
-                    // Attached after the selection is set, so building it is not a pick.
                     choice.SelectionChanged += (_, _) =>
                     {
-                        if (choice.SelectedIndex < 0) return;
-                        var option = ofKind[choice.SelectedIndex];
+                        if (choice.SelectedItem is not SourceOption option) return;
                         says.Text = option.Says;
                         Pick(option);
                     };
@@ -7950,18 +7943,20 @@ public partial class MainWindow : Window
             }
             else
             {
-                var kindChoice = new ComboBox
+                var kindChoice = new SearchPicker
                 {
-                    ItemsSource = kinds.Select(KindLabel).ToList(),
-                    SelectedIndex = kinds.IndexOf(chosen.Kind),
                     HorizontalAlignment = HorizontalAlignment.Stretch,
                     IsEnabled = enabled,
                     FontSize = 12,
                 };
 
+                foreach (var kind in kinds) kindChoice.Items.Add(new Choice(kind.ToString(), KindLabel(kind)));
+                kindChoice.Reselect(kindChoice.Items.OfType<Choice>().First(c => c.Tag == chosen.Kind.ToString()));
+
                 kindChoice.SelectionChanged += (_, _) =>
                 {
-                    if (kindChoice.SelectedIndex >= 0) ChooseKind(kinds[kindChoice.SelectedIndex]);
+                    if (kindChoice.SelectedItem is Choice picked && Enum.TryParse<SourceKind>(picked.Tag, out var kind))
+                        ChooseKind(kind);
                 };
 
                 box.Children.Add(kindChoice);
@@ -7975,6 +7970,22 @@ public partial class MainWindow : Window
         // des jeux qu'on ne peut pas utiliser »). What somebody chooses between is what can be used;
         // why another game on the disk cannot is the CLI's business (`install` prints it), not this card's.
         return box;
+    }
+
+    /// <summary>The editors or games of one kind, in the program's own dropdown, the source in force shown.</summary>
+    private static SearchPicker SourcePickerOf(IReadOnlyList<SourceOption> options, SourceOption selected, bool enabled)
+    {
+        var picker = new SearchPicker
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            IsEnabled = enabled,
+            FontSize = 12,
+            TextOf = item => item is SourceOption option ? option.Label : "",
+        };
+
+        foreach (var option in options) picker.Items.Add(option);
+        picker.Reselect(selected);
+        return picker;
     }
 
     /// <summary>The card's source block: a pick is remembered for this game, and the card redrawn.</summary>
@@ -8016,6 +8027,24 @@ public partial class MainWindow : Window
                             (preference, id) => preference.ClassLibrarySource = id);
     }
 
+    /// <summary>
+    /// A .NET source as the window names it.
+    ///
+    /// ⚠ What decides for these is the game's .NET runtime, not the Unity version (user's question,
+    /// 2026-09-21: « c'est la version dotnet ou unity qui compte ? »). The version names WHICH editor;
+    /// for a game its name does, and what the label adds is the fact that matters: same Unity version,
+    /// or another version with the same .NET runtime. Engine modules keep their version — for them
+    /// it is the version that counts.
+    /// </summary>
+    private static string NetLabel(ClassLibrarySource source) =>
+        source.Kind switch
+        {
+            ClassLibrarySourceKind.Editor => $"Unity {source.Version} editor",
+            ClassLibrarySourceKind.Game => source.Name ?? "Another game",
+            _ => "Unity's server",
+        }
+        + (source.SameRelease ? " — same Unity version" : " — same .NET runtime");
+
     /// <summary>The .NET libraries' sources as the card and the one-click show them — one wording for both.</summary>
     private static IReadOnlyList<SourceOption> ClassLibraryOptions(RuntimeLibrariesState state) =>
         state.ClassLibrarySources.Select(candidate => new SourceOption(
@@ -8026,7 +8055,7 @@ public partial class MainWindow : Window
                 ClassLibrarySourceKind.Game => SourceKind.Game,
                 _ => SourceKind.UnityServer,
             },
-            candidate.Source.Label,
+            NetLabel(candidate.Source),
             candidate.Source.Kind switch
             {
                 ClassLibrarySourceKind.UnityDownload =>
@@ -8034,8 +8063,8 @@ public partial class MainWindow : Window
                     + "once for this Unity version. Unity's terms apply. " + LocalCopies.NotAffiliated,
                 ClassLibrarySourceKind.Game => LocalCopies.Disclaimer(signed: false),
                 _ when !candidate.Source.SameRelease =>
-                    $"Another Unity release of the same generation, which this game's engine accepts ({candidate.Source.Version}).",
-                _ => "Same Unity release as the game.",
+                    $"Unity {candidate.Source.Version} ships the same .NET runtime as this game, so its libraries fit.",
+                _ => "Same Unity version as the game.",
             },
             candidate.Usable ? null : candidate.Problems[0])).ToList();
 

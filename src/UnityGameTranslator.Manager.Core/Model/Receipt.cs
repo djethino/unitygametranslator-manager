@@ -22,6 +22,9 @@ public sealed class Receipt
     [JsonPropertyName("loader")] public ReceiptLoader? Loader { get; set; }
     [JsonPropertyName("plugin")] public ReceiptPlugin? Plugin { get; set; }
 
+    /// <summary>The .NET libraries put beside the game, when it lacked some. Null otherwise.</summary>
+    [JsonPropertyName("runtime_libraries")] public ReceiptRuntimeLibraries? RuntimeLibraries { get; set; }
+
     [JsonPropertyName("steam_launch_options")] public ReceiptLaunchOptions? LaunchOptions { get; set; }
 
     /// <summary>"none" | "reused_existing" | "started_existing" | "installed_official" | "installed_portable".</summary>
@@ -65,6 +68,35 @@ public sealed class ReceiptPlugin
 
     [JsonPropertyName("files")] public List<ReceiptFile> Files { get; set; } = new();
     [JsonPropertyName("dirs_created")] public List<string> DirsCreated { get; set; } = new();
+}
+
+/// <summary>
+/// The class libraries this tool put beside a game that lacked them, and the one line it added to
+/// the loader's configuration so the runtime finds them.
+///
+/// ⚠ The configuration file is NOT among <see cref="Files"/>: it is the loader's, and removing our
+/// libraries takes our entry back out of it rather than deleting it. Taken out, the file is again
+/// exactly what the loader shipped, so the loader's own receipt still recognises it.
+/// </summary>
+public sealed class ReceiptRuntimeLibraries
+{
+    /// <summary>The Unity version the copies were chosen for ("2018.4.36").</summary>
+    [JsonPropertyName("unity")] public string Unity { get; set; } = "";
+
+    /// <summary>Where they came from — the archive's address.</summary>
+    [JsonPropertyName("source")] public string Source { get; set; } = "";
+
+    [JsonPropertyName("files")] public List<ReceiptFile> Files { get; set; } = new();
+    [JsonPropertyName("dirs_created")] public List<string> DirsCreated { get; set; } = new();
+
+    /// <summary>The loader configuration file holding the search path, relative to the game.</summary>
+    [JsonPropertyName("config_file")] public string ConfigFile { get; set; } = "";
+
+    /// <summary>The entry added to it — our folder.</summary>
+    [JsonPropertyName("config_entry")] public string ConfigEntry { get; set; } = "";
+
+    /// <summary>True when the configuration file did not exist and we created it.</summary>
+    [JsonPropertyName("config_created")] public bool ConfigCreated { get; set; }
 }
 
 public sealed class ReceiptFile

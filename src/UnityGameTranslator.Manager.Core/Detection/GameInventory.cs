@@ -248,6 +248,10 @@ public sealed class GameInventory
                                      && string.Equals(ours.Id, detected.Id, StringComparison.OrdinalIgnoreCase);
         }
 
+        // ⚠ Reconciled from the files every time — see RuntimeLibrariesState for the three ways an
+        // install of them is undone without a word.
+        report.RuntimeLibraries = Install.RuntimeLibrariesInstaller.StateOf(game, report.InstalledLoader);
+
         var descriptor = ResolveDescriptor(report, game);
         if (descriptor is not null)
         {

@@ -582,8 +582,18 @@ public sealed class GameReport
     ///
     /// ⚠ Read by SituationReader and by PlayPromises. Anything else that wants to say "this game is
     /// set up" reads it too, rather than re-deriving it.
+    ///
+    /// 🔴 **And the .NET libraries the game lacks, when it lacks some** (issue #28). A loader and a
+    /// plugin on a game without netstandard is the same inert pair: the loader starts, the mod stops
+    /// at load, and the only line saying so is in a log nobody opens.
     /// </summary>
-    public bool ModCanRun => InstalledLoader is not null && AnythingOfOursHere;
+    public bool ModCanRun => InstalledLoader is not null && AnythingOfOursHere && !RuntimeLibraries.BlocksTheMod;
+
+    /// <summary>
+    /// The .NET libraries this game lacks for the mod, and whether ours still stand — reconciled from
+    /// the files at every report (see <see cref="RuntimeLibrariesState"/>).
+    /// </summary>
+    public RuntimeLibrariesState RuntimeLibraries { get; set; } = RuntimeLibrariesState.None;
 
     /// <summary>
     /// Something of ours is here and it will not run: the state that used to read "Ready to play".

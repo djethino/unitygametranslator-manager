@@ -244,4 +244,88 @@ internal static class RuntimeLibrariesChecks
         Program.Check(melon.MinimumLoaderVersion == "0.7.1" && LoaderSearchPath.For("melonloader", false)!.Separator == ':',
             "MelonLoader: from 0.7.1, separated as the system separates", "read in its sources");
     }
+
+    /// <summary>
+    /// 🔴 A sequence, not a rule: what an install left in place is undone by things that happen
+    /// AFTER it — a loader update, a game update — and only reading the files again notices.
+    /// </summary>
+    public static void WhatStillStandsAfterwards()
+    {
+        Program.Section("Runtime libraries: what still stands afterwards, on real files");
+
+        var root = Path.Combine(Path.GetTempPath(), "ugt-runtime-libraries-" + Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, LoaderSearchPath.Folder));
+
+            const string shipped = "[UnityMono]\r\n# comment\r\ndll_search_path_override =\r\ndebug_enabled = false\r\n";
+            var configPath = Path.Combine(root, "doorstop_config.ini");
+            var setting = LoaderSearchPath.For("bepinex5", windowsBuild: true)!;
+
+            File.WriteAllText(configPath, LoaderSearchPath.Add(shipped, setting, LoaderSearchPath.Folder));
+            File.WriteAllText(Path.Combine(root, "Game.exe"), "");
+
+            var library = Path.Combine(root, LoaderSearchPath.Folder, "netstandard.dll");
+            File.WriteAllText(library, "not really a library");
+
+            var recorded = new Model.ReceiptRuntimeLibraries
+            {
+                Unity = "2018.4.36",
+                Files = { new Model.ReceiptFile { Path = $"{LoaderSearchPath.Folder}/netstandard.dll", Sha256 = FileOperations.HashFile(library) } },
+                DirsCreated = { LoaderSearchPath.Folder },
+                ConfigFile = "doorstop_config.ini",
+                ConfigEntry = LoaderSearchPath.Folder,
+            };
+            ReceiptStore.Write(root, new Model.Receipt { RuntimeLibraries = recorded });
+
+            var game = new Model.GameInstall
+            {
+                Name = "test", Path = root, ExecutablePath = Path.Combine(root, "Game.exe"),
+                Runtime = Model.UnityRuntime.Mono, UnityVersion = "2018.4.36f1",
+                RuntimeLibraries = new Model.RuntimeLibraryNeed(new[] { "netstandard" }, false, "2018.4.36", null),
+            };
+            var loader = new Model.DetectedLoader { Id = "bepinex5", Display = "BepInEx 5", PluginDir = "BepInEx/plugins" };
+
+            Program.Check(RuntimeLibrariesInstaller.StateOf(game, loader).Status == Model.RuntimeLibrariesStatus.InPlace,
+                "added, and the loader told: in place", "");
+
+            File.WriteAllText(configPath, shipped);
+            var afterLoaderUpdate = RuntimeLibrariesInstaller.StateOf(game, loader);
+            Program.Check(afterLoaderUpdate is { Status: Model.RuntimeLibrariesStatus.Missing, BlocksTheMod: true, WriteOffered: true },
+                "the loader rewrote its configuration: missing again, and offered",
+                "a loader update drops our entry without a word");
+
+            File.WriteAllText(configPath, LoaderSearchPath.Add(shipped, setting, LoaderSearchPath.Folder));
+            game.UnityVersion = "2019.4.1f1";
+            Program.Check(RuntimeLibrariesInstaller.StateOf(game, loader).Status == Model.RuntimeLibrariesStatus.WrongVersion,
+                "the game moved to another Unity: chosen for the wrong one", "a game update");
+            game.UnityVersion = "2018.4.36f1";
+
+            Program.Check(RuntimeLibrariesInstaller.StateOf(game, null).Status == Model.RuntimeLibrariesStatus.Missing,
+                "no loader left to read them: missing", "");
+
+            var removed = new List<string>();
+            var kept = new List<string>();
+            RuntimeLibrariesInstaller.Remove(game, recorded, removed, kept);
+
+            Program.Check(File.ReadAllText(configPath) == shipped,
+                "removed: the loader's configuration is back byte for byte",
+                "so the loader's own receipt still recognises it as its own to remove");
+            Program.Check(!File.Exists(library) && !Directory.Exists(Path.Combine(root, LoaderSearchPath.Folder)) && kept.Count == 0,
+                "and our folder is gone", "");
+
+            // A library somebody replaced by hand is theirs now.
+            Directory.CreateDirectory(Path.Combine(root, LoaderSearchPath.Folder));
+            File.WriteAllText(library, "somebody else's build");
+            var keptAgain = new List<string>();
+            RuntimeLibrariesInstaller.Remove(game, recorded, new List<string>(), keptAgain);
+            Program.Check(File.Exists(library) && keptAgain.Count == 1,
+                "a library changed since it was added is left, and said", "the rule every removal here follows");
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { /* a temp folder left behind proves nothing */ }
+        }
+    }
 }

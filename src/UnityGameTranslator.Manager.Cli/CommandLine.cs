@@ -560,6 +560,10 @@ public static class CommandLine
                 : $"              installed in {report.StrayPluginDirectories[0]}/, not "
                   + $"{report.PluginDirectory}/ - it may load late or not at all");
         }
+        // ⚠ Printed whenever it applies, refused games included: "a DLL is missing" is exactly the
+        // issue somebody opens, and this line is the answer to paste back.
+        if (report.RuntimeLibraries.Headline is { } libraries) Console.WriteLine($".NET libs   : {libraries}");
+
         Console.WriteLine($"Recommends  : {report.RecommendedLoader?.Display ?? "nothing"}");
         if (report.RecommendationReason is not null) Console.WriteLine($"              {report.RecommendationReason}");
         if (report.PluginBuildId is not null) Console.WriteLine($"Build       : {report.PluginBuildId}");

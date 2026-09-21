@@ -58,8 +58,36 @@ public enum ModdabilityVerdict
     /// </summary>
     StrippedRuntime,
 
+    /// <summary>
+    /// The loader starts, the mod cannot: the game lacks .NET libraries the mod needs, and no copy
+    /// published for its Unity version can be put beside it (see <see cref="RuntimeLibraryNeed"/>).
+    /// A property of how the game was built, like <see cref="StrippedRuntime"/>.
+    /// </summary>
+    MissingRuntimeLibraries,
+
     /// <summary>Not a Unity game.</summary>
     NotUnity,
+}
+
+/// <summary>
+/// The .NET class libraries a Mono game lacks for the mod — read from its own Managed folder when
+/// it was scanned, without downloading anything.
+/// </summary>
+/// <param name="Missing">
+/// The libraries where the mod's references stop, by name ("netstandard", "System"). What stops
+/// FIRST: a game lacking netstandard names netstandard alone, and the install finds what lies
+/// behind it on the real files.
+/// </param>
+/// <param name="LoaderCannotStart">
+/// The game's mscorlib lacks what every loader calls (<see cref="Detection.CorlibProbe"/>), so the
+/// libraries are needed before anything at all can run, not only the mod.
+/// </param>
+/// <param name="Archive">The Unity version the copies are chosen for ("2018.4.36"), or null when unreadable.</param>
+/// <param name="CannotSupply">Why no copy can serve this game, or null when one can — to be confirmed on the files.</param>
+public sealed record RuntimeLibraryNeed(IReadOnlyList<string> Missing, bool LoaderCannotStart,
+                                        string? Archive, string? CannotSupply)
+{
+    public bool CanSupply => CannotSupply is null;
 }
 
 /// <summary>
@@ -161,6 +189,23 @@ public sealed class GameInstall
     /// </summary>
     public List<Detection.CorlibProbe.BrokenFamily> BrokenLoaderFamilies { get; } = new();
 
+    /// <summary>
+    /// The .NET libraries this game lacks for the mod, or null when it lacks none (and for every
+    /// IL2CPP game, which has no class library to lack).
+    /// </summary>
+    public RuntimeLibraryNeed? RuntimeLibraries { get; set; }
+
+    /// <summary>
+    /// Whether the game is a Windows build, wherever it runs — on Windows, or through Proton.
+    ///
+    /// ⚠ One rule for two questions: whether a Linux Steam game runs through Proton, and which
+    /// build of a class library may be put beside a game (a Linux build calls a native library no
+    /// Windows build can load).
+    /// </summary>
+    public bool IsWindowsBuild =>
+        ExecutablePath?.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) == true
+        || File.Exists(System.IO.Path.Combine(Path, "UnityPlayer.dll"));
+
     public bool IsUnity => DataDirectory is not null || ExecutablePath is not null;
 
     public bool IsModdable => Verdict == ModdabilityVerdict.Ok;
@@ -180,8 +225,9 @@ public sealed class GameInstall
     /// as real as any other. An unreadable runtime or architecture is our probe failing, not the
     /// game refusing, and `--runtime` / `--arch` exist precisely to override it.
     ///
-    /// The other three are walls: a stripped runtime library no loader can start against,
-    /// encrypted binaries under a locked-down ACL, and a game that is not Unity at all.
+    /// The other four are walls: a stripped runtime library no loader can start against, class
+    /// libraries the mod needs and no published copy can supply, encrypted binaries under a
+    /// locked-down ACL, and a game that is not Unity at all.
     ///
     /// ⚠ **NOT a duplicate of <see cref="Detection.ModdabilityProbe.CanBeOverridden"/>, and merging
     /// the two would break both.** That one asks *will this tool try anyway if you insist*, and the

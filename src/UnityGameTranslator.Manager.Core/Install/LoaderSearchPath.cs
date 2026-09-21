@@ -48,6 +48,18 @@ public static class LoaderSearchPath
         _ => null,
     };
 
+    /// <summary>
+    /// The setting a recorded configuration file holds — how a removal finds its way back without
+    /// depending on which loader is detected today.
+    /// </summary>
+    public static Setting? ForFile(string configFile, bool windowsBuild)
+    {
+        var file = configFile.Replace('\\', '/');
+
+        return new[] { For("bepinex5", windowsBuild), For("melonloader", windowsBuild) }
+            .FirstOrDefault(s => s is not null && s.File.Equals(file, StringComparison.OrdinalIgnoreCase));
+    }
+
     // ── Reading ───────────────────────────────────────────────────────────────────────────────
 
     /// <summary>The entries the setting currently lists, as written. Empty when absent.</summary>

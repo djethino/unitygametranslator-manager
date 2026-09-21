@@ -3624,6 +3624,11 @@ public partial class MainWindow : Window
         foreach (var warning in report.Warnings)
             yield return Callout(warning, Tone.Warning);
 
+        // ⚠ Only on a game that lacks .NET libraries, or where ours still sit — anywhere else it
+        // would be a card saying nothing. First of the three because it comes first: without it,
+        // neither the mod nor (on the most stripped games) the loader can start.
+        if (report.RuntimeLibraries.Relevant) yield return Card(CompatibilitySection(report));
+
         // Three cards for three subjects, where there used to be one called "Actions".
         //
         // The loader and the mod are published by different people on different days and are
@@ -7588,6 +7593,191 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// The .NET libraries this game lacks for the mod — what is missing, where it stands, and the
+    /// verbs that add or remove them (issue #28).
+    ///
+    /// ⚠ Built like the loader's and the mod's cards beside it: a fact, a standing line in the
+    /// colour of what it means, then its own verbs. The one-click adds them too, and so do the
+    /// loader's and the mod's buttons — putting either on a game that lacks them without them would
+    /// give a game that cannot run. This card is where it is SEEN, and where it is undone.
+    /// </summary>
+    private Control CompatibilitySection(GameReport report)
+    {
+        var panel = new StackPanel { Spacing = 8 };
+        panel.Children.Add(SectionTitle("Compatibility"));
+
+        var state = report.RuntimeLibraries;
+        var need = state.Need;
+        var installed = state.Installed;
+        var running = _running.IsRunning(report.Game);
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = need is not null
+                ? "This game ships without .NET libraries the mod needs."
+                : "This game no longer lacks any .NET library.",
+            FontSize = 13,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("TextPrimary"),
+        });
+
+        if (need is not null)
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Missing: " + string.Join(", ", need.Missing),
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("TextSecondary"),
+            });
+        }
+
+        // ⚠ What it MEANS, in the colour of what it means — the same register as "Up to date." and
+        // the loader's warning line on the card below.
+        var (standing, tone) = state.Status switch
+        {
+            RuntimeLibrariesStatus.Missing when need is { CanSupply: false } =>
+                ($"They cannot be added: {need.CannotSupply}.", "StatusWarning"),
+
+            RuntimeLibrariesStatus.Missing when report.InstalledLoader is null =>
+                ("They are added together with the mod loader.", null),
+
+            RuntimeLibrariesStatus.Missing when installed is not null =>
+                ($"Added before, no longer in place ({state.Detail}). The mod will not start.", "StatusWarning"),
+
+            RuntimeLibrariesStatus.Missing =>
+                ("Not added yet. The mod will not start.", "StatusWarning"),
+
+            RuntimeLibrariesStatus.WrongVersion =>
+                ($"Added for another Unity version ({state.Detail}). The mod will not start.", "StatusWarning"),
+
+            RuntimeLibrariesStatus.InPlace =>
+                ($"Added for Unity {installed!.Unity}: {Composition.Amount(installed.Files.Count, "file", "files")} "
+                 + $"in {LoaderSearchPath.Folder}/.", null),
+
+            RuntimeLibrariesStatus.NoLongerNeeded =>
+                ($"{Composition.Amount(installed!.Files.Count, "file", "files")} added for Unity {installed.Unity} "
+                 + $"{(installed.Files.Count == 1 ? "is" : "are")} still in {LoaderSearchPath.Folder}/.", null),
+
+            _ => ("", null),
+        };
+
+        if (standing.Length > 0)
+        {
+            var line = new TextBlock { Text = standing, FontSize = 12, TextWrapping = TextWrapping.Wrap };
+            if (tone is null) line.Opacity = 0.6;
+            else line.Foreground = Brush(tone);
+            panel.Children.Add(line);
+        }
+
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Margin = new Avalonia.Thickness(0, 2, 0, 0),
+        };
+
+        // ⚠ Only with a loader to tell. Without one, the loader's own button and the one-click add
+        // them in the same act — said on the line above, so the absence of a button is explained.
+        if (state.WriteOffered && report.InstalledLoader is not null)
+        {
+            var add = new Button
+            {
+                Content = state.Status == RuntimeLibrariesStatus.WrongVersion ? "Update the libraries"
+                        : installed is not null ? "Reinstall the libraries"
+                        : "Install the libraries",
+                IsEnabled = !running,
+                Classes = { "primary" },
+            };
+
+            ToolTip.SetTip(add,
+                $"Downloads the .NET libraries of Unity {need!.Archive} from BepInEx's archive "
+                + $"({LoaderOrigins.ClassLibrariesHost}), checks them against this game's own, and puts the ones "
+                + $"it lacks in {LoaderSearchPath.Folder}/. {report.InstalledLoader.Display} is told to read them "
+                + "first. None of the game's own files is replaced.");
+
+            add.Click += async (_, _) => await RunRuntimeLibrariesInstallAsync(report);
+            buttons.Children.Add(add);
+        }
+
+        if (state.RemoveOffered)
+        {
+            var remove = new Button { Content = "Remove..." };
+            remove.IsEnabled = !running && MaySetUp(report, remove);
+
+            remove.Click += async (_, _) => await RemoveRuntimeLibrariesAsync(report);
+            buttons.Children.Add(remove);
+        }
+
+        if (buttons.Children.Count > 0) panel.Children.Add(buttons);
+
+        return panel;
+    }
+
+    /// <summary>Adds the libraries alone: the loader and the mod stay exactly as they are.</summary>
+    private async Task RunRuntimeLibrariesInstallAsync(GameReport report)
+    {
+        var plan = BuildPlan(report, _preferences.Read(report.Game.Path),
+                             loader: false, plugin: false, settings: false);
+
+        await RunInstallAsync(report, new InstallEngine(_platform, _catalog), plan);
+    }
+
+    /// <summary>
+    /// Takes our libraries back out, and our entry out of the loader's configuration.
+    ///
+    /// ⚠ Offered even while the game lacks them — it is the way back if the game behaves differently
+    /// with them — and the confirmation says plainly what that costs.
+    /// </summary>
+    private async Task RemoveRuntimeLibrariesAsync(GameReport report)
+    {
+        var installed = report.RuntimeLibraries.Installed;
+        if (installed is null) return;
+
+        var loader = report.InstalledLoader?.Display ?? "The mod loader";
+
+        var body = new StackPanel { Spacing = 10 };
+        body.Children.Add(new TextBlock
+        {
+            Text = $"{Composition.Amount(installed.Files.Count, "file", "files")} in {LoaderSearchPath.Folder}/ "
+                 + $"{(installed.Files.Count == 1 ? "is" : "are")} deleted, and {loader} is no longer told to read "
+                 + "them. The game's own files are not touched.",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("TextSecondary"),
+        });
+
+        if (report.RuntimeLibraries.Need is not null)
+        {
+            body.Children.Add(new TextBlock
+            {
+                Text = report.RuntimeLibraries.Need.LoaderCannotStart
+                    ? $"This game lacks them: {loader} will not start until they are installed again."
+                    : "This game lacks them: the mod will stop at load until they are installed again.",
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush("StatusWarning"),
+            });
+        }
+
+        if (!await ConfirmAsync($"Remove the .NET libraries from {report.Game.Name}?", body, "Remove")) return;
+
+        Working($"Removing the .NET libraries from {report.Game.Name}...");
+
+        try
+        {
+            var outcome = await Task.Run(() => new UninstallEngine(_platform, _catalog).RemoveRuntimeLibraries(report.Game));
+
+            Work.Finish(outcome.Success, outcome.Success ? "Done" : "Nothing was changed");
+            await MessageAsync(outcome.Success ? "Removed" : "Nothing was changed", outcome.Message);
+        }
+        finally
+        {
+            WorkEnded();
+        }
+
+        await ShowSelectedAsync();
+    }
+
+    /// <summary>
     /// 🔴 **May this window change how this game is SET UP — its configuration, its in-game key,
     /// what is installed in it?**
     ///
@@ -9909,7 +10099,7 @@ public partial class MainWindow : Window
     /// </summary>
     private enum OneClickAct
     {
-        InstallLoader, UpdateLoader, InstallMod, UpdateMod,
+        InstallLoader, UpdateLoader, InstallMod, UpdateMod, AddRuntimeLibraries,
         ApplySettings, TakeTranslation, UpdateTranslation, ReplaceTranslation,
     }
 
@@ -9941,6 +10131,15 @@ public partial class MainWindow : Window
             yield return report.InstalledPluginVersion is null
                 ? new(OneClickAct.InstallMod, "install the mod")
                 : new(OneClickAct.UpdateMod, $"update the mod to {report.PluginStanding!.Available}");
+        }
+
+        // ⚠ The same condition the plan reads (RuntimeLibrariesState.WriteOffered), so the list
+        // promises exactly what the click does. Named, because "a DLL is missing" is precisely the
+        // thing somebody wants to see being dealt with.
+        if (report.RuntimeLibraries is { WriteOffered: true, Need: { } need })
+        {
+            yield return new(OneClickAct.AddRuntimeLibraries,
+                             $"add the .NET libraries this game lacks ({string.Join(", ", need.Missing)})");
         }
 
         // ⚠ Only when it would actually change something. This step used to be listed whenever the
@@ -10104,7 +10303,7 @@ public partial class MainWindow : Window
     {
         if (steps.Count == 0) return "Nothing to OneClick";
 
-        if (steps.Any(s => s.Act is OneClickAct.InstallLoader or OneClickAct.InstallMod))
+        if (steps.Any(s => s.Act is OneClickAct.InstallLoader or OneClickAct.InstallMod or OneClickAct.AddRuntimeLibraries))
             return "OneClick Set Up this Game";
 
         if (steps.Any(s => s.Act is OneClickAct.UpdateLoader or OneClickAct.UpdateMod))
@@ -10221,6 +10420,7 @@ public partial class MainWindow : Window
         {
             InstallStage.Loader => StepOf(OneClickAct.InstallLoader, OneClickAct.UpdateLoader),
             InstallStage.Plugin => StepOf(OneClickAct.InstallMod, OneClickAct.UpdateMod),
+            InstallStage.RuntimeLibraries => StepOf(OneClickAct.AddRuntimeLibraries),
             InstallStage.Settings => StepOf(OneClickAct.ApplySettings),
             _ => -1,
         }));
@@ -12201,6 +12401,7 @@ public partial class MainWindow : Window
         var stages = new List<(InstallStage Stage, string Line)>();
         if (plan.InstallLoader) stages.Add((InstallStage.Loader, $"Install {plan.Loader.Display}"));
         if (plan.InstallPlugin) stages.Add((InstallStage.Plugin, "Install the mod"));
+        if (plan.SupplyRuntimeLibraries) stages.Add((InstallStage.RuntimeLibraries, "Add the .NET libraries"));
         if (plan.WritesSettings) stages.Add((InstallStage.Settings, "Apply the settings"));
 
         void OnStage(InstallStage stage) =>

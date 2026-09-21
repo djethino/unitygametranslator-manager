@@ -105,7 +105,7 @@ public sealed class SteamScanner
                     // A prefix exists for every app Steam ever launched through Proton, including
                     // native Linux ones in some setups. The deciding evidence is the game itself
                     // being a Windows build.
-                    game.RunsUnderProton = _platform.OsId != "windows" && IsWindowsBuild(game);
+                    game.RunsUnderProton = _platform.OsId != "windows" && game.IsWindowsBuild;
                 }
 
                 ModdabilityProbe.Evaluate(game);
@@ -113,10 +113,6 @@ public sealed class SteamScanner
             }
         }
     }
-
-    private static bool IsWindowsBuild(GameInstall game) =>
-        game.ExecutablePath?.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) == true
-        || File.Exists(Path.Combine(game.Path, "UnityPlayer.dll"));
 }
 
 public readonly record struct SteamApp(

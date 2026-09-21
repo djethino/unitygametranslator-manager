@@ -10,6 +10,13 @@ public enum InstallStage
 {
     Loader,
     Plugin,
+
+    /// <summary>
+    /// The .NET libraries the game lacks. After the loader, whose configuration it edits, and after
+    /// the plugin, whose real needs it reads.
+    /// </summary>
+    RuntimeLibraries,
+
     Settings,
 }
 
@@ -30,6 +37,16 @@ public sealed record InstallPlan(
     /// The two are now asked for separately, and the one-click asks for both.
     /// </summary>
     public bool InstallPlugin { get; init; } = true;
+
+    /// <summary>
+    /// Whether the .NET libraries this game lacks are added (or put back) by this plan.
+    ///
+    /// ⚠ Offered by default wherever the report says they are lacking and can be added — see
+    /// <see cref="RuntimeLibrariesState.WriteOffered"/>. The precedent is the mod's own button,
+    /// which brings a loader along when there is none: putting a loader or a plugin on a game that
+    /// lacks them would give a game that cannot run, which is not what anybody asked for.
+    /// </summary>
+    public bool SupplyRuntimeLibraries { get; init; }
 
     /// <summary>
     /// Whether the mod still runs its first-run wizard after this install.
@@ -121,6 +138,12 @@ public sealed record InstallPlan(
         yield return InstallPlugin
             ? $"Install the plugin into {Loader.PluginDir}/"
             : "The plugin already there is left exactly as it is";
+
+        if (SupplyRuntimeLibraries && Game.RuntimeLibraries is { } need)
+        {
+            yield return $"Add the .NET libraries this game lacks ({string.Join(", ", need.Missing)}) "
+                       + $"into {LoaderSearchPath.Folder}/, and tell {Loader.Display} to read them first";
+        }
 
         if (!string.Equals(Loader.UserDataDir, Loader.PluginDir, StringComparison.OrdinalIgnoreCase))
             yield return $"Settings and translations live in {Loader.UserDataDir}/";
@@ -233,6 +256,7 @@ public sealed class InstallEngine
             StrayPluginDirectories = stray,
             Settings = settings,
             Preference = preference,
+            SupplyRuntimeLibraries = report.RuntimeLibraries.WriteOffered,
 
             // 🔴 The build the screens announced, read from the SAME place they read it — the
             // resolver's cache. Filled here rather than by each caller so that no path can be
@@ -320,6 +344,35 @@ public sealed class InstallEngine
                 // installed plugin that nothing claims to have put there — and uninstall reads the
                 // receipt, so it would then refuse to remove our own files.
                 receipt.Plugin = existing?.Plugin;
+            }
+
+            // 🔴 **A loader written anew drops our entry from its configuration**, and the plan cannot
+            // see that coming: it was made while the libraries were in place. So a plan that puts the
+            // loader back on a game where we had added them puts them back too — it restores what we
+            // did, it does not decide anything new.
+            var restoresLibraries = plan.InstallLoader
+                                    && existing?.RuntimeLibraries is not null
+                                    && plan.Game.RuntimeLibraries is not null;
+
+            if (plan.SupplyRuntimeLibraries || restoresLibraries)
+            {
+                Stage?.Invoke(InstallStage.RuntimeLibraries);
+
+                // The version of the loader that will read the setting: the one just installed, or
+                // the one already there.
+                var loaderVersion = plan.InstallLoader
+                    ? plan.Build?.Version ?? plan.Loader.Version
+                    : LoaderProbe.Detect(plan.Game.Path, _catalog)?.Version;
+
+                receipt.RuntimeLibraries = await RuntimeLibrariesInstaller.ApplyAsync(
+                    plan.Game, plan.Loader, loaderVersion, files, existing?.RuntimeLibraries, staging,
+                    ArchivesCache(), Status, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                // Same reason as the plugin's: dropped from the receipt, our libraries would be files
+                // nothing claims, and the loader's configuration would keep pointing at them.
+                receipt.RuntimeLibraries = existing?.RuntimeLibraries;
             }
 
             var health = VerifyHealth(plan);

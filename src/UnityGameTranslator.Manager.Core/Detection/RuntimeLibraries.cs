@@ -374,6 +374,58 @@ public static class RuntimeLibraries
                                .Distinct(StringComparer.Ordinal)
                                .OrderBy(l => l, StringComparer.Ordinal)) + "\n";
 
+    // ── A game, as the scan sees it ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// What this Mono game lacks for the mod, read from its Managed folder — or null when it lacks
+    /// nothing, when it has no Managed folder, or when it is not Mono.
+    ///
+    /// ⚠ Read against <see cref="EmbeddedModNeeds"/>, so no download and no plugin are needed; and
+    /// remembered against the libraries' own stamps, so a list redrawn forty times reads a game
+    /// once, and reads it again the day an update replaces a library.
+    /// </summary>
+    /// <param name="loaderCannotStart">
+    /// The game's mscorlib lacks what loaders call (<see cref="CorlibProbe"/>): mscorlib is then
+    /// needed whatever the mod asks, because nothing starts without it.
+    /// </param>
+    public static Model.RuntimeLibraryNeed? NeedOf(Model.GameInstall game, bool loaderCannotStart)
+    {
+        if (game.Runtime != Model.UnityRuntime.Mono || game.DataDirectory is null) return null;
+
+        var managed = Path.Combine(game.DataDirectory, "Managed");
+        if (!Directory.Exists(managed)) return null;
+
+        var missing = MissingMemo.GetOrAdd(StampOf(managed),
+            _ => Missing(EmbeddedModNeeds, new Layers(Folder(managed))));
+
+        var all = loaderCannotStart && !missing.Contains("mscorlib", StringComparer.OrdinalIgnoreCase)
+            ? missing.Prepend("mscorlib").ToList()
+            : missing;
+
+        if (all.Count == 0) return null;
+
+        return new Model.RuntimeLibraryNeed(all, loaderCannotStart, ArchiveName(game.UnityVersion),
+                                            CannotSupply(all, game.UnityVersion, game.IsWindowsBuild));
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, IReadOnlyList<string>> MissingMemo = new();
+
+    /// <summary>The folder and the size and time of every class library in it.</summary>
+    private static string StampOf(string managed)
+    {
+        var parts = new List<string> { managed.ToLowerInvariant() };
+
+        foreach (var file in Directory.EnumerateFiles(managed, "*.dll").OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+        {
+            if (!IsClassLibrary(Path.GetFileNameWithoutExtension(file))) continue;
+
+            var info = new FileInfo(file);
+            parts.Add($"{info.Name}:{info.Length}:{info.LastWriteTimeUtc.Ticks}");
+        }
+
+        return string.Join("|", parts);
+    }
+
     // ── Reading a game's own libraries ────────────────────────────────────────────────────────
 
     /// <summary>

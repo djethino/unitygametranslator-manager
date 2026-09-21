@@ -59,6 +59,8 @@ public static class ModdabilityProbe
         }
 
         // Only Mono games have a managed corlib to strip; IL2CPP compiles it away entirely.
+        game.RuntimeLibraries = null;
+
         if (game.Runtime == UnityRuntime.Mono)
         {
             var corlib = CorlibProbe.Check(game.DataDirectory);
@@ -66,10 +68,28 @@ public static class ModdabilityProbe
             game.BrokenLoaderFamilies.Clear();
             game.BrokenLoaderFamilies.AddRange(corlib.Broken);
 
-            if (corlib.IsStripped)
+            // 🔴 **What the game lacks, and whether a complete copy can be put beside it.** Both
+            // refusals below used to be one: a stripped mscorlib was a wall. It is a wall only when
+            // no copy published for the game's Unity version can serve it — otherwise the loader's
+            // own search path takes a complete mscorlib and everything starts. And a game whose
+            // loader starts fine while the MOD lacks a library went unnoticed entirely: installed,
+            // "ready", and dead at load (issue #28).
+            var need = RuntimeLibraries.NeedOf(game, loaderCannotStart: corlib.IsStripped);
+            game.RuntimeLibraries = need;
+
+            // ⚠ The message is the one this refusal always had, on purpose: when no copy can serve,
+            // everything it says is still exactly true.
+            if (corlib.IsStripped && need is not { CanSupply: true })
             {
                 game.Verdict = ModdabilityVerdict.StrippedRuntime;
                 game.VerdictDetail = CorlibProbe.Describe(corlib.Broken);
+                return;
+            }
+
+            if (need is { CanSupply: false })
+            {
+                game.Verdict = ModdabilityVerdict.MissingRuntimeLibraries;
+                game.VerdictDetail = need.CannotSupply;
                 return;
             }
         }
@@ -101,6 +121,7 @@ public static class ModdabilityProbe
         ModdabilityVerdict.RuntimeUnknown => true,
         ModdabilityVerdict.ArchitectureUnknown => true,
         ModdabilityVerdict.StrippedRuntime => true,
+        ModdabilityVerdict.MissingRuntimeLibraries => true,
         ModdabilityVerdict.StoreProtected => true,
         _ => false,
     };
@@ -114,6 +135,8 @@ public static class ModdabilityProbe
             "Pick the wrong one and the loader silently never runs. Uninstalling puts it back.",
         ModdabilityVerdict.StrippedRuntime =>
             "This has been tested on a game built the same way: BepInEx 5, BepInEx 6 and MelonLoader all failed, and so did swapping in unstripped runtime libraries. Trying costs a few minutes and nothing else.",
+        ModdabilityVerdict.MissingRuntimeLibraries =>
+            "The loader will start and the mod will not: it stops at load on the missing library. Uninstalling puts the game back.",
         ModdabilityVerdict.StoreProtected =>
             "The folder is usually read-only, so the install will most likely be refused by the system rather than by us.",
         _ => "",
@@ -194,6 +217,11 @@ public static class ModdabilityProbe
             "and MelonLoader were each tried on such a game, and so was swapping in unstripped " +
             "runtime libraries. This is how the game was built, not a limitation of the tool or " +
             "of the mod.",
+        ModdabilityVerdict.MissingRuntimeLibraries =>
+            "Refused: this game ships without .NET libraries the mod needs " +
+            $"({string.Join(", ", game.RuntimeLibraries?.Missing ?? Array.Empty<string>())}), and they cannot be added: " +
+            $"{game.VerdictDetail}. The loader would start and the mod would stop at load. This is how the game " +
+            "was built, not a limitation of the tool or of the mod.",
         ModdabilityVerdict.ArchitectureUnknown =>
             "Refused: could not read whether this game is 32-bit or 64-bit. A 64-bit loader in a " +
             "32-bit game does not crash, it simply never runs — which looks exactly like a broken mod.",

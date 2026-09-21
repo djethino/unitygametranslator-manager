@@ -56,6 +56,7 @@ internal static class Program
         RuntimeLibrariesChecks.WhichCopiesMayBeUsed();
         RuntimeLibrariesChecks.WhichArchiveServesAGame();
         RuntimeLibrariesChecks.HowALoaderIsTold();
+        RuntimeLibrariesChecks.WhatStillStandsAfterwards();
 
         Console.WriteLine();
         if (_failures == 0)

@@ -197,10 +197,12 @@ public static class SituationReader
     /// </summary>
     private static string WhatIsMissing(GameReport report, string? standing)
     {
-        // ⚠ One sentence pair, because there is one way into this state: something of ours is here
-        // and no loader is. A missing PLUGIN cannot land here — see GameReport.ModCanRun, where the
-        // plugin's absence is never a verdict because its version is unreadable often enough.
-        const string missing = "No mod loader installed. The mod will not run.";
+        // ⚠ Two ways into this state, and each names its piece: no loader, or the .NET libraries
+        // the game lacks not in place. A missing PLUGIN cannot land here — see GameReport.ModCanRun,
+        // where the plugin's absence is never a verdict because its version is unreadable often enough.
+        var missing = report.InstalledLoader is null
+            ? "No mod loader installed. The mod will not run."
+            : "The .NET libraries this game lacks are not in place. The mod will not run.";
 
         return standing is { Length: > 0 } ? $"{missing} · {standing}" : missing;
     }
@@ -463,6 +465,7 @@ public static class SituationReader
         ModdabilityVerdict.RuntimeUnknown => "Not identified — Mono or IL2CPP could not be read",
         ModdabilityVerdict.ArchitectureUnknown => "Not identified — 32-bit or 64-bit could not be read",
         ModdabilityVerdict.StrippedRuntime => "Cannot be modded — the game ships a stripped runtime",
+        ModdabilityVerdict.MissingRuntimeLibraries => "Cannot be modded — the game lacks .NET libraries the mod needs",
         ModdabilityVerdict.NotUnity => "Not a Unity game",
         _ => "Cannot be modded",
     };

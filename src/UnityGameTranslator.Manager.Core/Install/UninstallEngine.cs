@@ -405,6 +405,27 @@ public sealed class UninstallEngine
             }
         }
 
+        // 🔴 **The .NET libraries we added, BEFORE the loader.** Taking our entry out of the loader's
+        // configuration gives it back its original bytes, and only then does the loader's own receipt
+        // recognise the file as its own to remove. The other order leaves a configuration file that
+        // reads as "changed since install" and stays behind for ever.
+        //
+        // ⚠ They go with the loader, or with the mod when only the mod needed them. A game whose
+        // mscorlib stops the LOADER itself keeps them while the loader stays: removing them would
+        // leave a loader that cannot start, which is not what "remove the mod" asked for.
+        if (receipt.RuntimeLibraries is { } libraries)
+        {
+            var loaderGoing = choice.RemoveLoader && receipt.Loader is { InstalledByUs: true }
+                              && CountForeignMods(game, receipt) == 0;
+            var onlyTheModNeedsThem = game.RuntimeLibraries?.LoaderCannotStart != true;
+
+            if (loaderGoing || (choice.RemovePlugin && onlyTheModNeedsThem))
+            {
+                RuntimeLibrariesInstaller.Remove(game, libraries, removed, kept);
+                receipt.RuntimeLibraries = null;
+            }
+        }
+
         if (choice.RemoveLoader && receipt.Loader is { InstalledByUs: true } loader)
         {
             var foreign = CountForeignMods(game, receipt);
@@ -450,7 +471,7 @@ public sealed class UninstallEngine
         // tool believe it manages a game it no longer touches.
         var ledger = new InstallLedger(_platform);
 
-        if (receipt.Plugin is null && receipt.Loader?.InstalledByUs != true)
+        if (receipt.Plugin is null && receipt.Loader?.InstalledByUs != true && receipt.RuntimeLibraries is null)
         {
             ReceiptStore.Delete(game.Path);
             FileOperations.TryRemoveEmptyDirectory(
@@ -483,6 +504,54 @@ public sealed class UninstallEngine
         }
 
         return new UninstallOutcome(true, message, removed, kept, lastBackupTaken);
+    }
+
+    /// <summary>
+    /// Takes out the .NET libraries this tool added, and nothing else — the Compatibility card's own
+    /// verb. The loader and the mod stay; the receipt goes on describing them.
+    ///
+    /// ⚠ Offered even while the game still lacks them, because it is the way back if a game behaves
+    /// differently with them in place. Said in the confirmation: the mod stops at load afterwards.
+    /// </summary>
+    public UninstallOutcome RemoveRuntimeLibraries(GameInstall game)
+    {
+        var receipt = ReceiptStore.Read(game.Path);
+        if (receipt?.RuntimeLibraries is not { } libraries)
+        {
+            return new UninstallOutcome(false, "No .NET libraries were added to this game by UnityGameTranslator Manager.",
+                Array.Empty<string>(), Array.Empty<string>(), false);
+        }
+
+        if (_platform.IsGameRunning(game))
+        {
+            return new UninstallOutcome(false, "The game is running. Close it and try again.",
+                Array.Empty<string>(), Array.Empty<string>(), false);
+        }
+
+        var removed = new List<string>();
+        var kept = new List<string>();
+
+        RuntimeLibrariesInstaller.Remove(game, libraries, removed, kept);
+        receipt.RuntimeLibraries = null;
+
+        var ledger = new InstallLedger(_platform);
+        if (receipt.Plugin is null && receipt.Loader?.InstalledByUs != true)
+        {
+            ReceiptStore.Delete(game.Path);
+            ledger.RememberRemoval(game.Path);
+        }
+        else
+        {
+            ReceiptStore.Write(game.Path, receipt);
+            ledger.Remember(receipt);
+        }
+
+        var message = removed.Count == 0
+            ? "Nothing was removed."
+            : $"Removed {Composition.Amount(removed.Count, "item", "items")}.";
+        if (kept.Count > 0) message += $" {kept.Count} left in place — see the details.";
+
+        return new UninstallOutcome(true, message, removed, kept, false);
     }
 
     /// <summary>

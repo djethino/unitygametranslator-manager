@@ -51,6 +51,11 @@ internal static class Program
         DetectionChecks.WhatMakesAFolderAGame();
         DetectionChecks.HowFarBelowAFolderWeLook();
         DetectionChecks.WhatAStoreManifestNames();
+        RuntimeLibrariesChecks.WhatAGameLacks();
+        RuntimeLibrariesChecks.WhatGoesBesideAGame();
+        RuntimeLibrariesChecks.WhichCopiesMayBeUsed();
+        RuntimeLibrariesChecks.WhichArchiveServesAGame();
+        RuntimeLibrariesChecks.HowALoaderIsTold();
 
         Console.WriteLine();
         if (_failures == 0)

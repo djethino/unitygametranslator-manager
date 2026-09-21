@@ -18,6 +18,12 @@
          answers to "which catalogue is this built from" is one too many. -->
     <EmbeddedResource Include="..\..\common\catalogs\loaders.json"
                       LogicalName="UnityGameTranslator.Manager.Core.Resources.loaders.json" />
+
+    <!-- What the mod asks of a game's .NET class libraries, read out of a real build by
+         generate-mod-requirements.ps1 (project root). The game list checks games against it
+         without downloading anything; an install checks the plugin it has just put in place. -->
+    <EmbeddedResource Include="Detection\mod-requirements.txt"
+                      LogicalName="UnityGameTranslator.Manager.Core.Resources.mod-requirements.txt" />
   </ItemGroup>
 
   <ItemGroup>

@@ -113,6 +113,11 @@ public sealed class ToolSettingsWindow : Window
             CheckToolUpdates = current.CheckToolUpdates,
             CheckContentUpdates = current.CheckContentUpdates,
             BepInEx6Channel = current.BepInEx6Channel,
+
+            // ⚠ Copied like the rest, or the two boxes open ticked against a stored "read" and the
+            // window greets somebody with "Apply (2)" for changes nobody made (2026-09-22).
+            LocalCopyNoticeRead = current.LocalCopyNoticeRead,
+            UnityDownloadNoticeRead = current.UnityDownloadNoticeRead,
         };
 
         Title = "Settings — this tool";

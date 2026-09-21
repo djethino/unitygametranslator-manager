@@ -165,11 +165,17 @@ public static class CommandLine
             output.WriteLine("  .NET from :");
             for (var i = 0; i < state.ClassLibrarySources.Count; i++)
             {
-                var source = state.ClassLibrarySources[i];
-                var mark = source == state.ClassLibrarySource ? "*" : " ";
-                var other = source.SameRelease ? "" : " [another release of the same generation]";
-                output.WriteLine($"            {mark} [{i + 1}] {source.Label}{other}");
+                var candidate = state.ClassLibrarySources[i];
+                var mark = candidate == state.ClassLibrarySource ? "*" : " ";
+                var other = candidate.Source.SameRelease ? "" : " [another release of the same generation]";
+
+                output.WriteLine(candidate.Usable
+                    ? $"            {mark} [{i + 1}] {candidate.Source.Label}{other}"
+                    : $"              [{i + 1}] {candidate.Source.Label}{other} - not usable: {candidate.Problems[0]}");
             }
+
+            if (state.ClassLibrarySources.Any(c => c.Usable && c.Source.Kind == ClassLibrarySourceKind.Game))
+                output.WriteLine($"              ! {LocalCopies.Disclaimer(signed: false)}");
         }
 
         if (state.ModuleSources.Count > 0)
@@ -185,7 +191,13 @@ public static class CommandLine
                     ? $"            {mark} [{i + 1}] {candidate.Source.Label}{older}"
                     : $"              [{i + 1}] {candidate.Source.Label}{older} - not usable: {candidate.Problems[0]}");
             }
+
+            if (state.ModuleSources.Any(c => c.Usable && c.Source.Kind == EngineModuleSourceKind.Game))
+                output.WriteLine($"              ! {LocalCopies.Disclaimer(signed: true)}");
         }
+
+        if (state.NoSource is { } none)
+            output.WriteLine($"              {none}");
 
         if (state.ChosenSourceGone)
             output.WriteLine("              a source chosen for this game is no longer usable - the first usable one is used");
@@ -354,6 +366,9 @@ public static class CommandLine
             // Wired here and not on the install path: there it would spend a request on the rate
             // limited API to print nothing.
             Releases = offline ? null : new PluginReleases(),
+
+            // Unity's server is then not offered as a source for what a game lacks.
+            Offline = offline,
 
             // 🔴 Which BepInEx 6 stream to measure "up to date" against, warmed just below. This
             // command is the one somebody pastes into an issue; comparing against the catalogue's
@@ -829,14 +844,14 @@ public static class CommandLine
         if (ValueOf(args, "--libraries-from") is { } libraryFrom)
         {
             var sources = report.RuntimeLibraries.ClassLibrarySources;
-            if (!int.TryParse(libraryFrom, out var index) || index < 1 || index > sources.Count)
+            if (!int.TryParse(libraryFrom, out var index) || index < 1 || index > sources.Count || !sources[index - 1].Usable)
             {
-                Console.Error.WriteLine($"'--libraries-from {libraryFrom}' is not a source for this game. The sources:");
+                Console.Error.WriteLine($"'--libraries-from {libraryFrom}' is not a usable source for this game. The sources:");
                 PrintSources(report.RuntimeLibraries, Console.Error);
                 return 1;
             }
 
-            plan = plan with { ClassLibrarySource = sources[index - 1] };
+            plan = plan with { ClassLibrarySource = sources[index - 1].Source };
         }
 
         if (ValueOf(args, "--modules-from") is { } from)
@@ -1533,6 +1548,9 @@ public static class CommandLine
                                           offline ? null : new CatalogApiClient())
         {
             BepInEx6Channel = bepinex6Channel,
+
+            // Unity's server is then not offered as a source for what a game lacks.
+            Offline = offline,
         };
 
         // A path is looked up in the full scan FIRST, and only probed on its own when that finds

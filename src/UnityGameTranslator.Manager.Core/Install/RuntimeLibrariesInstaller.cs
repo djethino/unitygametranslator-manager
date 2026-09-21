@@ -27,20 +27,22 @@ public static class RuntimeLibrariesInstaller
     /// <param name="games">The other games on this computer — possible sources of engine modules.</param>
     /// <param name="chosenModuleSource">The modules' source a person chose for this game (<see cref="Settings.GamePreference.ModuleSource"/>).</param>
     /// <param name="chosenClassLibrarySource">The .NET libraries' source a person chose (<see cref="Settings.GamePreference.ClassLibrarySource"/>).</param>
+    /// <param name="online">Whether this computer can reach Unity's server now.</param>
     public static RuntimeLibrariesState StateOf(GameInstall game, DetectedLoader? loader, IEnumerable<GameInstall> games,
-                                                string? chosenModuleSource, string? chosenClassLibrarySource)
+                                                string? chosenModuleSource, string? chosenClassLibrarySource, bool online)
     {
         var need = game.RuntimeLibraries;
         var installed = ReceiptStore.Read(game.Path)?.RuntimeLibraries;
+        var others = games as IReadOnlyCollection<GameInstall> ?? games.ToList();
 
         var candidates = need?.Modules is { } modules
-            ? EngineModuleSources.Find(game, modules, games)
+            ? EngineModuleSources.Find(game, modules, others, online)
             : Array.Empty<EngineModuleCandidate>();
         var source = EngineModuleSources.Choose(candidates, chosenModuleSource);
 
         var libraries = need is { Missing.Count: > 0 }
-            ? ClassLibrarySources.Find(game, need.Build, need.Changeset)
-            : Array.Empty<ClassLibrarySource>();
+            ? ClassLibrarySources.Find(game, need.Build, need.Changeset, others, online)
+            : Array.Empty<ClassLibraryCandidate>();
         var library = ClassLibrarySources.Choose(libraries, chosenClassLibrarySource);
 
         RuntimeLibrariesState With(RuntimeLibrariesStatus status, string? detail = null) =>
@@ -50,8 +52,9 @@ public static class RuntimeLibrariesInstaller
                 ModuleSource = source,
                 ClassLibrarySources = libraries,
                 ClassLibrarySource = library,
+                Online = online,
                 ChosenSourceGone = (chosenModuleSource is not null && candidates.Count > 0 && source?.Source.Id != chosenModuleSource)
-                                   || (chosenClassLibrarySource is not null && libraries.Count > 0 && library?.Id != chosenClassLibrarySource),
+                                   || (chosenClassLibrarySource is not null && libraries.Count > 0 && library?.Source.Id != chosenClassLibrarySource),
             };
 
         if (installed is null) return need is null ? RuntimeLibrariesState.None : With(RuntimeLibrariesStatus.Missing);
@@ -311,10 +314,11 @@ public static class RuntimeLibrariesInstaller
             ?? throw new InvalidOperationException(
                 "No source was chosen for this game's .NET libraries. Choose one in its Compatibility card. Nothing was added.");
 
-        string folder;
-        if (source.Kind == ClassLibrarySourceKind.Editor)
+        IReadOnlyList<string> folders;
+        if (source.Kind != ClassLibrarySourceKind.UnityDownload)
         {
-            folder = source.Folder!;
+            // An editor's profile and its Facades/, or another game's Managed folder.
+            folders = source.Folders!;
         }
         else
         {
@@ -328,13 +332,12 @@ public static class RuntimeLibrariesInstaller
             if (need?.Build is null || need.Changeset is null)
                 throw new InvalidOperationException("This game's Unity build could not be identified, so Unity's download cannot be found. Nothing was added.");
 
-            folder = await DownloadClassLibrariesAsync(need.Build, need.Changeset, source.Profile, http, staging, cache, status, ct)
-                         .ConfigureAwait(false);
+            // What was downloaded is already flat.
+            folders = new[] { await DownloadClassLibrariesAsync(need.Build, need.Changeset, source.Profile, http, staging, cache, status, ct)
+                                  .ConfigureAwait(false) };
         }
 
-        // An editor's profile keeps its facades in Facades/; what was downloaded is already flat.
-        var folders = new[] { folder, Path.Combine(folder, "Facades") };
-        var copies = RuntimeLibraries.Folder(folders);
+        var copies = RuntimeLibraries.Folder(folders.ToArray());
 
         var selection = RuntimeLibraries.Select(needs, gameLibraries, copies);
         if (!selection.Complete)

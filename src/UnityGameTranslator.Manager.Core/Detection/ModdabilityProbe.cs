@@ -135,7 +135,7 @@ public static class ModdabilityProbe
         ModdabilityVerdict.ArchitectureUnknown =>
             "Pick the wrong one and the loader silently never runs. Uninstalling puts it back.",
         ModdabilityVerdict.StrippedRuntime =>
-            "This has been tested on a game built the same way: BepInEx 5, BepInEx 6 and MelonLoader all failed, and so did swapping in unstripped runtime libraries. Trying costs a few minutes and nothing else.",
+            "Without complete libraries, every mod loader fails at start on such a game. Uninstalling puts the game back.",
         ModdabilityVerdict.MissingRuntimeLibraries =>
             "The loader will start and the mod will not: it stops at load on the missing library. Uninstalling puts the game back.",
         ModdabilityVerdict.StoreProtected =>
@@ -211,13 +211,14 @@ public static class ModdabilityProbe
         ModdabilityVerdict.RuntimeUnknown =>
             "Refused: could not tell whether this game uses Mono or IL2CPP. Installing the " +
             "wrong loader would stop the game from starting.",
+        // 🔴 Says the REAL reason (user's decision, 2026-09-21). It used to report that loaders and
+        // unstripped libraries had all been tried and failed — true when written, false since
+        // complete libraries of the right generation were shown to start such a game. A game is
+        // refused here only when no such copy can be found, and that is what it says.
         ModdabilityVerdict.StrippedRuntime =>
-            "Refused: this game was built with its runtime library stripped. Missing: " +
-            $"{game.VerdictDetail}. Every loader runs managed code and uses reflection before " +
-            "any mod does, and on a game stripped this hard they all fail — BepInEx 5, BepInEx 6 " +
-            "and MelonLoader were each tried on such a game, and so was swapping in unstripped " +
-            "runtime libraries. This is how the game was built, not a limitation of the tool or " +
-            "of the mod.",
+            "Refused: this game was built with its runtime library stripped (missing: " +
+            $"{game.VerdictDetail}), so every mod loader fails at start without complete libraries. " +
+            $"They cannot be added here: {game.RuntimeLibraries?.CannotSupply ?? "no copy fits this game"}.",
         ModdabilityVerdict.MissingRuntimeLibraries =>
             $"Refused: this game lacks what the mod needs ({game.RuntimeLibraries?.Lacking}), and it cannot be " +
             $"added: {game.VerdictDetail}. The loader would start and the mod would stop at load. This is how the " +

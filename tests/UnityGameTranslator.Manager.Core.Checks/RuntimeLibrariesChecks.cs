@@ -336,7 +336,7 @@ internal static class RuntimeLibrariesChecks
             var loader = new Model.DetectedLoader { Id = "bepinex5", Display = "BepInEx 5", PluginDir = "BepInEx/plugins" };
 
             Model.RuntimeLibrariesState State(Model.DetectedLoader? by) =>
-                RuntimeLibrariesInstaller.StateOf(game, by, Array.Empty<Model.GameInstall>(), null, null);
+                RuntimeLibrariesInstaller.StateOf(game, by, Array.Empty<Model.GameInstall>(), null, null, online: true);
 
             Program.Check(State(loader).Status == Model.RuntimeLibrariesStatus.InPlace,
                 "added, and the loader told: in place", "");

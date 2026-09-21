@@ -49,11 +49,14 @@ public sealed record RuntimeLibrariesState(RuntimeLibrariesStatus Status, Runtim
     /// <summary>The source an install would use: the one chosen for this game while usable, else the first usable one.</summary>
     public EngineModuleCandidate? ModuleSource { get; init; }
 
-    /// <summary>Every place the missing .NET libraries could come from, in the order they are preferred.</summary>
-    public IReadOnlyList<ClassLibrarySource> ClassLibrarySources { get; init; } = Array.Empty<ClassLibrarySource>();
+    /// <summary>Every place the missing .NET libraries could come from, in the order they are preferred, each with its verdict.</summary>
+    public IReadOnlyList<ClassLibraryCandidate> ClassLibrarySources { get; init; } = Array.Empty<ClassLibraryCandidate>();
 
-    /// <summary>The .NET libraries' source an install would use: the one chosen for this game while offered, else the first.</summary>
-    public ClassLibrarySource? ClassLibrarySource { get; init; }
+    /// <summary>The .NET libraries' source an install would use: the one chosen for this game while usable, else the first usable.</summary>
+    public ClassLibraryCandidate? ClassLibrarySource { get; init; }
+
+    /// <summary>Whether this computer could reach Unity's server when this was read — Unity's download is offered only then.</summary>
+    public bool Online { get; init; } = true;
 
     /// <summary>A source was chosen for this game and is no longer usable — the card says the default took its place.</summary>
     public bool ChosenSourceGone { get; init; }
@@ -71,8 +74,13 @@ public sealed record RuntimeLibrariesState(RuntimeLibrariesStatus Status, Runtim
 
     /// <summary>Adding them means downloading from Unity — what the person has to be told, and agree to, first.</summary>
     public bool NeedsUnityDownload => WriteOffered
-                                      && ((Need!.Missing.Count > 0 && ClassLibrarySource?.Kind == ClassLibrarySourceKind.UnityDownload)
+                                      && ((Need!.Missing.Count > 0 && ClassLibrarySource?.Source.Kind == ClassLibrarySourceKind.UnityDownload)
                                           || (Need.Modules is not null && ModuleSource?.Source.Kind == EngineModuleSourceKind.UnityDownload));
+
+    /// <summary>Copies would be taken from another game — what the person must be warned about first.</summary>
+    public bool CopiesFromAnotherGame => WriteOffered
+                                         && ((Need!.Missing.Count > 0 && ClassLibrarySource?.Source.Kind == ClassLibrarySourceKind.Game)
+                                             || (Need.Modules is not null && ModuleSource?.Source.Kind == EngineModuleSourceKind.Game));
 
     /// <summary>Something of ours is in place and may be taken out.</summary>
     public bool RemoveOffered => Installed is not null;
@@ -81,13 +89,26 @@ public sealed record RuntimeLibrariesState(RuntimeLibrariesStatus Status, Runtim
     public bool Relevant => Need is not null || Installed is not null;
 
     /// <summary>
-    /// Why the modules cannot be added although the game can be modded: sources were looked for and
-    /// none holds. Null otherwise.
+    /// Why what the game lacks cannot be added although the game can be modded: sources were looked
+    /// for and none holds. Null otherwise. Offline, the answer is to go online (user's decision).
     /// </summary>
-    public string? NoModuleSource => Need?.Modules is { CannotSupply: null } && ModuleSource is null
-        ? ModuleSources.FirstOrDefault()?.Problems.FirstOrDefault()
-          ?? "no copy of the same Unity release was found on this computer, and Unity's download is not available for it"
-        : null;
+    public string? NoSource
+    {
+        get
+        {
+            var lacksLibraries = Need is { Missing.Count: > 0, CannotSupply: null } && ClassLibrarySource is null;
+            var lacksModules = Need?.Modules is { CannotSupply: null } && ModuleSource is null;
+            if (!lacksLibraries && !lacksModules) return null;
+
+            if (!Online) return LocalCopies.GoOnline;
+
+            return lacksModules
+                ? ModuleSources.FirstOrDefault()?.Problems.FirstOrDefault()
+                  ?? "no copy of the same Unity release was found on this computer, and Unity's download is not available for it"
+                : ClassLibrarySources.FirstOrDefault()?.Problems.FirstOrDefault()
+                  ?? "no copy was found on this computer, and Unity's download is not available for this build";
+        }
+    }
 
     /// <summary>
     /// One line: what the game lacks, and where that stands — the same words for the report and the
@@ -102,8 +123,8 @@ public sealed record RuntimeLibrariesState(RuntimeLibrariesStatus Status, Runtim
         RuntimeLibrariesStatus.Missing when Need is { CanSupply: false } =>
             $"lacks {Need.Lacking} - it cannot be added: {Need.WhyNot}",
 
-        RuntimeLibrariesStatus.Missing when NoModuleSource is { } none =>
-            $"lacks {Need!.Lacking} - it cannot be added: {none}",
+        RuntimeLibrariesStatus.Missing when NoSource is { } none =>
+            Online ? $"lacks {Need!.Lacking} - it cannot be added: {none}" : $"lacks {Need!.Lacking} - {none}",
 
         RuntimeLibrariesStatus.Missing =>
             $"lacks {Need!.Lacking} - not added, so the mod will not start"

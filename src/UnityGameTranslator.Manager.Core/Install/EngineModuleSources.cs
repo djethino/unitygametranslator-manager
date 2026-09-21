@@ -62,7 +62,9 @@ public static class EngineModuleSources
 {
     /// <summary>Every place the modules could come from, in the order they are preferred, each with its verdict.</summary>
     /// <param name="games">Other games on this computer; the game itself is left out.</param>
-    public static IReadOnlyList<EngineModuleCandidate> Find(GameInstall game, EngineModuleNeed need, IEnumerable<GameInstall> games)
+    /// <param name="online">Whether this computer can reach Unity's server now — Unity's download is offered only then.</param>
+    public static IReadOnlyList<EngineModuleCandidate> Find(GameInstall game, EngineModuleNeed need, IEnumerable<GameInstall> games,
+                                                            bool online)
     {
         if (UnityVersions.Parse(need.Build ?? game.UnityVersion) is not { } version || need.CannotSupply is not null
             || EngineModules.PlatformOf(game) is not { } platform)
@@ -102,7 +104,7 @@ public static class EngineModuleSources
 
         // Checked when it is fetched: nothing can be said about files not yet downloaded, except
         // that they come from Unity itself — and the same checks then apply to them.
-        if (need.Changeset is not null && need.Build is not null)
+        if (online && need.Changeset is not null && need.Build is not null)
         {
             candidates.Add(new EngineModuleCandidate(new EngineModuleSource(
                 EngineModuleSourceKind.UnityDownload, $"unity:{need.Build}", null, version, true, null, null),

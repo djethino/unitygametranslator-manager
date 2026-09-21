@@ -7645,8 +7645,9 @@ public partial class MainWindow : Window
             RuntimeLibrariesStatus.Missing when need is { CanSupply: false } =>
                 ($"They cannot be added: {need.WhyNot}.", "StatusWarning"),
 
-            RuntimeLibrariesStatus.Missing when state.NoModuleSource is { } none =>
-                ($"They cannot be added: {none}.", "StatusWarning"),
+            // Offline, the sentence is the way out itself: go online, Unity's server has them.
+            RuntimeLibrariesStatus.Missing when state.NoSource is { } none =>
+                (state.Online ? $"They cannot be added: {none}." : none, "StatusWarning"),
 
             RuntimeLibrariesStatus.Missing when report.InstalledLoader is null =>
                 ("They are added together with the mod loader.", null),
@@ -7816,50 +7817,112 @@ public partial class MainWindow : Window
         return box;
     }
 
-    /// <summary>Where the missing .NET libraries come from — an editor on this computer, or Unity's editor package.</summary>
+    /// <summary>
+    /// One batch's source in the one-click's confirmation: a drop-down when there is a choice, the
+    /// source named when there is not, and under it what the selection means — the warning for a copy
+    /// from another game, Unity's terms for a download — changing as the selection does.
+    ///
+    /// ⚠ The same options, in the same words, as the card's radios (ClassLibraryOptions,
+    /// ModuleOptions): two places to choose, one list.
+    /// </summary>
+    private Control SourcePicker(string title, IReadOnlyList<SourceOption> options, string? current, Action<string> picked)
+    {
+        var usable = options.Where(o => o.Problem is null).ToList();
+        var box = new StackPanel { Spacing = 3, Margin = new Avalonia.Thickness(12, 0, 0, 0) };
+
+        var says = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, Foreground = Brush("TextMuted") };
+
+        void Show(SourceOption option) => says.Text = option.FromUnity
+            ? $"{option.Says} {RuntimeLibraryOrigins.UnityTermsUrl}"
+            : option.Says;
+
+        var selected = usable.FirstOrDefault(o => o.Id == current) ?? usable.FirstOrDefault();
+        if (selected is null) return box;
+
+        if (usable.Count == 1)
+        {
+            box.Children.Add(new TextBlock { Text = $"{title}: {selected.Label}", FontSize = 12, TextWrapping = TextWrapping.Wrap });
+        }
+        else
+        {
+            box.Children.Add(new TextBlock { Text = title, FontSize = 12 });
+
+            var choice = new ComboBox
+            {
+                ItemsSource = usable.Select(o => o.Label).ToList(),
+                SelectedIndex = usable.IndexOf(selected),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                FontSize = 12,
+            };
+
+            choice.SelectionChanged += (_, _) =>
+            {
+                if (choice.SelectedIndex < 0) return;
+                var option = usable[choice.SelectedIndex];
+                picked(option.Id);
+                Show(option);
+            };
+
+            box.Children.Add(choice);
+        }
+
+        Show(selected);
+        box.Children.Add(says);
+        return box;
+    }
+
+    /// <summary>Where the missing .NET libraries come from — an editor, another game, or Unity's editor package.</summary>
     private Control ClassLibrarySourceChoice(GameReport report, bool running)
     {
         var state = report.RuntimeLibraries;
 
-        var options = state.ClassLibrarySources.Select(source => new SourceOption(
-            source.Id, source.Label,
-            source.Kind switch
+        return SourceChoice(report, running, "libraries", ClassLibraryOptions(state), state.ClassLibrarySource?.Source.Id,
+                            (preference, id) => preference.ClassLibrarySource = id);
+    }
+
+    /// <summary>The .NET libraries' sources as the card and the one-click show them — one wording for both.</summary>
+    private static IReadOnlyList<SourceOption> ClassLibraryOptions(RuntimeLibrariesState state) =>
+        state.ClassLibrarySources.Select(candidate => new SourceOption(
+            candidate.Source.Id, candidate.Source.Label,
+            candidate.Source.Kind switch
             {
                 ClassLibrarySourceKind.UnityDownload =>
                     "Only the part of Unity's editor package that holds them is downloaded, a few hundred MB, "
                     + "once for this Unity version. Unity's terms apply.",
-                _ when !source.SameRelease =>
-                    $"Another Unity release of the same generation, which this game's engine accepts ({source.Version}).",
+                ClassLibrarySourceKind.Game => LocalCopies.Disclaimer(signed: false),
+                _ when !candidate.Source.SameRelease =>
+                    $"Another Unity release of the same generation, which this game's engine accepts ({candidate.Source.Version}).",
                 _ => "Same Unity release as the game.",
             },
-            source.Kind == ClassLibrarySourceKind.UnityDownload,
-            null)).ToList();
-
-        return SourceChoice(report, running, "libraries", options, state.ClassLibrarySource?.Id,
-                            (preference, id) => preference.ClassLibrarySource = id);
-    }
+            candidate.Source.Kind == ClassLibrarySourceKind.UnityDownload,
+            candidate.Usable ? null : candidate.Problems[0])).ToList();
 
     /// <summary>Where the missing engine modules come from — an editor, another game, or Unity's package.</summary>
     private Control ModuleSourceChoice(GameReport report, bool running)
     {
         var state = report.RuntimeLibraries;
 
-        var options = state.ModuleSources.Select(candidate => new SourceOption(
+        return SourceChoice(report, running, "modules", ModuleOptions(state), state.ModuleSource?.Source.Id,
+                            (preference, id) => preference.ModuleSource = id);
+    }
+
+    /// <summary>The engine modules' sources as the card and the one-click show them — one wording for both.</summary>
+    private static IReadOnlyList<SourceOption> ModuleOptions(RuntimeLibrariesState state) =>
+        state.ModuleSources.Select(candidate => new SourceOption(
             candidate.Source.Id, candidate.Source.Label,
             candidate.Source.Kind switch
             {
                 EngineModuleSourceKind.UnityDownload =>
                     "Only the part of Unity's package that holds the modules is downloaded. Unity's terms apply.",
+                EngineModuleSourceKind.Game when !candidate.Source.SameRelease =>
+                    $"An older release of the same branch ({state.Need?.Modules?.Build} is the game's). " + LocalCopies.Disclaimer(signed: true),
+                EngineModuleSourceKind.Game => LocalCopies.Disclaimer(signed: true),
                 _ when !candidate.Source.SameRelease =>
                     $"An older release of the same branch. Checked, but not the game's own version ({state.Need?.Modules?.Build}).",
                 _ => "Same Unity release as the game. Checked: signed by Unity, complete, and fits this game's engine.",
             },
             candidate.Source.Kind == EngineModuleSourceKind.UnityDownload,
             candidate.Usable ? null : candidate.Problems[0])).ToList();
-
-        return SourceChoice(report, running, "modules", options, state.ModuleSource?.Source.Id,
-                            (preference, id) => preference.ModuleSource = id);
-    }
 
     /// <summary>Adds the libraries alone: the loader and the mod stay exactly as they are.</summary>
     private async Task RunRuntimeLibrariesInstallAsync(GameReport report)
@@ -10284,16 +10347,12 @@ public partial class MainWindow : Window
         // ⚠ The same condition the plan reads (RuntimeLibrariesState.WriteOffered), so the list
         // promises exactly what the click does. Named, because "a DLL is missing" is precisely the
         // thing somebody wants to see being dealt with.
-        if (report.RuntimeLibraries is { WriteOffered: true, Need: { } need } libraries)
+        if (report.RuntimeLibraries is { WriteOffered: true, Need: { } need })
         {
-            // ⚠ The source is part of the promise: somebody agreeing to one click agrees to where
-            // the files come from — another game on this computer, or Unity's server under Unity's
-            // terms (user's requirement, 2026-09-21). The confirmation shows the terms beside it.
-            var from = libraries.ModuleSource is { } source && need.Modules is not null
-                ? $", engine modules from {source.Source.Label}"
-                : "";
-
-            yield return new(OneClickAct.AddRuntimeLibraries, $"add what this game lacks ({need.Lacking}{from})");
+            // ⚠ The sources are part of the promise, and the confirmation names them in pickers
+            // right under this line (SourcePicker) — not here, where a sentence would go on naming
+            // the first source after somebody picked another.
+            yield return new(OneClickAct.AddRuntimeLibraries, $"add what this game lacks ({need.Lacking})");
         }
 
         // ⚠ Only when it would actually change something. This step used to be listed whenever the
@@ -10513,6 +10572,10 @@ public partial class MainWindow : Window
 
         var steps = OneClickSteps(report, shown).ToList();
 
+        // The sources picked in the pickers below — null keeps what the card shows.
+        string? pickedLibraries = null;
+        string? pickedModules = null;
+
         // ⚠ One block per step rather than one paragraph, so the settings step can carry its own
         // detail. It used to be a single joined string, and "apply your settings" was therefore a
         // sentence with nothing behind it: the one act about to rewrite a file the player has been
@@ -10529,9 +10592,21 @@ public partial class MainWindow : Window
             if (step.Act is OneClickAct.ApplySettings)
                 foreach (var detail in SettingsDetail(report, preference)) body.Children.Add(detail);
 
-            // Said before the click that downloads, never after: Unity's modules are Unity's.
-            if (step.Act is OneClickAct.AddRuntimeLibraries && report.RuntimeLibraries.NeedsUnityDownload)
-                body.Children.Add(Muted($"   Unity's terms apply to what is downloaded from Unity: {RuntimeLibraryOrigins.UnityTermsUrl}"));
+            // 🔴 **Where each batch comes from, changeable HERE** (user's decision, 2026-09-21): the
+            // confirmation is the last moment somebody reads before files are copied from another
+            // game or fetched from Unity, so the choice and its warning are put where the eye is.
+            if (step.Act is OneClickAct.AddRuntimeLibraries)
+            {
+                var state = report.RuntimeLibraries;
+
+                if (state.Need is { Missing.Count: > 0 })
+                    body.Children.Add(SourcePicker(".NET libraries from", ClassLibraryOptions(state),
+                                                   state.ClassLibrarySource?.Source.Id, id => pickedLibraries = id));
+
+                if (state.Need?.Modules is not null)
+                    body.Children.Add(SourcePicker("Engine modules from", ModuleOptions(state),
+                                                   state.ModuleSource?.Source.Id, id => pickedModules = id));
+            }
         }
 
         // ⚠ Said, not omitted. With settings of its own that already match, this game produces no
@@ -10604,7 +10679,23 @@ public partial class MainWindow : Window
                 return;
             }
 
-            // Agreed to by the confirmation above, whose step named Unity's server and its terms.
+            // The sources picked in the confirmation, laid over the plan and remembered for this game —
+            // what the card will show next time. Only once agreed to: Cancel leaves nothing behind.
+            var runtime = report.RuntimeLibraries;
+            if (pickedLibraries is not null && runtime.ClassLibrarySources.FirstOrDefault(c => c.Source.Id == pickedLibraries) is { Usable: true } library)
+                plan = plan with { ClassLibrarySource = library.Source };
+            if (pickedModules is not null && runtime.ModuleSources.FirstOrDefault(c => c.Source.Id == pickedModules) is { Usable: true } module)
+                plan = plan with { ModuleSource = module.Source };
+
+            if (pickedLibraries is not null || pickedModules is not null)
+            {
+                var remembered = _preferences.Read(report.Game.Path);
+                if (pickedLibraries is not null) remembered.ClassLibrarySource = pickedLibraries;
+                if (pickedModules is not null) remembered.ModuleSource = pickedModules;
+                _preferences.Set(report.Game.Path, remembered);
+            }
+
+            // Agreed to by the confirmation above, whose pickers named Unity's server and its terms.
             plan = plan with { UnityDownloadAccepted = plan.DownloadsFromUnity };
 
             // ⚠ Task.Run, and not only because it is tidier: an archive already in the cache is

@@ -176,10 +176,16 @@ public sealed record InstallPlan(
                                : libraries.SameRelease ? "" : $" - another release of the same generation ({libraries.Version})");
             }
 
+            if (need.Missing.Count > 0 && ClassLibrarySource is { Kind: ClassLibrarySourceKind.Game })
+                yield return "! " + LocalCopies.Disclaimer(signed: false);
+
             if (need.Modules is { } modules && ModuleSource is { } source)
             {
                 yield return $"Add Unity's {modules.Set.Count} engine modules for this game's version, from {source.Label}"
                            + (source.SameRelease ? "" : $" — an older release than the game's ({source.Version})");
+
+                if (source.Kind == EngineModuleSourceKind.Game)
+                    yield return "! " + LocalCopies.Disclaimer(signed: true);
             }
 
             if (DownloadsFromUnity)
@@ -301,7 +307,7 @@ public sealed class InstallEngine
             Preference = preference,
             SupplyRuntimeLibraries = report.RuntimeLibraries.WriteOffered,
             ModuleSource = report.RuntimeLibraries.ModuleSource?.Source,
-            ClassLibrarySource = report.RuntimeLibraries.ClassLibrarySource,
+            ClassLibrarySource = report.RuntimeLibraries.ClassLibrarySource?.Source,
 
             // 🔴 The build the screens announced, read from the SAME place they read it — the
             // resolver's cache. Filled here rather than by each caller so that no path can be

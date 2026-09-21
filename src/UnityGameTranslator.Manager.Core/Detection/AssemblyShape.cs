@@ -17,7 +17,12 @@ public sealed record TypeUse(string Assembly, string Type, string? Member = null
 public sealed record TypeName(string? Assembly, string FullName);
 
 /// <summary>What one type holds that a reference can ask for: its member names, and what it derives from.</summary>
-public sealed record TypeShape(IReadOnlySet<string> Members, TypeName? Base);
+/// <param name="Visible">
+/// Reachable from another assembly — public, or nested public or protected inside such a type.
+/// ⚠ What separates an API from a library's own plumbing, which differs between two patch releases
+/// of the same library (measured 2026-09-21: compiler-generated attributes, marshalling helpers).
+/// </param>
+public sealed record TypeShape(IReadOnlySet<string> Members, TypeName? Base, bool Visible = true);
 
 /// <summary>
 /// What an assembly offers and what it asks of others, read out of its metadata and nothing else.
@@ -108,7 +113,7 @@ public sealed class AssemblyShape
 
             foreach (var field in definition.GetFields()) members.Add(r.GetString(r.GetFieldDefinition(field).Name));
 
-            types[typeName] = new TypeShape(members, NameOf(r, definition.BaseType));
+            types[typeName] = new TypeShape(members, NameOf(r, definition.BaseType), IsVisible(r, handle));
         }
 
         var forwards = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -150,6 +155,26 @@ public sealed class AssemblyShape
         }
 
         return new AssemblyShape(name, types, forwards, natives, uses.ToList(), internalCalls);
+    }
+
+    /// <summary>Whether a type can be named from another assembly: public all the way out, protected counting as reachable.</summary>
+    private static bool IsVisible(MetadataReader r, TypeDefinitionHandle handle)
+    {
+        var definition = r.GetTypeDefinition(handle);
+
+        switch (definition.Attributes & System.Reflection.TypeAttributes.VisibilityMask)
+        {
+            case System.Reflection.TypeAttributes.Public:
+                return true;
+
+            case System.Reflection.TypeAttributes.NestedPublic:
+            case System.Reflection.TypeAttributes.NestedFamily:
+            case System.Reflection.TypeAttributes.NestedFamORAssem:
+                return IsVisible(r, definition.GetDeclaringType());
+
+            default:
+                return false;
+        }
     }
 
     /// <summary>A type definition's full name, nested types joined to their parent with '+'.</summary>

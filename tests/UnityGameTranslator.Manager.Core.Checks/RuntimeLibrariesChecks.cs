@@ -188,9 +188,19 @@ internal static class RuntimeLibrariesChecks
             "a library calling System.Native, or System.*.Native, is Linux-only",
             "measured: no Windows build of a game carries one");
 
-        var game = Set(Assembly("System", new() { ["System.Uri"] = Type(), ["Interop+Kernel32"] = Type() }));
+        var game = Set(Assembly("System", new() { ["System.Uri"] = Type(), ["System.Net.NetworkInformation.Ping"] = Type() }));
         Program.Check(RuntimeLibraries.NotSameFamily(new[] { "System" }, game, archive).Count == 1,
-            "a game type the copy lacks: not the same family", "a Windows build compared with a Linux one, measured");
+            "a public type the game has and the copy lacks: not the same family",
+            "the game's own code may name it");
+
+        var plumbing = Set(Assembly("System", new()
+        {
+            ["System.Uri"] = Type(),
+            ["Microsoft.CodeAnalysis.EmbeddedAttribute"] = new TypeShape(new HashSet<string>(), null, Visible: false),
+        }));
+        Program.Check(RuntimeLibraries.NotSameFamily(new[] { "System" }, plumbing, archive).Count == 0,
+            "an internal type the copy lacks is not held against it",
+            "measured: patch releases differ in plumbing, and 17 of 25 games were refused for it");
 
         var generated = Set(Assembly("System", new() { ["System.Uri"] = Type(), ["<PrivateImplementationDetails>"] = Type() }));
         Program.Check(RuntimeLibraries.NotSameFamily(new[] { "System" }, generated, archive).Count == 0,

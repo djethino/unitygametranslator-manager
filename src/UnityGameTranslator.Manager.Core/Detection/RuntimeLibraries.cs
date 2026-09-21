@@ -248,6 +248,12 @@ public static class RuntimeLibraries
     ///
     /// ⚠ Compiler-generated names are left out (`&lt;PrivateImplementationDetails&gt;` and the
     /// like): they are produced per build, and their presence says nothing about the version.
+    ///
+    /// ⚠ **Types visible from outside only** (measured 2026-09-21). Two patch releases of one Mono
+    /// generation differ in their plumbing — a compiler-generated `EmbeddedAttribute`, a marshalling
+    /// struct, a TLS helper — and holding a copy to those refused a library for 17 of 25 games whose
+    /// public surface it covered. The game's code can only name what is visible; the library's own
+    /// insides travel with the library.
     /// </summary>
     public static IReadOnlyList<string> NotSameFamily(IEnumerable<string> chosen,
                                                       Func<string, AssemblyShape?> game,
@@ -259,7 +265,7 @@ public static class RuntimeLibraries
         {
             if (game(name) is not { } own || archive(name) is not { } copy) continue;
 
-            var alien = own.Types.Keys.FirstOrDefault(t =>
+            var alien = own.Types.Where(t => t.Value.Visible).Select(t => t.Key).FirstOrDefault(t =>
                 !t.Contains('<') && !t.StartsWith("__", StringComparison.Ordinal)
                 && !copy.Types.ContainsKey(t));
 

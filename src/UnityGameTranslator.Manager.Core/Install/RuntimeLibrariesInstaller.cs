@@ -309,6 +309,16 @@ public static class RuntimeLibrariesInstaller
                 .FetchAsync(lot.Url, lot.Sha256, "class-libraries",
                             new ArchiveCacheKey($"class-libraries-{lot.CorlibVersion}", lot.Sha256), lot.Size, ct)
                 .ConfigureAwait(false)).ExtractedPath;
+
+            // The checksum said these are the bytes published; this says they are the generation
+            // they were published for — the one the game's engine will check.
+            var lotCorlib = Path.Combine(lotFolder, "mscorlib.dll");
+            if (!File.Exists(lotCorlib)
+                || !string.Equals(ClassLibraryLots.CorlibVersionOf(lotCorlib), lot.CorlibVersion, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "The Windows .NET libraries downloaded are not the generation they are listed for. Nothing was added.");
+            }
         }
 
         var fromArchive = archiveFolder is null ? (_ => null) : RuntimeLibraries.Folder(archiveFolder);

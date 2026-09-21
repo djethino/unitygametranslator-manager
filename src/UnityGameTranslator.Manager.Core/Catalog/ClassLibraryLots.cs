@@ -58,6 +58,39 @@ public static class ClassLibraryLots
     }
 
     /// <summary>
+    /// The generation a `mscorlib` declares — `System.Environment.mono_corlib_version`, a constant
+    /// the engine compares with its own before running anything. Null when it declares none (the
+    /// older runtime, or not a mscorlib).
+    ///
+    /// ⚠ Also how a lot is held to its own entry once downloaded: a checksum says the bytes are
+    /// the ones published, this says they are the generation they were published for.
+    /// </summary>
+    public static string? CorlibVersionOf(string mscorlib)
+    {
+        using var stream = File.OpenRead(mscorlib);
+        using var pe = new System.Reflection.PortableExecutable.PEReader(stream);
+        if (!pe.HasMetadata) return null;
+
+        var r = System.Reflection.Metadata.PEReaderExtensions.GetMetadataReader(pe);
+        foreach (var handle in r.FieldDefinitions)
+        {
+            var field = r.GetFieldDefinition(handle);
+            if (r.GetString(field.Name) != "mono_corlib_version") continue;
+
+            var constant = field.GetDefaultValue();
+            if (constant.IsNil) continue;
+
+            var value = r.GetConstant(constant);
+            if (value.TypeCode != System.Reflection.Metadata.ConstantTypeCode.String) continue;
+
+            var blob = r.GetBlobReader(value.Value);
+            return blob.ReadUTF16(blob.Length);
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Whether an engine binary names this corlib version. Remembered against the file's size and time.
     /// </summary>
     public static bool Carries(string engine, string corlibVersion)

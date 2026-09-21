@@ -613,11 +613,6 @@ public partial class MainWindow : Window
         _running = await Task.Run(() => RunningGames.Sweep(toSweep));
         WatchForRunningGames();
 
-        var blocked = _games.Count(g => !g.IsModdable);
-        SubtitleText.Text = blocked == 0
-            ? $"{_games.Count} Unity games found"
-            : $"{_games.Count} Unity games found, {blocked} that cannot be modded";
-
         BuildFilterBar();
         RepublishRows();
 
@@ -926,6 +921,14 @@ public partial class MainWindow : Window
     private void RepublishRows()
     {
         RecomputeSituations();
+
+        // ⚠ Counted here, with the rows, and no longer once at the scan: overruling a refusal
+        // ("Let me try anyway") or taking the overrule back changes it, and the subtitle went on
+        // counting the game among those that cannot be modded (2026-09-21).
+        var blocked = _games.Count(g => !g.IsModdable);
+        SubtitleText.Text = blocked == 0
+            ? $"{_games.Count} Unity games found"
+            : $"{_games.Count} Unity games found, {blocked} that cannot be modded";
 
         // Contents rather than a rebuild wherever membership cannot move — which is everywhere
         // except under a filter, where learning something about a game can put it in or out of the
@@ -3378,7 +3381,13 @@ public partial class MainWindow : Window
 
     private async Task ShowSelectedAsync()
     {
-        if (GameList.SelectedItem is not ListBoxItem { Tag: GameInstall game }) return;
+        // 🔴 **The card follows the game being looked at, not the list's selection.** An act can
+        // take a game out of the filtered list — "Let me try anyway" under the Not moddable filter
+        // does exactly that — and the redraw then found no selection and stopped, leaving the card
+        // as it was before the click until somebody navigated away (2026-09-21). The list's
+        // selection still wins when there is one: that is a click on another game.
+        var game = GameList.SelectedItem is ListBoxItem { Tag: GameInstall listed } ? listed : _selected;
+        if (game is null) return;
 
         // 🔴 **Where somebody scrolled to is a place they put themselves in.** This method is the
         // one redraw of the card and everything calls it, so every act — applying a setting,

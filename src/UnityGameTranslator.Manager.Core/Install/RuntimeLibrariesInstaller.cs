@@ -33,29 +33,29 @@ public static class RuntimeLibrariesInstaller
     {
         var need = game.RuntimeLibraries;
         var installed = ReceiptStore.Read(game.Path)?.RuntimeLibraries;
-        var others = games as IReadOnlyCollection<GameInstall> ?? games.ToList();
+        // ⚠ Worked out only when something asks — see RuntimeLibrariesState.Sources for why.
+        var sources = new Lazy<RuntimeLibrariesState.SourceChoice>(() =>
+        {
+            var others = games as IReadOnlyCollection<GameInstall> ?? games.ToList();
 
-        var candidates = need?.Modules is { } modules
-            ? EngineModuleSources.Find(game, modules, others, online)
-            : Array.Empty<EngineModuleCandidate>();
-        var source = EngineModuleSources.Choose(candidates, chosenModuleSource);
+            var candidates = need?.Modules is { } modules
+                ? EngineModuleSources.Find(game, modules, others, online)
+                : Array.Empty<EngineModuleCandidate>();
+            var source = EngineModuleSources.Choose(candidates, chosenModuleSource);
 
-        var libraries = need is { Missing.Count: > 0 }
-            ? ClassLibrarySources.Find(game, need.Build, need.Changeset, others, online)
-            : Array.Empty<ClassLibraryCandidate>();
-        var library = ClassLibrarySources.Choose(libraries, chosenClassLibrarySource);
+            var libraries = need is { Missing.Count: > 0 }
+                ? ClassLibrarySources.Find(game, need.Build, need.Changeset, others, online)
+                : Array.Empty<ClassLibraryCandidate>();
+            var library = ClassLibrarySources.Choose(libraries, chosenClassLibrarySource);
+
+            return new RuntimeLibrariesState.SourceChoice(
+                libraries, library, candidates, source,
+                (chosenModuleSource is not null && candidates.Count > 0 && source?.Source.Id != chosenModuleSource)
+                || (chosenClassLibrarySource is not null && libraries.Count > 0 && library?.Source.Id != chosenClassLibrarySource));
+        });
 
         RuntimeLibrariesState With(RuntimeLibrariesStatus status, string? detail = null) =>
-            new(status, need, installed, detail)
-            {
-                ModuleSources = candidates,
-                ModuleSource = source,
-                ClassLibrarySources = libraries,
-                ClassLibrarySource = library,
-                Online = online,
-                ChosenSourceGone = (chosenModuleSource is not null && candidates.Count > 0 && source?.Source.Id != chosenModuleSource)
-                                   || (chosenClassLibrarySource is not null && libraries.Count > 0 && library?.Source.Id != chosenClassLibrarySource),
-            };
+            new(status, need, installed, detail) { Sources = sources, Online = online };
 
         if (installed is null) return need is null ? RuntimeLibrariesState.None : With(RuntimeLibrariesStatus.Missing);
         if (need is null) return With(RuntimeLibrariesStatus.NoLongerNeeded);

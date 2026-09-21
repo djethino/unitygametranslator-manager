@@ -367,42 +367,67 @@ public static class RuntimeLibraries
         var managed = Path.Combine(game.DataDirectory, "Managed");
         if (!Directory.Exists(managed)) return null;
 
-        var missing = MissingMemo.GetOrAdd(StampOf(managed, IsClassLibrary, null),
-            _ => Missing(EmbeddedModNeeds, new Layers(Folder(managed))));
+        // ⚠ One stamp over everything the reading depends on: the class libraries, the engine
+        // modules and the player — a game update replacing UnityPlayer.dll changes the answer while
+        // no library moved.
+        var player = EngineModules.PlayerBinary(game.Path, game.ExecutablePath);
+        var stamp = StampOf(managed, IsClassLibrary, null) + "#" + StampOf(managed, EngineModules.IsEngineModule, player);
 
-        var all = loaderCannotStart && !missing.Contains("mscorlib", StringComparer.OrdinalIgnoreCase)
-            ? missing.Prepend("mscorlib").ToList()
-            : missing;
+        var read = ReadMemo.GetOrAdd(stamp, _ => Memory?.Find(game.Path, stamp) ?? ReadAndRemember(game, managed, player, stamp));
 
-        // ⚠ Its own memory, keyed on the engine modules and the player: a game update replacing
-        // UnityPlayer.dll changes the answer while no class library moved.
-        var modules = ModulesMemo.GetOrAdd(
-            StampOf(managed, EngineModules.IsEngineModule, EngineModules.PlayerBinary(game.Path, game.ExecutablePath)),
-            _ => new Holder(EngineModules.NeedOf(game, EmbeddedModNeeds))).Need;
+        var all = loaderCannotStart && !read.Missing.Contains("mscorlib", StringComparer.OrdinalIgnoreCase)
+            ? read.Missing.Prepend("mscorlib").ToList()
+            : read.Missing;
+
+        var modules = read.Stripped is { } stripped
+            ? new Model.EngineModuleNeed(stripped, read.ModuleSet ?? new List<string>(), read.ModuleBuild, read.ModuleChangeset,
+                                         EngineModules.CannotSupply(game, read.ModuleBuild ?? game.UnityVersion, read.ModuleChangeset))
+            : null;
 
         if (all.Count == 0 && modules is null) return null;
 
-        // The build and its changeset, which Unity's downloads are filed under — read from the player
-        // only for a game that lacks .NET libraries (the modules' reading has its own).
-        var build = all.Count == 0 || EngineModules.PlayerBinary(game.Path, game.ExecutablePath) is not { } player
-            ? null
-            : EngineModules.BuildOf(player, game.UnityVersion);
-
-        return new Model.RuntimeLibraryNeed(all, loaderCannotStart, ReleaseName(build?.Version ?? game.UnityVersion),
-                                            Install.ClassLibrarySources.CannotSupply(game, all, build?.Version, build?.Changeset, games),
+        return new Model.RuntimeLibraryNeed(all, loaderCannotStart, ReleaseName(read.Build ?? game.UnityVersion),
+                                            Install.ClassLibrarySources.CannotSupply(game, all, read.Build, read.Changeset, games),
                                             modules)
         {
-            Build = build?.Version,
-            Changeset = build?.Changeset,
+            Build = read.Build,
+            Changeset = read.Changeset,
         };
     }
 
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, IReadOnlyList<string>> MissingMemo = new();
+    /// <summary>
+    /// Where the answers are kept between runs — set by the inventory that owns the scan, which
+    /// also writes it once the scan is over. Null: nothing is kept beyond this run.
+    /// </summary>
+    public static RuntimeNeedsMemory? Memory { get; set; }
 
-    /// <summary>A remembered answer that may be "nothing" — a dictionary cannot hold a null value.</summary>
-    private sealed record Holder(Model.EngineModuleNeed? Need);
+    /// <summary>The reading itself: what the game lacks, and the build its player states.</summary>
+    private static RuntimeNeedsMemory.Entry ReadAndRemember(Model.GameInstall game, string managed, string? player, string stamp)
+    {
+        var missing = Missing(EmbeddedModNeeds, new Layers(Folder(managed))).ToList();
+        var modules = EngineModules.NeedOf(game, EmbeddedModNeeds);
 
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Holder> ModulesMemo = new();
+        // The build and its changeset, which Unity's downloads are filed under — read from the player
+        // only for a game that lacks .NET libraries (the modules' reading has its own).
+        var build = missing.Count == 0 || player is null ? null : EngineModules.BuildOf(player, game.UnityVersion);
+
+        var entry = new RuntimeNeedsMemory.Entry
+        {
+            Stamp = stamp,
+            Missing = missing,
+            Build = build?.Version,
+            Changeset = build?.Changeset,
+            Stripped = modules?.Stripped.ToList(),
+            ModuleSet = modules?.Set.ToList(),
+            ModuleBuild = modules?.Build,
+            ModuleChangeset = modules?.Changeset,
+        };
+
+        Memory?.Remember(game.Path, entry);
+        return entry;
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, RuntimeNeedsMemory.Entry> ReadMemo = new();
 
     /// <summary>The folder and the size and time of every library in it that <paramref name="counts"/>, and of one more file.</summary>
     private static string StampOf(string managed, Func<string, bool> counts, string? extra)

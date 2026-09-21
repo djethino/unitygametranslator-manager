@@ -41,6 +41,10 @@ public sealed class GameInventory
         Folders = new CustomFolders(platform);
         Overrides = new GameOverrides(platform);
         _settings = new Settings.SettingsStore(platform).Current;
+
+        // What each game lacks, remembered between launches (RuntimeNeedsMemory) — one per
+        // machine, so the first inventory built sets it and the others share it.
+        RuntimeLibraries.Memory ??= new RuntimeNeedsMemory(platform.UserDataDirectory);
     }
 
     /// <summary>
@@ -159,10 +163,6 @@ public sealed class GameInventory
         Report?.Invoke("other stores");
         foreach (var game in stores.Result) Add(game);
 
-        // Applied after detection, never instead of it: we always read the files first, so a
-        // stale answer about a game that has since been updated gets replaced by the truth.
-        foreach (var game in games) Overrides.Apply(game);
-
         if (Folders.All.Count > 0) Report?.Invoke("your own folders");
 
         foreach (var folder in Folders.All)
@@ -172,15 +172,26 @@ public sealed class GameInventory
                 Add(game);
         }
 
-        // 🔴 **Looked at again once every game is known** (the user's remark, 2026-09-21). A game is
-        // judged while the walk is still going, so a verdict "nothing on this computer can lend the
-        // .NET libraries" could not count the games found after it. Only those games are read again
-        // — their build unreadable, so Unity's download was never an option — now with the full list.
+        // 🔴 **Every game judged at once, in parallel, once all are found** (2026-09-21). Judging
+        // reads what a game lacks out of its DLLs — a metadata parse per game, some six seconds for
+        // forty Mono games one after the other, against 0.6 s for the whole scan before. The games
+        // are independent and every memory behind the reading is thread-safe.
+        Report?.Invoke("what each game needs");
+        Parallel.ForEach(games, game => ModdabilityProbe.Evaluate(game));
+
+        // 🔴 **Looked at again once every game is known** (the user's remark, 2026-09-21). A game
+        // refused because nothing on this computer seemed able to lend the .NET libraries is read
+        // again with the full list — its build unreadable, so Unity's download was never an option.
         foreach (var game in games.Where(g => g.RuntimeLibraries is { CannotSupply: not null, Changeset: null }).ToList())
-        {
             ModdabilityProbe.Evaluate(game, games);
-            Overrides.Apply(game);
-        }
+
+        // Applied after detection, never instead of it: we always read the files first, so a
+        // stale answer about a game that has since been updated gets replaced by the truth.
+        foreach (var game in games) Overrides.Apply(game);
+
+        // What was read of each game, kept for the next launch — once, now that the parallel
+        // reading is over (RuntimeNeedsMemory).
+        RuntimeLibraries.Memory?.Save();
 
         _known = games;
         return games;
@@ -201,6 +212,12 @@ public sealed class GameInventory
     /// when a game actually needs this: every other report never asks.
     /// </summary>
     public IReadOnlyList<GameInstall> KnownGames() => _known ?? ScanAll();
+
+    /// <summary>A list read only when walked — so that asking for it costs nothing until then.</summary>
+    private static IEnumerable<GameInstall> Deferred(Func<IReadOnlyList<GameInstall>> list)
+    {
+        foreach (var game in list()) yield return game;
+    }
 
     /// <summary>
     /// Probes one folder the user pointed at directly.
@@ -278,10 +295,11 @@ public sealed class GameInventory
 
         // ⚠ Reconciled from the files every time — see RuntimeLibrariesState for the three ways an
         // install of them is undone without a word.
-        // The other games are asked for only when this one lacks something — see KnownGames.
+        // The other games are asked for only when this one lacks something, and only when its
+        // sources are worked out (lazily) — see KnownGames and RuntimeLibrariesState.Sources.
         report.RuntimeLibraries = Install.RuntimeLibrariesInstaller.StateOf(
             game, report.InstalledLoader,
-            game.RuntimeLibraries is null ? Array.Empty<GameInstall>() : KnownGames(),
+            game.RuntimeLibraries is null ? Array.Empty<GameInstall>() : Deferred(KnownGames),
             preference.ModuleSource, preference.ClassLibrarySource,
             online: !Offline && Install.LocalCopies.NetworkAvailable());
 
@@ -358,6 +376,12 @@ public sealed class GameInventory
                                                    CancellationToken ct = default)
     {
         var report = BuildReport(game);
+
+        // The card shows where the missing libraries would come from, and finding that out reads
+        // other games and editors — seconds, on the first look. Done here, off the caller's thread,
+        // so the window never waits on it (RuntimeLibrariesState.Sources).
+        if (report.RuntimeLibraries.Relevant)
+            await Task.Run(report.RuntimeLibraries.WarmSources, ct).ConfigureAwait(false);
 
         var descriptor = ResolveDescriptor(report, game);
 

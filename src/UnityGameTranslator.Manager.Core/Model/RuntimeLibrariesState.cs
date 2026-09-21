@@ -40,26 +40,64 @@ public sealed record RuntimeLibrariesState(RuntimeLibrariesStatus Status, Runtim
 {
     public static RuntimeLibrariesState None { get; } = new(RuntimeLibrariesStatus.NotNeeded, null, null);
 
+    /// <summary>Where each batch could come from, and which source an install would use.</summary>
+    public sealed record SourceChoice(IReadOnlyList<ClassLibraryCandidate> Libraries, ClassLibraryCandidate? Library,
+                                      IReadOnlyList<EngineModuleCandidate> Modules, EngineModuleCandidate? Module,
+                                      bool ChosenGone);
+
+    private static readonly SourceChoice NoSources =
+        new(Array.Empty<ClassLibraryCandidate>(), null, Array.Empty<EngineModuleCandidate>(), null, false);
+
+    /// <summary>
+    /// The sources, worked out the first time something asks — and only then.
+    ///
+    /// 🔴 **Lazy because the game LIST builds a report per game, on the interface thread**, and a row
+    /// never asks where the files would come from: only whether the mod can run. Finding the sources
+    /// reads editors, other games' libraries and players, and checks signatures — seconds per game
+    /// that lacks something, and the window froze at start for eight of them (2026-09-21). The card
+    /// asks for them off that thread (<see cref="WarmSources"/>).
+    /// </summary>
+    public Lazy<SourceChoice>? Sources { get; init; }
+
+    private SourceChoice Choice => Sources?.Value ?? NoSources;
+
+    /// <summary>Works the sources out now, on the calling thread — what the card does before drawing.</summary>
+    public void WarmSources() => _ = Choice;
+
     /// <summary>
     /// Every place the missing engine modules could come from, in the order they are preferred, each
     /// with what stands against it. Empty when no module is lacking.
     /// </summary>
-    public IReadOnlyList<EngineModuleCandidate> ModuleSources { get; init; } = Array.Empty<EngineModuleCandidate>();
+    public IReadOnlyList<EngineModuleCandidate> ModuleSources => Choice.Modules;
 
     /// <summary>The source an install would use: the one chosen for this game while usable, else the first usable one.</summary>
-    public EngineModuleCandidate? ModuleSource { get; init; }
+    public EngineModuleCandidate? ModuleSource => Choice.Module;
 
     /// <summary>Every place the missing .NET libraries could come from, in the order they are preferred, each with its verdict.</summary>
-    public IReadOnlyList<ClassLibraryCandidate> ClassLibrarySources { get; init; } = Array.Empty<ClassLibraryCandidate>();
+    public IReadOnlyList<ClassLibraryCandidate> ClassLibrarySources => Choice.Libraries;
 
     /// <summary>The .NET libraries' source an install would use: the one chosen for this game while usable, else the first usable.</summary>
-    public ClassLibraryCandidate? ClassLibrarySource { get; init; }
+    public ClassLibraryCandidate? ClassLibrarySource => Choice.Library;
 
     /// <summary>Whether this computer could reach Unity's server when this was read — Unity's download is offered only then.</summary>
     public bool Online { get; init; } = true;
 
     /// <summary>A source was chosen for this game and is no longer usable — the card says the default took its place.</summary>
-    public bool ChosenSourceGone { get; init; }
+    public bool ChosenSourceGone => Choice.ChosenGone;
+
+    /// <summary>
+    /// The copies in place came from another source than the one now chosen for this game.
+    ///
+    /// ⚠ Without it a new choice made on the card, with the libraries already in place, had no verb
+    /// to act on it (2026-09-21): the installer replaces a batch whose source changed, but nothing
+    /// offered to run it. Only while in place — lacking ones are offered anyway.
+    /// </summary>
+    public bool SourceChanged =>
+        Status == RuntimeLibrariesStatus.InPlace && Installed is { } installed && Need is not null
+        && ((Need.Missing.Count > 0 && installed.SourceId is { Length: > 0 } libraries
+             && ClassLibrarySource is { } chosenLibraries && chosenLibraries.Source.Id != libraries)
+            || (Need.Modules is not null && installed.Modules is { SourceId: { Length: > 0 } modules }
+                && ModuleSource is { } chosenModules && chosenModules.Source.Id != modules));
 
     /// <summary>The mod cannot start until this is settled.</summary>
     public bool BlocksTheMod => Need is not null && Status is RuntimeLibrariesStatus.Missing or RuntimeLibrariesStatus.WrongVersion;
@@ -68,7 +106,7 @@ public sealed record RuntimeLibrariesState(RuntimeLibrariesStatus Status, Runtim
     /// Adding them would change something and can be done — read by the promise and by the act, like
     /// <see cref="GameReport.PluginWriteOffered"/>. Each lacking batch needs a source.
     /// </summary>
-    public bool WriteOffered => BlocksTheMod && Need is { CanSupply: true }
+    public bool WriteOffered => (BlocksTheMod || SourceChanged) && Need is { CanSupply: true }
                                 && (Need.Missing.Count == 0 || ClassLibrarySource is not null)
                                 && (Need.Modules is null || ModuleSource is not null);
 

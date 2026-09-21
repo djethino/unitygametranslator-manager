@@ -108,7 +108,8 @@ public sealed class SteamScanner
                     game.RunsUnderProton = _platform.OsId != "windows" && game.IsWindowsBuild;
                 }
 
-                ModdabilityProbe.Evaluate(game);
+                // ⚠ Not judged here: GameInventory.ScanAll judges every game found, in parallel,
+                // once the walk is over — reading what a game lacks costs a DLL parse per game.
                 yield return game;
             }
         }

@@ -73,7 +73,7 @@ public sealed class StoreScanner
             {
                 if (games.Count == 1) game.StoreAppId = appName;
 
-                ModdabilityProbe.Evaluate(game);
+                // Judged by GameInventory.ScanAll, with every other game, in parallel.
                 yield return game;
             }
         }
@@ -85,6 +85,9 @@ public sealed class StoreScanner
     /// ⚠ The walk itself lives in <see cref="UnityGameProbe.FindGameFolders"/> — it is the same
     /// walk Steam needs, and two copies of "how deep do we look" is how Steam came to have its own
     /// answer of zero.
+    ///
+    /// ⚠ Finds, does not judge: a caller that needs verdicts calls ModdabilityProbe.Evaluate — the
+    /// scan does it for every game at once, in parallel; the folders window only counts.
     /// </summary>
     public static IEnumerable<GameInstall> ScanFolder(string root, GameStore store,
                                                       int maxDepth = UnityGameProbe.NestingDepth)
@@ -94,7 +97,6 @@ public sealed class StoreScanner
             var game = UnityGameProbe.Probe(folder, null, store);
             if (game is null) continue;
 
-            ModdabilityProbe.Evaluate(game);
             yield return game;
         }
     }

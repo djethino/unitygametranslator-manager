@@ -7661,6 +7661,12 @@ public partial class MainWindow : Window
             RuntimeLibrariesStatus.WrongVersion =>
                 ($"The copies added no longer fit ({state.Detail}). The mod will not start.", "StatusWarning"),
 
+            // A new source picked above: said, since nothing changes in the game until reinstalled.
+            RuntimeLibrariesStatus.InPlace when state.SourceChanged =>
+                ($"Added: {state.InstalledSummary}. Reinstall to take them from "
+                 + string.Join(" and ", new[] { state.ClassLibrarySource?.Source.Label, state.ModuleSource?.Source.Label }
+                                        .Where(l => l is not null).Distinct()) + ".", "StatusWarning"),
+
             RuntimeLibrariesStatus.InPlace =>
                 ($"Added: {state.InstalledSummary}. In {LoaderSearchPath.Folder}/.", null),
 
@@ -7730,144 +7736,215 @@ public partial class MainWindow : Window
         Foreground = Brush("TextSecondary"),
     };
 
-    /// <summary>One place a batch could come from, as the card shows it.</summary>
+    /// <summary>The three kinds of place a batch can come from — what the person chooses first.</summary>
+    private enum SourceKind { Editor, Game, UnityServer }
+
+    private static string KindLabel(SourceKind kind) => kind switch
+    {
+        SourceKind.Editor => "Unity editor on this computer",
+        SourceKind.Game => "Another game on this computer",
+        _ => "Download from Unity's server",
+    };
+
+    /// <summary>One place a batch could come from, as the card and the one-click show it.</summary>
     /// <param name="Problem">Why it cannot be used, or null when it can.</param>
-    private sealed record SourceOption(string Id, string Label, string Says, bool FromUnity, string? Problem);
+    private sealed record SourceOption(string Id, SourceKind Kind, string Label, string Says, string? Problem);
 
     /// <summary>
-    /// Where a batch comes from, and the way to choose another source — the same block for the .NET
-    /// libraries and the engine modules.
+    /// Where a batch comes from, and the way to choose another source — the same control for the
+    /// .NET libraries and the engine modules, on the card and in the one-click's confirmation.
     ///
-    /// 🔴 **The person chooses, and every source says what it is** (user's requirement,
-    /// 2026-09-21): a copy from another game on this computer is only as trustworthy as that game,
-    /// so it is named; a download from Unity says so, with Unity's terms, before anything is fetched.
-    /// Only usable sources can be picked — the others are listed with the reason each one was
-    /// refused, so the list is never silently shorter than what is on the disk.
+    /// 🔴 **Two levels: first the KIND of source, then WHICH one** (user's decision, 2026-09-21:
+    /// « le radio c'est entre éditeur/jeux locaux/server unity, tu peux pas mettre toutes les
+    /// versions et tous les éditeurs ou jeux en radio »). A radio per copy grew with every editor
+    /// and game installed; the kind is the decision that changes what is trusted, so it gets the
+    /// radios (a drop-down in the confirmation), and the editor or game is picked in a drop-down
+    /// under it when there is more than one.
     ///
-    /// ⚠ Built like the settings card's way of setting a game up: radio buttons, the source on the
-    /// label, what it means underneath. The choice is a preference, read by the acts below and by
-    /// the one-click; it writes nothing into the game.
+    /// 🔴 **Every source says what it is** (2026-09-21): a copy from another game carries the
+    /// disclaimer, in a warning callout, and a download says so with Unity's terms, before anything
+    /// is fetched. Only usable sources are shown at all.
+    ///
+    /// ⚠ The choice is a preference, read by the acts and the one-click; it writes nothing into
+    /// the game.
     /// </summary>
-    private Control SourceChoice(GameReport report, bool running, string group, IReadOnlyList<SourceOption> options,
-                                 string? current, Action<GamePreference, string> remember)
+    /// <param name="radios">Radios for the kind (the card); a drop-down otherwise (the confirmation).</param>
+    private Control SourceSelector(string group, IReadOnlyList<SourceOption> options, string? current,
+                                   bool radios, bool enabled, Action<string> picked)
     {
         var box = new StackPanel { Spacing = 4 };
 
         var usable = options.Where(o => o.Problem is null).ToList();
-        var refused = options.Where(o => o.Problem is not null).ToList();
+        var kinds = usable.Select(o => o.Kind).Distinct().OrderBy(k => k).ToList();
 
-        if (usable.Count > 0)
+        var chosen = usable.FirstOrDefault(o => o.Id == current) ?? usable.FirstOrDefault();
+
+        if (chosen is not null)
         {
-            box.Children.Add(Muted(usable.Count == 1 ? "Source:" : "Source (choose one):"));
+            // What was last picked in each kind, so going back to a kind finds it again.
+            var lastOfKind = new Dictionary<SourceKind, SourceOption> { [chosen.Kind] = chosen };
+            var which = new StackPanel { Spacing = 3, Margin = new Avalonia.Thickness(radios ? 28 : 0, 0, 0, 0) };
 
-            foreach (var option in usable)
+            void Pick(SourceOption option)
             {
-                var text = new StackPanel { Spacing = 1 };
-                text.Children.Add(new TextBlock { Text = option.Label, FontSize = 12, Foreground = Brush("TextPrimary") });
-                text.Children.Add(new TextBlock
-                {
-                    Text = option.Says,
-                    FontSize = 11,
-                    TextWrapping = TextWrapping.Wrap,
-                    Foreground = Brush("TextMuted"),
-                });
+                lastOfKind[option.Kind] = option;
+                picked(option.Id);
+            }
 
-                var radio = new RadioButton
+            void ShowKind(SourceKind kind)
+            {
+                which.Children.Clear();
+                var ofKind = usable.Where(o => o.Kind == kind).ToList();
+                var selected = lastOfKind.TryGetValue(kind, out var last) ? last : ofKind[0];
+
+                // 🔴 A copy from another game carries a WARNING, and is drawn as one — the tinted
+                // callout the rest of the window uses (it was muted grey, read as white and unseen).
+                var says = new TextBlock
                 {
-                    Content = text,
-                    GroupName = group + "-" + report.Game.Path,
-                    IsChecked = option.Id == current,
-                    IsEnabled = !running,
+                    FontSize = 12,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = Brush(kind == SourceKind.Game ? "TextPrimary" : "TextMuted"),
+                };
+
+                if (ofKind.Count > 1)
+                {
+                    var choice = new ComboBox
+                    {
+                        ItemsSource = ofKind.Select(o => o.Label).ToList(),
+                        SelectedIndex = ofKind.IndexOf(selected),
+                        HorizontalAlignment = HorizontalAlignment.Stretch,
+                        IsEnabled = enabled,
+                        FontSize = 12,
+                    };
+
+                    // Attached after the selection is set, so building it is not a pick.
+                    choice.SelectionChanged += (_, _) =>
+                    {
+                        if (choice.SelectedIndex < 0) return;
+                        var option = ofKind[choice.SelectedIndex];
+                        says.Text = option.Says;
+                        Pick(option);
+                    };
+
+                    which.Children.Add(choice);
+                }
+                else
+                {
+                    which.Children.Add(new TextBlock
+                    {
+                        Text = selected.Label,
+                        FontSize = 12,
+                        TextWrapping = TextWrapping.Wrap,
+                        Foreground = Brush("TextPrimary"),
+                    });
+                }
+
+                says.Text = selected.Says;
+                which.Children.Add(kind == SourceKind.Game ? Callout(says, Tone.Warning) : says);
+
+                if (kind == SourceKind.UnityServer)
+                {
+                    var terms = new Button { Content = "Unity's terms", FontSize = 11 };
+                    ToolTip.SetTip(terms, RuntimeLibraryOrigins.UnityTermsUrl);
+                    terms.Click += (_, _) => OpenUrl(RuntimeLibraryOrigins.UnityTermsUrl);
+                    which.Children.Add(terms);
+                }
+            }
+
+            void ChooseKind(SourceKind kind)
+            {
+                if (lastOfKind.TryGetValue(kind, out var last)) Pick(last);
+                else Pick(usable.First(o => o.Kind == kind));
+                ShowKind(kind);
+            }
+
+            if (kinds.Count == 1)
+            {
+                box.Children.Add(Muted($"Source: {KindLabel(chosen.Kind)}"));
+            }
+            else if (radios)
+            {
+                box.Children.Add(Muted("Source:"));
+
+                foreach (var kind in kinds)
+                {
+                    var radio = new RadioButton
+                    {
+                        Content = KindLabel(kind),
+                        GroupName = group,
+                        IsChecked = kind == chosen.Kind,
+                        IsEnabled = enabled,
+                        FontSize = 12,
+                    };
+
+                    radio.IsCheckedChanged += (_, _) =>
+                    {
+                        if (radio.IsChecked != true) return;
+                        ChooseKind(kind);
+
+                        // The editor or game list goes under the kind that is now selected.
+                        box.Children.Remove(which);
+                        box.Children.Insert(box.Children.IndexOf(radio) + 1, which);
+                    };
+
+                    box.Children.Add(radio);
+                    if (kind == chosen.Kind) box.Children.Add(which);
+                }
+            }
+            else
+            {
+                var kindChoice = new ComboBox
+                {
+                    ItemsSource = kinds.Select(KindLabel).ToList(),
+                    SelectedIndex = kinds.IndexOf(chosen.Kind),
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    IsEnabled = enabled,
                     FontSize = 12,
                 };
 
-                radio.IsCheckedChanged += async (_, _) =>
+                kindChoice.SelectionChanged += (_, _) =>
                 {
-                    if (radio.IsChecked != true || option.Id == current) return;
-
-                    var preference = _preferences.Read(report.Game.Path);
-                    remember(preference, option.Id);
-                    _preferences.Set(report.Game.Path, preference);
-
-                    await ShowSelectedAsync();
+                    if (kindChoice.SelectedIndex >= 0) ChooseKind(kinds[kindChoice.SelectedIndex]);
                 };
 
-                box.Children.Add(radio);
-
-                if (option.FromUnity)
-                {
-                    var terms = new Button { Content = "Unity's terms", FontSize = 11, Margin = new Avalonia.Thickness(28, 0, 0, 0) };
-                    ToolTip.SetTip(terms, RuntimeLibraryOrigins.UnityTermsUrl);
-                    terms.Click += (_, _) => OpenUrl(RuntimeLibraryOrigins.UnityTermsUrl);
-                    box.Children.Add(terms);
-                }
+                box.Children.Add(kindChoice);
             }
+
+            if (!box.Children.Contains(which)) box.Children.Add(which);
+            ShowKind(chosen.Kind);
         }
 
-        // ⚠ Said on the card, not in a hover: a copy somebody can see on their disk and not in this
-        // list needs its reason where the eye already is.
-        foreach (var option in refused)
-        {
-            var line = Muted($"Not usable: {option.Label}. {option.Problem}.");
-            line.FontSize = 11;
-            line.Foreground = Brush("TextMuted");
-            box.Children.Add(line);
-        }
-
+        // ⚠ The copies that cannot serve are NOT listed (user, 2026-09-21: « pas la peine de parler
+        // des jeux qu'on ne peut pas utiliser »). What somebody chooses between is what can be used;
+        // why another game on the disk cannot is the CLI's business (`install` prints it), not this card's.
         return box;
     }
 
+    /// <summary>The card's source block: a pick is remembered for this game, and the card redrawn.</summary>
+    private Control SourceChoice(GameReport report, bool running, string group, IReadOnlyList<SourceOption> options,
+                                 string? current, Action<GamePreference, string> remember) =>
+        SourceSelector(group + "-" + report.Game.Path, options, current, radios: true, enabled: !running, picked: async id =>
+        {
+            if (id == current) return;
+
+            var preference = _preferences.Read(report.Game.Path);
+            remember(preference, id);
+            _preferences.Set(report.Game.Path, preference);
+
+            await ShowSelectedAsync();
+        });
+
     /// <summary>
-    /// One batch's source in the one-click's confirmation: a drop-down when there is a choice, the
-    /// source named when there is not, and under it what the selection means — the warning for a copy
-    /// from another game, Unity's terms for a download — changing as the selection does.
-    ///
-    /// ⚠ The same options, in the same words, as the card's radios (ClassLibraryOptions,
-    /// ModuleOptions): two places to choose, one list.
+    /// One batch's source in the one-click's confirmation — the card's control with drop-downs:
+    /// the kind, then the editor or game when there are several.
     /// </summary>
     private Control SourcePicker(string title, IReadOnlyList<SourceOption> options, string? current, Action<string> picked)
     {
-        var usable = options.Where(o => o.Problem is null).ToList();
         var box = new StackPanel { Spacing = 3, Margin = new Avalonia.Thickness(12, 0, 0, 0) };
+        if (!options.Any(o => o.Problem is null)) return box;
 
-        var says = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, Foreground = Brush("TextMuted") };
-
-        void Show(SourceOption option) => says.Text = option.FromUnity
-            ? $"{option.Says} {RuntimeLibraryOrigins.UnityTermsUrl}"
-            : option.Says;
-
-        var selected = usable.FirstOrDefault(o => o.Id == current) ?? usable.FirstOrDefault();
-        if (selected is null) return box;
-
-        if (usable.Count == 1)
-        {
-            box.Children.Add(new TextBlock { Text = $"{title}: {selected.Label}", FontSize = 12, TextWrapping = TextWrapping.Wrap });
-        }
-        else
-        {
-            box.Children.Add(new TextBlock { Text = title, FontSize = 12 });
-
-            var choice = new ComboBox
-            {
-                ItemsSource = usable.Select(o => o.Label).ToList(),
-                SelectedIndex = usable.IndexOf(selected),
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                FontSize = 12,
-            };
-
-            choice.SelectionChanged += (_, _) =>
-            {
-                if (choice.SelectedIndex < 0) return;
-                var option = usable[choice.SelectedIndex];
-                picked(option.Id);
-                Show(option);
-            };
-
-            box.Children.Add(choice);
-        }
-
-        Show(selected);
-        box.Children.Add(says);
+        box.Children.Add(new TextBlock { Text = title, FontSize = 12 });
+        box.Children.Add(SourceSelector(title, options, current, radios: false, enabled: true, picked));
         return box;
     }
 
@@ -7883,7 +7960,14 @@ public partial class MainWindow : Window
     /// <summary>The .NET libraries' sources as the card and the one-click show them — one wording for both.</summary>
     private static IReadOnlyList<SourceOption> ClassLibraryOptions(RuntimeLibrariesState state) =>
         state.ClassLibrarySources.Select(candidate => new SourceOption(
-            candidate.Source.Id, candidate.Source.Label,
+            candidate.Source.Id,
+            candidate.Source.Kind switch
+            {
+                ClassLibrarySourceKind.Editor => SourceKind.Editor,
+                ClassLibrarySourceKind.Game => SourceKind.Game,
+                _ => SourceKind.UnityServer,
+            },
+            candidate.Source.Label,
             candidate.Source.Kind switch
             {
                 ClassLibrarySourceKind.UnityDownload =>
@@ -7894,7 +7978,6 @@ public partial class MainWindow : Window
                     $"Another Unity release of the same generation, which this game's engine accepts ({candidate.Source.Version}).",
                 _ => "Same Unity release as the game.",
             },
-            candidate.Source.Kind == ClassLibrarySourceKind.UnityDownload,
             candidate.Usable ? null : candidate.Problems[0])).ToList();
 
     /// <summary>Where the missing engine modules come from — an editor, another game, or Unity's package.</summary>
@@ -7909,7 +7992,14 @@ public partial class MainWindow : Window
     /// <summary>The engine modules' sources as the card and the one-click show them — one wording for both.</summary>
     private static IReadOnlyList<SourceOption> ModuleOptions(RuntimeLibrariesState state) =>
         state.ModuleSources.Select(candidate => new SourceOption(
-            candidate.Source.Id, candidate.Source.Label,
+            candidate.Source.Id,
+            candidate.Source.Kind switch
+            {
+                EngineModuleSourceKind.Editor => SourceKind.Editor,
+                EngineModuleSourceKind.Game => SourceKind.Game,
+                _ => SourceKind.UnityServer,
+            },
+            candidate.Source.Label,
             candidate.Source.Kind switch
             {
                 EngineModuleSourceKind.UnityDownload =>
@@ -7921,7 +8011,6 @@ public partial class MainWindow : Window
                     $"An older release of the same branch. Checked, but not the game's own version ({state.Need?.Modules?.Build}).",
                 _ => "Same Unity release as the game. Checked: signed by Unity, complete, and fits this game's engine.",
             },
-            candidate.Source.Kind == EngineModuleSourceKind.UnityDownload,
             candidate.Usable ? null : candidate.Problems[0])).ToList();
 
     /// <summary>Adds the libraries alone: the loader and the mod stay exactly as they are.</summary>

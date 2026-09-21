@@ -7753,7 +7753,7 @@ public partial class MainWindow : Window
         string Says(EngineModuleSource source) => source.Kind switch
         {
             EngineModuleSourceKind.UnityDownload =>
-                "Only the part that holds the modules is downloaded, a few MB. Unity's terms apply.",
+                "Only the part of Unity's package that holds the modules is downloaded. Unity's terms apply.",
             _ when !source.SameRelease =>
                 $"An older release of the same branch. Checked, but not the game's own version ({report.RuntimeLibraries.Need?.Modules?.Build}).",
             _ => "Same Unity release as the game. Checked: signed by Unity, complete, and fits this game's engine.",

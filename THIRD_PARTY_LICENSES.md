@@ -100,7 +100,10 @@ Downloaded only for a game that shipped without some of them, and only the files
 Needed only by a game whose build stripped its own engine modules. The tool either copies them
 from another Unity game or Unity editor already installed on the same computer, or downloads
 them from Unity's own servers (`download.unity3d.com`) after saying so and showing Unity's terms.
-A module is used only when its Authenticode signature by Unity Technologies verifies.
+A module copied from this computer is used only when its Authenticode signature by Unity
+Technologies verifies. A module downloaded from Unity's server may carry none, since Unity signs
+neither its Linux builds nor versions before 2020; one whose signature is present and fails is
+refused whatever its origin.
 
 ## Notes
 

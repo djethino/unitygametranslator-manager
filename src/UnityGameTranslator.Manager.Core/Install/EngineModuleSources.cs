@@ -50,7 +50,9 @@ public sealed record EngineModuleCandidate(EngineModuleSource Source, IReadOnlyL
 ///   · it is the complete set the game ships, not some of it — a partial set broke a game's data;
 ///   · every file carries Unity's valid signature (<see cref="UnitySignature"/>) — a copy from
 ///     another game is only as trustworthy as that game, and the signature is what says Unity built
-///     it;
+///     it. The one exception is Unity's own server, for the builds Unity never signed (Linux, and
+///     every version before 2020): there the origin is what says it (user's decision, 2026-09-21),
+///     and a signature that is present but fails is still refused;
 ///   · it is not stripped itself, read against its own player (<see cref="EngineModules.Stripped"/>);
 ///   · every native call it makes exists in THIS game's player (<see cref="EngineModules.MissingFromPlayer"/>);
 ///   · everything the game's own stripped copy kept, it has too (<see cref="EngineModules.Lacks"/>) —
@@ -62,29 +64,35 @@ public static class EngineModuleSources
     /// <param name="games">Other games on this computer; the game itself is left out.</param>
     public static IReadOnlyList<EngineModuleCandidate> Find(GameInstall game, EngineModuleNeed need, IEnumerable<GameInstall> games)
     {
-        if (UnityVersions.Parse(need.Build ?? game.UnityVersion) is not { } version || need.CannotSupply is not null)
+        if (UnityVersions.Parse(need.Build ?? game.UnityVersion) is not { } version || need.CannotSupply is not null
+            || EngineModules.PlatformOf(game) is not { } platform)
             return Array.Empty<EngineModuleCandidate>();
 
         var local = new List<EngineModuleSource>();
 
-        foreach (var (editorVersion, managed, player) in Editors(game.Architecture))
+        // ⚠ No copy on this computer at all where Unity signs nothing: none could ever be verified,
+        // and listing them only to refuse each one would bury the one source that can serve.
+        if (EngineModules.UnitySigns(platform, version))
         {
-            if (Fits(editorVersion, version) is not { } same) continue;
-            local.Add(new EngineModuleSource(EngineModuleSourceKind.Editor, $"editor:{managed}", null, editorVersion,
-                                             same, managed, player));
-        }
+            foreach (var (editorVersion, managed, player) in Editors(game.Architecture))
+            {
+                if (Fits(editorVersion, version) is not { } same) continue;
+                local.Add(new EngineModuleSource(EngineModuleSourceKind.Editor, $"editor:{managed}", null, editorVersion,
+                                                 same, managed, player));
+            }
 
-        foreach (var other in games)
-        {
-            if (string.Equals(Path.GetFullPath(other.Path), Path.GetFullPath(game.Path), StringComparison.OrdinalIgnoreCase)) continue;
-            if (other.Runtime != UnityRuntime.Mono || other.DataDirectory is null || !other.IsWindowsBuild) continue;
-            if (UnityVersions.Parse(other.UnityVersion) is not { } otherVersion || Fits(otherVersion, version) is not { } same) continue;
+            foreach (var other in games)
+            {
+                if (string.Equals(Path.GetFullPath(other.Path), Path.GetFullPath(game.Path), StringComparison.OrdinalIgnoreCase)) continue;
+                if (other.Runtime != UnityRuntime.Mono || other.DataDirectory is null || EngineModules.PlatformOf(other) != platform) continue;
+                if (UnityVersions.Parse(other.UnityVersion) is not { } otherVersion || Fits(otherVersion, version) is not { } same) continue;
 
-            var managed = Path.Combine(other.DataDirectory, "Managed");
-            if (!File.Exists(Path.Combine(managed, "UnityEngine.CoreModule.dll"))) continue;
+                var managed = Path.Combine(other.DataDirectory, "Managed");
+                if (!File.Exists(Path.Combine(managed, "UnityEngine.CoreModule.dll"))) continue;
 
-            local.Add(new EngineModuleSource(EngineModuleSourceKind.Game, $"game:{Path.GetFullPath(other.Path)}", other.Name,
-                                             otherVersion, same, managed, EngineModules.PlayerBinary(other.Path, other.ExecutablePath)));
+                local.Add(new EngineModuleSource(EngineModuleSourceKind.Game, $"game:{Path.GetFullPath(other.Path)}", other.Name,
+                                                 otherVersion, same, managed, EngineModules.PlayerBinary(other.Path, other.ExecutablePath)));
+            }
         }
 
         var candidates = local.Where(s => s.SameRelease)
@@ -94,7 +102,7 @@ public static class EngineModuleSources
 
         // Checked when it is fetched: nothing can be said about files not yet downloaded, except
         // that they come from Unity itself — and the same checks then apply to them.
-        if (need.Changeset is not null && need.Build is not null && game.IsWindowsBuild)
+        if (need.Changeset is not null && need.Build is not null)
         {
             candidates.Add(new EngineModuleCandidate(new EngineModuleSource(
                 EngineModuleSourceKind.UnityDownload, $"unity:{need.Build}", null, version, true, null, null),
@@ -139,7 +147,8 @@ public static class EngineModuleSources
                                 })
                                 .Append(Stamp(source.Player)).Append(Stamp(gamePlayer)));
 
-        return VerifyMemo.GetOrAdd(stamp, _ => VerifyNow(need, source.Managed, source.Player, gameManaged, gamePlayer, source.Label));
+        return VerifyMemo.GetOrAdd(stamp, _ => VerifyNow(need, source.Managed, source.Player, gameManaged, gamePlayer, source.Label,
+                                                         fromUnityServer: false));
     }
 
     private static readonly ConcurrentDictionary<string, IReadOnlyList<string>> VerifyMemo = new();
@@ -155,8 +164,15 @@ public static class EngineModuleSources
     /// The checks themselves, on folders — also what an install runs on modules it has just
     /// downloaded, whose player is not at hand (<paramref name="donorPlayer"/> null).
     /// </summary>
+    /// <param name="fromUnityServer">
+    /// The files were just read from Unity's own server. 🔴 **Only then may a module carry no
+    /// signature at all** (user's decision, 2026-09-21): Unity signs nothing in Linux builds nor
+    /// before 2020, and its own server over HTTPS is the one origin that needs no signature to be
+    /// Unity's. A signature that is THERE and fails is refused whatever the origin — that is a file
+    /// altered after Unity built it.
+    /// </param>
     public static IReadOnlyList<string> VerifyNow(EngineModuleNeed need, string donorManaged, string? donorPlayer,
-                                                  string gameManaged, string? gamePlayer, string label)
+                                                  string gameManaged, string? gamePlayer, string label, bool fromUnityServer)
     {
         var problems = new List<string>();
 
@@ -170,7 +186,7 @@ public static class EngineModuleSources
         foreach (var name in need.Set)
         {
             var result = UnitySignature.Check(Path.Combine(donorManaged, name + ".dll"));
-            if (result.IsValid) continue;
+            if (result.IsValid || (fromUnityServer && result.Verdict == UnitySignature.Verdict.NotSigned)) continue;
 
             problems.Add($"{name} in {label} is not verifiably Unity's ({Describe(result)})");
             return problems;
@@ -186,10 +202,13 @@ public static class EngineModuleSources
             return problems;
         }
 
-        if (gamePlayer is not null && File.Exists(gamePlayer))
+        // ⚠ Not for Unity's own download: it is fetched for the game's exact build — its changeset —
+        // so its native calls ARE the game's player's, by construction.
+        if (!fromUnityServer && gamePlayer is not null && File.Exists(gamePlayer))
         {
             var shapes = need.Set.Select(donor).OfType<AssemblyShape>().ToList();
-            var calls = EngineModules.MissingFromPlayer(shapes, EngineModules.NativeNames(gamePlayer));
+            var donorNames = donorPlayer is not null && File.Exists(donorPlayer) ? EngineModules.NativeNames(donorPlayer) : null;
+            var calls = EngineModules.MissingFromPlayer(shapes, EngineModules.NativeNames(gamePlayer), donorNames);
             if (calls.Count > 0)
             {
                 problems.Add($"{label} calls {calls.Count} engine functions this game's player does not have ({calls[0]})");

@@ -53,9 +53,15 @@ internal static class EngineModulesChecks
                           .TryGetValue("UnityEngine.CoreModule", out var lacking) && lacking == 1,
             "a stripped module lacks what the player still names", "Application.productName, measured on a stripped game");
 
-        var donor = Module("UnityEngine.CoreModule", new Dictionary<string, TypeShape>(complete.Types), new[] { "UnityEngine.Application::get_productName", "UnityEngine.Jobs::New" });
-        Program.Check(EngineModules.MissingFromPlayer(new[] { donor }, player).SequenceEqual(new[] { "UnityEngine.Jobs::New" }),
-            "a native call the game's player lacks is found", "a newer donor crashed a game at start on exactly this");
+        var donor = Module("UnityEngine.CoreModule", new Dictionary<string, TypeShape>(complete.Types),
+                           new[] { "UnityEngine.Application::get_productName", "UnityEngine.Jobs::New", "UnityEngine.Old::Dead" });
+        var donorPlayer = new HashSet<string>(player) { "UnityEngine.Jobs::New" };
+        Program.Check(EngineModules.MissingFromPlayer(new[] { donor }, player, donorPlayer).SequenceEqual(new[] { "UnityEngine.Jobs::New" }),
+            "a native call the donor's engine has and the game's lacks is found", "a newer donor crashed a game at start on exactly this");
+        Program.Check(!EngineModules.MissingFromPlayer(new[] { donor }, player, donorPlayer).Contains("UnityEngine.Old::Dead"),
+            "...but not one neither engine registers", "every intact 2021.3 game declares two such calls of its own");
+        Program.Check(EngineModules.MissingFromPlayer(new[] { donor }, player, null).Count == 2,
+            "without the donor's engine, every absent call counts", "stricter, never looser");
 
         var gameOwn = Module("UnityEngine.CoreModule", new()
         {

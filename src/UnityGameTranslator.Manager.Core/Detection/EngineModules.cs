@@ -161,11 +161,23 @@ public static class EngineModules
     }
 
     /// <summary>
-    /// The native calls a set of modules makes that a player does not carry — what makes a module
-    /// from another build crash the game at start. Empty when every one is there.
+    /// The native calls a set of modules makes that its own player carries and the game's does not —
+    /// what makes a module from another build crash the game at start. Empty when there is none.
+    ///
+    /// 🔴 **Against the donor's own player, never in the absolute** (measured 2026-09-21). A module
+    /// declares native calls its own player never registers — resolved only when first called, and
+    /// some never are: every intact 2021.3 game "misses" two of its own, a 2018 game one, a game
+    /// shipping the old networking module two hundred. Counted in the absolute, that refused perfectly
+    /// good copies. What the crash comes from is a call the DONOR's engine had and the game's lacks.
     /// </summary>
-    public static IReadOnlyList<string> MissingFromPlayer(IEnumerable<AssemblyShape> modules, IReadOnlySet<string> nativeNames) =>
-        modules.SelectMany(m => m.InternalCalls).Where(call => !nativeNames.Contains(call))
+    /// <param name="donorNames">
+    /// The donor's player's names. Null when it is not at hand: every call the game's player lacks
+    /// then counts — stricter, never looser.
+    /// </param>
+    public static IReadOnlyList<string> MissingFromPlayer(IEnumerable<AssemblyShape> modules, IReadOnlySet<string> gameNames,
+                                                          IReadOnlySet<string>? donorNames) =>
+        modules.SelectMany(m => m.InternalCalls)
+               .Where(call => !gameNames.Contains(call) && (donorNames is null || donorNames.Contains(call)))
                .Distinct(StringComparer.Ordinal).OrderBy(c => c, StringComparer.Ordinal).ToList();
 
     /// <summary>
@@ -276,27 +288,82 @@ public static class EngineModules
 
         var build = BuildOf(player, game.UnityVersion);
         return new Model.EngineModuleNeed(hit, set, build?.Version ?? game.UnityVersion, build?.Changeset,
-                                          CannotSupply(game, build?.Version ?? game.UnityVersion));
+                                          CannotSupply(game, build?.Version ?? game.UnityVersion, build?.Changeset));
+    }
+
+    public enum Platform { Windows, Linux }
+
+    /// <summary>
+    /// The system a game is built for, as far as engine modules go — a Windows build wherever it
+    /// runs (Proton included), a Linux one, or null for anything else (a macOS build copied over).
+    /// </summary>
+    public static Platform? PlatformOf(Model.GameInstall game)
+    {
+        if (game.IsWindowsBuild) return Platform.Windows;
+        if (File.Exists(Path.Combine(game.Path, "UnityPlayer.so"))) return Platform.Linux;
+
+        // Before 2019.3 the Linux player was the executable itself: an ELF file.
+        if (game.ExecutablePath is { } executable && File.Exists(executable))
+        {
+            try
+            {
+                using var stream = File.OpenRead(executable);
+                var magic = new byte[4];
+                if (stream.Read(magic, 0, 4) == 4 && magic[0] == 0x7F && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F')
+                    return Platform.Linux;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // An executable that cannot be opened says nothing about its system.
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
-    /// Why no copy of the engine modules can be verified for this game — said at scan, from what is
-    /// measured, before any source is looked at. Null when one may be.
-    ///
-    /// ⚠ Both reasons are measured (2026-09-21), not assumed: the Linux build's modules in Unity's
-    /// own download carry no signature, and no module of a 2017–2019 build on this machine did. A copy
-    /// that cannot be verified is not used (user's requirement), so for those games there is none.
+    /// The sections of Unity's list of downloads that hold a platform's build support, newest
+    /// name first — read on 2018.4 ("Linux") and 2021.3 ("Linux-Mono").
     /// </summary>
-    public static string? CannotSupply(Model.GameInstall game, string? version)
+    public static IReadOnlyList<string> PackageSections(Platform platform) => platform == Platform.Windows
+        ? new[] { "Windows-Mono" }
+        : new[] { "Linux-Mono", "Linux" };
+
+    /// <summary>
+    /// Whether Unity signs the engine modules of builds like this one — what decides whether a copy
+    /// found on this computer can ever be verified.
+    ///
+    /// ⚠ Measured (2026-09-21): signed in Windows builds from 2020.3 late on (No Plan B 2020.3.48,
+    /// Rain World 2020.3.45), unsigned in every 2017–2019 build on this machine and in 2020.3.2/.4;
+    /// unsigned in Linux builds, Unity's own 2021.3 package included. 2020 is let through: a copy that
+    /// turns out unsigned is refused by the check itself.
+    /// </summary>
+    public static bool UnitySigns(Platform platform, UnityVersion? version) =>
+        platform == Platform.Windows && version is { Major: >= 2020 };
+
+    /// <summary>
+    /// Why no copy of the engine modules can be found for this game — said at scan, before any
+    /// source is looked at. Null when one may be.
+    ///
+    /// 🔴 **The user's decision (2026-09-21), and its limit.** A copy found on this computer is used
+    /// only when Unity's signature verifies — another game may have been tampered with. Where Unity
+    /// signs nothing (Linux builds, versions before 2020), the one source left is Unity's own server,
+    /// trusted for being Unity's, over HTTPS; so such a game can be served only when its build can be
+    /// identified to find the download.
+    /// </summary>
+    public static string? CannotSupply(Model.GameInstall game, string? version, string? changeset)
     {
-        if (!game.IsWindowsBuild)
-            return "Unity does not sign the engine modules of builds for this system, so no copy can be verified";
+        if (PlatformOf(game) is not { } platform)
+            return "this game is not built for Windows or Linux, and Unity's engine modules for it cannot be found";
 
-        if (UnityVersions.Parse(version) is { } parsed && parsed.Major < 2020)
-            return $"Unity did not sign the engine modules of version {parsed.Major}, so no copy can be verified";
-
-        if (version is null)
+        if (UnityVersions.Parse(version) is not { } parsed)
             return "the game's Unity version could not be read, so no matching engine modules can be chosen";
+
+        if (!UnitySigns(platform, parsed) && changeset is null)
+        {
+            return "Unity did not sign the engine modules of this build, and the build could not be identified "
+                 + "to download them from Unity";
+        }
 
         return null;
     }

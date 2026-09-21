@@ -33,11 +33,12 @@ public static class RuntimeLibraryOrigins
 
     /// <summary>
     /// Unity's description of one build's downloads: sections per module, each with its file, size
-    /// and md5. The Linux editor's file is the one listing the "Windows Build Support (Mono)"
-    /// module as a single package; the Windows editor's installs it with the editor.
+    /// and md5. The macOS editor's file is the one listing BOTH platforms' build support as single
+    /// packages — "Windows-Mono", and "Linux-Mono" (named "Linux" before 2019) — read for 2018.4 and
+    /// 2021.3; the Linux editor's lists no Linux package, the Windows editor's no Windows one.
     /// </summary>
     public static string UnityBuildIndexUrl(string version, string changeset) =>
-        $"https://{UnityDownloadHost}/download_unity/{Uri.EscapeDataString(changeset)}/unity-{Uri.EscapeDataString(version)}-linux.ini";
+        $"https://{UnityDownloadHost}/download_unity/{Uri.EscapeDataString(changeset)}/unity-{Uri.EscapeDataString(version)}-osx.ini";
 
     /// <summary>A file named in that index, relative to the build's folder on the server.</summary>
     public static string UnityBuildFileUrl(string changeset, string relative) =>

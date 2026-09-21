@@ -30,11 +30,14 @@ public static class UnityPackage
     private static readonly Regex ModuleFile = new(@"^UnityEngine(\.[A-Za-z0-9]+Module)?\.dll$", RegexOptions.CultureInvariant);
 
     /// <summary>
-    /// The folders the modules may be taken from, in the order they are looked for. The first one
-    /// met in the stream is the one used, whole.
+    /// The folders the modules may be taken from. The first one met in the stream is the one used,
+    /// whole. Read on real packages (2026-09-21): `Managed/` at the top in 2018 (Windows and Linux
+    /// alike, the same bytes), `Variations/mono/Managed/` first in 2021's Windows package, and the
+    /// player's own `…_player_nondevelopment_mono/Data/Managed/` in 2021's Linux one — which has no
+    /// shared folder, its modules being built per platform.
     /// </summary>
     private static readonly Regex ModuleFolder = new(
-        @"^Variations/(mono/Managed|win(32|64)_player_nondevelopment_mono/Data/Managed)$",
+        @"^(Managed|Variations/(mono/Managed|(win(32|64)|linux(32|64))_player_nondevelopment_mono/Data/Managed))$",
         RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     /// <summary>

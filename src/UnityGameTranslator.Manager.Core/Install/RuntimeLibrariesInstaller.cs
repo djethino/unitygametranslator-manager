@@ -415,7 +415,8 @@ public static class RuntimeLibrariesInstaller
         if (source.Kind != EngineModuleSourceKind.UnityDownload)
         {
             // Checked again now, not trusted from the report: the files may have changed since.
-            var problems = EngineModuleSources.VerifyNow(need, source.Managed!, source.Player, managed, gamePlayer, source.Label);
+            var problems = EngineModuleSources.VerifyNow(need, source.Managed!, source.Player, managed, gamePlayer, source.Label,
+                                                         fromUnityServer: false);
             if (problems.Count > 0) throw new InvalidOperationException($"{problems[0]}. Nothing was added.");
 
             return new ModuleChoice(source, source.Managed!, need.Set, gameRelease);
@@ -431,9 +432,12 @@ public static class RuntimeLibrariesInstaller
         if (need.Build is null || need.Changeset is null)
             throw new InvalidOperationException("This game's Unity build could not be identified, so Unity's download cannot be found. Nothing was added.");
 
-        var folder = await DownloadModulesAsync(need, http, staging, cache, status, ct).ConfigureAwait(false);
+        var platform = EngineModules.PlatformOf(game)
+            ?? throw new InvalidOperationException("This game is not built for Windows or Linux. Nothing was added.");
 
-        var downloaded = EngineModuleSources.VerifyNow(need, folder, null, managed, gamePlayer, source.Label);
+        var folder = await DownloadModulesAsync(need, platform, http, staging, cache, status, ct).ConfigureAwait(false);
+
+        var downloaded = EngineModuleSources.VerifyNow(need, folder, null, managed, gamePlayer, source.Label, fromUnityServer: true);
         if (downloaded.Count > 0) throw new InvalidOperationException($"{downloaded[0]}. Nothing was added.");
 
         return new ModuleChoice(source, folder, need.Set, gameRelease);
@@ -450,21 +454,22 @@ public static class RuntimeLibrariesInstaller
 
     /// <summary>
     /// Unity's engine modules for this build, from Unity's server: its index for the build, then the
-    /// start of its Windows Build Support package, read until the modules have gone by.
+    /// start of the platform's Build Support package, read until the modules have gone by.
     ///
-    /// ⚠ Kept in the archive cache as a zip of the modules, keyed on the build: a second game on the
-    /// same release reads them from disk. They are checked again on the way out, like everything the
-    /// cache hands back, and signature-checked again by the caller.
+    /// ⚠ Kept in the archive cache as a zip of the modules, keyed on the platform and the build: a
+    /// second game on the same release reads them from disk. They are checked again on the way out,
+    /// like everything the cache hands back, and signature-checked again by the caller.
     /// </summary>
-    private static async Task<string> DownloadModulesAsync(EngineModuleNeed need, HttpClient http, string staging,
-                                                           ArchiveCache cache, Action<string>? status, CancellationToken ct)
+    private static async Task<string> DownloadModulesAsync(EngineModuleNeed need, EngineModules.Platform platform, HttpClient http,
+                                                           string staging, ArchiveCache cache, Action<string>? status,
+                                                           CancellationToken ct)
     {
         var build = need.Build!;
         var folder = Path.Combine(staging, "engine-modules");
         if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
         Directory.CreateDirectory(folder);
 
-        var key = new ArchiveCacheKey($"unity-engine-modules-{build}", build);
+        var key = new ArchiveCacheKey($"unity-engine-modules-{platform.ToString().ToLowerInvariant()}-{build}", build);
         if (cache.TryPath(key, null, ".zip") is { } cached)
         {
             ZipFile.ExtractToDirectory(cached, folder);
@@ -481,8 +486,9 @@ public static class RuntimeLibrariesInstaller
             index = await reader.ReadToEndAsync(ct).ConfigureAwait(false);
         }
 
-        var package = UnityBuildIndex.Section(index, "Windows-Mono")
-            ?? throw new InvalidOperationException($"Unity does not list a Windows Build Support package for {build}. Nothing was added.");
+        var package = EngineModules.PackageSections(platform).Select(section => UnityBuildIndex.Section(index, section))
+                                                             .FirstOrDefault(p => p is not null)
+            ?? throw new InvalidOperationException($"Unity does not list a {platform} Build Support package for {build}. Nothing was added.");
 
         status?.Invoke($"Downloading Unity's engine modules for {build} from {RuntimeLibraryOrigins.UnityDownloadHost}...");
 

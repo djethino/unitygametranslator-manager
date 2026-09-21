@@ -37,13 +37,15 @@ public sealed class AssemblyShape
                          IReadOnlyDictionary<string, TypeShape> types,
                          IReadOnlyDictionary<string, string>? forwards = null,
                          IReadOnlyCollection<string>? nativeImports = null,
-                         IReadOnlyList<TypeUse>? uses = null)
+                         IReadOnlyList<TypeUse>? uses = null,
+                         IReadOnlyCollection<string>? internalCalls = null)
     {
         Name = name;
         Types = types;
         Forwards = forwards ?? new Dictionary<string, string>(StringComparer.Ordinal);
         NativeImports = nativeImports ?? Array.Empty<string>();
         Uses = uses ?? Array.Empty<TypeUse>();
+        InternalCalls = internalCalls ?? Array.Empty<string>();
     }
 
     /// <summary>Simple name, as references name it ("System.Net.Http").</summary>
@@ -60,6 +62,13 @@ public sealed class AssemblyShape
 
     /// <summary>What it asks of other assemblies — the list a missing library would break.</summary>
     public IReadOnlyList<TypeUse> Uses { get; }
+
+    /// <summary>
+    /// Its methods implemented inside the engine rather than in IL, as "Type::Method" (nested types
+    /// joined with '+') — the calls a Unity module makes into the native player, which that player
+    /// must carry under the same name (see <see cref="EngineModules"/>).
+    /// </summary>
+    public IReadOnlyCollection<string> InternalCalls { get; }
 
     /// <summary>
     /// Reads an assembly's shape from disk.
@@ -80,15 +89,26 @@ public sealed class AssemblyShape
         var name = r.IsAssembly ? r.GetString(r.GetAssemblyDefinition().Name) : Path.GetFileNameWithoutExtension(path);
 
         var types = new Dictionary<string, TypeShape>(StringComparer.Ordinal);
+        var internalCalls = new HashSet<string>(StringComparer.Ordinal);
         foreach (var handle in r.TypeDefinitions)
         {
             var definition = r.GetTypeDefinition(handle);
+            var typeName = DefinitionName(r, handle);
 
             var members = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var method in definition.GetMethods()) members.Add(r.GetString(r.GetMethodDefinition(method).Name));
+            foreach (var method in definition.GetMethods())
+            {
+                var methodDefinition = r.GetMethodDefinition(method);
+                var methodName = r.GetString(methodDefinition.Name);
+                members.Add(methodName);
+
+                if ((methodDefinition.ImplAttributes & System.Reflection.MethodImplAttributes.InternalCall) != 0)
+                    internalCalls.Add(typeName + "::" + methodName);
+            }
+
             foreach (var field in definition.GetFields()) members.Add(r.GetString(r.GetFieldDefinition(field).Name));
 
-            types[DefinitionName(r, handle)] = new TypeShape(members, NameOf(r, definition.BaseType));
+            types[typeName] = new TypeShape(members, NameOf(r, definition.BaseType));
         }
 
         var forwards = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -129,7 +149,7 @@ public sealed class AssemblyShape
                 uses.Add(new TypeUse(assembly, owner.FullName, r.GetString(reference.Name)));
         }
 
-        return new AssemblyShape(name, types, forwards, natives, uses.ToList());
+        return new AssemblyShape(name, types, forwards, natives, uses.ToList(), internalCalls);
     }
 
     /// <summary>A type definition's full name, nested types joined to their parent with '+'.</summary>

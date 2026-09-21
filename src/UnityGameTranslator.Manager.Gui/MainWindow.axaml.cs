@@ -7614,22 +7614,28 @@ public partial class MainWindow : Window
         panel.Children.Add(new TextBlock
         {
             Text = need is not null
-                ? "This game ships without .NET libraries the mod needs."
-                : "This game no longer lacks any .NET library.",
+                ? "This game lacks libraries the mod needs."
+                : "This game no longer lacks any library.",
             FontSize = 13,
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("TextPrimary"),
         });
 
-        if (need is not null)
+        // ⚠ One line per batch, each NAMING where its files come from — the user's requirement
+        // (2026-09-21): a download is announced with its host before it happens, and a copy from
+        // another game says which game. Two batches, two sources, two lines.
+        if (need is { Missing.Count: > 0 })
         {
-            panel.Children.Add(new TextBlock
-            {
-                Text = "Missing: " + string.Join(", ", need.Missing),
-                FontSize = 12,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = Brush("TextSecondary"),
-            });
+            panel.Children.Add(Muted($".NET libraries: {string.Join(", ", need.Missing)}. "
+                                     + $"From {RuntimeLibraryOrigins.ClassLibrariesHost}, for Unity {need.Archive}."));
+        }
+
+        if (need?.Modules is { } modules)
+        {
+            panel.Children.Add(Muted($"Unity engine modules its build stripped: {string.Join(", ", modules.Stripped)}. "
+                                     + $"All {modules.Set.Count} are replaced together."));
+
+            if (modules.CannotSupply is null) panel.Children.Add(ModuleSourceChoice(report, running));
         }
 
         // ⚠ What it MEANS, in the colour of what it means — the same register as "Up to date." and
@@ -7637,27 +7643,28 @@ public partial class MainWindow : Window
         var (standing, tone) = state.Status switch
         {
             RuntimeLibrariesStatus.Missing when need is { CanSupply: false } =>
-                ($"They cannot be added: {need.CannotSupply}.", "StatusWarning"),
+                ($"They cannot be added: {need.WhyNot}.", "StatusWarning"),
+
+            RuntimeLibrariesStatus.Missing when state.NoModuleSource is { } none =>
+                ($"They cannot be added: {none}.", "StatusWarning"),
 
             RuntimeLibrariesStatus.Missing when report.InstalledLoader is null =>
                 ("They are added together with the mod loader.", null),
 
             RuntimeLibrariesStatus.Missing when installed is not null =>
-                ($"Added before, no longer in place ({state.Detail}). The mod will not start.", "StatusWarning"),
+                ($"Not all in place ({state.Detail}). The mod will not start.", "StatusWarning"),
 
             RuntimeLibrariesStatus.Missing =>
                 ("Not added yet. The mod will not start.", "StatusWarning"),
 
             RuntimeLibrariesStatus.WrongVersion =>
-                ($"Added for another Unity version ({state.Detail}). The mod will not start.", "StatusWarning"),
+                ($"The copies added no longer fit ({state.Detail}). The mod will not start.", "StatusWarning"),
 
             RuntimeLibrariesStatus.InPlace =>
-                ($"Added for Unity {installed!.Unity}: {Composition.Amount(installed.Files.Count, "file", "files")} "
-                 + $"in {LoaderSearchPath.Folder}/.", null),
+                ($"Added: {state.InstalledSummary}. In {LoaderSearchPath.Folder}/.", null),
 
             RuntimeLibrariesStatus.NoLongerNeeded =>
-                ($"{Composition.Amount(installed!.Files.Count, "file", "files")} added for Unity {installed.Unity} "
-                 + $"{(installed.Files.Count == 1 ? "is" : "are")} still in {LoaderSearchPath.Folder}/.", null),
+                ($"Still in {LoaderSearchPath.Folder}/: {state.InstalledSummary}.", null),
 
             _ => ("", null),
         };
@@ -7691,10 +7698,9 @@ public partial class MainWindow : Window
             };
 
             ToolTip.SetTip(add,
-                $"Downloads the .NET libraries of Unity {need!.Archive} from BepInEx's archive "
-                + $"({LoaderOrigins.ClassLibrariesHost}), checks them against this game's own, and puts the ones "
-                + $"it lacks in {LoaderSearchPath.Folder}/. {report.InstalledLoader.Display} is told to read them "
-                + "first. None of the game's own files is replaced.");
+                $"Puts what this game lacks in {LoaderSearchPath.Folder}/, from the sources named above, after "
+                + $"checking every file against this game's own. {report.InstalledLoader.Display} is told to read "
+                + "them first. None of the game's own files is replaced.");
 
             add.Click += async (_, _) => await RunRuntimeLibrariesInstallAsync(report);
             buttons.Children.Add(add);
@@ -7712,6 +7718,110 @@ public partial class MainWindow : Window
         if (buttons.Children.Count > 0) panel.Children.Add(buttons);
 
         return panel;
+    }
+
+    /// <summary>A secondary line of a card, in the size and colour the cards beside it use for theirs.</summary>
+    private TextBlock Muted(string text) => new()
+    {
+        Text = text,
+        FontSize = 12,
+        TextWrapping = TextWrapping.Wrap,
+        Foreground = Brush("TextSecondary"),
+    };
+
+    /// <summary>
+    /// Where the missing engine modules come from, and the way to choose another source.
+    ///
+    /// 🔴 **The person chooses, and every source says what it is** (user's requirement,
+    /// 2026-09-21): a copy from another game on this computer is only as trustworthy as that game,
+    /// so it is named; a download from Unity says so, with Unity's terms, before anything is fetched.
+    /// Only usable sources can be picked — the others are listed with the reason each one was
+    /// refused, so the list is never silently shorter than what is on the disk.
+    ///
+    /// ⚠ Built like the settings card's way of setting a game up: radio buttons, the source on the
+    /// label, what it means underneath. The choice is a preference, read by the acts below and by
+    /// the one-click; it writes nothing into the game.
+    /// </summary>
+    private Control ModuleSourceChoice(GameReport report, bool running)
+    {
+        var state = report.RuntimeLibraries;
+        var box = new StackPanel { Spacing = 4 };
+
+        var usable = state.ModuleSources.Where(c => c.Usable).ToList();
+        var refused = state.ModuleSources.Where(c => !c.Usable).ToList();
+
+        string Says(EngineModuleSource source) => source.Kind switch
+        {
+            EngineModuleSourceKind.UnityDownload =>
+                "Only the part that holds the modules is downloaded, a few MB. Unity's terms apply.",
+            _ when !source.SameRelease =>
+                $"An older release of the same branch. Checked, but not the game's own version ({report.RuntimeLibraries.Need?.Modules?.Build}).",
+            _ => "Same Unity release as the game. Checked: signed by Unity, complete, and fits this game's engine.",
+        };
+
+        if (usable.Count > 0)
+        {
+            box.Children.Add(Muted(usable.Count == 1 ? "Source:" : "Source (choose one):"));
+
+            foreach (var candidate in usable)
+            {
+                var text = new StackPanel { Spacing = 1 };
+                text.Children.Add(new TextBlock { Text = candidate.Source.Label, FontSize = 12, Foreground = Brush("TextPrimary") });
+                text.Children.Add(new TextBlock
+                {
+                    Text = Says(candidate.Source),
+                    FontSize = 11,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = Brush("TextMuted"),
+                });
+
+                var radio = new RadioButton
+                {
+                    Content = text,
+                    GroupName = "modules-" + report.Game.Path,
+                    IsChecked = candidate == state.ModuleSource,
+                    IsEnabled = !running,
+                    FontSize = 12,
+                };
+
+                var id = candidate.Source.Id;
+                radio.IsCheckedChanged += async (_, _) =>
+                {
+                    if (radio.IsChecked != true || id == state.ModuleSource?.Source.Id) return;
+
+                    var preference = _preferences.Read(report.Game.Path);
+                    preference.ModuleSource = id;
+                    _preferences.Set(report.Game.Path, preference);
+
+                    await ShowSelectedAsync();
+                };
+
+                box.Children.Add(radio);
+
+                if (candidate.Source.Kind == EngineModuleSourceKind.UnityDownload)
+                {
+                    var terms = new Button { Content = "Unity's terms", FontSize = 11, Margin = new Avalonia.Thickness(28, 0, 0, 0) };
+                    ToolTip.SetTip(terms, RuntimeLibraryOrigins.UnityTermsUrl);
+                    terms.Click += (_, _) => OpenUrl(RuntimeLibraryOrigins.UnityTermsUrl);
+                    box.Children.Add(terms);
+                }
+            }
+        }
+
+        if (state.ChosenSourceGone)
+            box.Children.Add(Muted("The source chosen before is no longer usable, so the first usable one is used."));
+
+        // ⚠ Said on the card, not in a hover: a copy somebody can see on their disk and not in this
+        // list needs its reason where the eye already is.
+        foreach (var candidate in refused)
+        {
+            var line = Muted($"Not usable: {candidate.Source.Label}. {candidate.Problems[0]}.");
+            line.FontSize = 11;
+            line.Foreground = Brush("TextMuted");
+            box.Children.Add(line);
+        }
+
+        return box;
     }
 
     /// <summary>Adds the libraries alone: the loader and the mod stay exactly as they are.</summary>
@@ -7735,13 +7845,14 @@ public partial class MainWindow : Window
         if (installed is null) return;
 
         var loader = report.InstalledLoader?.Display ?? "The mod loader";
+        var count = RuntimeLibrariesInstaller.AllFiles(installed).Count;
 
         var body = new StackPanel { Spacing = 10 };
         body.Children.Add(new TextBlock
         {
-            Text = $"{Composition.Amount(installed.Files.Count, "file", "files")} in {LoaderSearchPath.Folder}/ "
-                 + $"{(installed.Files.Count == 1 ? "is" : "are")} deleted, and {loader} is no longer told to read "
-                 + "them. The game's own files are not touched.",
+            Text = $"{Composition.Amount(count, "file", "files")} in {LoaderSearchPath.Folder}/ "
+                 + $"{(count == 1 ? "is" : "are")} deleted ({report.RuntimeLibraries.InstalledSummary}), and {loader} "
+                 + "is no longer told to read them. The game's own files are not touched.",
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("TextSecondary"),
         });
@@ -10136,10 +10247,16 @@ public partial class MainWindow : Window
         // ⚠ The same condition the plan reads (RuntimeLibrariesState.WriteOffered), so the list
         // promises exactly what the click does. Named, because "a DLL is missing" is precisely the
         // thing somebody wants to see being dealt with.
-        if (report.RuntimeLibraries is { WriteOffered: true, Need: { } need })
+        if (report.RuntimeLibraries is { WriteOffered: true, Need: { } need } libraries)
         {
-            yield return new(OneClickAct.AddRuntimeLibraries,
-                             $"add the .NET libraries this game lacks ({string.Join(", ", need.Missing)})");
+            // ⚠ The source is part of the promise: somebody agreeing to one click agrees to where
+            // the files come from — another game on this computer, or Unity's server under Unity's
+            // terms (user's requirement, 2026-09-21). The confirmation shows the terms beside it.
+            var from = libraries.ModuleSource is { } source && need.Modules is not null
+                ? $", engine modules from {source.Source.Label}"
+                : "";
+
+            yield return new(OneClickAct.AddRuntimeLibraries, $"add what this game lacks ({need.Lacking}{from})");
         }
 
         // ⚠ Only when it would actually change something. This step used to be listed whenever the
@@ -10374,6 +10491,10 @@ public partial class MainWindow : Window
 
             if (step.Act is OneClickAct.ApplySettings)
                 foreach (var detail in SettingsDetail(report, preference)) body.Children.Add(detail);
+
+            // Said before the click that downloads, never after: Unity's modules are Unity's.
+            if (step.Act is OneClickAct.AddRuntimeLibraries && report.RuntimeLibraries.NeedsUnityDownload)
+                body.Children.Add(Muted($"   Unity's terms apply to what is downloaded from Unity: {RuntimeLibraryOrigins.UnityTermsUrl}"));
         }
 
         // ⚠ Said, not omitted. With settings of its own that already match, this game produces no
@@ -10445,6 +10566,9 @@ public partial class MainWindow : Window
                     report.RecommendationReason ?? "No plan could be made for this game.");
                 return;
             }
+
+            // Agreed to by the confirmation above, whose step named Unity's server and its terms.
+            plan = plan with { UnityDownloadAccepted = plan.DownloadsFromUnity };
 
             // ⚠ Task.Run, and not only because it is tidier: an archive already in the cache is
             // extracted and copied without a single await that yields, so the whole install ran on
@@ -12392,6 +12516,10 @@ public partial class MainWindow : Window
         var body = string.Join(Environment.NewLine, lines);
         if (!await ConfirmAsync($"Install into {report.Game.Name}?", body, "Install")) return;
 
+        // 🔴 **Agreed to by the confirmation just accepted, and by nothing else.** Its lines name
+        // Unity's server and Unity's terms whenever the engine modules come from there (Describe).
+        plan = plan with { UnityDownloadAccepted = plan.DownloadsFromUnity };
+
         // Same reading as the one-click, for the same reason: the answer to "does this game follow
         // Mod defaults" is about to become unreadable from the game itself.
         var configBefore = GameConfig(report);
@@ -12401,7 +12529,7 @@ public partial class MainWindow : Window
         var stages = new List<(InstallStage Stage, string Line)>();
         if (plan.InstallLoader) stages.Add((InstallStage.Loader, $"Install {plan.Loader.Display}"));
         if (plan.InstallPlugin) stages.Add((InstallStage.Plugin, "Install the mod"));
-        if (plan.SupplyRuntimeLibraries) stages.Add((InstallStage.RuntimeLibraries, "Add the .NET libraries"));
+        if (plan.SupplyRuntimeLibraries) stages.Add((InstallStage.RuntimeLibraries, "Add the libraries this game lacks"));
         if (plan.WritesSettings) stages.Add((InstallStage.Settings, "Apply the settings"));
 
         void OnStage(InstallStage stage) =>

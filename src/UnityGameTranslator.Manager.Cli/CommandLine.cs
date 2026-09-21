@@ -139,12 +139,38 @@ public static class CommandLine
             --runtime mono|il2cpp   tell us what we could not read
             --arch x86|x64          tell us what we could not read
             --force                 proceed despite a refusal (never for an anti-cheat)
+            --modules-from N        (install) take the Unity engine modules a game lacks from
+                                    source N, as numbered by `report`
             --yes skips the confirmation prompt.
             --loader, --settings  (uninstall) also remove the mod loader / your settings
                                   and translations. Both are off by default. The translation
                                   is backed up one last time first, and the backups stay.
             """);
         return 0;
+    }
+
+    /// <summary>
+    /// The places a game's missing engine modules could come from, numbered, with the one an
+    /// install would use marked and each refusal said. ASCII only, like the rest of `report`.
+    /// </summary>
+    private static void PrintModuleSources(RuntimeLibrariesState state, TextWriter? output = null)
+    {
+        output ??= Console.Out;
+        if (state.ModuleSources.Count == 0) return;
+
+        for (var i = 0; i < state.ModuleSources.Count; i++)
+        {
+            var candidate = state.ModuleSources[i];
+            var mark = candidate == state.ModuleSource ? "*" : " ";
+            var older = candidate.Source.SameRelease ? "" : " [older release]";
+
+            output.WriteLine(candidate.Usable
+                ? $"            {mark} [{i + 1}] {candidate.Source.Label}{older}"
+                : $"              [{i + 1}] {candidate.Source.Label}{older} - not usable: {candidate.Problems[0]}");
+        }
+
+        if (state.ChosenSourceGone)
+            output.WriteLine("              the source chosen for this game is no longer usable - the first usable one is used");
     }
 
     private static int Unknown(string command)
@@ -562,7 +588,11 @@ public static class CommandLine
         }
         // ⚠ Printed whenever it applies, refused games included: "a DLL is missing" is exactly the
         // issue somebody opens, and this line is the answer to paste back.
-        if (report.RuntimeLibraries.Headline is { } libraries) Console.WriteLine($".NET libs   : {libraries}");
+        if (report.RuntimeLibraries.Headline is { } libraries) Console.WriteLine($"Libraries   : {libraries}");
+
+        // Where the engine modules would come from, numbered as `install --modules-from N` takes
+        // them — the same list, in the same order, as the window's Compatibility card.
+        PrintModuleSources(report.RuntimeLibraries);
 
         Console.WriteLine($"Recommends  : {report.RecommendedLoader?.Display ?? "nothing"}");
         if (report.RecommendationReason is not null) Console.WriteLine($"              {report.RecommendationReason}");
@@ -777,6 +807,20 @@ public static class CommandLine
             return 3;
         }
 
+        // Another source for the engine modules, for this run: the number `report` printed.
+        if (ValueOf(args, "--modules-from") is { } from)
+        {
+            var sources = report.RuntimeLibraries.ModuleSources;
+            if (!int.TryParse(from, out var index) || index < 1 || index > sources.Count || !sources[index - 1].Usable)
+            {
+                Console.Error.WriteLine($"'--modules-from {from}' is not a usable source for this game. The sources:");
+                PrintModuleSources(report.RuntimeLibraries, Console.Error);
+                return 1;
+            }
+
+            plan = plan with { ModuleSource = sources[index - 1].Source };
+        }
+
         if (report.InstalledLoader is null && report.EligibleLoaders.Count > 1 && chosen is null)
         {
             var others = report.EligibleLoaders.Where(l => l != plan.Loader).Select(l => l.Id);
@@ -797,6 +841,9 @@ public static class CommandLine
         Console.WriteLine();
 
         if (!Confirm(args, "Proceed?")) { Console.WriteLine("Cancelled. Nothing was written."); return 0; }
+
+        // The lines above named Unity's server and terms when they apply; going on is agreeing.
+        plan = plan with { UnityDownloadAccepted = plan.DownloadsFromUnity };
 
         engine.Status += message => Console.WriteLine($"  {message}");
         var outcome = await engine.ApplyAsync(plan);

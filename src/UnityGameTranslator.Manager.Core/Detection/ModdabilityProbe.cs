@@ -77,9 +77,10 @@ public static class ModdabilityProbe
             var need = RuntimeLibraries.NeedOf(game, loaderCannotStart: corlib.IsStripped);
             game.RuntimeLibraries = need;
 
-            // ⚠ The message is the one this refusal always had, on purpose: when no copy can serve,
-            // everything it says is still exactly true.
-            if (corlib.IsStripped && need is not { CanSupply: true })
+            // ⚠ The message is the one this refusal always had, on purpose: when no copy of the .NET
+            // libraries can serve, everything it says is still exactly true. It is about the LOADER,
+            // so it follows the .NET batch alone; engine modules concern the mod, below.
+            if (corlib.IsStripped && (need is null || need.CannotSupply is not null))
             {
                 game.Verdict = ModdabilityVerdict.StrippedRuntime;
                 game.VerdictDetail = CorlibProbe.Describe(corlib.Broken);
@@ -89,7 +90,7 @@ public static class ModdabilityProbe
             if (need is { CanSupply: false })
             {
                 game.Verdict = ModdabilityVerdict.MissingRuntimeLibraries;
-                game.VerdictDetail = need.CannotSupply;
+                game.VerdictDetail = need.WhyNot;
                 return;
             }
         }
@@ -218,10 +219,9 @@ public static class ModdabilityProbe
             "runtime libraries. This is how the game was built, not a limitation of the tool or " +
             "of the mod.",
         ModdabilityVerdict.MissingRuntimeLibraries =>
-            "Refused: this game ships without .NET libraries the mod needs " +
-            $"({string.Join(", ", game.RuntimeLibraries?.Missing ?? Array.Empty<string>())}), and they cannot be added: " +
-            $"{game.VerdictDetail}. The loader would start and the mod would stop at load. This is how the game " +
-            "was built, not a limitation of the tool or of the mod.",
+            $"Refused: this game lacks what the mod needs ({game.RuntimeLibraries?.Lacking}), and it cannot be " +
+            $"added: {game.VerdictDetail}. The loader would start and the mod would stop at load. This is how the " +
+            "game was built, not a limitation of the tool or of the mod.",
         ModdabilityVerdict.ArchitectureUnknown =>
             "Refused: could not read whether this game is 32-bit or 64-bit. A 64-bit loader in a " +
             "32-bit game does not crash, it simply never runs — which looks exactly like a broken mod.",

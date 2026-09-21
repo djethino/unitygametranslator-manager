@@ -174,6 +174,18 @@ public sealed class GamePreference
     [JsonPropertyName("let_wizard_ask")] public bool LetWizardAsk { get; set; }
 
     /// <summary>
+    /// Where this game's missing engine modules are taken from, when somebody chose — the id of a
+    /// <see cref="Install.EngineModuleSource"/>. Null follows the default order (the same Unity
+    /// release installed on this machine, then Unity's download, then an older release).
+    ///
+    /// 🔴 **A choice the person makes, per game, and never one this tool makes silently** (user's
+    /// requirement, 2026-09-21): a copy can come from another game on this computer, and whether
+    /// that game is one they trust is theirs to judge. A choice whose source has since gone falls
+    /// back to the default, and the card says so.
+    /// </summary>
+    [JsonPropertyName("module_source")] public string? ModuleSource { get; set; }
+
+    /// <summary>
     /// The answers that end up in the game's config.json — by name, so a check can hold every rule
     /// that has to know them to this list (<c>PreferenceFieldsChecks</c>).
     ///
@@ -196,7 +208,7 @@ public sealed class GamePreference
     public static readonly IReadOnlyList<string> NotForTheConfig = new[]
     {
         nameof(Schema), nameof(ApplyModDefaults), nameof(InstalledTranslationId),
-        nameof(InstallTranslation), nameof(AdoptLoader),
+        nameof(InstallTranslation), nameof(AdoptLoader), nameof(ModuleSource),
     };
 
     /// <summary>
@@ -267,6 +279,7 @@ public sealed class GamePreference
         InstallTranslation = InstallTranslation,
         AdoptLoader = AdoptLoader,
         LetWizardAsk = LetWizardAsk,
+        ModuleSource = ModuleSource,
     };
 }
 

@@ -1,14 +1,16 @@
+using UnityGameTranslator.Manager.Core.Install;
+
 namespace UnityGameTranslator.Manager.Core.Model;
 
-/// <summary>Where a game stands on the .NET libraries it lacks.</summary>
+/// <summary>Where a game stands on what it lacks for the mod.</summary>
 public enum RuntimeLibrariesStatus
 {
     /// <summary>It lacks nothing, and nothing of ours is in place.</summary>
     NotNeeded,
 
     /// <summary>
-    /// It lacks some, and they are not in place — never added, removed, or the loader's
-    /// configuration lost our entry (a loader update rewrites it).
+    /// It lacks something, and ours is not in place — never added, removed, only one of the two
+    /// batches added, or the loader's configuration lost our entry (a loader update rewrites it).
     /// </summary>
     Missing,
 
@@ -23,7 +25,8 @@ public enum RuntimeLibrariesStatus
 }
 
 /// <summary>
-/// The .NET libraries a game lacks, and whether what this tool put beside it still stands.
+/// What a game lacks — .NET libraries, engine modules its build stripped, or both — whether what
+/// this tool put beside it still stands, and where the modules would come from.
 ///
 /// 🔴 **Reconciled from the files at every report, never remembered as "done".** Three things undo
 /// an install without a word: a loader update rewrites its configuration and drops our entry; a
@@ -37,20 +40,45 @@ public sealed record RuntimeLibrariesState(RuntimeLibrariesStatus Status, Runtim
 {
     public static RuntimeLibrariesState None { get; } = new(RuntimeLibrariesStatus.NotNeeded, null, null);
 
+    /// <summary>
+    /// Every place the missing engine modules could come from, in the order they are preferred, each
+    /// with what stands against it. Empty when no module is lacking.
+    /// </summary>
+    public IReadOnlyList<EngineModuleCandidate> ModuleSources { get; init; } = Array.Empty<EngineModuleCandidate>();
+
+    /// <summary>The source an install would use: the one chosen for this game while usable, else the first usable one.</summary>
+    public EngineModuleCandidate? ModuleSource { get; init; }
+
+    /// <summary>A source was chosen for this game and is no longer usable — the card says the default took its place.</summary>
+    public bool ChosenSourceGone { get; init; }
+
     /// <summary>The mod cannot start until this is settled.</summary>
     public bool BlocksTheMod => Need is not null && Status is RuntimeLibrariesStatus.Missing or RuntimeLibrariesStatus.WrongVersion;
 
     /// <summary>
     /// Adding them would change something and can be done — read by the promise and by the act, like
-    /// <see cref="GameReport.PluginWriteOffered"/>.
+    /// <see cref="GameReport.PluginWriteOffered"/>. For engine modules, that needs a usable source.
     /// </summary>
-    public bool WriteOffered => BlocksTheMod && Need is { CanSupply: true };
+    public bool WriteOffered => BlocksTheMod && Need is { CanSupply: true } && (Need.Modules is null || ModuleSource is not null);
+
+    /// <summary>Adding them means downloading from Unity — what the person has to be told, and agree to, first.</summary>
+    public bool NeedsUnityDownload => WriteOffered && Need?.Modules is not null
+                                      && ModuleSource?.Source.Kind == EngineModuleSourceKind.UnityDownload;
 
     /// <summary>Something of ours is in place and may be taken out.</summary>
     public bool RemoveOffered => Installed is not null;
 
     /// <summary>Whether a card should be shown for it at all: something is lacking, or ours is here.</summary>
     public bool Relevant => Need is not null || Installed is not null;
+
+    /// <summary>
+    /// Why the modules cannot be added although the game can be modded: sources were looked for and
+    /// none holds. Null otherwise.
+    /// </summary>
+    public string? NoModuleSource => Need?.Modules is { CannotSupply: null } && ModuleSource is null
+        ? ModuleSources.FirstOrDefault()?.Problems.FirstOrDefault()
+          ?? "no copy of the same Unity release was found on this computer, and Unity's download is not available for it"
+        : null;
 
     /// <summary>
     /// One line: what the game lacks, and where that stands — the same words for the report and the
@@ -63,23 +91,41 @@ public sealed record RuntimeLibrariesState(RuntimeLibrariesStatus Status, Runtim
         RuntimeLibrariesStatus.NotNeeded => null,
 
         RuntimeLibrariesStatus.Missing when Need is { CanSupply: false } =>
-            $"lacks {Named(Need.Missing)} - they cannot be added: {Need.CannotSupply}",
+            $"lacks {Need.Lacking} - it cannot be added: {Need.WhyNot}",
+
+        RuntimeLibrariesStatus.Missing when NoModuleSource is { } none =>
+            $"lacks {Need!.Lacking} - it cannot be added: {none}",
 
         RuntimeLibrariesStatus.Missing =>
-            $"lacks {Named(Need!.Missing)} - not added, so the mod will not start"
+            $"lacks {Need!.Lacking} - not added, so the mod will not start"
             + (Detail is null ? "" : $" ({Detail})"),
 
         RuntimeLibrariesStatus.WrongVersion =>
-            $"lacks {Named(Need!.Missing)} - the ones added were {Detail}, so the mod will not start",
+            $"lacks {Need!.Lacking} - the copies added no longer fit ({Detail}), so the mod will not start",
 
         RuntimeLibrariesStatus.InPlace =>
-            $"lacks {Named(Need!.Missing)} - added for Unity {Installed!.Unity} ({Installed.Files.Count} files)",
+            $"lacks {Need!.Lacking} - added ({InstalledSummary})",
 
         RuntimeLibrariesStatus.NoLongerNeeded =>
-            $"lacks nothing any more - the {Installed!.Files.Count} files added for Unity {Installed.Unity} can be removed",
+            $"lacks nothing any more - {InstalledSummary} can be removed",
 
         _ => null,
     };
 
-    private static string Named(IReadOnlyList<string> libraries) => string.Join(", ", libraries);
+    /// <summary>What of ours is in place, and from where: "4 .NET libraries for Unity 2018.4.36; 36 engine modules from ...".</summary>
+    public string InstalledSummary
+    {
+        get
+        {
+            if (Installed is null) return "";
+
+            var parts = new List<string>();
+            if (Installed.Files.Count > 0)
+                parts.Add($"{Installed.Files.Count} .NET libraries for Unity {Installed.Unity}");
+            if (Installed.Modules is { } modules)
+                parts.Add($"{modules.Files.Count} engine modules of Unity {modules.Unity} from {modules.Source}");
+
+            return string.Join("; ", parts);
+        }
+    }
 }

@@ -34,6 +34,23 @@ public static class Download
     public static async Task ToFileAsync(HttpClient http, string url, string destination, long? declaredBytes,
                                          Action<long, long?>? progress, CancellationToken ct)
     {
+        await using var source = await OpenAsync(http, url, declaredBytes, progress, ct).ConfigureAwait(false);
+        await using var target = File.Create(destination);
+
+        await source.CopyToAsync(target, 81920, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The same download, as a stream the caller reads as far as it needs — held to every question
+    /// above before the first byte is handed over, and to the size bound while it is read.
+    ///
+    /// ⚠ For a file whose useful part is at its start: Unity's engine modules sit in the first
+    /// megabytes of a 550 MB package, and reading on would fetch half a gigabyte for nothing.
+    /// Disposing the stream ends the download.
+    /// </summary>
+    public static async Task<Stream> OpenAsync(HttpClient http, string url, long? declaredBytes,
+                                               Action<long, long?>? progress, CancellationToken ct)
+    {
         if (!DownloadOrigins.IsAllowedDownload(url))
         {
             throw new InvalidOperationException(
@@ -43,53 +60,111 @@ public static class Download
 
         var requested = new Uri(url);
 
-        using var response = await http
+        var response = await http
             .GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct)
             .ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
 
-        // Where it actually came from, once HttpClient followed the redirects. Nothing has been
-        // read yet, so a refusal here costs the headers and nothing else.
-        var landed = response.RequestMessage?.RequestUri ?? requested;
-        if (!DownloadOrigins.IsAllowedLanding(requested, landed))
+        try
         {
-            throw new InvalidOperationException(
-                $"Refusing the download from {Sanitize.Url(url)}: it was redirected to "
-                + $"{landed.Host}, which is not where this publisher serves its files. Nothing was fetched.");
-        }
+            response.EnsureSuccessStatusCode();
 
-        var announced = response.Content.Headers.ContentLength;
-
-        // The publisher's figure first, the server's second. A server announcing more than the
-        // publisher stated is not sending the file that was described.
-        var limit = declaredBytes ?? announced;
-        if (declaredBytes is { } declared && announced > declared)
-        {
-            throw new InvalidOperationException(
-                $"Refusing the download from {Sanitize.Url(url)}: the publisher lists this file at "
-                + $"{Human(declared)} and the server is sending {Human(announced.Value)}. Nothing was fetched.");
-        }
-
-        await using var source = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-        await using var target = File.Create(destination);
-
-        var buffer = new byte[81920];
-        long done = 0;
-        int read;
-        while ((read = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
-        {
-            done += read;
-
-            if (limit is { } most && done > most)
+            // Where it actually came from, once HttpClient followed the redirects. Nothing has been
+            // read yet, so a refusal here costs the headers and nothing else.
+            var landed = response.RequestMessage?.RequestUri ?? requested;
+            if (!DownloadOrigins.IsAllowedLanding(requested, landed))
             {
                 throw new InvalidOperationException(
-                    $"The download from {Sanitize.Url(url)} kept going past the {Human(most)} it was "
+                    $"Refusing the download from {Sanitize.Url(url)}: it was redirected to "
+                    + $"{landed.Host}, which is not where this publisher serves its files. Nothing was fetched.");
+            }
+
+            var announced = response.Content.Headers.ContentLength;
+
+            // The publisher's figure first, the server's second. A server announcing more than the
+            // publisher stated is not sending the file that was described.
+            var limit = declaredBytes ?? announced;
+            if (declaredBytes is { } declared && announced > declared)
+            {
+                throw new InvalidOperationException(
+                    $"Refusing the download from {Sanitize.Url(url)}: the publisher lists this file at "
+                    + $"{Human(declared)} and the server is sending {Human(announced.Value)}. Nothing was fetched.");
+            }
+
+            var body = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+            return new Bounded(response, body, limit, url, progress);
+        }
+        catch
+        {
+            response.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// A response body that refuses to run past the size it was said to be, reports progress, and
+    /// ends the download when it is disposed.
+    /// </summary>
+    private sealed class Bounded : Stream
+    {
+        private readonly HttpResponseMessage _response;
+        private readonly Stream _body;
+        private readonly long? _limit;
+        private readonly string _url;
+        private readonly Action<long, long?>? _progress;
+        private long _done;
+
+        public Bounded(HttpResponseMessage response, Stream body, long? limit, string url, Action<long, long?>? progress)
+        {
+            _response = response;
+            _body = body;
+            _limit = limit;
+            _url = url;
+            _progress = progress;
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => Count(_body.Read(buffer, offset, count));
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default) =>
+            Count(await _body.ReadAsync(buffer, ct).ConfigureAwait(false));
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken ct) =>
+            ReadAsync(buffer.AsMemory(offset, count), ct).AsTask();
+
+        private int Count(int read)
+        {
+            _done += read;
+
+            if (_limit is { } most && _done > most)
+            {
+                throw new InvalidOperationException(
+                    $"The download from {Sanitize.Url(_url)} kept going past the {Human(most)} it was "
                     + "said to be. It was discarded.");
             }
 
-            await target.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
-            progress?.Invoke(done, limit);
+            if (read > 0) _progress?.Invoke(_done, _limit);
+            return read;
         }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _body.Dispose();
+                _response.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => _done; set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     /// <summary>A size a person can read, in the unit that fits it: "622 KB", "40 MB", "1.5 GB".</summary>

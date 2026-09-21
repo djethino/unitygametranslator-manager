@@ -70,25 +70,67 @@ public enum ModdabilityVerdict
 }
 
 /// <summary>
-/// The .NET class libraries a Mono game lacks for the mod — read from its own Managed folder when
-/// it was scanned, without downloading anything.
+/// What a Mono game lacks for the mod — read from its own folder when it was scanned, without
+/// downloading anything. Two batches, supplied from different places under different rules:
+/// the .NET class libraries (<see cref="Missing"/>) and Unity's engine modules (<see cref="Modules"/>).
 /// </summary>
 /// <param name="Missing">
-/// The libraries where the mod's references stop, by name ("netstandard", "System"). What stops
+/// The .NET libraries where the mod's references stop, by name ("netstandard", "System"). What stops
 /// FIRST: a game lacking netstandard names netstandard alone, and the install finds what lies
-/// behind it on the real files.
+/// behind it on the real files. Empty when only engine modules are lacking.
 /// </param>
 /// <param name="LoaderCannotStart">
 /// The game's mscorlib lacks what every loader calls (<see cref="Detection.CorlibProbe"/>), so the
 /// libraries are needed before anything at all can run, not only the mod.
 /// </param>
-/// <param name="Archive">The Unity version the copies are chosen for ("2018.4.36"), or null when unreadable.</param>
-/// <param name="CannotSupply">Why no copy can serve this game, or null when one can — to be confirmed on the files.</param>
+/// <param name="Archive">The Unity version the .NET copies are chosen for ("2018.4.36"), or null when unreadable.</param>
+/// <param name="CannotSupply">
+/// Why no copy of the .NET libraries can serve this game, or null when one can — to be confirmed on
+/// the files.
+/// </param>
+/// <param name="Modules">The engine modules the game's build stripped of what the mod calls, or null.</param>
 public sealed record RuntimeLibraryNeed(IReadOnlyList<string> Missing, bool LoaderCannotStart,
-                                        string? Archive, string? CannotSupply)
+                                        string? Archive, string? CannotSupply,
+                                        EngineModuleNeed? Modules = null)
 {
-    public bool CanSupply => CannotSupply is null;
+    /// <summary>Both batches can be supplied, as far as can be said without the files.</summary>
+    public bool CanSupply => WhyNot is null;
+
+    /// <summary>The first reason nothing can serve, whichever batch it concerns — null when both can.</summary>
+    public string? WhyNot => Missing.Count > 0 && CannotSupply is not null ? CannotSupply : Modules?.CannotSupply;
+
+    /// <summary>
+    /// What the game lacks, named — the same words in the refusal, the report and the card.
+    /// ⚠ ASCII only: `report` is pasted into issues from consoles that mangle anything else.
+    /// </summary>
+    public string Lacking
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (Missing.Count > 0) parts.Add(".NET libraries " + string.Join(", ", Missing));
+            if (Modules is { } modules) parts.Add("engine modules its build stripped (" + string.Join(", ", modules.Stripped) + ")");
+            return string.Join(" and ", parts);
+        }
+    }
 }
+
+/// <summary>
+/// Unity's engine modules a game's build stripped of what the mod calls (issue #28, measured on two
+/// games 2026-09-21).
+///
+/// 🔴 **They are replaced as a whole set, or not at all.** A module carries the layout of the data
+/// the game serialised; replacing some and not others left a game on a black screen, while the
+/// complete set of the same version, or of an older one of the same branch, ran it perfectly. So
+/// what is supplied is <see cref="Set"/>, every engine module the game ships.
+/// </summary>
+/// <param name="Stripped">The modules the mod's references stop in, and that the build stripped.</param>
+/// <param name="Set">Every engine module the game ships ("UnityEngine", "UnityEngine.CoreModule"…) — what is replaced.</param>
+/// <param name="Build">The game's Unity build as the engine states it ("2021.3.6f1"), or null.</param>
+/// <param name="Changeset">The build's changeset ("7da38d85baf6"), which Unity's downloads are filed under, or null.</param>
+/// <param name="CannotSupply">Why no copy can be verified for this game, or null when one may be.</param>
+public sealed record EngineModuleNeed(IReadOnlyList<string> Stripped, IReadOnlyList<string> Set,
+                                      string? Build, string? Changeset, string? CannotSupply);
 
 /// <summary>
 /// One Unity game found on disk, with everything we could establish about it.

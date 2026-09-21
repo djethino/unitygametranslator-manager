@@ -44,27 +44,13 @@ public static class LoaderOrigins
     };
 
     /// <summary>
-    /// Hosts outside GitHub this tool downloads from: BepInEx's own CI, and BepInEx's archive of
-    /// Unity's class libraries. Not third parties.
+    /// Hosts a loader is served from outside GitHub. BepInEx's own CI, not a third party.
     ///
     /// ⚠ Read by <see cref="DownloadOrigins"/>, which is where the address of EVERY download is
-    /// checked — loaders included. This file only says who publishes each loader.
+    /// checked — loaders included. This file only says who publishes each loader; the libraries a
+    /// game lacks have theirs in <see cref="RuntimeLibraryOrigins"/>.
     /// </summary>
-    public static IReadOnlyCollection<string> BuildsHosts { get; } = ["builds.bepinex.dev", ClassLibrariesHost];
-
-    /// <summary>
-    /// Where Unity's own .NET class libraries are published, one archive per Unity version — the
-    /// copies put beside a game that shipped without some (see Detection.RuntimeLibraries).
-    ///
-    /// ⚠ BepInEx's infrastructure again, and the archive its own documentation sends players to
-    /// for stripped games. No checksum is published there; what is put in a game is instead held to
-    /// the game's own libraries before anything is written (same family, right platform).
-    /// </summary>
-    public const string ClassLibrariesHost = "unity.bepinex.dev";
-
-    /// <summary>The archive for one Unity version, as the archive names it ("2018.4.36").</summary>
-    public static string ClassLibrariesUrl(string archiveName) =>
-        $"https://{ClassLibrariesHost}/corlibs/{Uri.EscapeDataString(archiveName)}.zip";
+    public static IReadOnlyCollection<string> BuildsHosts { get; } = ["builds.bepinex.dev"];
 
     /// <summary>The GitHub repositories the loaders are published from.</summary>
     public static IEnumerable<string> KnownRepositories =>

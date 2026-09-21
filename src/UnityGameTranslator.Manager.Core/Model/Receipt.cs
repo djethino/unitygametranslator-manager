@@ -80,13 +80,17 @@ public sealed class ReceiptPlugin
 /// </summary>
 public sealed class ReceiptRuntimeLibraries
 {
-    /// <summary>The Unity version the copies were chosen for ("2018.4.36").</summary>
+    /// <summary>The Unity version the .NET copies were chosen for ("2018.4.36"); empty when none were needed.</summary>
     [JsonPropertyName("unity")] public string Unity { get; set; } = "";
 
-    /// <summary>Where they came from — the archive's address.</summary>
+    /// <summary>Where the .NET copies came from — the archive's address, and our lot's when one served.</summary>
     [JsonPropertyName("source")] public string Source { get; set; } = "";
 
+    /// <summary>The .NET libraries written.</summary>
     [JsonPropertyName("files")] public List<ReceiptFile> Files { get; set; } = new();
+
+    /// <summary>The engine modules written, when the game's build had stripped them. Null otherwise.</summary>
+    [JsonPropertyName("modules")] public ReceiptEngineModules? Modules { get; set; }
     [JsonPropertyName("dirs_created")] public List<string> DirsCreated { get; set; } = new();
 
     /// <summary>The loader configuration file holding the search path, relative to the game.</summary>
@@ -97,6 +101,33 @@ public sealed class ReceiptRuntimeLibraries
 
     /// <summary>True when the configuration file did not exist and we created it.</summary>
     [JsonPropertyName("config_created")] public bool ConfigCreated { get; set; }
+}
+
+/// <summary>
+/// Unity's engine modules put beside a game whose build stripped them — the whole set, and where
+/// it came from, so the card can say it and a game update can be told from an install.
+/// </summary>
+public sealed class ReceiptEngineModules
+{
+    /// <summary>The Unity release of the copies ("2021.3.6f1") — an older one of the branch when that was the source.</summary>
+    [JsonPropertyName("unity")] public string Unity { get; set; } = "";
+
+    /// <summary>
+    /// The game's own release when they were written. What tells a game update (the game moved on,
+    /// the copies no longer fit) from an older source chosen on purpose (the copies never matched).
+    /// </summary>
+    [JsonPropertyName("game_unity")] public string GameUnity { get; set; } = "";
+
+    /// <summary>"editor", "game" or "unity" — see Install.EngineModuleSourceKind.</summary>
+    [JsonPropertyName("source_kind")] public string SourceKind { get; set; } = "";
+
+    /// <summary>The source's id, as a person's choice names it (Install.EngineModuleSource.Id).</summary>
+    [JsonPropertyName("source_id")] public string SourceId { get; set; } = "";
+
+    /// <summary>The source, as it was named to the person when they were written.</summary>
+    [JsonPropertyName("source")] public string Source { get; set; } = "";
+
+    [JsonPropertyName("files")] public List<ReceiptFile> Files { get; set; } = new();
 }
 
 public sealed class ReceiptFile

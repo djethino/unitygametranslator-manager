@@ -146,6 +146,32 @@ internal static class RuntimeLibrariesChecks
         Program.Check(RuntimeLibraries.Select(new[] { new TypeUse("mscorlib", "System.Object", ".ctor") }, game, archive)
                           .Chosen.Count == 0,
             "nothing lacking: nothing chosen", "a game is only changed where it has to be");
+
+        // An added netstandard forwards to libraries the GAME has, stripped — its own code then
+        // reaches them through the facade (DataView, measured in play on 2026-09-21).
+        var forwardingFacade = Assembly("netstandard", new(), new Dictionary<string, string>
+        {
+            ["System.String"] = "mscorlib",
+            ["System.Data.DataView"] = "System.Data",
+            ["System.Drawing.Point"] = "System.Drawing",
+        });
+        var strippedData = Assembly("System.Data", new() { ["System.Data.DataTable"] = Type(".ctor") });
+        var completeData = Assembly("System.Data", new()
+        {
+            ["System.Data.DataTable"] = Type(".ctor"),
+            ["System.Data.DataView"] = Type(".ctor"),
+        });
+        var drawing = Assembly("System.Drawing", new() { ["System.Drawing.Point"] = Type(".ctor") });
+
+        var facadeSelection = RuntimeLibraries.Select(new[] { new TypeUse("netstandard", "System.String", "Concat") },
+                                                      Set(archiveCorlib, strippedData),
+                                                      Set(archiveCorlib, forwardingFacade, completeData, drawing));
+        Program.Check(facadeSelection.Chosen.SequenceEqual(new[] { "netstandard", "System.Data" }),
+            "an added facade completes what it forwards to, when stripped",
+            "the game's stripped System.Data lacks the DataView netstandard now points at");
+        Program.Check(!facadeSelection.Chosen.Contains("System.Drawing"),
+            "...but not what the game never had",
+            "nothing of the game's reached System.Drawing before, and nothing will");
     }
 
     public static void WhichCopiesMayBeUsed()
@@ -287,23 +313,62 @@ internal static class RuntimeLibrariesChecks
             };
             var loader = new Model.DetectedLoader { Id = "bepinex5", Display = "BepInEx 5", PluginDir = "BepInEx/plugins" };
 
-            Program.Check(RuntimeLibrariesInstaller.StateOf(game, loader).Status == Model.RuntimeLibrariesStatus.InPlace,
+            Model.RuntimeLibrariesState State(Model.DetectedLoader? by) =>
+                RuntimeLibrariesInstaller.StateOf(game, by, Array.Empty<Model.GameInstall>(), null);
+
+            Program.Check(State(loader).Status == Model.RuntimeLibrariesStatus.InPlace,
                 "added, and the loader told: in place", "");
 
             File.WriteAllText(configPath, shipped);
-            var afterLoaderUpdate = RuntimeLibrariesInstaller.StateOf(game, loader);
+            var afterLoaderUpdate = State(loader);
             Program.Check(afterLoaderUpdate is { Status: Model.RuntimeLibrariesStatus.Missing, BlocksTheMod: true, WriteOffered: true },
                 "the loader rewrote its configuration: missing again, and offered",
                 "a loader update drops our entry without a word");
 
             File.WriteAllText(configPath, LoaderSearchPath.Add(shipped, setting, LoaderSearchPath.Folder));
             game.UnityVersion = "2019.4.1f1";
-            Program.Check(RuntimeLibrariesInstaller.StateOf(game, loader).Status == Model.RuntimeLibrariesStatus.WrongVersion,
+            Program.Check(State(loader).Status == Model.RuntimeLibrariesStatus.WrongVersion,
                 "the game moved to another Unity: chosen for the wrong one", "a game update");
             game.UnityVersion = "2018.4.36f1";
 
-            Program.Check(RuntimeLibrariesInstaller.StateOf(game, null).Status == Model.RuntimeLibrariesStatus.Missing,
+            Program.Check(State(null).Status == Model.RuntimeLibrariesStatus.Missing,
                 "no loader left to read them: missing", "");
+
+            // ── The engine modules: a second batch, reconciled the same way ──
+            var needWithModules = new Model.RuntimeLibraryNeed(new[] { "netstandard" }, false, "2018.4.36", null,
+                new Model.EngineModuleNeed(new[] { "UnityEngine.CoreModule" }, new[] { "UnityEngine.CoreModule" },
+                                           "2018.4.36f1", "6cd387d23174", null));
+            game.RuntimeLibraries = needWithModules;
+
+            Program.Check(State(loader) is { Status: Model.RuntimeLibrariesStatus.Missing, Detail: "the engine modules were never added" },
+                "modules now lacking, only the .NET batch in place: missing",
+                "an install from before engine modules existed is not 'in place'");
+
+            var module = Path.Combine(root, LoaderSearchPath.Folder, "UnityEngine.CoreModule.dll");
+            File.WriteAllText(module, "not really a module");
+            recorded.Modules = new Model.ReceiptEngineModules
+            {
+                Unity = "2018.4.30f1", GameUnity = "2018.4.36f1", SourceKind = "editor", SourceId = "editor:x", Source = "an editor",
+                Files = { new Model.ReceiptFile { Path = $"{LoaderSearchPath.Folder}/UnityEngine.CoreModule.dll", Sha256 = FileOperations.HashFile(module) } },
+            };
+            ReceiptStore.Write(root, new Model.Receipt { RuntimeLibraries = recorded });
+
+            Program.Check(State(loader).Status == Model.RuntimeLibrariesStatus.InPlace,
+                "both batches in place, modules from an older release: in place",
+                "an older source chosen on purpose is not a game update");
+
+            // The engine states a newer build (the .NET batch is held to the game's version apart).
+            game.RuntimeLibraries = needWithModules with { Modules = needWithModules.Modules! with { Build = "2018.4.37f1" } };
+            Program.Check(State(loader) is { Status: Model.RuntimeLibrariesStatus.WrongVersion } moved
+                          && moved.Detail!.Contains("engine modules"),
+                "the game moved on: the modules no longer fit", "their release is compared with the game's at install");
+            game.RuntimeLibraries = needWithModules;
+
+            File.Delete(module);
+            Program.Check(State(loader).Status == Model.RuntimeLibrariesStatus.Missing,
+                "a module deleted (Steam's 'verify files'): missing", "");
+            File.WriteAllText(module, "not really a module");
+            game.RuntimeLibraries = new Model.RuntimeLibraryNeed(new[] { "netstandard" }, false, "2018.4.36", null);
 
             var removed = new List<string>();
             var kept = new List<string>();

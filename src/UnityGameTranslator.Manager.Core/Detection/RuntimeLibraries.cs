@@ -1,5 +1,3 @@
-using System.Text.RegularExpressions;
-
 namespace UnityGameTranslator.Manager.Core.Detection;
 
 /// <summary>
@@ -189,6 +187,22 @@ public static class RuntimeLibraries
 
                     found.Add(stop);
                 }
+
+                // 🔴 **What an added library forwards becomes the GAME's need too** (measured
+                // 2026-09-21). A game that never had netstandard gets one, and its own code then
+                // resolves types through it: `DataView` forwarded to the game's stripped
+                // System.Data, which lacked it — a TypeLoadException in the game's own loading,
+                // with the mod not even installed. So each forward that lands on a copy the game
+                // HAS, but stripped of that type, adds the complete copy. A target the game lacks
+                // entirely is not added: nothing of the game's reached it before, and nothing will.
+                foreach (var forwarded in added.Forwards.Keys)
+                {
+                    var use = new TypeUse(name, forwarded);
+                    if (Resolve(use, view) is not { Kind: StopKind.MissingType or StopKind.MissingMember } stop) continue;
+                    if (Resolve(use, everything) is not null) continue;
+
+                    found.Add(stop);
+                }
             }
 
             stops = found.Distinct().ToList();
@@ -257,9 +271,6 @@ public static class RuntimeLibraries
 
     // ── Which archive, and whether one can serve ──────────────────────────────────────────────
 
-    private static readonly Regex UnityVersionPattern =
-        new(@"^(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)(?<suffix>[abfp]\d+)?", RegexOptions.CultureInvariant);
-
     /// <summary>
     /// The name BepInEx's archive files a Unity version under: "2018.4.36f1" → "2018.4.36".
     ///
@@ -267,18 +278,12 @@ public static class RuntimeLibraries
     /// ("2021.2.0a10"), because that is how the archive lists them. Null when the version cannot be
     /// read — and then nothing is guessed.
     /// </summary>
-    public static string? ArchiveName(string? unityVersion)
+    public static string? ArchiveName(string? unityVersion) => UnityVersions.Parse(unityVersion) switch
     {
-        if (string.IsNullOrWhiteSpace(unityVersion)) return null;
-
-        var match = UnityVersionPattern.Match(unityVersion.Trim());
-        if (!match.Success) return null;
-
-        var baseName = $"{match.Groups["major"].Value}.{match.Groups["minor"].Value}.{match.Groups["patch"].Value}";
-        var suffix = match.Groups["suffix"].Value;
-
-        return suffix.StartsWith('a') || suffix.StartsWith('b') ? baseName + suffix : baseName;
-    }
+        null => null,
+        { Kind: 'a' or 'b' } v => v.ToString(),
+        { } v => v.Release,
+    };
 
     /// <summary>
     /// Whether this Unity version's class libraries differ per platform — 2021.2 and later.
@@ -286,16 +291,8 @@ public static class RuntimeLibraries
     /// ⚠ What makes the archive useless for part of a Windows game from then on: it carries one
     /// build, and that build is Linux's (measured on seven versions, 2021.2.0 to 6000.2.6).
     /// </summary>
-    public static bool PerPlatform(string unityVersion)
-    {
-        var match = UnityVersionPattern.Match(unityVersion.Trim());
-        if (!match.Success) return false;
-
-        var major = int.Parse(match.Groups["major"].Value);
-        var minor = int.Parse(match.Groups["minor"].Value);
-
-        return major > 2021 || (major == 2021 && minor >= 2);
-    }
+    public static bool PerPlatform(string unityVersion) =>
+        UnityVersions.Parse(unityVersion) is { } v && (v.Major > 2021 || (v.Major == 2021 && v.Minor >= 2));
 
     /// <summary>
     /// The libraries a per-platform archive carries in their Linux build only — the ones that call
@@ -309,7 +306,12 @@ public static class RuntimeLibraries
     /// they can (to be confirmed on the files at install), the reason otherwise.
     /// </summary>
     /// <param name="windowsBuild">True for a Windows build of the game, including one run through Proton.</param>
-    public static string? CannotSupply(IReadOnlyCollection<string> missing, string? unityVersion, bool windowsBuild)
+    /// <param name="lotServes">
+    /// Whether one of our Windows lots fits this game's Mono (<see cref="Catalog.ClassLibraryLots"/>)
+    /// — asked only when the archive's Linux-only copies would be needed, since it reads the engine.
+    /// </param>
+    public static string? CannotSupply(IReadOnlyCollection<string> missing, string? unityVersion, bool windowsBuild,
+                                       Func<bool>? lotServes = null)
     {
         if (missing.Count == 0) return null;
 
@@ -319,7 +321,7 @@ public static class RuntimeLibraries
         if (!windowsBuild || !PerPlatform(unityVersion!)) return null;
 
         var bound = missing.Where(m => LinuxBoundWhenPerPlatform.Contains(m, StringComparer.OrdinalIgnoreCase)).ToList();
-        if (bound.Count == 0) return null;
+        if (bound.Count == 0 || lotServes?.Invoke() == true) return null;
 
         return $"for Unity {ArchiveName(unityVersion)}, the only copy of {string.Join(", ", bound)} published is "
              + "built for Linux, and this game is built for Windows";
@@ -328,7 +330,8 @@ public static class RuntimeLibraries
     // ── The mod's own needs, when no build of it is at hand ───────────────────────────────────
 
     /// <summary>
-    /// What the mod asks of the class libraries, as of the build this tool was compiled with.
+    /// What the mod asks of the class libraries and of Unity's engine modules, as of the build this
+    /// tool was compiled with.
     ///
     /// ⚠ **The scan's answer, never the install's.** A game list cannot download the plugin to read
     /// it, so it reads this — generated from a real build by `generate-mod-requirements.ps1` and
@@ -367,9 +370,13 @@ public static class RuntimeLibraries
         return needs;
     }
 
-    /// <summary>The inverse of <see cref="ParseNeeds"/>, sorted so a regenerated file diffs cleanly.</summary>
+    /// <summary>
+    /// The inverse of <see cref="ParseNeeds"/>, sorted so a regenerated file diffs cleanly. Keeps
+    /// what the mod asks of the class libraries AND of Unity's engine modules — the two batches a
+    /// game can lack.
+    /// </summary>
     public static string FormatNeeds(IEnumerable<TypeUse> needs) =>
-        string.Join("\n", needs.Where(u => IsClassLibrary(u.Assembly))
+        string.Join("\n", needs.Where(u => IsClassLibrary(u.Assembly) || EngineModules.IsEngineModule(u.Assembly))
                                .Select(u => u.Member is null ? $"{u.Assembly}|{u.Type}" : $"{u.Assembly}|{u.Type}|{u.Member}")
                                .Distinct(StringComparer.Ordinal)
                                .OrderBy(l => l, StringComparer.Ordinal)) + "\n";
@@ -377,8 +384,9 @@ public static class RuntimeLibraries
     // ── A game, as the scan sees it ───────────────────────────────────────────────────────────
 
     /// <summary>
-    /// What this Mono game lacks for the mod, read from its Managed folder — or null when it lacks
-    /// nothing, when it has no Managed folder, or when it is not Mono.
+    /// What this Mono game lacks for the mod — .NET libraries, engine modules its build stripped, or
+    /// both — read from its own folder; null when it lacks nothing, when it has no Managed folder,
+    /// or when it is not Mono.
     ///
     /// ⚠ Read against <see cref="EmbeddedModNeeds"/>, so no download and no plugin are needed; and
     /// remembered against the libraries' own stamps, so a list redrawn forty times reads a game
@@ -395,32 +403,47 @@ public static class RuntimeLibraries
         var managed = Path.Combine(game.DataDirectory, "Managed");
         if (!Directory.Exists(managed)) return null;
 
-        var missing = MissingMemo.GetOrAdd(StampOf(managed),
+        var missing = MissingMemo.GetOrAdd(StampOf(managed, IsClassLibrary, null),
             _ => Missing(EmbeddedModNeeds, new Layers(Folder(managed))));
 
         var all = loaderCannotStart && !missing.Contains("mscorlib", StringComparer.OrdinalIgnoreCase)
             ? missing.Prepend("mscorlib").ToList()
             : missing;
 
-        if (all.Count == 0) return null;
+        // ⚠ Its own memory, keyed on the engine modules and the player: a game update replacing
+        // UnityPlayer.dll changes the answer while no class library moved.
+        var modules = ModulesMemo.GetOrAdd(
+            StampOf(managed, EngineModules.IsEngineModule, EngineModules.PlayerBinary(game.Path, game.ExecutablePath)),
+            _ => new Holder(EngineModules.NeedOf(game, EmbeddedModNeeds))).Need;
+
+        if (all.Count == 0 && modules is null) return null;
 
         return new Model.RuntimeLibraryNeed(all, loaderCannotStart, ArchiveName(game.UnityVersion),
-                                            CannotSupply(all, game.UnityVersion, game.IsWindowsBuild));
+                                            CannotSupply(all, game.UnityVersion, game.IsWindowsBuild,
+                                                         () => Catalog.ClassLibraryLots.For(game) is not null),
+                                            modules);
     }
 
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, IReadOnlyList<string>> MissingMemo = new();
 
-    /// <summary>The folder and the size and time of every class library in it.</summary>
-    private static string StampOf(string managed)
+    /// <summary>A remembered answer that may be "nothing" — a dictionary cannot hold a null value.</summary>
+    private sealed record Holder(Model.EngineModuleNeed? Need);
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Holder> ModulesMemo = new();
+
+    /// <summary>The folder and the size and time of every library in it that <paramref name="counts"/>, and of one more file.</summary>
+    private static string StampOf(string managed, Func<string, bool> counts, string? extra)
     {
         var parts = new List<string> { managed.ToLowerInvariant() };
 
-        foreach (var file in Directory.EnumerateFiles(managed, "*.dll").OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
-        {
-            if (!IsClassLibrary(Path.GetFileNameWithoutExtension(file))) continue;
+        var files = Directory.EnumerateFiles(managed, "*.dll")
+                             .Where(f => counts(Path.GetFileNameWithoutExtension(f)))
+                             .OrderBy(f => f, StringComparer.OrdinalIgnoreCase);
 
+        foreach (var file in extra is null ? files : files.Append(extra))
+        {
             var info = new FileInfo(file);
-            parts.Add($"{info.Name}:{info.Length}:{info.LastWriteTimeUtc.Ticks}");
+            parts.Add($"{info.FullName.ToLowerInvariant()}:{info.Length}:{info.LastWriteTimeUtc.Ticks}");
         }
 
         return string.Join("|", parts);

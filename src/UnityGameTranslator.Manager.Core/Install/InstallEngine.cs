@@ -49,6 +49,24 @@ public sealed record InstallPlan(
     public bool SupplyRuntimeLibraries { get; init; }
 
     /// <summary>
+    /// Where the engine modules this game lacks come from — the source the report settled on
+    /// (<see cref="RuntimeLibrariesState.ModuleSource"/>), named in <see cref="Describe"/> so what is
+    /// shown before the install is what the install uses. Null when no module is lacking.
+    /// </summary>
+    public EngineModuleSource? ModuleSource { get; init; }
+
+    /// <summary>
+    /// The person was told the engine modules come from Unity's server, under Unity's terms, and
+    /// went on. False by default: only a screen that said so may set it, and an install needing it
+    /// without it refuses before downloading anything.
+    /// </summary>
+    public bool UnityDownloadAccepted { get; init; }
+
+    /// <summary>Whether this plan downloads anything from Unity — what a screen must say, and have agreed to, first.</summary>
+    public bool DownloadsFromUnity => SupplyRuntimeLibraries && Game.RuntimeLibraries?.Modules is not null
+                                      && ModuleSource?.Kind == EngineModuleSourceKind.UnityDownload;
+
+    /// <summary>
     /// Whether the mod still runs its first-run wizard after this install.
     ///
     /// 🔴 **first_run_completed is a latch, and only this tool ever closed it.** A complete set
@@ -141,8 +159,24 @@ public sealed record InstallPlan(
 
         if (SupplyRuntimeLibraries && Game.RuntimeLibraries is { } need)
         {
-            yield return $"Add the .NET libraries this game lacks ({string.Join(", ", need.Missing)}) "
-                       + $"into {LoaderSearchPath.Folder}/, and tell {Loader.Display} to read them first";
+            if (need.Missing.Count > 0)
+            {
+                yield return $"Add the .NET libraries this game lacks ({string.Join(", ", need.Missing)}), "
+                           + $"downloaded from {Catalog.RuntimeLibraryOrigins.ClassLibrariesHost}";
+            }
+
+            // ⚠ The source, named — a copy from another game on this computer is only as trustworthy
+            // as that game, and a download from Unity is under Unity's terms. Both are said before.
+            if (need.Modules is { } modules && ModuleSource is { } source)
+            {
+                yield return $"Add Unity's {modules.Set.Count} engine modules for this game's version, from {source.Label}"
+                           + (source.SameRelease ? "" : $" — an older release than the game's ({source.Version})");
+
+                if (source.Kind == EngineModuleSourceKind.UnityDownload)
+                    yield return $"Unity's terms apply to what is downloaded from Unity: {Catalog.RuntimeLibraryOrigins.UnityTermsUrl}";
+            }
+
+            yield return $"They go into {LoaderSearchPath.Folder}/, and {Loader.Display} is told to read them first";
         }
 
         if (!string.Equals(Loader.UserDataDir, Loader.PluginDir, StringComparison.OrdinalIgnoreCase))
@@ -257,6 +291,7 @@ public sealed class InstallEngine
             Settings = settings,
             Preference = preference,
             SupplyRuntimeLibraries = report.RuntimeLibraries.WriteOffered,
+            ModuleSource = report.RuntimeLibraries.ModuleSource?.Source,
 
             // 🔴 The build the screens announced, read from the SAME place they read it — the
             // resolver's cache. Filled here rather than by each caller so that no path can be
@@ -364,9 +399,12 @@ public sealed class InstallEngine
                     ? plan.Build?.Version ?? plan.Loader.Version
                     : LoaderProbe.Detect(plan.Game.Path, _catalog)?.Version;
 
+                var agreement = new RuntimeLibrariesInstaller.Agreement(
+                    plan.ModuleSource, plan.UnityDownloadAccepted, RestoreOnly: !plan.SupplyRuntimeLibraries);
+
                 receipt.RuntimeLibraries = await RuntimeLibrariesInstaller.ApplyAsync(
                     plan.Game, plan.Loader, loaderVersion, files, existing?.RuntimeLibraries, staging,
-                    ArchivesCache(), Status, ct).ConfigureAwait(false);
+                    ArchivesCache(), agreement, Status, ct).ConfigureAwait(false);
             }
             else
             {

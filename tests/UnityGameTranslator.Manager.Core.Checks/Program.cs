@@ -59,6 +59,10 @@ internal static class Program
         RuntimeLibrariesChecks.WhatStillStandsAfterwards();
         UnitySignatureChecks.WhatCountsAsSignedByUnity();
         UnitySignatureChecks.WhoIsUnity();
+        EngineModulesChecks.WhatTheEngineTells();
+        EngineModulesChecks.WhichReleasesFit();
+        EngineModulesChecks.WhatUnitysIndexSays();
+        EngineModulesChecks.HowUnitysPackageIsRead();
 
         Console.WriteLine();
         if (_failures == 0)

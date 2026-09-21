@@ -172,8 +172,19 @@ public sealed class GameInventory
                 Add(game);
         }
 
+        _known = games;
         return games;
     }
+
+    private List<GameInstall>? _known;
+
+    /// <summary>
+    /// The games of the last full scan — what a game lacking engine modules may take them from.
+    ///
+    /// ⚠ A report built without a scan first (the CLI naming one folder) scans once here, and only
+    /// when a game actually needs this: every other report never asks.
+    /// </summary>
+    public IReadOnlyList<GameInstall> KnownGames() => _known ?? ScanAll();
 
     /// <summary>
     /// Probes one folder the user pointed at directly.
@@ -229,7 +240,8 @@ public sealed class GameInventory
         // permission that one of them forgot to attach would be a game where the loader silently
         // goes back to being untouchable — the kind of gap nobody notices because the safe answer
         // is the one that stays.
-        report.LoaderAdopted = new Settings.GamePreferences(_platform).Read(game.Path).AdoptLoader;
+        var preference = new Settings.GamePreferences(_platform).Read(game.Path);
+        report.LoaderAdopted = preference.AdoptLoader;
 
         // ⚠ The probe looks at files; only the receipt knows who put them there. Nothing was
         // filling this in, so DetectedLoader.InstalledByUs was false for EVERY game — including
@@ -250,7 +262,11 @@ public sealed class GameInventory
 
         // ⚠ Reconciled from the files every time — see RuntimeLibrariesState for the three ways an
         // install of them is undone without a word.
-        report.RuntimeLibraries = Install.RuntimeLibrariesInstaller.StateOf(game, report.InstalledLoader);
+        // The other games are asked for only when this one lacks engine modules — see KnownGames.
+        report.RuntimeLibraries = Install.RuntimeLibrariesInstaller.StateOf(
+            game, report.InstalledLoader,
+            game.RuntimeLibraries?.Modules is null ? Array.Empty<GameInstall>() : KnownGames(),
+            preference.ModuleSource);
 
         var descriptor = ResolveDescriptor(report, game);
         if (descriptor is not null)

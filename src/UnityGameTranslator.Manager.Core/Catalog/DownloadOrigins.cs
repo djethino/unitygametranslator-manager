@@ -85,7 +85,8 @@ public static class DownloadOrigins
         if (uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
             return IsTrustedRepositoryPath(uri.AbsolutePath);
 
-        return LoaderOrigins.BuildsHosts.Contains(uri.Host, StringComparer.OrdinalIgnoreCase);
+        return LoaderOrigins.BuildsHosts.Contains(uri.Host, StringComparer.OrdinalIgnoreCase)
+            || RuntimeLibraryOrigins.Hosts.Contains(uri.Host, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>

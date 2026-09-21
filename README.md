@@ -119,9 +119,12 @@ logs on every launch, and we have no reason to hold that.
 
 ## Building
 
-Requires the .NET 8 SDK.
+Requires the .NET 8 SDK and the `common` submodule, which carries the data catalogs the build checks
+its language tables against. Every other dependency comes from NuGet: unlike the mod, nothing has to
+be copied in by hand.
 
 ```bash
+git submodule update --init --recursive
 dotnet build -c Release
 dotnet run --project src/UnityGameTranslator.Manager.Gui -- scan
 ```

@@ -77,6 +77,16 @@ public static class UnityPackage
     private static readonly Regex ClassLibraryFile = new(@"^[A-Za-z0-9_.\-]+\.dll$", RegexOptions.CultureInvariant);
 
     /// <summary>
+    /// Reads a Unity package until the first folder matching <paramref name="folder"/> has gone by,
+    /// writing the files <paramref name="keeps"/> accepts. For what the two readers above do not
+    /// cover — the reference assemblies the mod's build is checked against, taken from an old
+    /// editor's package (UnityGameTranslator's `unity-api-floor`).
+    /// </summary>
+    public static IReadOnlyList<string> ExtractFolder(Stream package, string destination, Regex folder,
+                                                      Func<string, bool> keeps, string what) =>
+        Extract(package, destination, parent => folder.IsMatch(parent) ? parent : null, keeps, what);
+
+    /// <summary>
     /// Reads <paramref name="package"/> up to the end of the first group of folders it wants, writing
     /// the files it keeps by their name alone.
     /// </summary>

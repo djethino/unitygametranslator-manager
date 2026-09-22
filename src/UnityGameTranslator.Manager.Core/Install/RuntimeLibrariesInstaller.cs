@@ -272,7 +272,10 @@ public static class RuntimeLibrariesInstaller
         return new ReceiptRuntimeLibraries
         {
             Unity = classLibraries?.Release ?? "",
-            Source = classLibraries is null ? "" : classLibraries.Source?.Label ?? previous?.Source ?? "",
+            // ⚠ Recorded without "already downloaded": the receipt says where the files came from,
+            // which stays true, not whether a cache held them that day (2026-09-22).
+            Source = classLibraries is null ? "" : (classLibraries.Source is { } source ? (source with { Cached = false }).Label : null)
+                                                    ?? previous?.Source ?? "",
             SourceId = classLibraries is null ? "" : classLibraries.Source?.Id ?? previous?.SourceId ?? "",
             Files = classFiles,
             Modules = modules is null ? null : modules.Kept ?? new ReceiptEngineModules
@@ -286,7 +289,7 @@ public static class RuntimeLibrariesInstaller
                     _ => "unity",
                 },
                 SourceId = modules.Source.Id,
-                Source = modules.Source.Label,
+                Source = (modules.Source with { Cached = false }).Label,
                 Files = moduleFiles,
             },
             DirsCreated = created.Union(previous?.DirsCreated ?? Enumerable.Empty<string>(),

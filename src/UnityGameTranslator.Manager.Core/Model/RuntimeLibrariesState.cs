@@ -185,6 +185,16 @@ public sealed record RuntimeLibrariesState(RuntimeLibrariesStatus Status, Runtim
     /// 36 engine modules of Unity 2021.3.6 from ...". ⚠ No Unity version on the .NET half: the
     /// source names its own, and what they must match is the game's Mono runtime, not a release.
     /// </summary>
+    /// <summary>
+    /// Where a recorded batch came from, without "already downloaded": that described the cache on
+    /// the day of the install, and receipts written by v0.3.0 carry it. Said now, it reads as a fact
+    /// about the files in the game, which it is not (2026-09-22).
+    /// </summary>
+    private static string WhereFrom(string recorded) =>
+        recorded.EndsWith(", already downloaded", StringComparison.Ordinal)
+            ? recorded[..^", already downloaded".Length]
+            : recorded;
+
     public string InstalledSummary
     {
         get
@@ -195,11 +205,11 @@ public sealed record RuntimeLibrariesState(RuntimeLibrariesStatus Status, Runtim
             if (Installed.Files.Count > 0)
             {
                 // An address is what the copies of an earlier release recorded (BepInEx's archive).
-                var from = Installed.Source.Contains("://", StringComparison.Ordinal) ? "" : $" from {Installed.Source}";
+                var from = Installed.Source.Contains("://", StringComparison.Ordinal) ? "" : $" from {WhereFrom(Installed.Source)}";
                 parts.Add($"{Installed.Files.Count} .NET libraries{from}");
             }
             if (Installed.Modules is { } modules)
-                parts.Add($"{modules.Files.Count} engine modules of Unity {modules.Unity} from {modules.Source}");
+                parts.Add($"{modules.Files.Count} engine modules of Unity {modules.Unity} from {WhereFrom(modules.Source)}");
 
             return string.Join("; ", parts);
         }

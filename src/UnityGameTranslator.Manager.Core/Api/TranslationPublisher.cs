@@ -316,6 +316,7 @@ public sealed class TranslationPublisher
                                          string? resourcesUrl = null,
                                          bool? acceptsBranches = null,
                                          string? company = null,
+                                         bool adultDeclared = false,
                                          CancellationToken ct = default)
     {
         LastError = null;
@@ -379,6 +380,10 @@ public sealed class TranslationPublisher
                 // Same rule as status: omitted when the caller has no opinion, so the server keeps
                 // what it holds. Null is what a branch sends — the decision is its Main's.
                 if (acceptsBranches is bool takes) writer.WriteBoolean("accepts_branches", takes);
+
+                // Only ever true, from a first publication whose window offered the box and had it
+                // ticked; the site applies it only if this upload adds the game (Common.AdultMarks).
+                if (adultDeclared) writer.WriteBoolean("adult_declared", true);
 
                 writer.WriteEndObject();
             }

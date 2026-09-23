@@ -184,6 +184,63 @@ public sealed class CatalogApiClient
         }
     }
 
+    /// <summary>
+    /// Whether a game a first publication names is for adults only, and whether this publication may
+    /// say so — see <see cref="Common.AdultMarks"/> for what the window does with it.
+    /// </summary>
+    /// <param name="Known">A card already answers: the upload lands on it and creates nothing.</param>
+    /// <param name="Source">Who says so — steam, igdb, contributor, admin — or null.</param>
+    /// <param name="Declarable">The box is offered: the upload adds the game and nobody classified it.</param>
+    public sealed record GameAdult(bool Known, bool Adult, string? Source, bool Declarable);
+
+    /// <summary>
+    /// Ask the site about the game a first publication names, with the SAME two fields the upload
+    /// will send: it resolves both the same way, and asked about another name it would answer
+    /// about another game. Null when it could not be asked — the window then shows nothing rather
+    /// than a guess. Same token rule as <see cref="SearchGamesAsync"/>: it costs the stores' quota.
+    /// </summary>
+    public async Task<GameAdult?> GameAdultAsync(string? steamId, string? gameName, string apiToken,
+                                                 CancellationToken ct = default)
+    {
+        LastError = null;
+        LastStatus = null;
+
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(steamId)) parts.Add("steam_id=" + Uri.EscapeDataString(steamId.Trim()));
+        if (!string.IsNullOrWhiteSpace(gameName)) parts.Add("game_name=" + Uri.EscapeDataString(gameName.Trim()));
+        if (parts.Count == 0) return null;
+
+        try
+        {
+            var json = await GetAsync($"{BuildInfo.ApiBaseUrl}/games/adult?{string.Join("&", parts)}", apiToken, ct)
+                .ConfigureAwait(false);
+
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return null;
+
+            // ⚠ A field absent reads as the safe answer — not adult, nothing to declare — so a site
+            // that predates the route offers no box rather than one whose answer it would ignore.
+            return new GameAdult(
+                Flag(root, "known") == true,
+                Flag(root, "adult") == true,
+                Text(root, "source"),
+                Flag(root, "declarable") == true);
+        }
+        catch (Exception ex)
+        {
+            LastError = LastStatus is { } status && (int)status >= 400
+                ? $"The site answered {(int)status}."
+                : Net.Http.Describe(ex, "the community site");
+            return null;
+        }
+    }
+
+    private static bool? Flag(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && (value.ValueKind == JsonValueKind.True || value.ValueKind == JsonValueKind.False)
+            ? value.GetBoolean()
+            : null;
+
     private static string? Text(JsonElement element, string name) =>
         element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()

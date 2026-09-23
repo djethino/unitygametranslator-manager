@@ -6249,10 +6249,14 @@ public partial class MainWindow : Window
         // only answers a named caller. Sent without one it was refused, and the refusal read as
         // "the site could not be reached".
         var api = new CatalogApiClient();
+        // ⚠ Its own client: the two questions can be in flight together, and LastError is the
+        // search's sentence under its field — the adult question must not overwrite it.
+        var adultApi = new CatalogApiClient();
         var game = ask.SourceIsAsked
             ? new GameToConfirm(report.Game.ProductName ?? report.Game.Name, report.Game.SteamAppId,
                                 (query, steamId) => api.SearchGamesAsync(query, steamId, token),
-                                () => api.LastError)
+                                () => api.LastError,
+                                (steamId, name) => adultApi.GameAdultAsync(steamId, name, token))
             : null;
 
         var edited = await TranslationDetailsWindow.PublishAsync(
@@ -6301,7 +6305,8 @@ public partial class MainWindow : Window
                                               // ⚠ Null on branch work, exactly like status: a
                                               // contribution does not decide this for the Main.
                                               acceptsBranches: branchWork ? null : edited.AcceptsContributions,
-                                              company: report.Game.CompanyName);
+                                              company: report.Game.CompanyName,
+                                              adultDeclared: edited.AdultDeclared);
 
         button.IsEnabled = true;
         ScopeMark.SetLabel(button, verb);

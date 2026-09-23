@@ -53,6 +53,32 @@ internal static class DropdownChecks
                                  : "found at " + string.Join(", ", offenders));
     }
 
+    /// <summary>
+    /// 🔴 The list refill must never hand the list a NEW row template (Manager issue #1, 2026-09-23).
+    /// Replacing a template clears every row shown, and a cleared row is drawn once more with no
+    /// content: the default row read it as an item and the process died without a word, on every
+    /// short list opened a second time. Lexical, like the check above.
+    /// </summary>
+    public static void RowsAreNeverRebuiltOnRefill()
+    {
+        Program.Section("Dropdowns: a refill never replaces the row template");
+
+        var gui = FindDirectory("src", "UnityGameTranslator.Manager.Gui");
+        var file = gui is null ? null : Path.Combine(gui, "SearchPicker.cs");
+        Program.Check(file is not null && File.Exists(file), "SearchPicker's source is found", "this check reads it");
+        if (file is null || !File.Exists(file)) return;
+
+        var source = File.ReadAllText(file);
+        var start = source.IndexOf("private void Refill()", StringComparison.Ordinal);
+        var end = start < 0 ? -1 : source.IndexOf("\n    private ", start + 1, StringComparison.Ordinal);
+        var refill = start < 0 ? "" : end < 0 ? source[start..] : source[start..end];
+
+        Program.Check(refill.Length > 0 && !refill.Contains("new FuncDataTemplate", StringComparison.Ordinal),
+            "Refill builds no template", "a new template on every refill cleared the rows and crashed the window");
+        Program.Check(source.Contains("item is null ? \"\"", StringComparison.Ordinal),
+            "the default row draws nothing for an empty content", "Avalonia draws a recycled row with no content");
+    }
+
     private static string? FindDirectory(params string[] parts)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

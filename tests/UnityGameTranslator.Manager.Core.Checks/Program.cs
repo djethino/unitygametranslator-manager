@@ -55,6 +55,7 @@ internal static class Program
         RuntimeLibrariesChecks.WhatGoesBesideAGame();
         RuntimeLibrariesChecks.WhichCopiesMayBeUsed();
         DropdownChecks.OnlyTheProgramsOwnDropdown();
+        DropdownChecks.RowsAreNeverRebuiltOnRefill();
         RuntimeLibrariesChecks.WhichRuntimeIsTooOld();
         RuntimeLibrariesChecks.WhatIsSaidOnce();
         RuntimeLibrariesChecks.WhichProfileServesAGame();

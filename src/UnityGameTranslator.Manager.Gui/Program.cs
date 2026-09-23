@@ -20,6 +20,9 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        // First, before anything can fail: a crash leaves something a person can attach to a report.
+        WriteCrashesDown();
+
         // Reaching this line is the proof an update worked: the new binary started. Until it does,
         // the version it replaced is still sitting beside it under its own name, which is the only
         // way back a tool without a signing certificate can honestly offer.
@@ -61,6 +64,43 @@ internal static class Program
 
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
         return 0;
+    }
+
+    /// <summary>
+    /// Writes what killed the process to `crash.txt`, in the tool's own folder, as it dies.
+    ///
+    /// 🔴 **Why this exists.** A dropdown took the whole program down, and the person reporting it
+    /// had nothing to give: the window closed, `ugt-manager > log.txt` was empty, and only the
+    /// Windows event log of a machine that reproduced it held the cause (Manager issue #1,
+    /// 2026-09-23). This is the one place catching everything is right — the process boundary —
+    /// and it catches nothing: the process still dies, only now it says why.
+    ///
+    /// ⚠ One file, overwritten: the last crash is the one worth reading, and a file that grows with
+    /// every crash is a file nobody opens. ⚠ Through Sanitize, because it is written to be pasted
+    /// into a public issue: the account name inside a path is identifying on its own.
+    /// </summary>
+    private static void WriteCrashesDown()
+    {
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            try
+            {
+                var folder = PlatformFactory.Create().UserDataDirectory;
+                Directory.CreateDirectory(folder);
+
+                var version = typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown";
+                var report = $"UnityGameTranslator Manager {version} — {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC\n"
+                             + $"{Environment.OSVersion}\n\n{e.ExceptionObject}\n";
+
+                File.WriteAllText(Path.Combine(folder, "crash.txt"),
+                                  UnityGameTranslator.Manager.Core.Diagnostics.Sanitize.Text(report));
+            }
+            catch
+            {
+                // Writing the report failed while the process is already dying: there is no one
+                // left to tell. Windows' own event log still holds the exception.
+            }
+        };
     }
 
     private static void RefreshSystemEntry()

@@ -280,16 +280,13 @@ public sealed class SearchPicker : UserControl
                            || Reads(item).Contains(needle, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
-        // 🔴 **Without a template, a row reads as what TextOf says — never as the object itself.**
-        // The ListBox otherwise prints ToString(), which for a record is every field it holds: the
-        // library-source picker showed ids, paths and whole warnings across the screen (2026-09-22).
-        // The closed face already read TextOf; the rows now read the same words.
-        _list.ItemTemplate = ItemTemplate ?? new FuncDataTemplate<object>((item, _) => new TextBlock
-        {
-            Text = Reads(item),
-            TextTrimming = TextTrimming.CharacterEllipsis,
-            VerticalAlignment = VerticalAlignment.Center,
-        });
+        // 🔴 **Assigned only when it changes.** This handed the list a NEW template on every refill;
+        // replacing a template makes Avalonia clear every row already shown, and a cleared row is
+        // drawn once more with no content at all — which the default row read as `null.ToString()`.
+        // The process died there without a word, on every short list opened a second time or typed
+        // into (Manager issue #1, 2026-09-23).
+        var template = RowTemplate;
+        if (!ReferenceEquals(_list.ItemTemplate, template)) _list.ItemTemplate = template;
         _list.ItemsSource = rows;
 
         // The row in force, so opening the list lands on it rather than at the top of a hundred and
@@ -316,6 +313,26 @@ public sealed class SearchPicker : UserControl
     }
 
     private string Reads(object item) => TextOf?.Invoke(item) ?? item.ToString() ?? "";
+
+    /// <summary>
+    /// How a row is drawn: the caller's template, or one of our own built ONCE and kept.
+    ///
+    /// 🔴 **Without a template, a row reads as what TextOf says — never as the object itself.**
+    /// The ListBox otherwise prints ToString(), which for a record is every field it holds: the
+    /// library-source picker showed ids, paths and whole warnings across the screen (2026-09-22).
+    ///
+    /// ⚠ **An empty content is a real case, not an error to hide.** Avalonia draws a row being
+    /// recycled with no content; a template must draw nothing then, as the language rows already do
+    /// (LanguageMark.Rows, `choice?.Name`). Read as an item, it killed the process.
+    /// </summary>
+    private IDataTemplate RowTemplate => ItemTemplate ?? (_defaultRow ??= new FuncDataTemplate<object?>((item, _) => new TextBlock
+    {
+        Text = item is null ? "" : Reads(item),
+        TextTrimming = TextTrimming.CharacterEllipsis,
+        VerticalAlignment = VerticalAlignment.Center,
+    }));
+
+    private IDataTemplate? _defaultRow;
 
     /// <summary>
     /// Draws the row in force on the closed face — its own copy, built from the template.

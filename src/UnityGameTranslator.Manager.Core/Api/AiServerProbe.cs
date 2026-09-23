@@ -430,7 +430,8 @@ public sealed class AiServerProbe
                                      bool Accepted, bool Repaired, bool NeededCleaning);
 
     /// <summary>
-    /// Translates one line the way a game does: up to three attempts, judged by the mod's own
+    /// Translates one line the way a game does — through the very loop a game runs
+    /// (<see cref="LineTranslation.AskModel"/>): up to three attempts, judged by the mod's own
     /// rules, timed from end to end.
     ///
     /// This is the number a player actually experiences — the delay between a line appearing in
@@ -439,115 +440,73 @@ public sealed class AiServerProbe
     /// alone. Both endings are timed here, because waiting four seconds for nothing is exactly the
     /// case someone choosing a model needs to see.
     ///
-    /// The three attempts differ as they do in the mod: a plain request; then a corrective
-    /// exchange carrying the failed answer back as an assistant turn with targeted feedback; then
-    /// a fresh request without that answer — to break the anchoring — with the required sequences
-    /// spelt into the system prompt and a little warmth in the temperature.
+    /// ⚠ This had its own copy of the loop until 2026-09-23, and it had drifted: it cleaned an
+    /// answer before judging it where the game judged it raw, and scored an answer carrying the
+    /// skip marker AND a translation as a correct refusal where the game throws it away. One loop
+    /// now, in the socle — so what is scored here is what a game does.
+    ///
+    /// ⚠ The fixtures are already in the form the mod sends (placeholders as tokens, no markup, no
+    /// padding), so the loop's own preparation leaves them untouched, and the rules are the
+    /// precomputed ones each case carries.
     /// </summary>
     private async Task<ModAttempt> TranslateLikeTheModAsync(string baseUrl, string model,
                                                             string systemPrompt, string source,
                                                             CancellationToken ct)
     {
-        var frozen = Placeholders.FrozenSequences(source);
-        var maxTokens = Math.Max(200, source.Length * 2);
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-
-        string? answer = null;
-        var neededCleaning = false;
-        string? failed = null;
-        var errors = new List<string>();
-        var repaired = false;
-
-        for (var attempt = 0; attempt < Placeholders.MaxAttempts; attempt++)
+        var job = new ModelJob
         {
-            object messages = attempt switch
-            {
-                0 => new object[]
-                {
-                    new { role = "system", content = systemPrompt },
-                    new { role = "user", content = source },
-                },
+            Instructions = (_, _) => systemPrompt,
+            // The mod's defaults: deterministic, and a little warmth for the last-resort attempt
+            // (ai_temperature / ai_temperature_repair). No seed — the bench has no config to read.
+            Temperature = 0.0,
+            RepairTemperature = 0.3,
+            Attempts = Placeholders.MaxAttempts,
+        };
 
-                1 => new object[]
-                {
-                    new { role = "system", content = systemPrompt },
-                    new { role = "user", content = source },
-                    new { role = "assistant", content = failed ?? "" },
-                    new { role = "user", content = Placeholders.Correction(errors, frozen) },
-                },
+        var stopwatch = Stopwatch.StartNew();
 
-                _ => new object[]
-                {
-                    new
-                    {
-                        role = "system",
-                        content = systemPrompt + "\n" + Placeholders.MandatorySequences(frozen),
-                    },
-                    new { role = "user", content = source },
-                },
-            };
+        // Off the caller's thread: the loop is synchronous, as it is in a game's worker, and its
+        // requests wait on the network.
+        var answer = await Task.Run(() => LineTranslation.AskModel(source, job, Chat(baseUrl, model, null, ct)), ct)
+            .ConfigureAwait(false);
 
-            answer = await SendAsync(baseUrl, model, messages,
-                                     attempt == 2 ? 0.3 : 0.0, maxTokens, "none", ct)
-                .ConfigureAwait(false);
+        stopwatch.Stop();
 
+        return answer.Outcome switch
+        {
+            LineOutcome.Translated => new ModAttempt(answer.Text, answer.Requests, stopwatch.Elapsed, true,
+                                                     answer.Repaired, answer.NeededCleaning),
+            // Asked to skip this line, and did: nothing to validate.
+            LineOutcome.Declined => new ModAttempt(answer.Text, answer.Requests, stopwatch.Elapsed, true,
+                                                   false, answer.NeededCleaning),
+            // Three attempts, still refused — or an answer a game throws away. In a game this line
+            // stays in its original language for the session. The time was spent all the same.
+            LineOutcome.Refused or LineOutcome.Unusable => new ModAttempt(answer.Said, answer.Requests, stopwatch.Elapsed,
+                                                                          false, false, answer.NeededCleaning),
             // A refused request is not a refused translation: the mod gives up here too rather
             // than burning its retries on a server problem.
-            //
-            // 🔴 Tested BEFORE the answer is used, which it was not: the null-forgiving `!` below
-            // promised the compiler a value that a refused request does not provide, and the
-            // Trim() two lines further down took the whole process down with a
-            // NullReferenceException — no message, no window, nothing. Reachable whenever a server
-            // stops answering, and reached in practice by pressing Stop while a model loaded.
-            if (answer is null)
-            {
-                stopwatch.Stop();
-                return new ModAttempt(null, attempt + 1, stopwatch.Elapsed, false, false, neededCleaning);
-            }
-
-            // ⚠ Cleaned before it is judged, exactly where the mod cleans it. A model that wraps
-            // its answer in quotation marks, opens with "Translation:" or adds a note about its
-            // own work is not a model that broke a rule — a game copes with all of that and shows
-            // the text underneath. Scoring the wrapping would have measured this bench.
-            var asItArrived = answer;
-            answer = Answers.Clean(asItArrived);
-            neededCleaning |= !string.Equals(answer, asItArrived.Trim(), StringComparison.Ordinal);
-
-            // Nothing to validate: the model was asked to skip this line and did.
-            if (answer.Contains(ModelTestSuite.SkipMarker, StringComparison.Ordinal))
-            {
-                stopwatch.Stop();
-                return new ModAttempt(answer, attempt + 1, stopwatch.Elapsed, true, false, neededCleaning);
-            }
-
-            if (frozen.Count == 0)
-            {
-                stopwatch.Stop();
-                return new ModAttempt(answer, attempt + 1, stopwatch.Elapsed, true, false, neededCleaning);
-            }
-
-            if (Placeholders.Accepts(source, answer, frozen, out errors))
-            {
-                stopwatch.Stop();
-                return new ModAttempt(answer, attempt + 1, stopwatch.Elapsed, true, repaired, neededCleaning);
-            }
-
-            // The repair a game makes for itself, and it has to pass the full check on its own.
-            if (Placeholders.RepairTrailingBreaks(source, answer) is { } mended
-                && Placeholders.Accepts(source, mended, frozen, out _))
-            {
-                stopwatch.Stop();
-                return new ModAttempt(mended, attempt + 1, stopwatch.Elapsed, true, true, neededCleaning);
-            }
-
-            failed = answer;
-        }
-
-        // Three attempts, still refused: in a game this line stays in its original language for
-        // the session. The time was spent all the same, which is the point of timing it.
-        stopwatch.Stop();
-        return new ModAttempt(answer, Placeholders.MaxAttempts, stopwatch.Elapsed, false, false, neededCleaning);
+            _ => new ModAttempt(null, answer.Requests, stopwatch.Elapsed, false, false, answer.NeededCleaning),
+        };
     }
+
+    /// <summary>
+    /// The socle's <see cref="ChatSend"/> over this probe's negotiation — what
+    /// <see cref="LineTranslation.AskModel"/> sends through, on the bench and when answering the
+    /// browser editor.
+    ///
+    /// ⚠ Synchronous on purpose, like the loop that calls it: run it off the UI thread
+    /// (<c>Task.Run</c>). A cancellation is thrown, not reported as "no answer" — see
+    /// <see cref="SendAsync"/>.
+    /// </summary>
+    /// <param name="apiKey">Sent as a bearer token when the server needs one — a cloud provider.</param>
+    /// <param name="ceiling">How long one request may take; the bench's two minutes when not said.</param>
+    public ChatSend Chat(string baseUrl, string model, string? apiKey, CancellationToken ct, TimeSpan? ceiling = null) =>
+        (messages, temperature, maxTokens, seed) =>
+        {
+            var wire = messages.Select(m => new { role = m.Role, content = m.Content }).ToArray();
+            return SendAsync(baseUrl, model, wire, temperature, maxTokens, "none", ct, seed, apiKey, ceiling)
+                .GetAwaiter().GetResult();
+        };
 
     /// <summary>Reasoning budgets to try, best first — the same ladder the mod walks.</summary>
     private static readonly string?[] ReasoningEffortLadder = { "none", "low", null };
@@ -684,7 +643,8 @@ public sealed class AiServerProbe
 
     private async Task<string?> SendAsync(string baseUrl, string model, object messages,
                                           double temperature, int maxTokens, string? effort,
-                                          CancellationToken ct)
+                                          CancellationToken ct, int? seed = null, string? apiKey = null,
+                                          TimeSpan? ceiling = null)
     {
         _negotiation.ForgetIfChanged($"{baseUrl}|{model}");
 
@@ -702,6 +662,11 @@ public sealed class AiServerProbe
 
             if (_negotiation.SendTemperature) fields["temperature"] = temperature;
 
+            // Sent only when a caller asked for a different draw of an answer it already has — a
+            // retranslation. Several servers take the field and ignore it, which is why the
+            // variation rests on the temperature and the seed is a bonus (Negotiation.SendSeed).
+            if (seed is not null && _negotiation.SendSeed) fields["seed"] = seed.Value;
+
             // ⚠ The caller picks the rung on the first go — the probe does, to see how a model
             // behaves when asked to reason. After a refusal the negotiation decides instead:
             // sending the caller's choice again would collect the same refusal five times.
@@ -713,10 +678,15 @@ public sealed class AiServerProbe
             try
             {
                 using var content = new StringContent(payload, Encoding.UTF8, "application/json");
-                using var client = Http.Create(TimeSpan.FromMinutes(2));
+                using var client = Http.Create(ceiling ?? TimeSpan.FromMinutes(2));
+                using var request = new HttpRequestMessage(HttpMethod.Post, Endpoints.Chat(baseUrl)) { Content = content };
 
-                var response = await client.PostAsync(Endpoints.Chat(baseUrl), content, ct)
-                                           .ConfigureAwait(false);
+                // The same header the mod sends. Local servers take none; a cloud provider refuses
+                // without it.
+                if (!string.IsNullOrEmpty(apiKey))
+                    request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+
+                var response = await client.SendAsync(request, ct).ConfigureAwait(false);
 
                 if (response.IsSuccessStatusCode)
                 {

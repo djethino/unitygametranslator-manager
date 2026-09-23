@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using UnityGameTranslator.Manager.Core.Ai;
 using UnityGameTranslator.Manager.Core.Detection;
 using UnityGameTranslator.Manager.Core.Install;
 using UnityGameTranslator.Manager.Core.Model;
@@ -54,7 +55,7 @@ internal static class ConfigContractChecks
                 File.WriteAllText(Path.Combine(folder, LocalTranslationProbe.ConfigFileName), text);
 
                 var snapshot = GameConfigWriter.Read(gamePath, descriptor);
-                var derived = Derive(snapshot);
+                var derived = Derive(snapshot, GameConfigWriter.ReadAi(gamePath, descriptor));
 
                 var failures = new List<string>();
                 foreach (var expectation in expects)
@@ -80,8 +81,19 @@ internal static class ConfigContractChecks
             "fewer than the contract holds: the file was mis-read");
     }
 
-    private static Dictionary<string, object?> Derive(GameConfigSnapshot s) => new()
+    private static Dictionary<string, object?> Derive(GameConfigSnapshot s, GameAiSettings ai) => new()
     {
+        // How the game asks a backend for a line — what the browser editor's Retranslate is
+        // answered with while the game is closed, and the same numbers the mod's "read" states.
+        ["Ai.IsTranslationEnabled"] = ai.IsTranslationEnabled,
+        ["Ai.BackendLabel"] = ai.Label,
+        ["Ai.AttemptsAllowed"] = ai.AttemptsAllowed,
+        ["Ai.TemperatureNormal"] = ai.TemperatureNormal,
+        ["Ai.TemperatureRepair"] = ai.TemperatureRepair,
+        ["Ai.TemperatureRetranslate"] = ai.TemperatureRetranslate,
+        ["Ai.SeedRetranslate"] = ai.SeedRetranslate,
+        ["Ai.StrictSourceLanguage"] = ai.StrictSourceLanguage,
+
         ["Exists"] = s.Exists,
         ["FirstRunCompleted"] = s.FirstRunCompleted,
         ["InGameHotkey"] = s.InGameHotkey,
@@ -112,6 +124,8 @@ internal static class ConfigContractChecks
         if (value.TryGetValue<bool>(out var b)) return Equals(actual, b) ? null : $"expected {b}, got {Show(actual)}";
         if (value.TryGetValue<string>(out var str)) return string.Equals(actual as string, str, StringComparison.Ordinal) ? null : $"expected \"{str}\", got {Show(actual)}";
         if (value.TryGetValue<long>(out var n)) return actual is not null && actual is not bool && actual is not string && Convert.ToInt64(actual) == n ? null : $"expected {n}, got {Show(actual)}";
+        // A temperature: written 2.0 in the case, compared as a number, never as text.
+        if (value.TryGetValue<double>(out var d)) return actual is double or int && Math.Abs(Convert.ToDouble(actual) - d) < 1e-9 ? null : $"expected {d}, got {Show(actual)}";
         return $"unsupported expectation {expected.ToJsonString()}";
     }
 

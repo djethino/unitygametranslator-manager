@@ -1,8 +1,10 @@
 using UnityGameTranslator.Common;
+using UnityGameTranslator.Manager.Core.Ai;
 using UnityGameTranslator.Manager.Core.Detection;
 using UnityGameTranslator.Manager.Core.Install;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
+using UnityGameTranslator.Manager.Core.Settings;
 
 namespace UnityGameTranslator.Manager.Core.Api;
 
@@ -64,11 +66,31 @@ public sealed class EditSessionRunner
 
     private readonly EditSessionClient _client;
     private readonly TranslationInstaller _installer;
+    private readonly IPlatform _platform;
 
     public EditSessionRunner(IPlatform platform, EditSessionClient? client = null)
     {
         _client = client ?? new EditSessionClient();
         _installer = new TranslationInstaller(platform);
+        _platform = platform;
+    }
+
+    /// <summary>
+    /// What answers the page's per-line Retranslate while this session runs: the game's own
+    /// settings, the socle's loop and guards. See <see cref="EditSessionRetranslator"/>.
+    ///
+    /// ⚠ The target language as the mod reads it: the one the game is set to, or — set to "auto" —
+    /// this machine's (GameLanguages.Resolve, the mod's GetTargetLanguage). The model is told a
+    /// NAME, never a code.
+    /// </summary>
+    private EditSessionRetranslator RetranslatorFor(GameInstall game, LoaderDescriptor descriptor,
+                                                    string? sourceLanguage, string? targetLanguage)
+    {
+        var target = targetLanguage
+                     ?? Languages.NameOf(GameLanguages.Resolve(null, _platform.SystemLanguage()));
+
+        return new EditSessionRetranslator(GameConfigWriter.ReadAi(game.Path, descriptor),
+                                           game.ProductName, sourceLanguage, target);
     }
 
     /// <summary>The session currently being followed, or null.</summary>
@@ -125,11 +147,13 @@ public sealed class EditSessionRunner
             return null;
         }
 
-        // ⚠ ai_available stays false: the per-line Retranslate button in the browser is answered by
-        // whatever holds the translation loop, and the game is not running. Promising it would
-        // leave somebody waiting on nobody.
+        // The per-line Retranslate button is answered HERE while the game is closed, with the
+        // game's own settings — offered only when those settings can answer (a backend switched
+        // on, a key where one is needed, a language to go into). Never offered is better than
+        // offered and failing after the person waited.
+        var retranslator = RetranslatorFor(game, descriptor, sourceLanguage, targetLanguage);
         var session = await _client.OpenAsync(sent, game.Name, sourceLanguage, targetLanguage,
-                                              aiAvailable: false, aiModel: null, ct)
+                                              aiAvailable: retranslator.CanAnswer, aiModel: retranslator.Label, ct)
             .ConfigureAwait(false);
 
         if (session is null)
@@ -142,6 +166,7 @@ public sealed class EditSessionRunner
         _sentJson = sent;
         _game = game;
         _descriptor = descriptor;
+        _retranslator = retranslator;
 
         // Beside the translation, so the mod finds it. ⚠ After the session exists, never before: a
         // marker pointing at a session that failed to open would refuse the next attempt on behalf
@@ -281,6 +306,13 @@ public sealed class EditSessionRunner
         _sentJson = File.ReadAllText(path);
         _game = game;
         _descriptor = descriptor;
+
+        // Answered again once picked back up. ⚠ The page was told at opening whether to offer the
+        // button, and nothing here can change that now; if the game's settings changed since, a
+        // request this side can no longer answer is refused by the guards and the page frees the
+        // row on its own.
+        var languages = LocalTranslationProbe.ReadLanguages(game.Path, descriptor);
+        _retranslator = RetranslatorFor(game, descriptor, languages.Source, languages.Target);
         return true;
     }
 
@@ -377,6 +409,10 @@ public sealed class EditSessionRunner
 
                 lastHash = state.ContentHash ?? lastHash;
 
+                // The page's Retranslate requests, against the file as it stands on disk — which,
+                // after any apply above, is what _sentJson holds. Answered in the background.
+                _retranslator?.Take(session.ModKey, state.RetranslateRequests, _sentJson ?? "{}", ct);
+
                 // A departure is announced by a refresh as well as by a real one, hence the grace.
                 if (state.BrowserLeft)
                 {
@@ -449,6 +485,15 @@ public sealed class EditSessionRunner
         Current = null;
         if (session is null) return;
 
+        // Answers still on their way were cancelled with the follow; waited for so none posts to
+        // a session being deleted under it.
+        if (_retranslator is { } retranslator)
+        {
+            _retranslator = null;
+            try { await retranslator.DrainAsync().ConfigureAwait(false); }
+            catch (OperationCanceledException) { /* cancelled with the follow: the expected end */ }
+        }
+
         // 🔴 **Drained before it is deleted.** Ending a session used to throw away whatever had
         // been saved in the browser since the last tick: somebody clicked Save on the site and
         // closed the editor a second later, and their work was gone with nothing said.
@@ -478,4 +523,5 @@ public sealed class EditSessionRunner
     private string? _sentJson;
     private GameInstall? _game;
     private LoaderDescriptor? _descriptor;
+    private EditSessionRetranslator? _retranslator;
 }

@@ -19,8 +19,18 @@ public sealed record EditSession(string ModKey, string Url, DateTimeOffset? Expi
 /// <param name="BrowserLeft">The page said it was going away. Nobody is editing any more.</param>
 /// <param name="BrowserSeenSecondsAgo">Null when the page has never been seen at all.</param>
 /// <param name="PendingChanges">Edits saved in the browser that this side has not fetched.</param>
+/// <param name="RetranslateRequests">
+/// The page's per-line Retranslate requests nobody has answered yet — waiting here because this
+/// tool polls and never receives the event the mod gets. Served again on every poll until answered.
+/// </param>
 public sealed record EditSessionState(string? ContentHash, bool BrowserLeft,
-                                      int? BrowserSeenSecondsAgo, int PendingChanges);
+                                      int? BrowserSeenSecondsAgo, int PendingChanges,
+                                      IReadOnlyList<RetranslateRequest> RetranslateRequests);
+
+/// <summary>One line the browser editor asked to have translated again.</summary>
+/// <param name="Id">The page's request id — stable across its re-emissions, carried back with the answer.</param>
+/// <param name="Key">The line, as keyed in the file. Chosen by whoever holds the page: see PageRetranslations.</param>
+public sealed record RetranslateRequest(string Id, string Key);
 
 /// <summary>
 /// The browser editor, driven from this tool instead of from inside a game.
@@ -32,10 +42,9 @@ public sealed record EditSessionState(string? ContentHash, bool BrowserLeft,
 /// it.
 ///
 /// ⚠ **The session key is a credential.** Sixty-four unguessable characters that authorise reading
-/// and rewriting one translation for as long as the session lives. It is kept in this tool's own
-/// per-user data directory and NEVER written into the game folder: game folders are shared between
-/// the operating-system accounts of one machine, and a key left there would hand the next person a
-/// live handle on somebody else's file.
+/// and rewriting one translation for as long as the session lives. It is written beside the
+/// translation, encrypted, so the mod does not open a second editor over this one — why that is
+/// acceptable is in <see cref="EditSessionRunner"/> and in the socle above <c>MarkerSuffix</c>.
 ///
 /// ⚠ **Nothing here is a listening surface.** Every exchange is this tool calling out over HTTPS;
 /// no port is opened, nothing local is exposed, and the browser is merely sent to a URL. The only
@@ -71,11 +80,11 @@ public sealed class EditSessionClient
     /// round trip. Deserialising into a model would quietly drop them.
     /// </param>
     /// <param name="aiAvailable">
-    /// Whether an AI backend is configured HERE. It drives the per-line Retranslate button in the
-    /// browser. ⚠ False for now from this tool: that button is answered by whatever holds the
-    /// translation loop, and the game is not running — promising it would leave the user waiting on
-    /// nobody. See analyse/manager-translation-workbench.md.
+    /// Whether the game's translation is switched on. It drives the per-line Retranslate button in
+    /// the browser, which this tool answers with the GAME's own settings while it is closed (see
+    /// <see cref="EditSessionRetranslator"/>).
     /// </param>
+    /// <param name="aiModel">The backend's name for the button's tooltip — never an address.</param>
     public async Task<EditSession?> OpenAsync(string contentJson, string? gameName,
                                               string? sourceLanguage, string? targetLanguage,
                                               bool aiAvailable = false, string? aiModel = null,
@@ -221,13 +230,64 @@ public sealed class EditSessionClient
                 root.TryGetProperty("browser_seen_seconds_ago", out var seen)
                     && seen.TryGetInt32(out var seconds) ? seconds : null,
                 root.TryGetProperty("pending_changes", out var pending)
-                    && pending.TryGetInt32(out var count) ? count : 0);
+                    && pending.TryGetInt32(out var count) ? count : 0,
+                ReadRequests(root));
         }
         catch (Exception ex)
         {
             LastError = Net.Http.Describe(ex, "the community site");
             return null;
         }
+    }
+
+    /// <summary>
+    /// The page's waiting requests. Absent is "none asked" (a site older than this field); an entry
+    /// without both an id and a key is not a request and is skipped rather than guessed at.
+    /// </summary>
+    private static IReadOnlyList<RetranslateRequest> ReadRequests(JsonElement root)
+    {
+        if (!root.TryGetProperty("retranslate_requests", out var list) || list.ValueKind != JsonValueKind.Array)
+            return Array.Empty<RetranslateRequest>();
+
+        var requests = new List<RetranslateRequest>();
+        foreach (var item in list.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object) continue;
+            if (Text(item, "id") is { Length: > 0 } id && Text(item, "key") is { Length: > 0 } key)
+                requests.Add(new RetranslateRequest(id, key));
+        }
+
+        return requests;
+    }
+
+    /// <summary>
+    /// Hand the page the answer to one of its Retranslate requests.
+    ///
+    /// ⚠ A PROPOSAL: the page stages it for its own Save, exactly like something typed there.
+    /// Nothing is written into the game by this — the file only changes when the page saves and the
+    /// save is fetched.
+    /// </summary>
+    /// <param name="value">The new translation when <paramref name="outcome"/> is Replaced, otherwise null.</param>
+    public async Task<bool> SendRetranslationAsync(string modKey, string requestId, string key,
+                                                   string? value, RetranslateOutcome outcome,
+                                                   CancellationToken ct = default)
+    {
+        LastError = null;
+
+        var payload = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(payload))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("id", requestId);
+            writer.WriteString("key", key);
+            if (outcome == RetranslateOutcome.Replaced && value is not null) writer.WriteString("value", value);
+            else writer.WriteNull("value");
+            writer.WriteString("outcome", Retranslation.Word(outcome));
+            writer.WriteEndObject();
+        }
+
+        var url = $"{BuildInfo.ApiBaseUrl}/edit-session/{Uri.EscapeDataString(modKey)}/retranslation";
+        return await PostAsync(url, payload.ToArray(), ct).ConfigureAwait(false) is not null;
     }
 
     /// <summary>

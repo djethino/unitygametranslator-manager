@@ -1,6 +1,7 @@
 ﻿using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using UnityGameTranslator.Manager.Core.Ai;
 using UnityGameTranslator.Manager.Core.Detection;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Settings;
@@ -252,6 +253,65 @@ public sealed class GameConfigWriter
             return GameConfigSnapshot.Unknown;
         }
     }
+
+    /// <summary>
+    /// How this game's mod asks a backend for a line — what the browser editor's Retranslate is
+    /// answered with while the game is closed.
+    ///
+    /// ⚠ Read here rather than beside the editor because this class is the ONE reader of a game's
+    /// config.json; a second parser would be a second opinion about what the file says.
+    ///
+    /// ⚠ Never throws, like <see cref="Read"/>: a config that cannot be read comes back as
+    /// <see cref="GameAiSettings.Unknown"/> — translation off, so the button is simply not offered.
+    /// </summary>
+    public static GameAiSettings ReadAi(string gamePath, LoaderDescriptor? descriptor)
+    {
+        if (descriptor is null) return GameAiSettings.Unknown;
+
+        var path = ConfigPath(gamePath, descriptor);
+        if (path is null || !File.Exists(path)) return GameAiSettings.Unknown;
+
+        try
+        {
+            var root = Load(path);
+            var fallback = GameAiSettings.Unknown;
+
+            return new GameAiSettings(
+                EnableAi: Flag(root, null, "enable_ai") ?? fallback.EnableAi,
+                Backend: Text(root, null, "translation_backend") ?? fallback.Backend,
+                // Respelled as the mod respells it: one spelling of local (Endpoints.Canonical).
+                AiUrl: Endpoints.Canonical(Text(root, null, "ai_url") ?? fallback.AiUrl),
+                AiModel: Text(root, null, "ai_model") ?? fallback.AiModel,
+                AiApiKey: Secret(root, "ai_api_key"),
+                GoogleApiKey: Secret(root, "google_api_key"),
+                DeeplApiKey: Secret(root, "deepl_api_key"),
+                DeeplUseFree: Flag(root, null, "deepl_use_free") ?? fallback.DeeplUseFree,
+                AttemptsAllowed: LineTranslation.ClampAttempts(Whole(root, "ai_max_attempts") ?? fallback.AttemptsAllowed),
+                TemperatureNormal: LineTranslation.ClampTemperature(Number(root, "ai_temperature") ?? fallback.TemperatureNormal),
+                TemperatureRepair: LineTranslation.ClampTemperature(Number(root, "ai_temperature_repair") ?? fallback.TemperatureRepair),
+                TemperatureRetranslate: LineTranslation.ClampTemperature(Number(root, "ai_temperature_retranslate") ?? fallback.TemperatureRetranslate),
+                SeedRetranslate: Whole(root, "ai_seed_retranslate"),
+                GameContext: Text(root, null, GameContextKey),
+                StrictSourceLanguage: Flag(root, null, "strict_source_language") ?? fallback.StrictSourceLanguage);
+        }
+        catch
+        {
+            return GameAiSettings.Unknown;
+        }
+    }
+
+    /// <summary>A number under a top-level key, or null when it is absent or is something else.</summary>
+    private static double? Number(JsonObject root, string key) =>
+        At(root, null, key) is { } node && node.GetValueKind() == JsonValueKind.Number
+            ? node.GetValue<JsonElement>().GetDouble()
+            : null;
+
+    /// <summary>A whole number under a top-level key, or null when it is absent, fractional or out of range.</summary>
+    private static int? Whole(JsonObject root, string key) =>
+        At(root, null, key) is { } node && node.GetValueKind() == JsonValueKind.Number
+            && node.GetValue<JsonElement>().TryGetInt32(out var value)
+            ? value
+            : null;
 
     /// <summary>A string under a key, or null when the game says nothing usable there.</summary>
     private static string? Text(JsonObject root, string? parent, string key)

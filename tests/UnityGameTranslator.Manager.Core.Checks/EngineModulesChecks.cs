@@ -167,6 +167,50 @@ internal static class EngineModulesChecks
                 "a game's Managed folder is flat; another system's profile and third-party libraries stay out");
             Program.Check(readEditor.Consumed < 1 << 20,
                 "and reading stops once that profile has gone by", "measured: 496 MB of a 2.9 GB package");
+
+            // 🔴 The `4.5` profile — every game before Unity 2021.2 — holds a SECOND subfolder,
+            // `MSBuild`, and the package lists entries sorted without case: `Mono.XBuild.Tasks.dll`,
+            // then `MSBuild/…`, then `System.*`. The first `MSBuild/` entry used to end the profile,
+            // so everything from `System.` on was never read: a game of 2020.3 lacking
+            // System.Net.Http got a batch without it, and the install refused (2026-09-23, the game
+            // of issue #28). A subfolder of the profile is still inside it.
+            var legacy = Package(new (string, byte[])[]
+            {
+                ($"{mono}/4.5/Facades/netstandard.dll", Encoding.ASCII.GetBytes("facade")),
+                ($"{mono}/4.5/Microsoft.CSharp.dll", Encoding.ASCII.GetBytes("csharp")),
+                ($"{mono}/4.5/Mono.XBuild.Tasks.dll", Encoding.ASCII.GetBytes("xbuild tasks")),
+                ($"{mono}/4.5/MSBuild", Array.Empty<byte>()),
+                ($"{mono}/4.5/MSBuild/Microsoft.Build.dll", Encoding.ASCII.GetBytes("msbuild")),
+                ($"{mono}/4.5/System.Net.Http.dll", Encoding.ASCII.GetBytes("http")),
+                ($"{mono}/4.5/System.Xml.Linq.dll", Encoding.ASCII.GetBytes("linq")),
+                // The reference assemblies next door share the name's start, not the folder.
+                ($"{mono}/4.5-api/System.Net.Http.dll", Encoding.ASCII.GetBytes("reference only")),
+                ($"{mono}/xbuild/Something.dll", RandomNumberGenerator(4 << 20)),
+            });
+
+            var legacyProfile = Path.Combine(destination, "legacy");
+            var readLegacy = new CountingStream(new MemoryStream(legacy));
+            var legacyLibraries = UnityPackage.ExtractClassLibraries(readLegacy, legacyProfile, "4.5");
+
+            Program.Check(legacyLibraries.Contains("System.Net.Http") && legacyLibraries.Contains("System.Xml.Linq")
+                          && File.ReadAllText(Path.Combine(legacyProfile, "System.Net.Http.dll")) == "http",
+                "a subfolder of the profile does not end it", "4.5 holds MSBuild/ between Mono.* and System.*");
+            Program.Check(!legacyLibraries.Contains("Microsoft.Build") && !File.Exists(Path.Combine(legacyProfile, "Microsoft.Build.dll")),
+                "and what that subfolder holds is not taken", "it is not a class library the game loads");
+            Program.Check(readLegacy.Consumed < 1 << 20,
+                "the profile still ends at the first entry outside it", "4.5-api is next door, not inside");
+
+            // And what the old reader left in the cache must not be served again: an archive kept
+            // under the bare build ("2020.3.48f1") is the incomplete one, answered "already
+            // downloaded" to every later install until the reading revision became part of the key.
+            var cache = new ArchiveCache(Path.Combine(destination, "cache"));
+            var oldZip = Path.Combine(destination, "old.zip");
+            File.WriteAllText(oldZip, "written by the reader that stopped at MSBuild/");
+            var current = RuntimeLibrariesInstaller.ClassLibrariesKey("4.5", "2020.3.48f1");
+            cache.Store(current with { Version = "2020.3.48f1" }, oldZip, FileOperations.HashFile(oldZip), ".zip");
+
+            Program.Check(!cache.Holds(current, ".zip") && cache.TryPath(current, null, ".zip") is null,
+                "an archive the old reader wrote is not served", "it lacked every System.* library of 4.5");
         }
         finally
         {

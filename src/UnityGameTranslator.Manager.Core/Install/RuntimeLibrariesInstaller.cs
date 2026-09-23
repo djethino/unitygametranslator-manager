@@ -28,13 +28,26 @@ public static class RuntimeLibrariesInstaller
     /// <param name="chosenModuleSource">The modules' source a person chose for this game (<see cref="Settings.GamePreference.ModuleSource"/>).</param>
     /// <param name="chosenClassLibrarySource">The .NET libraries' source a person chose (<see cref="Settings.GamePreference.ClassLibrarySource"/>).</param>
     /// <param name="online">Whether this computer can reach Unity's server now.</param>
+    /// <summary>
+    /// Which reading of Unity's packages a cached archive came from. Raised whenever
+    /// <see cref="UnityPackage"/> changes what it takes out of a package.
+    ///
+    /// 🔴 **An archive is only as good as the reader that wrote it.** Before revision 2, a subfolder
+    /// of the `4.5` profile ended the read early and every `System.*` library was left out
+    /// (2026-09-23, issue #28) — and the cache kept that incomplete archive under the same key for
+    /// ever, answering "already downloaded" to every later install. The revision is part of the
+    /// VERSION, not the name: an old entry is missed, then replaced in the same folder, so nothing
+    /// is left on the disk.
+    /// </summary>
+    private const int PackageReading = 2;
+
     /// <summary>Where Unity's .NET libraries for a build are kept once downloaded — ONE key, read by the install and the screens.</summary>
     public static ArchiveCacheKey ClassLibrariesKey(string profile, string build) =>
-        new($"unity-class-libraries-{profile}-{build}", build);
+        new($"unity-class-libraries-{profile}-{build}", $"{build}/reading-{PackageReading}");
 
     /// <summary>Where Unity's engine modules for a build are kept once downloaded.</summary>
     public static ArchiveCacheKey ModulesKey(EngineModules.Platform platform, string build) =>
-        new($"unity-engine-modules-{platform.ToString().ToLowerInvariant()}-{build}", build);
+        new($"unity-engine-modules-{platform.ToString().ToLowerInvariant()}-{build}", $"{build}/reading-{PackageReading}");
 
     /// <param name="cache">
     /// This machine's archive cache — so a download from Unity already made says so rather than

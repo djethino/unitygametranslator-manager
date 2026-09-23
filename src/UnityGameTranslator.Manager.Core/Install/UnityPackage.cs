@@ -180,8 +180,16 @@ public static class UnityPackage
 
             var entryGroup = groupOf(parent);
 
-            // The group is over once an entry outside it arrives: what was wanted has all gone by.
-            if (group is not null && taken.Count > 0 && !string.Equals(entryGroup, group, StringComparison.Ordinal)) break;
+            // The group is over once an entry arrives from OUTSIDE its folder: what was wanted has
+            // all gone by.
+            //
+            // 🔴 **Outside the folder — not merely outside what is kept.** A subfolder of the group
+            // that holds nothing wanted is still inside it, and more of the group can follow it. The
+            // `4.5` profile (every game before Unity 2021.2) holds `MSBuild/` between `Mono.*` and
+            // `System.*` in the package's order; ending the group there dropped every `System.*`
+            // library, System.Net.Http with it, and the install of a 2020.3 game refused (2026-09-23,
+            // issue #28). The trailing slash keeps a sibling like `4.5-api` outside.
+            if (group is not null && taken.Count > 0 && !path.StartsWith(group + "/", StringComparison.Ordinal)) break;
 
             if (entryGroup is not null && keeps(fileName) && (group is null || entryGroup == group))
             {

@@ -181,13 +181,19 @@ internal static class RuntimeLibrariesChecks
 
         var linuxSystem = Assembly("System", new() { ["System.Uri"] = Type() }, natives: new[] { "System.Native", "kernel32.dll" });
         var neutralHttp = Assembly("System.Net.Http", new() { ["System.Net.Http.HttpClient"] = Type() });
-        var security = Assembly("System.Security", new() { ["X"] = Type() }, natives: new[] { "System.Net.Security.Native" });
-        var archive = Set(linuxSystem, neutralHttp, security);
+        // The System.Data every Windows game of 2018.4–2020.3 ships: it names a Unix native for
+        // Kerberos SQL logins, and is a Windows build all the same.
+        var windowsData = Assembly("System.Data", new() { ["System.Data.DataSet"] = Type() },
+                                   natives: new[] { "System.Net.Security.Native", "System.IO.Compression.DeflateStreamNative" });
+        var archive = Set(linuxSystem, neutralHttp, windowsData);
 
-        Program.Check(RuntimeLibraries.UnixOnly(new[] { "System", "System.Net.Http", "System.Security" }, archive)
-                          .SequenceEqual(new[] { "System", "System.Security" }),
-            "a library calling System.Native, or System.*.Native, is Linux-only",
-            "measured: no Windows build of a game carries one");
+        Program.Check(RuntimeLibraries.UnixOnly(new[] { "System", "System.Net.Http", "System.Data" }, archive)
+                          .SequenceEqual(new[] { "System" }),
+            "a library calling System.Native is Linux-only",
+            "measured: no Windows build of a game carries System.Native");
+        Program.Check(!RuntimeLibraries.UnixOnly(new[] { "System.Data" }, archive).Any(),
+            "System.Net.Security.Native does not make a library Linux-only",
+            "11 Windows games of 2018.4–2020.3 ship a System.Data that names it (2026-09-23)");
 
         var game = Set(Assembly("System", new() { ["System.Uri"] = Type(), ["System.Net.NetworkInformation.Ping"] = Type() }));
         Program.Check(RuntimeLibraries.NotSameFamily(new[] { "System" }, game, archive).Count == 1,

@@ -223,17 +223,24 @@ public static class RuntimeLibraries
     // ── What may be put beside a game ─────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Whether a native library name is one of the Unix shims Mono's newer class libraries call.
+    /// Whether a native library name marks a Linux build of Mono's class libraries.
     ///
     /// ⚠ Measured, not assumed (2026-09-21): from Unity 2021.2 the class libraries differ per
-    /// platform, and the Linux build of `System.dll` imports `System.Native` — which exists on no
-    /// Windows machine. Put in a Windows game, every file operation then fails. No Windows build of
-    /// a game carries one (read on three games from 2021.3 to 6000.0).
+    /// platform, and the Linux build of `mscorlib`, `System` and `System.Core` imports
+    /// `System.Native` — which exists on no Windows machine. Put in a Windows game, every file
+    /// operation then fails. No Windows build of a game carries it (three games, 2021.3 to 6000.0).
+    ///
+    /// 🔴 **`System.Native` exactly — not every `System.*.Native`.** The rule used to take any name
+    /// of that shape, and `System.Net.Security.Native` is one: every Windows game of Unity 2018.4 to
+    /// 2020.3 that ships its own `System.Data.dll` imports it (read on 11 of them on 2026-09-23 —
+    /// Rain World 2020.3.45, Walkabout 2020.3.4, Outer Wilds, KSP…), where it serves Kerberos SQL
+    /// logins on Unix only and is never resolved otherwise. So the `4.5` profile of every game
+    /// before 2021.2 was refused as "built for Linux", Unity's download and other games alike (the
+    /// game of issue #28). The Linux builds carry `System.Native` in the libraries every set
+    /// includes, so the narrower rule still catches them.
     /// </summary>
     public static bool IsUnixShim(string nativeLibrary) =>
-        nativeLibrary.Equals("System.Native", StringComparison.OrdinalIgnoreCase)
-        || (nativeLibrary.StartsWith("System.", StringComparison.OrdinalIgnoreCase)
-            && nativeLibrary.EndsWith(".Native", StringComparison.OrdinalIgnoreCase));
+        nativeLibrary.Equals("System.Native", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The chosen libraries that call a Unix-only native library.</summary>
     public static IReadOnlyList<string> UnixOnly(IEnumerable<string> chosen, Func<string, AssemblyShape?> archive) =>

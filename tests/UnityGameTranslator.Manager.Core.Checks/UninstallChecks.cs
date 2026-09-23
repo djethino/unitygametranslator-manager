@@ -44,15 +44,30 @@ public static class UninstallChecks
                       && UninstallEngine.LoaderTree(new Model.LoaderDescriptor { PluginDir = "Mods", PluginDirShared = true }) is null,
             "the plugin folder answers only when no version file does", "and a shared folder at the root never");
 
+        // 🔴 The catalog is fetched: a tree it names that is not one of ours cleans NOTHING. The
+        // empty-folder sweep would otherwise walk whatever folder it pointed at.
+        Program.Check(UninstallEngine.CleanableTree(melon) == "MelonLoader"
+                      && UninstallEngine.CleanableTree(bepinex) == "BepInEx",
+            "the two loader trees are cleanable", "compiled in");
+        Program.Check(new[] { "premiumbowling_Data/x.dll", "UserData/x.dll", "C:/Windows/x.dll", "../x/y.dll", "Mods/x.dll" }
+                          .All(v => UninstallEngine.CleanableTree(new Model.LoaderDescriptor
+                          {
+                              PluginDir = "Mods",
+                              PluginDirShared = true,
+                              Detect = new Model.LoaderDetect { VersionFile = v },
+                          }) is null),
+            "a catalog pointing anywhere else cleans nothing", "the game's own folders, settings, another drive");
+
         // ⚠ config/ and UserData/ are settings: kept by design, so never in what a loader "produced".
-        var all = new[] { "BepInEx", "MelonLoader" }
-            .SelectMany(t => UninstallEngine.ProducedBy(t).Inside.Concat(UninstallEngine.ProducedBy(t).EmptyBeside))
-            .ToList();
-        Program.Check(all.Count > 0
-                      && !all.Any(n => n.Equals("config", StringComparison.OrdinalIgnoreCase)
-                                       || n.Equals("UserData", StringComparison.OrdinalIgnoreCase)
-                                       || n.Equals("Mods", StringComparison.OrdinalIgnoreCase)
-                                       || n.Contains('/') || n.Contains('\\') || n.Contains("..")),
+        // Inside a tree everything named is deleted whole; beside it, only while empty.
+        var inside = new[] { "BepInEx", "MelonLoader" }.SelectMany(t => UninstallEngine.ProducedBy(t).Inside).ToList();
+        var beside = new[] { "BepInEx", "MelonLoader" }.SelectMany(t => UninstallEngine.ProducedBy(t).EmptyBeside).ToList();
+        Program.Check(inside.Count > 0
+                      && !inside.Concat(beside).Any(n => n.Equals("config", StringComparison.OrdinalIgnoreCase)
+                                                         || n.Equals("UserData", StringComparison.OrdinalIgnoreCase)
+                                                         || n.Contains('/') || n.Contains('\\') || n.Contains(':')
+                                                         || n.Contains(".."))
+                      && !inside.Any(n => n.Equals("Mods", StringComparison.OrdinalIgnoreCase)),
             "what a loader produced never names settings or a path", "a configuration is not regenerated");
         Program.Check(UninstallEngine.ProducedBy("MelonLoader").Inside.Contains("Logs")
                       && UninstallEngine.ProducedBy("MelonLoader").EmptyBeside.Contains("UserLibs")

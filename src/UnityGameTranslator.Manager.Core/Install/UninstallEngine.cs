@@ -203,8 +203,16 @@ public sealed class UninstallEngine
             // regenerated at the next one.
             ["BepInEx"] = (new[] { "cache", "interop", "unity-libs", "LogOutput.log", "ErrorLog.log", "preloader.log" },
                            Array.Empty<string>()),
-            ["MelonLoader"] = (new[] { "Latest.log", "Logs" }, new[] { "Plugins", "UserLibs" }),
+            ["MelonLoader"] = (new[] { "Latest.log", "Logs" }, new[] { "Mods", "Plugins", "UserLibs" }),
         };
+
+    /// <summary>
+    /// The tree <see cref="RemoveLoaderLeftovers"/> may clean for this loader: the one the catalog
+    /// points at, and only when it is a key of <see cref="Produced"/>. Null otherwise — nothing
+    /// is touched.
+    /// </summary>
+    public static string? CleanableTree(LoaderDescriptor descriptor) =>
+        LoaderTree(descriptor) is { } tree && Produced.ContainsKey(tree) ? tree : null;
 
     /// <summary>The names <see cref="RemoveLoaderLeftovers"/> would take for a tree — for the checks.</summary>
     public static (IReadOnlyList<string> Inside, IReadOnlyList<string> EmptyBeside) ProducedBy(string tree) =>
@@ -821,36 +829,26 @@ public sealed class UninstallEngine
     {
         if (descriptor is null) return;
 
-        // ⚠ The shared plugin folder — MelonLoader's Mods/ — is the LOADER's, which is why every
-        // plugin uninstall now leaves it alone. Once the loader itself is gone it answers to
-        // nobody either, so this is the one pass entitled to drop it, and only while empty:
-        // anything still in there belongs to another mod, and CountForeignMods refused the removal
-        // before we ever got here.
-        // ⚠ Every path below is built from the fetched catalog, and every one of them is deleted
-        // from — so they all go through the guard. See FileOperations.TryResolveInsideGame.
+        // 🔴 **Nothing deleted here is named by the fetched catalog.** The catalog only picks WHICH
+        // compiled entry of <see cref="Produced"/> applies, through the tree it points at; a tree
+        // that is not one of those keys — `premiumbowling_Data`, `UserData`, `C:` — ends the pass
+        // before anything is touched. Before that rule the tree came straight from the catalog
+        // and the empty-folder sweep below would have walked whatever folder it named.
         var files = new FileOperations(game.Path);
 
-        if (descriptor.PluginDirShared && !string.IsNullOrWhiteSpace(descriptor.PluginDir))
-        {
-            if (files.TryResolveInsideGame(descriptor.PluginDir, out var shared)
-                && FileOperations.TryRemoveEmptyDirectory(shared))
-            {
-                removed.Add(Normalise(descriptor.PluginDir) + "/");
-            }
-        }
-
-        // ⚠ Through the guard, like every path here: it comes from the fetched catalog.
-        if (LoaderTree(descriptor) is not { } tree
+        if (CleanableTree(descriptor) is not { } tree
+            || !Produced.TryGetValue(tree, out var produced)
             || !files.TryResolveInsideGame(tree, out var root)
-            || !Directory.Exists(root))
+            || !Directory.Exists(root)
+            || IsLink(root))
         {
             return;
         }
 
-        var produced = ProducedBy(tree);
-
-        // Folders the loader creates at the game root on first launch (MelonLoader's Plugins/,
-        // UserLibs/). Only while empty: another mod may have put something there.
+        // Folders the loader owns at the game root, only while empty: anything still in one belongs
+        // to another mod, and CountForeignMods refused the removal before we ever got here.
+        // MelonLoader's Mods/ is one of them — the LOADER's, which is why every plugin uninstall
+        // leaves it alone; once the loader is gone it answers to nobody.
         foreach (var name in produced.EmptyBeside)
         {
             if (files.TryResolveInsideGame(name, out var beside)
@@ -866,7 +864,8 @@ public sealed class UninstallEngine
 
             try
             {
-                if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
+                // A link is removed as a link: its target is somebody else's folder.
+                if (Directory.Exists(path)) Directory.Delete(path, recursive: !IsLink(path));
                 else if (File.Exists(path)) File.Delete(path);
                 else continue;
 
@@ -879,7 +878,14 @@ public sealed class UninstallEngine
             }
         }
 
-        foreach (var directory in Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories)
+        // Never through a link: an empty folder at the other end is not the loader's.
+        var walk = new EnumerationOptions
+        {
+            RecurseSubdirectories = true,
+            AttributesToSkip = FileAttributes.ReparsePoint,
+        };
+
+        foreach (var directory in Directory.EnumerateDirectories(root, "*", walk)
                                            .OrderByDescending(d => d.Length))
         {
             FileOperations.TryRemoveEmptyDirectory(directory);
@@ -887,6 +893,9 @@ public sealed class UninstallEngine
 
         FileOperations.TryRemoveEmptyDirectory(root);
     }
+
+    private static bool IsLink(string path) =>
+        File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint);
 
     /// <summary>
     /// Copies settings and translations out before deleting them. A translation can be months of

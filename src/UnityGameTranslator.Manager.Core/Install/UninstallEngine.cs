@@ -152,6 +152,66 @@ public sealed class UninstallEngine
 
     private static string Normalise(string path) => path.Replace('\\', '/').Trim('/');
 
+    /// <summary>
+    /// The loader's own folder at the top of the game — "BepInEx" — from where its plugins go, or
+    /// null when that says nothing usable.
+    ///
+    /// 🔴 **The FIRST segment, not the parent of the plugin folder.** The cleanup of what a loader
+    /// leaves behind (its cache, its log) used to look in the parent of `plugin_dir`, written when
+    /// that was `BepInEx/plugins`. The catalog now gives the mod its own folder,
+    /// `BepInEx/plugins/UnityGameTranslator`, so the parent became `BepInEx/plugins`: the cache and
+    /// the log were looked for there, never found, and a "complete" uninstall left `BepInEx/` with
+    /// both in it (2026-09-23). The first segment is the loader's tree whichever depth the plugin
+    /// folder has.
+    /// </summary>
+    public static string? LoaderTree(string? pluginDir)
+    {
+        if (string.IsNullOrWhiteSpace(pluginDir)) return null;
+
+        var first = Normalise(pluginDir).Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+
+        // A plugin folder at the game root, or one written with dots, names no tree of the loader's.
+        return first is null || first == "." || first == ".." || !Normalise(pluginDir).Contains('/') ? null : first;
+    }
+
+    /// <summary>
+    /// The loader's own tree, read first from the file that tells its version — which always sits
+    /// inside it (`BepInEx/core/…`, `MelonLoader/net6/…`) — and from the plugin folder otherwise.
+    ///
+    /// ⚠ The plugin folder alone cannot answer for MelonLoader: `Mods/` sits at the game root,
+    /// beside `MelonLoader/`, not inside it. Reading only that left the whole MelonLoader tree —
+    /// its logs, then the empty folder — behind every complete uninstall (2026-09-23).
+    /// </summary>
+    public static string? LoaderTree(LoaderDescriptor descriptor) =>
+        LoaderTree(descriptor.Detect.VersionFile)
+        ?? (descriptor.PluginDirShared ? null : LoaderTree(descriptor.PluginDir));
+
+    /// <summary>
+    /// What a loader WRITES while it runs, compiled in and keyed by its tree: inside the tree,
+    /// removed whole; beside it at the game root, folders it creates on first launch and removed
+    /// only while empty.
+    ///
+    /// ⚠ **Compiled in, not read from the catalog, on purpose.** Every name here is deleted; a list
+    /// that arrives with the fetched catalog would be a list of deletions reaching every
+    /// installation at its next launch — the same reason download addresses left the catalog
+    /// (<see cref="Catalog.LoaderOrigins"/>). A new loader ships a binary anyway.
+    /// </summary>
+    private static readonly Dictionary<string, (string[] Inside, string[] EmptyBeside)> Produced =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            // BepInEx 6 IL2CPP adds interop/ and unity-libs/: assemblies generated at first launch,
+            // regenerated at the next one.
+            ["BepInEx"] = (new[] { "cache", "interop", "unity-libs", "LogOutput.log", "ErrorLog.log", "preloader.log" },
+                           Array.Empty<string>()),
+            ["MelonLoader"] = (new[] { "Latest.log", "Logs" }, new[] { "Plugins", "UserLibs" }),
+        };
+
+    /// <summary>The names <see cref="RemoveLoaderLeftovers"/> would take for a tree — for the checks.</summary>
+    public static (IReadOnlyList<string> Inside, IReadOnlyList<string> EmptyBeside) ProducedBy(string tree) =>
+        Produced.TryGetValue(tree, out var produced)
+            ? (produced.Inside, produced.EmptyBeside)
+            : (Array.Empty<string>(), Array.Empty<string>());
+
     /// <summary>True when <paramref name="candidate"/> is <paramref name="root"/> or sits inside it.</summary>
     private static bool IsWithin(string candidate, string root) =>
         root.Length > 0
@@ -779,23 +839,28 @@ public sealed class UninstallEngine
             }
         }
 
-        // The loader's own tree: the parent of its plugin folder, unless that folder IS the tree
-        // (MelonLoader's Mods/ sits beside UserData/ rather than inside anything of ours).
-        if (descriptor.PluginDirShared) return;
-        if (!files.TryResolveInsideGame(descriptor.PluginDir, out var pluginDir)) return;
-
-        var root = Path.GetDirectoryName(pluginDir);
-
-        // ⚠ The PARENT, so the guard is applied again: a plugin_dir sitting at the game root would
-        // otherwise hand us the folder above it — the one holding every other game.
-        if (root is null
-            || !files.TryResolveInsideGame(Path.GetRelativePath(game.Path, root), out _)
+        // ⚠ Through the guard, like every path here: it comes from the fetched catalog.
+        if (LoaderTree(descriptor) is not { } tree
+            || !files.TryResolveInsideGame(tree, out var root)
             || !Directory.Exists(root))
         {
             return;
         }
 
-        foreach (var name in new[] { "cache", "LogOutput.log", "preloader.log" })
+        var produced = ProducedBy(tree);
+
+        // Folders the loader creates at the game root on first launch (MelonLoader's Plugins/,
+        // UserLibs/). Only while empty: another mod may have put something there.
+        foreach (var name in produced.EmptyBeside)
+        {
+            if (files.TryResolveInsideGame(name, out var beside)
+                && FileOperations.TryRemoveEmptyDirectory(beside))
+            {
+                removed.Add(name + "/");
+            }
+        }
+
+        foreach (var name in produced.Inside)
         {
             var path = Path.Combine(root, name);
 

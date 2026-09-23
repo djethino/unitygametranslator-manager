@@ -66,6 +66,7 @@ internal static class Program
         EngineModulesChecks.WhichReleasesFit();
         EngineModulesChecks.WhatUnitysIndexSays();
         EngineModulesChecks.HowUnitysPackageIsRead();
+        UninstallChecks.WhereTheLoaderTreeIs();
 
         Console.WriteLine();
         if (_failures == 0)

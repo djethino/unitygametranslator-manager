@@ -484,7 +484,13 @@ public sealed class GameConfigWriter
         // leaving enable_ai to a flag set while another backend was selected would write a setup
         // contradicting the one thing somebody asked for. It is the only backend that decides this
         // rather than merely being told about it.
-        var startsTranslating = settings.TranslationBackend == "capture"
+        //
+        // 🔴 **And so does "none" (Community translations only), for a reason of the mod's own.**
+        // The mod reads `enable_ai: true` beside `translation_backend: none` as a file older than
+        // the backend choice and rewrites it to `llm` at load (spec/config, x-migrations). Writing
+        // the per-game "none" beside Mod defaults' `enable_ai: true` therefore produced a game that
+        // started its AI — and loaded a model on the server — right after being told not to.
+        var startsTranslating = settings.TranslationBackend is "capture" or "none"
             ? false
             : perGame?.StartTranslation ?? settings.EnableAi;
         intents.Add(new Intent(null, "enable_ai", startsTranslating,

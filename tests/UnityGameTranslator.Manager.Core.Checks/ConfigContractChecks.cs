@@ -81,6 +81,49 @@ internal static class ConfigContractChecks
             "fewer than the contract holds: the file was mis-read");
     }
 
+    /// <summary>
+    /// The other direction: what this tool WRITES must mean, once the mod has loaded it, what was
+    /// asked. The mod rewrites `enable_ai: true` + `translation_backend: none` to `llm` (a file
+    /// older than the backend choice, spec/config x-migrations) — so a game set to "Community
+    /// translations only" beside Mod defaults' AI switched on started its AI at launch.
+    /// </summary>
+    internal static void WhatThisToolWritesStaysWhatWasAsked()
+    {
+        Program.Section("config.json as this tool writes it");
+
+        var descriptor = new LoaderDescriptor { Id = "bepinex5", UserDataDir = "BepInEx/plugins/UnityGameTranslator" };
+
+        foreach (var backend in new[] { "none", "capture", "llm", "google", "deepl" })
+        {
+            var gamePath = Path.Combine(Path.GetTempPath(), "ugt-config-write-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(Path.Combine(gamePath, "BepInEx", "plugins", "UnityGameTranslator"));
+
+                // Mod defaults with translation on — the very situation of the defect.
+                var settings = new InstallerSettings { TranslationBackend = backend, EnableAi = true };
+                var result = new GameConfigWriter().Apply(gamePath, descriptor, settings, "French");
+
+                var written = JsonNode.Parse(File.ReadAllText(Path.Combine(
+                    gamePath, "BepInEx", "plugins", "UnityGameTranslator", LocalTranslationProbe.ConfigFileName)))!.AsObject();
+                var enableAi = written["enable_ai"]?.GetValue<bool>();
+                var writtenBackend = written["translation_backend"]?.GetValue<string>();
+
+                bool noTranslation = backend is "none" or "capture";
+                Program.Check(result.Written && writtenBackend is not null
+                              && !(enableAi == true && writtenBackend == "none")
+                              && (!noTranslation || enableAi == false),
+                    $"backend {backend}: the mod reads back what was asked",
+                    $"wrote translation_backend={writtenBackend}, enable_ai={enableAi} — "
+                    + "the mod turns enable_ai:true + none into llm at load");
+            }
+            finally
+            {
+                try { Directory.Delete(gamePath, recursive: true); } catch { /* a temp folder left behind proves nothing */ }
+            }
+        }
+    }
+
     private static Dictionary<string, object?> Derive(GameConfigSnapshot s, GameAiSettings ai) => new()
     {
         // How the game asks a backend for a line — what the browser editor's Retranslate is

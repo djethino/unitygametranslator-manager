@@ -37,6 +37,7 @@ internal static class Program
         ModelOrderChecks.WhichRowsCarryAMark();
         UserDataChecks.WhichFilesAreTheModsInterface();
         ConfigContractChecks.WhatAGamesConfigSays();
+        ConfigContractChecks.WhatThisToolWritesStaysWhatWasAsked();
         MomentsContractChecks.WhatTheFileSaysAfterEachMoment();
         InstallLedgerChecks.WhatTheToolRemembersDoing();
         ProbeMemoryChecks.WhatARememberedReadAnswers();

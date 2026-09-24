@@ -12199,7 +12199,11 @@ public partial class MainWindow : Window
     private IEnumerable<Control> PlanDetail(GameReport report, GamePreference preference,
                                             LoaderDescriptor? descriptor, Action refresh)
     {
-        var settings = _settings.Current;
+        // 🔴 **This game's settings, not Mod defaults** (2026-09-24). A game set to "Community
+        // translations only" in its own settings showed Mod defaults' AI here, with "Translate
+        // while I play" offered — a translator the game does not have. SettingsFor is the chain
+        // the writer uses: this game's answers, then its config.json, then Mod defaults.
+        var settings = SettingsFor(report, preference);
         var posture = DeducedPosture(report, preference);
         var backend = TranslationBackendLabel(settings);
 

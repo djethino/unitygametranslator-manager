@@ -151,7 +151,7 @@ public partial class MainWindow : Window
     /// and one of these describes the person — which games they take part in — so it could not be
     /// expressed as one without inventing a state a game does not have.
     /// </summary>
-    private enum Lens { All, Playable, NeedsTranslator, Ready, Mine, Running, Blocked }
+    private enum Lens { All, ReadyToPlay, TranslationAvailable, NoTranslationYet, Ready, Mine, Running, Blocked }
 
     private Lens _lens = Lens.All;
 
@@ -1478,8 +1478,9 @@ public partial class MainWindow : Window
     /// </summary>
     private static string LensLabel(Lens lens) => lens switch
     {
-        Lens.Playable => "In my language",
-        Lens.NeedsTranslator => "Untranslated",
+        Lens.ReadyToPlay => "Ready to play",
+        Lens.TranslationAvailable => "Translation available",
+        Lens.NoTranslationYet => "No translation yet",
         Lens.Ready => "Set up",
         Lens.Mine => "Mine",
         Lens.Running => "Running",
@@ -1536,8 +1537,9 @@ public partial class MainWindow : Window
         var filters = new List<(string Label, string Meaning, Lens Value)>
         {
             (LensLabel(Lens.All), "Every game found, whatever its state.", Lens.All),
-            (LensLabel(Lens.Playable), "Games with a translation in your language.", Lens.Playable),
-            (LensLabel(Lens.NeedsTranslator), "Games with no translation in your language yet.", Lens.NeedsTranslator),
+            (LensLabel(Lens.ReadyToPlay), "Games that play translated into your language: a translation is in them, or they translate as you play.", Lens.ReadyToPlay),
+            (LensLabel(Lens.TranslationAvailable), "Games with a community translation in your language to install.", Lens.TranslationAvailable),
+            (LensLabel(Lens.NoTranslationYet), "Games with no translation in your language, here or on the website.", Lens.NoTranslationYet),
             (LensLabel(Lens.Ready), "Games with UGT Mod installed.", Lens.Ready),
         };
 
@@ -2147,7 +2149,17 @@ public partial class MainWindow : Window
 
         var language = _settings.ResolveTargetLanguage();
         var online = _online.Peek(game);
-        var inLanguage = online?.Any(t => Languages.Matches(t.TargetLanguage, language)) == true;
+        var published = online?.Any(t => Languages.Matches(t.TargetLanguage, language)) == true;
+
+        // 🔴 **What pressing Play gives, not what the site holds** (2026-09-25). These three used
+        // to be "In my language" and "Untranslated", both asking only whether a translation was
+        // PUBLISHED: a game translated here and never published sat under "Untranslated" with its
+        // flag on the row. The play mark is the fact the row itself draws — a translation in the
+        // game, or a backend translating as it plays, and in which language — so the lens and the
+        // row cannot disagree. A translation switched off is still here: one click brings it back.
+        var playsTranslated = _playStates.TryGetValue(game.Path, out var play)
+                              && play.Promise != PlayPromise.Plain
+                              && Languages.Matches(play.Language, language);
 
         return _lens switch
         {
@@ -2156,8 +2168,13 @@ public partial class MainWindow : Window
             // A state of this minute rather than of the game, which is why it is the one lens whose
             // membership changes on its own — see LookForRunningGamesAsync.
             Lens.Running => _running.IsRunning(game),
-            Lens.Playable => game.IsModdable && inLanguage,
-            Lens.NeedsTranslator => game.IsModdable && online is not null && !inLanguage,
+
+            // The three words the rows use, for the three things a person does next: play, get the
+            // community's translation, or be the first to translate. Every moddable game whose
+            // community lookup has answered is in exactly one of them.
+            Lens.ReadyToPlay => game.IsModdable && playsTranslated,
+            Lens.TranslationAvailable => game.IsModdable && !playsTranslated && published,
+            Lens.NoTranslationYet => game.IsModdable && !playsTranslated && online is not null && !published,
             Lens.Ready => game.IsModdable && IsSetUp(game),
 
             // Where this account leads a translation or contributes to one. A fact about the

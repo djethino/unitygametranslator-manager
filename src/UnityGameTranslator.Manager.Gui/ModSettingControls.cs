@@ -177,14 +177,16 @@ public static class ModSettingControls
         return box;
     }
 
-    /// <summary>The one sentence explaining why so few keys are accepted here.</summary>
+    /// <summary>
+    /// Why so few keys are accepted here. The reason (a per-project Unity setting decides what a
+    /// character key is called, see analyse/hotkey-keycode-divergence.md) stays in this comment:
+    /// the reader only needs the fact and the way out.
+    /// </summary>
     public const string HotkeyAdvice =
-        "Click the key button, then press the key you want. Only keys every game detects the same "
-        + "way are accepted here: F1 to F15, the keypad, Insert/Delete/Home/End/Page, the arrows, "
-        + "Escape, Tab, Space and Enter. In the game itself the mod accepts far more - any key the "
-        + "game does not already use - because there it reads your actual keyboard. A key that "
-        + "prints a character is detected differently from one game to the next, so it cannot be "
-        + "sent from here.";
+        "Click the button, then press a key. Allowed here: F1–F15, keypad, arrows, Insert, Delete, "
+        + "Home, End, Page Up, Page Down, Escape, Tab, Space, Enter. "
+        + "Letters and symbols (², ;, …) are read differently by some games. "
+        + "To use one, set it in the game.";
 }
 
 /// <summary>
@@ -325,8 +327,8 @@ public sealed class HotkeyEditor
         {
             // Said, never worked around. Substituting another key silently would leave somebody
             // pressing the one they chose and concluding the mod is broken.
-            Refuse("The mod cannot use that key: Unity has no name for its position, so it would "
-                   + "never respond. Your previous key was kept.");
+            // Unity has no KeyCode for this position (ISO "<>", JIS/Korean IME keys…).
+            Refuse("Games cannot detect this key. The previous key was kept.");
             return;
         }
 

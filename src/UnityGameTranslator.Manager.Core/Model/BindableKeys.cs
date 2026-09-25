@@ -267,15 +267,10 @@ public static class BindableKeys
 
         var key = BaseKeyOf(hotkey!);
 
-        // ⚠ "what it means changes from one game to the next" — a key does not mean anything, and
-        // dressing a detection problem as intent made the sentence unserious. What actually varies
-        // is whether the same physical key is DETECTED as this key, which depends on a per-project
-        // setting each studio chose.
-        return $"\"{key}\" prints a character, and the same physical key is detected differently "
-             + "from one game to the next — it depends on a setting each studio chose. This tool "
-             + "only sends keys that are detected the same way everywhere: F1 to F15, the keypad, "
-             + "Insert/Delete/Home/End/Page keys, arrows, Escape, Tab, Space, Enter. "
-             + "To use this key, set it in the game itself — there the mod reads your actual "
-             + "keyboard, so it is right whatever your layout or language.";
+        // ⚠ What varies is whether the same physical key is DETECTED as this key — a per-project
+        // Unity setting each studio chose — never what the key "means". The list of allowed keys
+        // is HotkeyAdvice's job; this line only says why THIS key was refused, and the way out.
+        return $"\"{key}\" is not allowed here: some games read it as a different key. "
+             + "Set it in the game.";
     }
 }

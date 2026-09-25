@@ -855,14 +855,14 @@ public sealed class SettingsWindow : Window
         panel.Children.Add(Row("Updates", _channel));
         panel.Children.Add(_modOnline);
         panel.Children.Add(Note(
-            "Off means the mod never contacts anything from inside the game: no update notices, "
-            + "no community lookups. What you installed from here keeps working.", "TextMuted"));
+            "Off: the mod stays offline in the game. No update notices, no community translations. "
+            + "What is already installed keeps working.", "TextMuted"));
 
+        // The hotkey is asked here because the mod's first-run wizard asks for it: with every
+        // answer given the wizard is skipped, with one missing it still runs (AnswersTheWizard).
         return Card("In the game",
-            "The hotkey opens the mod's own panel while you play. It is asked here because the "
-            + "mod's first-run wizard asks for it: answer everything and it can be skipped, "
-            + "leave anything out and the wizard still runs — we will not pretend to have "
-            + "answered on your behalf.",
+            "The hotkey opens the mod's panel in the game. "
+            + "When Mod defaults is complete, the mod skips its setup wizard.",
             panel);
     }
 

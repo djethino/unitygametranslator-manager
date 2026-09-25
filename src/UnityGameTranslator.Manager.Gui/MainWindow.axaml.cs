@@ -3624,6 +3624,11 @@ public partial class MainWindow : Window
 
         if (report.MyPosition is not null) _mine.Add(game.Path); else _mine.Remove(game.Path);
 
+        // ⚠ And the Play mark, the fourth collection the row reads — missed the same way: taking a
+        // translation in another language changed the flag in the bar at the bottom (drawn from
+        // this report) and left the row's flag on the previous language.
+        _playStates[game.Path] = PlayStateOf(report);
+
         if (_rows.TryGetValue(game.Path, out var row) && row.Item.Tag is GameInstall shown)
         {
             var facts = FactsFor(game);

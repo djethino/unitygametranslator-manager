@@ -114,8 +114,7 @@ public sealed class EditSessionRunner
         // nobody spends that twenty minutes.
         if (_installer.WhyNotNow(game) is { } refusal)
         {
-            LastError = refusal + " While it is open, the mod's own live editor is the one that "
-                      + "can change this translation.";
+            LastError = refusal + " While it runs, edit this translation from UGT Mod in the game.";
             return null;
         }
 
@@ -131,8 +130,8 @@ public sealed class EditSessionRunner
 
         if (!File.Exists(path))
         {
-            LastError = "There is no translation file in this game yet. Take one from the community "
-                      + "or play once with the mod to start one.";
+            LastError = "This game has no translation file yet. Download one from the community, "
+                      + "or play once with UGT Mod to start one.";
             return null;
         }
 
@@ -175,10 +174,9 @@ public sealed class EditSessionRunner
         {
             // Said, not swallowed: the session works, but the game will not know it is there, and
             // that is the one guarantee this file exists to give.
-            LastError = "The session is open, but this game's folder could not be marked as being "
-                      + $"edited ({failure}). The mod will not know about it, so do not open a "
-                      + "second editor from inside the game — the last one to save would erase the "
-                      + "other.";
+            LastError = "The session is open, but this game could not be marked as being edited "
+                      + $"({failure}). UGT Mod will not know about it: do not open a second editor "
+                      + "from inside the game, or the last one to save will overwrite the other.";
         }
 
         return session;
@@ -219,9 +217,9 @@ public sealed class EditSessionRunner
             return new Blocking(
                 "A browser editing session for this game was opened from "
                 + EditSessions.HolderName(marker.Holder) + " " + when + " by another user of this "
-                + "computer, or before this game was moved here. It cannot be ended from your "
-                + "account, and two sessions on one translation erase each other's saves. "
-                + "Open yours anyway?",
+                + "computer, or before this game was moved to this folder. Your account cannot end "
+                + "it, and two sessions on one translation overwrite each other's saves. "
+                + "Open a new one anyway?",
                 null, Ours: false);
         }
 
@@ -242,9 +240,9 @@ public sealed class EditSessionRunner
         if (marker.IsOurs)
         {
             return new Blocking(
-                "A browser editing session opened from here " + when + " is still running. Your "
-                + "browser tab is probably still on it. Pick it back up, so that what you save "
-                + "there reaches this game again?",
+                "A browser editing session opened from UGT Manager " + when + " is still open. "
+                + "Your browser tab is probably still on it. Resume it, so what you save there "
+                + "reaches this game again?",
                 marker.ModKey, Ours: true);
         }
 

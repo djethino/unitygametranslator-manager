@@ -83,15 +83,21 @@ public sealed record AiTrial(
     /// </summary>
     public string GpuText => OnCardShare switch
     {
-        null => "unknown, this server does not report it",
-        >= 0.99 => "in use, with the whole model on it",
-        <= 0.01 => "NOT used - the model runs entirely on the processor",
+        null => "unknown (this server does not report it)",
+        >= 0.99 => "in use for the whole model",
+        <= 0.01 => "not used: the model runs entirely on the processor",
         // ⚠ Written out rather than formatted with "P0": that follows the machine's own language
         // and would print "83 %" here and "83%" elsewhere, inside an interface that is English
         // everywhere and for everyone.
-        var share => $"in use for {(int)Math.Round(share!.Value * 100)}% of the model"
-                     + " - the rest runs on the processor",
+        var share => $"in use for {(int)Math.Round(share!.Value * 100)}% of the model, "
+                     + "the rest runs on the processor",
     };
+
+    /// <summary>
+    /// Part of the model runs on the processor — the usual reason lines are slow. Known only when
+    /// the server reports placement; unknown is not "split".
+    /// </summary>
+    public bool SplitWithProcessor => OnCardShare is < 0.99;
 
     /// <summary>
     /// How many answers were judged, and how many of them held.
@@ -309,6 +315,7 @@ public sealed class AiServerProbe
     {
         var results = new List<ModelTestResult>();
         LastPlacement = null;
+        LastPlacementSplit = false;
 
         // The judge is told which language it is reading FROM, and it has to be the same one the
         // cases are written in or it marks a correct translation of a text it thinks it is not.
@@ -401,11 +408,11 @@ public sealed class AiServerProbe
                     var total = placement.Size / 1024.0 / 1024 / 1024;
                     var card = placement.OnCard / 1024.0 / 1024 / 1024;
 
-                    LastPlacement = placement.OnCard >= placement.Size * 0.99
+                    LastPlacementSplit = placement.OnCard < placement.Size * 0.99;
+                    LastPlacement = !LastPlacementSplit
                         ? $"{total:F1} GB, entirely on the graphics card."
-                        : $"{total:F1} GB, of which only {card:F1} GB fits on the graphics card — "
-                          + "the rest runs on the processor, which is what makes lines take "
-                          + "seconds instead of tenths of a second.";
+                        : $"{total:F1} GB. Only {card:F1} GB fits on the graphics card, the rest "
+                          + "runs on the processor. This is why each line takes seconds.";
                 }
             }
 
@@ -424,6 +431,12 @@ public sealed class AiServerProbe
     /// rather than patience.
     /// </summary>
     public string? LastPlacement { get; private set; }
+
+    /// <summary>
+    /// Whether <see cref="LastPlacement"/> reports a model split with the processor — the fact a
+    /// screen colours as a warning, asked here rather than guessed from the words.
+    /// </summary>
+    public bool LastPlacementSplit { get; private set; }
 
     /// <summary>What the whole chain cost and how it ended.</summary>
     private sealed record ModAttempt(string? Answer, int Attempts, TimeSpan Elapsed,

@@ -172,8 +172,8 @@ public sealed record InstallPlan(
         // Said either way. "The mod is left as it is" is the sentence that stops somebody
         // wondering, after a loader update, whether their plugin was quietly replaced too.
         yield return InstallPlugin
-            ? $"Install the plugin into {Loader.PluginDir}/"
-            : "The plugin already there is left exactly as it is";
+            ? $"Install UGT Mod into {Loader.PluginDir}/"
+            : "UGT Mod already there is not changed";
 
         if (SupplyRuntimeLibraries && Game.RuntimeLibraries is { } need)
         {
@@ -184,9 +184,9 @@ public sealed record InstallPlan(
                 yield return $"Add the .NET libraries this game lacks ({string.Join(", ", need.Missing)}), from {libraries.Label}"
                            + (libraries.Kind == ClassLibrarySourceKind.UnityDownload
                                ? libraries.Cached
-                                   ? " - nothing is downloaded again"
-                                   : " - only the part of the package that holds them is downloaded, once for this Unity version"
-                               : libraries.SameRelease ? "" : $" - another release of the same generation ({libraries.Version})");
+                                   ? " (already downloaded)"
+                                   : " (only the part needed is downloaded, once per Unity version)"
+                               : libraries.SameRelease ? "" : $" (another release of the same generation: {libraries.Version})");
             }
 
             // ⚠ The warnings in full only until read once on this machine (LocalCopies.WithNoticesRead);
@@ -197,7 +197,7 @@ public sealed record InstallPlan(
             if (need.Modules is { } modules && ModuleSource is { } source)
             {
                 yield return $"Add Unity's {modules.Set.Count} engine modules for this game's version, from {source.Label}"
-                           + (source.SameRelease ? "" : $" — an older release than the game's ({source.Version})");
+                           + (source.SameRelease ? "" : $" (an older release than the game's: {source.Version})");
 
                 if (!LocalCopyNoticeRead && source.Kind == EngineModuleSourceKind.Game)
                     yield return "! " + LocalCopies.Disclaimer(signed: true);
@@ -210,7 +210,7 @@ public sealed record InstallPlan(
             }
 
             yield return $"They go into {LoaderSearchPath.Folder}/, and {Loader.Display} is told to read them first. "
-                       + "They can be removed at any time from UnityGameTranslator Manager";
+                       + "UGT Manager can remove them at any time";
         }
 
         if (!string.Equals(Loader.UserDataDir, Loader.PluginDir, StringComparison.OrdinalIgnoreCase))
@@ -222,12 +222,12 @@ public sealed record InstallPlan(
         if (TargetLanguage is { Length: > 0 } target)
             yield return $"Set this game to translate into {target}";
 
-        yield return "Existing settings and translations are left untouched";
+        yield return "Existing settings and translations are not changed";
 
         foreach (var stray in StrayPluginDirectories)
         {
-            yield return $"! Remove the other copy of the mod in {stray}/ — with two of them, the "
-                       + "loader reads the older one and updates appear to do nothing";
+            yield return $"! Remove the other copy of UGT Mod in {stray}/. With two copies, the "
+                       + "loader reads the older one and updates seem to do nothing";
         }
     }
 }
@@ -405,7 +405,7 @@ public sealed class InstallEngine
             if (plan.InstallPlugin)
             {
                 Stage?.Invoke(InstallStage.Plugin);
-                Status?.Invoke("Downloading the plugin...");
+                Status?.Invoke("Downloading UGT Mod...");
                 await InstallPluginAsync(plan, files, receipt, staging, ct).ConfigureAwait(false);
             }
             else
@@ -470,7 +470,7 @@ public sealed class InstallEngine
             if (plan.WritesSettings)
             {
                 Stage?.Invoke(InstallStage.Settings);
-                Status?.Invoke("Applying your settings...");
+                Status?.Invoke("Applying settings...");
                 configured = new GameConfigWriter()
                     .Apply(plan.Game.Path, plan.Loader, plan.Settings, plan.TargetLanguage,
                            skipWizard: !plan.LetWizardAsk, perGame: plan.Preference);
@@ -577,7 +577,7 @@ public sealed class InstallEngine
                                           string staging, CancellationToken ct)
     {
         var release = await _releases.GetLatestAsync(plan.Channel, ct).ConfigureAwait(false)
-            ?? throw new InvalidOperationException("No plugin release found.");
+            ?? throw new InvalidOperationException("No UGT Mod release found.");
 
         var resolved = await _releases.ResolveAssetAsync(release, plan.PluginAssetPattern, ct)
                                       .ConfigureAwait(false)
@@ -593,7 +593,7 @@ public sealed class InstallEngine
                         SizeOf(release, resolved.Url), ct)
             .ConfigureAwait(false);
 
-        Status?.Invoke($"Installing the plugin {release.Version}...");
+        Status?.Invoke($"Installing UGT Mod {release.Version}...");
 
         var before = files.WrittenFiles.Count;
         var dirsBefore = files.CreatedDirectories.Count;
@@ -624,7 +624,7 @@ public sealed class InstallEngine
             // plugin_dir, and this is the one delete an install performs.
             if (!files.TryResolveInsideGame(stray, out var directory))
             {
-                Status?.Invoke($"Ignored a plugin location outside the game: {stray}.");
+                Status?.Invoke($"Ignored a UGT Mod location outside the game: {stray}.");
                 continue;
             }
 
@@ -635,7 +635,7 @@ public sealed class InstallEngine
                 if (File.Exists(copy))
                 {
                     File.Delete(copy);
-                    Status?.Invoke($"Removed the other plugin copy in {stray}.");
+                    Status?.Invoke($"Removed the other copy of UGT Mod in {stray}.");
                 }
 
                 FileOperations.TryRemoveEmptyDirectory(directory);
@@ -644,8 +644,8 @@ public sealed class InstallEngine
             {
                 // Said, never silent: a copy still there is the one thing that makes this install
                 // behave unpredictably, and the reason it survived is worth reading.
-                Status?.Invoke($"Could not remove the plugin copy in {stray} ({ex.Message}). "
-                             + "Delete it by hand: with two in one game, the loader may load either.");
+                Status?.Invoke($"Could not remove the other copy of UGT Mod in {stray} ({ex.Message}). "
+                             + "Delete it by hand: with two copies, the loader may load either one.");
             }
         }
 
@@ -797,22 +797,22 @@ public sealed class InstallEngine
         // how a tool loses trust — and because "why is my language wrong" is answered here.
         if (configured is { Written: true, Applied.Count: > 0 })
         {
-            lines.Add($"Applied your settings: {string.Join(", ", configured.Applied)}.");
+            lines.Add($"Settings applied: {string.Join(", ", configured.Applied)}.");
 
             lines.Add(configured.WizardSkipped
-                ? "The mod's first-run wizard is skipped: everything it asks is already answered."
-                : "The mod will still run its first-run wizard, since some of its questions have "
-                  + "no answer in your settings yet.");
+                ? "UGT Mod's first-run questions are skipped: they are all answered."
+                : "UGT Mod will still ask its first-run questions: some are not answered in Mod "
+                  + "defaults yet.");
         }
         else if (configured is { Written: false })
         {
-            lines.Add($"Your settings could not be written ({configured.Failure}). The game is "
-                    + "installed and the mod will ask you its own questions on first launch.");
+            lines.Add($"Settings could not be written ({configured.Failure}). The game is "
+                    + "installed, and UGT Mod will ask its own questions on first launch.");
         }
 
         if (_platform.NeedsDllOverride(plan.Game) && plan.Loader.ProtonDllOverride is not null)
         {
-            lines.Add("One more step, and the mod will not load without it — set this as the " +
+            lines.Add("One more step: UGT Mod does not load without it. Set this as the " +
                       "game's Steam launch options:");
             lines.Add($"  WINEDLLOVERRIDES=\"{plan.Loader.ProtonDllOverride}=n,b\" %command%");
         }

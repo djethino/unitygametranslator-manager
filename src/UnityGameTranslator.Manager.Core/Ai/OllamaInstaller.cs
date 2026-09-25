@@ -102,9 +102,8 @@ public sealed class OllamaInstaller
         {
             return new OllamaOffer(false, null, null, null, _platform.OsId == "windows"
                 ? "Ollama does not publish an installer for this processor architecture."
-                : "On this system Ollama is installed with its own script, which needs your "
-                  + "password and knows your distribution better than we do. Run: "
-                  + "curl -fsSL https://ollama.com/install.sh | sh");
+                : "On this system, install Ollama with its official script (it asks for your "
+                  + "password): curl -fsSL https://ollama.com/install.sh | sh");
         }
 
         var release = await LatestReleaseAsync(ct).ConfigureAwait(false);
@@ -120,8 +119,8 @@ public sealed class OllamaInstaller
         if (!digests.TryGetValue(asset, out var sha))
         {
             return new OllamaOffer(false, asset, sizes.GetValueOrDefault(asset), null,
-                "Ollama published no checksum for this file. We will not download and run an "
-                + "installer we cannot verify — install it from ollama.com instead.");
+                "Ollama did not publish a checksum for this installer, so it cannot be verified. "
+                + "Install Ollama from ollama.com instead.");
         }
 
         return new OllamaOffer(true, asset, sizes.GetValueOrDefault(asset), sha, null, tag);
@@ -152,8 +151,8 @@ public sealed class OllamaInstaller
             if (!string.Equals(actual, offer.Sha256, StringComparison.OrdinalIgnoreCase))
             {
                 TryDelete(target);
-                return $"Checksum mismatch — expected {offer.Sha256}, got {actual}. "
-                     + "The download was discarded and nothing was run.";
+                return $"Checksum mismatch (expected {offer.Sha256}, got {actual}). "
+                     + "The file was deleted and nothing was run.";
             }
 
             var start = new ProcessStartInfo
@@ -193,8 +192,7 @@ public sealed class OllamaInstaller
                 return null;
         }
 
-        return "Ollama was installed but is not answering yet. Starting it from the Start menu "
-             + "usually settles it.";
+        return "Ollama is installed but does not answer yet. Start it from the Start menu.";
     }
 
     /// <summary>Tag and asset sizes of the current release.</summary>

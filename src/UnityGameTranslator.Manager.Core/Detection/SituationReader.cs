@@ -201,8 +201,8 @@ public static class SituationReader
         // the game lacks not in place. A missing PLUGIN cannot land here — see GameReport.ModCanRun,
         // where the plugin's absence is never a verdict because its version is unreadable often enough.
         var missing = report.InstalledLoader is null
-            ? "No mod loader installed. The mod will not run."
-            : "The libraries this game lacks are not in place. The mod will not run.";
+            ? "No mod loader installed. UGT Mod will not run."
+            : "The libraries this game lacks are not in place. UGT Mod will not run.";
 
         return standing is { Length: > 0 } ? $"{missing} · {standing}" : missing;
     }
@@ -353,19 +353,21 @@ public static class SituationReader
         // whatever it got. The un-owned line therefore ended with it twice, and a reader could no
         // longer tell whether the mod, the loader or the translation was being described.
         var loader = loaderNewer
-            ? (loaderOurs ? "loader update available" : "loader update available — not managed by UGT")
+            ? (loaderOurs ? "loader update available" : "loader update available — not managed by UGT Manager")
             : null;
 
         // ⚠ The un-owned case does not fold into "mod and loader": it carries its own instruction,
         // and gluing it onto a list would produce "mod and loader update — allow it in Set up",
         // which reads as if the mod needed allowing too.
+        //
+        // "UGT Mod", never "mod" alone: in a row that also names a loader, "mod" could be either.
         if (loaderNewer && !loaderOurs)
-            return plugin ? $"mod update available · {loader}" : loader;
+            return plugin ? $"UGT Mod update available · {loader}" : loader;
 
         return (plugin, loaderNewer) switch
         {
-            (true, true) => "mod and loader update available",
-            (true, false) => "mod update available",
+            (true, true) => "UGT Mod and loader updates available",
+            (true, false) => "UGT Mod update available",
             (false, true) => "loader update available",
             _ => null,
         };
@@ -384,13 +386,13 @@ public static class SituationReader
         if (plugin is null && loader is null) return null;
 
         var what = plugin is not null && loader is not null
-            ? "Mod and loader updates available"
+            ? "UGT Mod and loader updates available"
             : plugin is not null
-                ? "Mod update available"
+                ? "UGT Mod update available"
                 : "Loader update available";
 
         var detail = new List<string>();
-        if (plugin is not null) detail.Add($"mod {plugin.Installed} → {plugin.Available}");
+        if (plugin is not null) detail.Add($"UGT Mod {plugin.Installed} → {plugin.Available}");
         if (loader is not null) detail.Add($"loader {loader.Installed} → {loader.Available}");
 
         return new GameSituationInfo(Situation.UpdateAvailable, what,
@@ -430,10 +432,10 @@ public static class SituationReader
     public static string Consequence(Posture posture) => posture switch
     {
         Posture.Use => "Text the translation does not cover stays in the game's own language.",
-        Posture.Complete => "Whatever it does not cover is translated as you meet it, and joins "
-                          + "the file as machine work you can review later.",
-        Posture.Start => "Nothing is downloaded. The mod captures the game's text as you play, "
-                       + "for a translator to fill in or for you to write yourself.",
+        Posture.Complete => "Text it does not cover is translated automatically as it appears, "
+                          + "and marked for review.",
+        Posture.Start => "Nothing is downloaded. UGT Mod collects the game's text as you play, "
+                       + "to translate automatically or by hand.",
         _ => "",
     };
 
@@ -465,7 +467,7 @@ public static class SituationReader
         ModdabilityVerdict.RuntimeUnknown => "Not identified — Mono or IL2CPP could not be read",
         ModdabilityVerdict.ArchitectureUnknown => "Not identified — 32-bit or 64-bit could not be read",
         ModdabilityVerdict.StrippedRuntime => "Cannot be modded — the game ships a stripped runtime",
-        ModdabilityVerdict.MissingRuntimeLibraries => "Cannot be modded — the game lacks libraries the mod needs",
+        ModdabilityVerdict.MissingRuntimeLibraries => "Cannot be modded — the game lacks libraries UGT Mod needs",
         ModdabilityVerdict.LegacyRuntime => "Cannot be modded — the game runs .NET 3.5",
         ModdabilityVerdict.NotUnity => "Not a Unity game",
         _ => "Cannot be modded",

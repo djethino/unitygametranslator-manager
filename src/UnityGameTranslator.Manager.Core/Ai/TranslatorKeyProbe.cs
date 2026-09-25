@@ -52,9 +52,8 @@ public sealed class TranslatorKeyProbe
                 new KeyCheck(false, "Google does not recognise this key."),
 
             System.Net.HttpStatusCode.Forbidden =>
-                new KeyCheck(false, "Google refused this key. It usually means the Cloud "
-                                    + "Translation API is not switched on for it, or billing is not "
-                                    + "set up."),
+                new KeyCheck(false, "Google refused this key. Check that the Cloud Translation API "
+                                    + "is enabled for it and that billing is set up."),
 
             _ => new KeyCheck(false, $"Google answered {(int)status}."),
         }).ConfigureAwait(false);
@@ -85,13 +84,11 @@ public sealed class TranslatorKeyProbe
 
                 System.Net.HttpStatusCode.Forbidden =>
                     new KeyCheck(false, free
-                        ? "DeepL refused this key on the free host. If it is a Pro key, untick "
-                          + "Free tier."
-                        : "DeepL refused this key on the paid host. If it is a free key, tick "
-                          + "Free tier."),
+                        ? "DeepL refused this key. If it is a Pro key, untick \"Free tier\"."
+                        : "DeepL refused this key. If it is a free key, tick \"Free tier\"."),
 
                 (System.Net.HttpStatusCode)456 =>
-                    new KeyCheck(false, "The key works, but its allowance for this month is used up."),
+                    new KeyCheck(false, "The key works, but this month's quota is used up."),
 
                 _ => new KeyCheck(false, $"DeepL answered {(int)status}."),
             }).ConfigureAwait(false);
@@ -121,12 +118,11 @@ public sealed class TranslatorKeyProbe
         }
         catch (TaskCanceledException)
         {
-            return new KeyCheck(false, "No answer in twelve seconds. The key was not tested.");
+            return new KeyCheck(false, $"No answer after {Patience.TotalSeconds:0} seconds. The key was not tested.");
         }
         catch (HttpRequestException ex)
         {
-            return new KeyCheck(false, $"Could not reach the provider ({ex.Message}). The key was "
-                                       + "not tested.");
+            return new KeyCheck(false, $"Could not connect ({ex.Message}). The key was not tested.");
         }
     }
 

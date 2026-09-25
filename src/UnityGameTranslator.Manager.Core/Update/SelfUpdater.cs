@@ -152,11 +152,11 @@ public sealed class SelfUpdater
     {
         var executable = RunningExecutable;
         if (executable is null)
-            return "This build cannot tell where it is running from, so it will not replace itself.";
+            return "UGT Manager cannot find where it is running from, so it cannot update itself.";
 
         var folder = Path.GetDirectoryName(executable);
         if (folder is null || !Directory.Exists(folder))
-            return "This build cannot tell which folder it is running from.";
+            return "UGT Manager cannot find the folder it is running from, so it cannot update itself.";
 
         try
         {
@@ -167,15 +167,17 @@ public sealed class SelfUpdater
         }
         catch (UnauthorizedAccessException)
         {
-            return $"The folder it lives in cannot be written to: {folder}. "
-                   + "Move the tool somewhere you own, or download the new version yourself.";
+            return ReadOnlyFolder(folder);
         }
         catch (IOException)
         {
-            return $"The folder it lives in cannot be written to: {folder}. "
-                   + "Move the tool somewhere you own, or download the new version yourself.";
+            return ReadOnlyFolder(folder);
         }
     }
+
+    private static string ReadOnlyFolder(string folder) =>
+        $"UGT Manager cannot write to its folder ({folder}). Move it to a folder you can write to, "
+        + "or download the new version yourself.";
 
     /// <summary>
     /// Looks for a newer build on the given channel.
@@ -208,8 +210,8 @@ public sealed class SelfUpdater
             // first release exists this is what everyone gets, and reporting it as "could not
             // check" would have every one of them looking for a network problem.
             return new SelfUpdateCheck(SelfUpdateState.UpToDate, null,
-                $"Nothing published on the {Describe(channel)} channel yet, so {CurrentVersion} "
-                + "is what there is.");
+                $"Nothing published on the {Describe(channel)} channel yet. {CurrentVersion} is "
+                + "the latest.");
         }
 
         if (!Versions.IsNewer(CurrentVersion, release.Version))
@@ -249,9 +251,8 @@ public sealed class SelfUpdater
         if (sha is null)
         {
             return new SelfUpdateCheck(SelfUpdateState.CannotBeVerified, null,
-                $"Version {release.Version} publishes {assetName} without a checksum, and GitHub "
-                + "reports no digest for it either. Refusing to replace the tool with a file "
-                + "nothing vouches for.");
+                $"Version {release.Version} has no checksum for {assetName}, so it cannot be "
+                + "verified. UGT Manager was not replaced.");
         }
 
         release.AssetSizes.TryGetValue(assetName, out var size);
@@ -431,8 +432,8 @@ public sealed class SelfUpdater
         {
             throw new InvalidOperationException(
                 $"The checksum published beside {assetName} does not match the digest GitHub "
-                + $"reports for it ({sidecar} against {published}). Refusing to go further: one "
-                + "of the two was changed after the release was made.");
+                + $"reports for it ({sidecar} against {published}). One of the two was changed "
+                + "after the release. Nothing was replaced.");
         }
 
         return sidecar ?? published;

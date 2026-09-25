@@ -5588,11 +5588,12 @@ public partial class MainWindow : Window
         if (blocking is not null)
         {
             var agreed = await ConfirmationWindow.AskAsync(this,
-                blocking.Ours ? "A session of yours is still open" : "Already being edited",
+                blocking.Ours ? "A browser session is still open" : "Already being edited",
                 blocking.Question,
+                // Verbs, not sentences: "mine" named nobody on a computer several people use.
                 blocking.Ours ? "Resume"
-                              : blocking.ModKey is not null ? "Close it and open mine"
-                              : "Open mine anyway");
+                              : blocking.ModKey is not null ? "Take over"
+                              : "Open anyway");
 
             if (!agreed)
             {

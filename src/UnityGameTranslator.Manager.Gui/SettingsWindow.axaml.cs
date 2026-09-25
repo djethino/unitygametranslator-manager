@@ -1869,7 +1869,9 @@ public sealed class SettingsWindow : Window
 
             if (trial.Succeeded)
             {
-                _metrics.Foreground = Brush("TextSecondary");
+                // Amber when part of the model runs on the processor: that is the reading which
+                // explains slow lines, and in grey it sat unread among the timings.
+                _metrics.Foreground = Brush(trial.SplitWithProcessor ? "StatusWarning" : "TextSecondary");
                 _metrics.Text =
                     $"First line: {trial.Elapsed.TotalSeconds:F1}s "
                     + (trial.FirstRunWasCold ? "(model loading)" : "(model already loaded)")
@@ -2023,7 +2025,8 @@ public sealed class SettingsWindow : Window
                     FontSize = 12,
                     TextWrapping = TextWrapping.Wrap,
                     Margin = new Thickness(0, 2, 0, 0),
-                    Foreground = Brush("TextSecondary"),
+                    // Amber when lines were given up on: that sentence is the warning of the run.
+                    Foreground = Brush(ModelTestSuite.AnyGaveUp(outcomes) ? "StatusWarning" : "TextSecondary"),
                 });
             }
 
@@ -2032,7 +2035,7 @@ public sealed class SettingsWindow : Window
             if (_probe.LastPlacement is { } placement)
             {
                 var where = Note($"This model holds {placement}",
-                                 placement.Contains("processor") ? Tone.Warning : Tone.Neutral);
+                                 _probe.LastPlacementSplit ? Tone.Warning : Tone.Neutral);
                 where.FontSize = 12;
                 _testOutput.Children.Add(where);
             }
@@ -2372,7 +2375,7 @@ public sealed class SettingsWindow : Window
 
         if ((_autoDownload.IsChecked == true) != saved.AutoDownload) changes.Add("auto-download");
         if ((_notifyUpdates.IsChecked == true) != saved.NotifyUpdates) changes.Add("translation update notifications");
-        if ((_checkModUpdates.IsChecked == true) != saved.CheckModUpdates) changes.Add("mod update notifications");
+        if ((_checkModUpdates.IsChecked == true) != saved.CheckModUpdates) changes.Add("UGT Mod update notifications");
         if ((_notificationsEnabled.IsChecked == true) != saved.NotificationsEnabled) changes.Add("in-game notifications");
 
         Compare("Google key", _draft.GoogleApiKey, saved.GoogleApiKey);

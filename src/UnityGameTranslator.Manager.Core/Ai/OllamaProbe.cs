@@ -128,7 +128,9 @@ public sealed class OllamaProbe
         if (models is not null)
         {
             return new OllamaStatus(OllamaState.Running, FindExecutable(),
-                $"already serving {Composition.Amount(models.Count, "model", "models")}");
+                // The count alone: the one reader writes "Ollama is already serving (…)" around it,
+                // and "(already serving 3 models)" inside that said it twice.
+                Composition.Amount(models.Count, "model", "models"));
         }
 
         var executable = FindExecutable();
@@ -212,9 +214,8 @@ public sealed class OllamaProbe
             howToStop = app is not null
                 ? "Right-click the Ollama icon next to the clock and choose Quit."
                 : _platform.OsId == "windows"
-                    ? "It runs in the background with no icon: ending \"ollama.exe\" in the Task "
-                      + "Manager stops it."
-                    : "It runs in the background: \"pkill ollama\" stops it.";
+                    ? "End \"ollama.exe\" in Task Manager. It runs in the background with no icon."
+                    : "Run \"pkill ollama\". It runs in the background.";
 
             try
             {
@@ -230,7 +231,7 @@ public sealed class OllamaProbe
 
                 using var process = Process.Start(start);
                 if (process is null)
-                    return new OllamaStartOutcome(false, Failure: "It would not start.");
+                    return new OllamaStartOutcome(false, Failure: "Ollama did not start.");
             }
             catch (Exception ex)
             {
@@ -249,8 +250,7 @@ public sealed class OllamaProbe
         }
 
         return new OllamaStartOutcome(false,
-            Failure: "It was started but is not answering yet. Giving it a moment and searching "
-                   + "again usually settles it.");
+            Failure: "Ollama started but does not answer yet. Wait a moment, then click Find local AI.");
     }
 
     /// <summary>Runs a command and reports whether it succeeded. Never elevated.</summary>

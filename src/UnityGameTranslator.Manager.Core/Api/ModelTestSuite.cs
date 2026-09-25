@@ -273,8 +273,7 @@ public static class ModelTestSuite
     /// </summary>
     public static string Summarise(IReadOnlyList<ModelTestResult> results)
     {
-        var lines = results.Where(r => r.Test.UnlocksOption is null && r.Elapsed > TimeSpan.Zero)
-                           .ToList();
+        var lines = SummarisedLines(results);
 
         if (lines.Count == 0) return "";
 
@@ -293,25 +292,40 @@ public static class ModelTestSuite
 
         var summary = new System.Text.StringBuilder();
 
-        summary.Append($"A line usually takes {typical:F1}s and the slowest took {worst:F1}s — "
-                     + "that is the wait before the original text is replaced on screen. ");
+        summary.Append($"Typical line: {typical:F1}s. Slowest: {worst:F1}s. This is how long the "
+                     + "original text stays on screen. ");
 
         summary.Append(corrected == 0
-            ? $"Nothing had to be asked twice — the mod allows up to "
-              + $"{Placeholders.MaxAttempts} tries per line before giving up on it."
-            : $"{Composition.Amount(corrected, "line", "lines")} of {lines.Count} had to be asked again, out of the "
-              + $"{Placeholders.MaxAttempts} tries the mod allows before leaving a line "
-              + "alone. Each extra try spends that time and that graphics card over again, while "
-              + "the game is running.");
+            ? $"No line had to be asked again (UGT Mod tries up to {Placeholders.MaxAttempts} "
+              + "times per line)."
+            : $"{corrected} of {Composition.Amount(lines.Count, "line", "lines")} had to be asked again "
+              + $"(UGT Mod tries up to {Placeholders.MaxAttempts} times per line). Each retry uses "
+              + "the graphics card again while the game runs.");
 
+        // ⚠ Not "until a later session" any more: a line that fails every try is kept in the
+        // mod's failure ledger across launches and only asked again from its Failures tab.
         if (refused > 0)
         {
-            summary.Append($" {refused} was refused even then, and would stay in its original "
-                         + "language until a later session.");
+            summary.Append($" {refused} failed every try. UGT Mod leaves "
+                         + (refused == 1 ? "it" : "them")
+                         + " in the original language and lists "
+                         + (refused == 1 ? "it" : "them")
+                         + " under Failures.");
         }
 
         return summary.ToString();
     }
+
+    /// <summary>
+    /// Whether the summary reports lines given up on — the part a screen shows as a warning.
+    /// Counted from the same lines as <see cref="Summarise"/>, so the colour and the sentence agree.
+    /// </summary>
+    public static bool AnyGaveUp(IReadOnlyList<ModelTestResult> results) =>
+        SummarisedLines(results).Any(r => !r.Accepted);
+
+    /// <summary>The lines a summary speaks for: real translations, the option-unlocking cases aside.</summary>
+    private static List<ModelTestResult> SummarisedLines(IReadOnlyList<ModelTestResult> results) =>
+        results.Where(r => r.Test.UnlocksOption is null && r.Elapsed > TimeSpan.Zero).ToList();
 
     /// <param name="gameContext">
     /// What the mod's own "describe this game" setting holds, or null for the default.
@@ -579,10 +593,9 @@ public static class ModelTestSuite
                 ExpectsRefusal = true,
                 UnlocksOption = "strict_source",
 
-                Caveat = "It stays experimental whatever this test says: one sentence is not a "
-                       + "game, and when it goes wrong it goes wrong silently — text that was "
-                       + "perfectly fine is dropped and nothing tells you. Switch it on knowing "
-                       + "that, and keep an eye on what disappears.",
+                Caveat = "Still experimental, whatever this test says: one sentence is not a game. "
+                       + "When it goes wrong, correct text is left untranslated and no message "
+                       + "says so.",
             },
 
             // Last of all, and the only case that can never collide with anybody: a constructed

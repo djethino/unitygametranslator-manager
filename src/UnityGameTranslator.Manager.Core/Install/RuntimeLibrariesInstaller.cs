@@ -392,7 +392,7 @@ public static class RuntimeLibrariesInstaller
             var lacking = selection.Unresolved.Select(s => s.Use.Member is null ? s.Use.Type : $"{s.Use.Type}.{s.Use.Member}")
                                               .Distinct().Take(3);
             throw new InvalidOperationException(
-                $"Even with the .NET libraries from {source.Label}, the mod would lack {string.Join(", ", lacking)}. Nothing was added.");
+                $"Even with the .NET libraries from {source.Label}, UGT Mod would lack {string.Join(", ", lacking)}. Nothing was added.");
         }
 
         // The loader needs mscorlib even when the mod does not ask for it by name.
@@ -443,8 +443,8 @@ public static class RuntimeLibrariesInstaller
         var package = await UnityPackageOf(build, changeset, new[] { "Unity" }, http, status, ct).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Unity does not list an editor package for {build}. Nothing was added.");
 
-        status?.Invoke($"Reading the .NET libraries from Unity's {build} editor package ({RuntimeLibraryOrigins.UnityDownloadHost}) - "
-                       + "only the part that holds them is downloaded...");
+        status?.Invoke($"Reading the .NET libraries from Unity's {build} editor package ({RuntimeLibraryOrigins.UnityDownloadHost}), "
+                       + "only the part needed...");
 
         await using (var stream = await Download.OpenAsync(http, RuntimeLibraryOrigins.UnityBuildFileUrl(changeset, package.Url),
                                                             package.Size, null, ct).ConfigureAwait(false))

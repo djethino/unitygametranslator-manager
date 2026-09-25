@@ -225,6 +225,10 @@ public sealed class GameConfigWriter
                     : null,
                 StrictSourceLanguage = Flag(root, null, StrictSourceKey),
 
+                // Only the shortcuts the game HAS: the mod writes "" for each one it leaves empty,
+                // and "none" is not a value to show as this game's own.
+                Shortcuts = ShortcutsIn(root),
+
                 // Read into the CLEAR fields, then handed straight back to ProtectSecrets when
                 // something is stored. The stored halves stay empty on purpose: what a game holds
                 // is encrypted for this machine already, and copying one ciphertext into another
@@ -321,6 +325,20 @@ public sealed class GameConfigWriter
         }
     }
 
+    /// <summary>The mod's optional shortcuts this game has set, or null when it has none.</summary>
+    private static Dictionary<string, string>? ShortcutsIn(JsonObject root)
+    {
+        Dictionary<string, string>? found = null;
+
+        foreach (var shortcut in ModShortcuts.All)
+        {
+            if (Text(root, null, shortcut.Key) is not { } key) continue;
+            (found ??= new Dictionary<string, string>(StringComparer.Ordinal))[shortcut.Key] = key;
+        }
+
+        return found;
+    }
+
     /// <summary>A number under a top-level key, or null when it is absent or is something else.</summary>
     private static double? Number(JsonObject root, string key) =>
         At(root, null, key) is { } node && node.GetValueKind() == JsonValueKind.Number
@@ -407,6 +425,11 @@ public sealed class GameConfigWriter
     /// ⚠ The opposite of <see cref="AskedSeparately"/>, which means "the offer IS this line".
     /// Here the offer is elsewhere, so the line has nothing to add.
     /// </param>
+    /// <param name="FillsEmpty">
+    /// Write this key only when the game has no value for it — absent OR empty — and leave a value
+    /// alone otherwise. OnlyIfAbsent's rule for the keys the mod serialises as "" when unset (the
+    /// optional shortcuts): for those, a present key says nothing, only a non-empty one does.
+    /// </param>
     private readonly record struct Intent(
         string? Parent,
         string Key,
@@ -416,7 +439,14 @@ public sealed class GameConfigWriter
         string? Note = null,
         bool OnlyIfAbsent = false,
         bool AskedSeparately = false,
-        bool AnsweredOnTheCard = false);
+        bool AnsweredOnTheCard = false,
+        bool FillsEmpty = false);
+
+    /// <summary>Whether the game already holds a non-empty text under this intent's key.</summary>
+    private static bool HoldsText(JsonObject root, Intent intent) =>
+        Existing(root, intent) is { } node
+        && node.GetValueKind() == JsonValueKind.String
+        && !string.IsNullOrEmpty(node.GetValue<string>());
 
     /// <summary>
     /// Everything we would write, and nothing else.
@@ -592,6 +622,30 @@ public sealed class GameConfigWriter
                 AskedSeparately: true));
         }
 
+        // The mod's optional shortcuts (user's decision, 2026-09-25): one decided for THIS game wins
+        // and replaces what the game holds; otherwise Mod defaults FILL an empty one and never
+        // replace a shortcut the game already has. Only keys that travel (ModShortcuts.MayTravel,
+        // the panel key's limit) ever leave from here.
+        foreach (var shortcut in ModShortcuts.All)
+        {
+            var label = $"shortcut: {shortcut.Label}";
+
+            if (perGame?.Mod?.Shortcuts is { } own && own.TryGetValue(shortcut.Key, out var mine))
+            {
+                // Answered by the game's own settings form, with its own Apply — not a difference
+                // with Mod defaults.
+                if (ModShortcuts.MayTravel(mine))
+                    intents.Add(new Intent(null, shortcut.Key, mine ?? "", label, AnsweredOnTheCard: true));
+                continue;
+            }
+
+            if (settings.Shortcuts.TryGetValue(shortcut.Key, out var fallback)
+                && !string.IsNullOrEmpty(fallback) && ModShortcuts.MayTravel(fallback))
+            {
+                intents.Add(new Intent(null, shortcut.Key, fallback, label, FillsEmpty: true));
+            }
+        }
+
         // The mod's own setting, not this tool's. Someone who installed everything from here,
         // translation included, has what they need before the game starts and may not want the mod
         // reaching the network while they play.
@@ -714,8 +768,9 @@ public sealed class GameConfigWriter
 
             foreach (var intent in intents)
             {
-                // Left exactly as the game has it — see Intent.OnlyIfAbsent.
+                // Left exactly as the game has it — see Intent.OnlyIfAbsent and FillsEmpty.
                 if (intent.OnlyIfAbsent && Existing(root, intent) is not null) continue;
+                if (intent.FillsEmpty && HoldsText(root, intent)) continue;
 
                 var value = intent.Secret && intent.Value is string secret
                     ? Secrets.Protect(secret)
@@ -871,10 +926,16 @@ public sealed class GameConfigWriter
             // belonged in.
             if (intent.OnlyIfAbsent && node is not null && !intent.AskedSeparately) continue;
 
+            // A shortcut the game already has is kept — nothing offered, nothing to report.
+            if (intent.FillsEmpty && HoldsText(root, intent)) continue;
+
             // Absent in the game means the mod is on its default there. That IS a difference worth
             // offering — it is how "your game never learned your hotkey" shows up — but it is
             // worded as absence rather than as a wrong value.
             var inGame = node is null ? null : Read(node, intent.Secret);
+
+            // An empty shortcut is how the mod writes "none" — shown as not set, like an absent key.
+            if (intent.FillsEmpty && string.IsNullOrEmpty(inGame)) inGame = null;
 
             // Read as the mod reads it: an older "localhost" is respelled at the mod's next load
             // anyway, and offering to "fix" it here would be asking somebody to approve a spelling.

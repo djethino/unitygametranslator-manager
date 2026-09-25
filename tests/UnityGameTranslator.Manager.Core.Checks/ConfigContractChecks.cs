@@ -167,6 +167,73 @@ internal static class ConfigContractChecks
             "so the one-click can start a game with strict source armed, before any line is translated");
     }
 
+    /// <summary>
+    /// The optional shortcuts: Mod defaults FILL an empty one and keep what a game set; a game's own
+    /// answer replaces; a key that does not travel is never written (analyse/manager-reglages-avances.md, part B).
+    /// </summary>
+    internal static void ShortcutsFillThenReplace()
+    {
+        Program.Section("config.json: the optional shortcuts");
+
+        var descriptor = new LoaderDescriptor { Id = "bepinex5", UserDataDir = "BepInEx/plugins/UnityGameTranslator" };
+
+        JsonObject After(string existing, GamePreference? perGame)
+        {
+            var gamePath = Path.Combine(Path.GetTempPath(), "ugt-config-keys-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var folder = Path.Combine(gamePath, "BepInEx", "plugins", "UnityGameTranslator");
+                Directory.CreateDirectory(folder);
+                var file = Path.Combine(folder, LocalTranslationProbe.ConfigFileName);
+                File.WriteAllText(file, existing);
+
+                var defaults = new InstallerSettings
+                {
+                    Shortcuts = new Dictionary<string, string>
+                    {
+                        ["toggle_translations_hotkey"] = "F5",
+                        ["toggle_ai_hotkey"] = "F6",
+                        ["force_scan_hotkey"] = "Ctrl+Q", // a letter: does not travel
+                    },
+                };
+
+                new GameConfigWriter().Apply(gamePath, descriptor, defaults, "French", perGame: perGame);
+                return JsonNode.Parse(File.ReadAllText(file))!.AsObject();
+            }
+            finally
+            {
+                try { Directory.Delete(gamePath, recursive: true); } catch { /* a temp folder left behind proves nothing */ }
+            }
+        }
+
+        // The mod writes "" for every shortcut it leaves empty; one of them is set in the game.
+        var written = After("""{ "toggle_translations_hotkey": "", "toggle_ai_hotkey": "F9", "force_scan_hotkey": "" }""", null);
+
+        Program.Check(written["toggle_translations_hotkey"]?.GetValue<string>() == "F5",
+            "Mod defaults fill a shortcut the game left empty", "the mod writes \"\" for none; a present key is not a set one");
+        Program.Check(written["toggle_ai_hotkey"]?.GetValue<string>() == "F9",
+            "and keep one the game already set", "set in the game, against the keyboard as that game reads it");
+        Program.Check(written["force_scan_hotkey"]?.GetValue<string>() == "",
+            "a key that does not travel between games is never written", "the panel key's limit, for every shortcut");
+
+        var replaced = After("""{ "toggle_ai_hotkey": "F9" }""", new GamePreference
+        {
+            Mod = new GameModOverrides { Shortcuts = new Dictionary<string, string> { ["toggle_ai_hotkey"] = "" } },
+        });
+
+        Program.Check(replaced["toggle_ai_hotkey"]?.GetValue<string>() == ""
+                      && replaced["toggle_translations_hotkey"]?.GetValue<string>() == "F5",
+            "a shortcut decided for the game replaces what it holds — even \"none\"",
+            "the game's own settings are the one place a game's shortcut is changed");
+
+        var own = new GameModOverrides { Shortcuts = new Dictionary<string, string> { ["toggle_ai_hotkey"] = "F2" } };
+        var copy = own.Copy();
+        copy.Shortcuts!["toggle_ai_hotkey"] = "F3";
+        Program.Check(own.Shortcuts["toggle_ai_hotkey"] == "F2",
+            "a copy of a game's answers does not share its shortcut map",
+            "a draft edited on screen would otherwise edit what is stored");
+    }
+
     private static Dictionary<string, object?> Derive(GameConfigSnapshot s, GameAiSettings ai) => new()
     {
         // How the game asks a backend for a line — what the browser editor's Retranslate is

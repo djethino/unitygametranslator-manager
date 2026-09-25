@@ -39,6 +39,7 @@ internal static class Program
         ConfigContractChecks.WhatAGamesConfigSays();
         ConfigContractChecks.WhatThisToolWritesStaysWhatWasAsked();
         ConfigContractChecks.TheSourceLanguageIsDeclaredNeverGuessed();
+        ConfigContractChecks.ShortcutsFillThenReplace();
         MomentsContractChecks.WhatTheFileSaysAfterEachMoment();
         InstallLedgerChecks.WhatTheToolRemembersDoing();
         ProbeMemoryChecks.WhatARememberedReadAnswers();

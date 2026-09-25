@@ -71,6 +71,9 @@ public sealed class SettingsWindow : Window
     private SearchPicker _testFrom = null!;
     private HotkeyEditor _hotkey = null!;
     private TextBlock _hotkeyProblem = null!;
+
+    /// <summary>The mod's optional shortcuts, by config.json key — see ModShortcuts.</summary>
+    private readonly Dictionary<string, HotkeyEditor> _shortcuts = new(StringComparer.Ordinal);
     private SearchPicker _channel = null!;
     private CheckBox _modOnline = null!;
     private CheckBox _autoDownload = null!;
@@ -161,6 +164,7 @@ public sealed class SettingsWindow : Window
             EnableAi = current.EnableAi,
             OnlineMode = current.OnlineMode,
             SettingsHotkey = current.SettingsHotkey,
+            Shortcuts = ModShortcuts.CopyOf(current.Shortcuts) ?? new Dictionary<string, string>(),
             Channel = current.Channel,
             AiApiKey = current.AiApiKey,
             GoogleApiKey = current.GoogleApiKey,
@@ -815,6 +819,7 @@ public sealed class SettingsWindow : Window
         panel.Children.Add(_hotkeyProblem);
         panel.Children.Add(Note(
             "A game that already has a hotkey keeps it. You can replace it on that game's page."));
+        panel.Children.Add(AdditionalHotkeys());
         panel.Children.Add(Row("Update channel", _channel));
         panel.Children.Add(_modOnline);
         panel.Children.Add(Note(
@@ -824,6 +829,78 @@ public sealed class SettingsWindow : Window
         // The hotkey is asked here because the mod's first-run wizard asks for it — the window's
         // intro says when that wizard is skipped.
         return Card("In the game", "The hotkey opens the UGT Mod panel in the game.", panel);
+    }
+
+    /// <summary>
+    /// The mod's optional shortcuts, folded under the panel key — "Additional hotkeys", the mod's own
+    /// name for them (user's decision, 2026-09-25: global here, reproduced in a game's own settings).
+    ///
+    /// ⚠ Folded: all ten are optional and empty by default, and unrolled they would bury the rest of
+    /// the card. The header says how many are set, so folding hides a form, never a fact.
+    ///
+    /// ⚠ They FILL a game, never replace a shortcut it already has — said in the intro, because it
+    /// is what somebody needs to know before expecting a game to change.
+    /// </summary>
+    private Control AdditionalHotkeys()
+    {
+        var body = new StackPanel { Spacing = 8, Margin = new Thickness(0, 6, 0, 0) };
+
+        body.Children.Add(Note("Optional. None is set by default. A game that already has a shortcut "
+                               + "keeps it; change it on that game's page."));
+        body.Children.Add(Note(ModSettingControls.HotkeyAdvice));
+
+        foreach (var shortcut in ModShortcuts.All)
+        {
+            _draft.Shortcuts.TryGetValue(shortcut.Key, out var current);
+
+            var editor = new HotkeyEditor(current, Brush("TextMuted"), Brush("StatusWarning"), optional: true);
+            _shortcuts[shortcut.Key] = editor;
+
+            body.Children.Add(ShortcutBlock(shortcut, editor.Row, editor.Problem));
+        }
+
+        var header = new TextBlock { FontSize = 12, FontWeight = FontWeight.SemiBold };
+
+        void Count()
+        {
+            var set = _shortcuts.Values.Count(e => e.Value.Length > 0);
+            header.Text = set == 0 ? "Additional hotkeys" : $"Additional hotkeys ({set} set)";
+        }
+
+        foreach (var editor in _shortcuts.Values) editor.Changed += Count;
+        Count();
+
+        return new Expander
+        {
+            Header = header,
+            Content = body,
+            IsExpanded = false,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+    }
+
+    /// <summary>One shortcut as the mod lays it out: its name, its hint, then the capture.</summary>
+    internal static Control ShortcutBlock(ModShortcut shortcut, Control capture, Control problem,
+                                          Control? origin = null)
+    {
+        var block = new StackPanel { Spacing = 2 };
+
+        var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        title.Children.Add(new TextBlock
+        {
+            Text = shortcut.Label,
+            FontSize = 12,
+            FontWeight = FontWeight.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = Ui.Brush("TextPrimary"),
+        });
+        if (origin is not null) title.Children.Add(origin);
+
+        block.Children.Add(title);
+        block.Children.Add(Note(shortcut.Hint));
+        block.Children.Add(capture);
+        block.Children.Add(problem);
+        return block;
     }
 
     // ---------------------------------------------------------------- AI
@@ -2281,6 +2358,7 @@ public sealed class SettingsWindow : Window
         // so it cannot be unusable — and quietly substituting a different key would be the exact
         // behaviour this whole mechanism exists to avoid.
         if (!string.IsNullOrWhiteSpace(_hotkey.Value)) _draft.SettingsHotkey = _hotkey.Value;
+        _draft.Shortcuts = ShortcutsOnScreen();
         _draft.Channel = Tag(_channel) ?? "stable";
 
         // Reviewed is what allows the mod's first-run wizard to be skipped later, and it is set
@@ -2318,6 +2396,7 @@ public sealed class SettingsWindow : Window
         stored.NotificationsEnabled = _draft.NotificationsEnabled;
         stored.NotificationPosition = _draft.NotificationPosition;
         stored.SettingsHotkey = _draft.SettingsHotkey;
+        stored.Shortcuts = ModShortcuts.CopyOf(_draft.Shortcuts) ?? new Dictionary<string, string>();
         stored.Channel = _draft.Channel;
         stored.Reviewed = true;
 
@@ -2365,6 +2444,13 @@ public sealed class SettingsWindow : Window
             Compare("API key", _apiKey.Text, saved.AiApiKey);
         }
         Compare("hotkey", _hotkey.Value, saved.SettingsHotkey);
+
+        foreach (var shortcut in ModShortcuts.All)
+        {
+            saved.Shortcuts.TryGetValue(shortcut.Key, out var before);
+            Compare($"shortcut \"{shortcut.Label}\"", _shortcuts[shortcut.Key].Value, before);
+        }
+
         Compare("update channel", Tag(_channel), saved.Channel);
 
         if ((_modOnline.IsChecked == true) != saved.ModOnlineMode)
@@ -2392,6 +2478,11 @@ public sealed class SettingsWindow : Window
     /// changed something.
     /// </summary>
     private int CountPendingChanges() => PendingChanges().Count;
+
+    /// <summary>The optional shortcuts as captured on screen — only the ones that have a key.</summary>
+    private Dictionary<string, string> ShortcutsOnScreen() =>
+        _shortcuts.Where(pair => pair.Value.Value.Length > 0)
+                  .ToDictionary(pair => pair.Key, pair => pair.Value.Value, StringComparer.Ordinal);
 
     /// <summary>"Apply (3)" while there is something to save, "Close" when there is not.</summary>
     private void RefreshApplyButton()
@@ -2439,6 +2530,7 @@ public sealed class SettingsWindow : Window
         // Its own event rather than a hidden TextBox's: the editor raises it only when the
         // composed key actually moves, so a refused capture no longer counts as a pending change.
         _hotkey.Changed += RefreshApplyButton;
+        foreach (var editor in _shortcuts.Values) editor.Changed += RefreshApplyButton;
 
         _modOnline.IsCheckedChanged += (_, _) => RefreshApplyButton();
         foreach (var box in new[] { _autoDownload, _notifyUpdates, _checkModUpdates, _notificationsEnabled })

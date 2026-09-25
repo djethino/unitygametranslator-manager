@@ -210,6 +210,19 @@ public sealed class InstallerSettings
     /// </summary>
     [JsonPropertyName("settings_hotkey")] public string SettingsHotkey { get; set; } = "Ctrl+F10";
 
+    /// <summary>
+    /// The mod's optional shortcuts (<see cref="ModShortcuts"/>), by config.json key — only the ones
+    /// somebody set; an absent key means no shortcut.
+    ///
+    /// ⚠ **They FILL a game, never replace** (user's decision, 2026-09-25): a shortcut the game
+    /// already has — set in its own Options, against the keyboard as that game reads it — is kept.
+    /// Changing one in a particular game is that game's own settings, with their own Apply.
+    ///
+    /// ⚠ The one field here that is not a string, a bool or an int — so <see cref="Copy"/> copies it
+    /// apart, or a copy would share it with the settings everybody uses.
+    /// </summary>
+    [JsonPropertyName("shortcuts")] public Dictionary<string, string> Shortcuts { get; set; } = new();
+
     // ⚠ There is deliberately no "write this hotkey into games" setting here, and adding one back
     // would undo a decision rather than fill a gap. Whether a game's own hotkey is replaced is
     // asked on that game's card (GamePreference.ReplaceHotkey), because this tool cannot know what
@@ -369,8 +382,16 @@ public sealed class InstallerSettings
     /// field here is a string, a bool or an int, so a shallow clone IS a full copy, and it stays
     /// one as fields are added. That last part is the whole reason.
     ///
+    /// ⚠ **Except <see cref="Shortcuts"/>**, a map: it is copied apart, and a collection added later
+    /// must be too.
+    ///
     /// ⚠ Never use it to SAVE: SettingsStore.Save says why, and says it at length. This produces a
     /// value to write into a game, which is a different act with a different lifetime.
     /// </summary>
-    public InstallerSettings Copy() => (InstallerSettings)MemberwiseClone();
+    public InstallerSettings Copy()
+    {
+        var copy = (InstallerSettings)MemberwiseClone();
+        copy.Shortcuts = ModShortcuts.CopyOf(Shortcuts) ?? new Dictionary<string, string>();
+        return copy;
+    }
 }

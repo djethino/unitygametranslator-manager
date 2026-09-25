@@ -725,6 +725,8 @@ public sealed class GameModSettingsForm
         // never by a position that moves with the layout.
         yield return Note("The in-game hotkey has its own setting: \"Key for this game\".");
 
+        yield return AdditionalHotkeys();
+
         _modOnline = new CheckBox
         {
             Content = "Allow UGT Mod to go online",
@@ -738,6 +740,85 @@ public sealed class GameModSettingsForm
 
         yield return WithOrigin(_modOnline, _draft.ModOnlineMode, _inGame.ModOnlineMode,
                                 () => _draft.ModOnlineMode = null);
+    }
+
+    /// <summary>
+    /// The mod's optional shortcuts for THIS game — the block Mod defaults carries, in the same words
+    /// (user's decision, 2026-09-25), with each field's origin like every other row here.
+    ///
+    /// ⚠ **Here an answer REPLACES what the game holds.** Mod defaults only fill an empty shortcut;
+    /// this is the one place a game's own shortcut is changed from UGT Manager, in front of it, and
+    /// written by this form's Apply (N) — counted by GameModOverrides.PendingAgainst.
+    /// </summary>
+    private Control AdditionalHotkeys()
+    {
+        var body = new StackPanel { Spacing = 8, Margin = new Avalonia.Thickness(0, 6, 0, 0) };
+        body.Children.Add(Note(ModSettingControls.HotkeyAdvice));
+
+        var set = 0;
+
+        foreach (var shortcut in ModShortcuts.All)
+        {
+            string? own = null;
+            var decided = _draft.Shortcuts is { } answered && answered.TryGetValue(shortcut.Key, out own);
+
+            string? inGame = null;
+            _inGame.Shortcuts?.TryGetValue(shortcut.Key, out inGame);
+
+            _defaults.Shortcuts.TryGetValue(shortcut.Key, out var fallback);
+
+            // What this game will use: its own answer, else what it holds, else what Mod defaults fills.
+            var wouldBeAnyway = inGame ?? fallback ?? "";
+            var shown = decided ? own ?? "" : wouldBeAnyway;
+            if (shown.Length > 0) set++;
+
+            // warnOnArrival off, like the key for this game: a shortcut the game holds was captured
+            // there, and it works where it lives.
+            var editor = new HotkeyEditor(shown, Palette.Of("TextMuted"), Palette.Of("StatusWarning"),
+                                          warnOnArrival: false, optional: true);
+
+            editor.Changed += () =>
+            {
+                if (_populating) return;
+
+                var value = editor.Value;
+
+                // Landing back on what the game would use anyway clears the answer — the form's rule.
+                if (ModShortcuts.Norm(value) == ModShortcuts.Norm(wouldBeAnyway))
+                {
+                    _draft.Shortcuts?.Remove(shortcut.Key);
+                    if (_draft.Shortcuts is { Count: 0 }) _draft.Shortcuts = null;
+                }
+                else
+                {
+                    (_draft.Shortcuts ??= new Dictionary<string, string>(StringComparer.Ordinal))[shortcut.Key] = value;
+                }
+
+                RefreshApply();
+                Record();
+            };
+
+            var origin = Origin(decided ? own ?? "" : null, inGame, () =>
+            {
+                _draft.Shortcuts?.Remove(shortcut.Key);
+                if (_draft.Shortcuts is { Count: 0 }) _draft.Shortcuts = null;
+            });
+
+            body.Children.Add(SettingsWindow.ShortcutBlock(shortcut, editor.Row, editor.Problem, origin));
+        }
+
+        return new Expander
+        {
+            Header = new TextBlock
+            {
+                Text = set == 0 ? "Additional hotkeys" : $"Additional hotkeys ({set} set)",
+                FontSize = 12,
+                FontWeight = FontWeight.SemiBold,
+            },
+            Content = body,
+            IsExpanded = false,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
     }
 
     private IEnumerable<Control> UpdatesBlock()

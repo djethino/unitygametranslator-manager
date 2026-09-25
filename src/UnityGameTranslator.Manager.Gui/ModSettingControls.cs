@@ -226,10 +226,26 @@ public sealed class HotkeyEditor
     private readonly CheckBox _alt;
     private readonly CheckBox _shift;
     private readonly Button _key;
+    private readonly Button? _clear;
+
+    /// <summary>
+    /// Whether "no shortcut" is an answer — the mod's optional shortcuts, empty by default. The panel
+    /// key is never optional: without it there is no way into the mod at all.
+    /// </summary>
+    private readonly bool _optional;
+
+    /// <summary>The captured key without its modifiers; empty when an optional shortcut has none.</summary>
+    private string _baseKey;
 
     private bool _capturing;
 
-    /// <summary>The composed shortcut, e.g. "Ctrl+F10". Never empty.</summary>
+    /// <summary>What the key button reads when an optional shortcut has no key.</summary>
+    private const string NotSet = "Not set";
+
+    /// <summary>
+    /// The composed shortcut, e.g. "Ctrl+F10". Never empty for the panel key; empty for an optional
+    /// shortcut that has none.
+    /// </summary>
     public string Value { get; private set; }
 
     /// <summary>The row to place: the three boxes, the "+", and the key button.</summary>
@@ -258,15 +274,39 @@ public sealed class HotkeyEditor
     /// that game reads it, and it works perfectly where it lives. Flagging it tells the player
     /// their own good choice is broken, about the one setting this tool has no business judging.
     /// </param>
-    public HotkeyEditor(string? initial, IBrush? muted, IBrush? warning, bool warnOnArrival = true)
+    /// <param name="optional">
+    /// True for the mod's optional shortcuts: an empty value is kept as "no shortcut", the key button
+    /// reads "Not set", and a Clear button takes the key away — the X beside each one in the mod.
+    /// </param>
+    public HotkeyEditor(string? initial, IBrush? muted, IBrush? warning, bool warnOnArrival = true,
+                        bool optional = false)
     {
-        Value = string.IsNullOrWhiteSpace(initial) ? BindableKeys.Default : initial;
+        _optional = optional;
+
+        Value = string.IsNullOrWhiteSpace(initial)
+            ? optional ? "" : BindableKeys.Default
+            : initial;
+
+        _baseKey = Value.Length == 0 ? "" : BindableKeys.BaseKeyOf(Value);
 
         _ctrl = new CheckBox { Content = "Ctrl", IsChecked = Value.Contains("Ctrl+") };
         _alt = new CheckBox { Content = "Alt", IsChecked = Value.Contains("Alt+") };
         _shift = new CheckBox { Content = "Shift", IsChecked = Value.Contains("Shift+") };
 
-        _key = new Button { Content = BindableKeys.BaseKeyOf(Value), MinWidth = 110, FontSize = 12 };
+        _key = new Button { Content = KeyLabel(), MinWidth = 110, FontSize = 12 };
+
+        if (optional)
+        {
+            _clear = new Button { Content = "Clear", FontSize = 11, IsVisible = Value.Length > 0 };
+            _clear.Click += (_, _) =>
+            {
+                _capturing = false;
+                _baseKey = "";
+                _key.Content = KeyLabel();
+                Problem!.IsVisible = false;
+                Recompose();
+            };
+        }
 
         Problem = new TextBlock
         {
@@ -276,7 +316,7 @@ public sealed class HotkeyEditor
             Foreground = warning,
         };
 
-        if (warnOnArrival && BindableKeys.ExplainNotUniversal(Value) is { } carriedOver)
+        if (warnOnArrival && Value.Length > 0 && BindableKeys.ExplainNotUniversal(Value) is { } carriedOver)
         {
             Problem.Text = carriedOver;
             Problem.IsVisible = true;
@@ -313,9 +353,12 @@ public sealed class HotkeyEditor
             Foreground = muted,
         });
         row.Children.Add(_key);
+        if (_clear is not null) row.Children.Add(_clear);
 
         Row = row;
     }
+
+    private string KeyLabel() => _baseKey.Length == 0 ? NotSet : _baseKey;
 
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
@@ -352,24 +395,31 @@ public sealed class HotkeyEditor
             return;
         }
 
-        _key.Content = unityName;
+        _baseKey = unityName;
+        _key.Content = KeyLabel();
         Problem.IsVisible = false;
         Recompose();
     }
 
     private void Refuse(string why)
     {
-        _key.Content = BindableKeys.BaseKeyOf(Value);
+        _key.Content = KeyLabel();
         Problem.Text = why;
         Problem.IsVisible = true;
     }
 
     private void Recompose()
     {
-        var composed = (_ctrl.IsChecked == true ? "Ctrl+" : "")
-                     + (_alt.IsChecked == true ? "Alt+" : "")
-                     + (_shift.IsChecked == true ? "Shift+" : "")
-                     + _key.Content;
+        // ⚠ Read from the captured key, never from the button's text: an optional shortcut with no
+        // key shows "Not set", which is not a key name the mod could read.
+        var composed = _optional && _baseKey.Length == 0
+            ? ""
+            : (_ctrl.IsChecked == true ? "Ctrl+" : "")
+              + (_alt.IsChecked == true ? "Alt+" : "")
+              + (_shift.IsChecked == true ? "Shift+" : "")
+              + _baseKey;
+
+        if (_clear is not null) _clear.IsVisible = composed.Length > 0;
 
         if (composed == Value) return;
 

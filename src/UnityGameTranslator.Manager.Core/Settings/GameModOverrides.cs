@@ -118,6 +118,17 @@ public sealed class GameModOverrides
     /// </summary>
     [JsonPropertyName("strict_source_language")] public bool? StrictSourceLanguage { get; set; }
 
+    /// <summary>
+    /// The mod's optional shortcuts decided for THIS game, by config.json key — an empty value is
+    /// "no shortcut here", written as such; a key absent from the map was not decided here.
+    ///
+    /// ⚠ Unlike Mod defaults, which only fill an empty shortcut, an answer here REPLACES what the
+    /// game holds: it is the game's own settings form, with its own Apply (N), in front of the
+    /// game's current keys. Null when nothing was decided — never an empty map, which
+    /// <see cref="IsEmpty"/> would have to special-case.
+    /// </summary>
+    [JsonPropertyName("shortcuts")] public Dictionary<string, string>? Shortcuts { get; set; }
+
     /// <summary>Whether the MOD may reach the internet from inside this game.</summary>
     [JsonPropertyName("mod_online_mode")] public bool? ModOnlineMode { get; set; }
 
@@ -148,6 +159,7 @@ public sealed class GameModOverrides
         TargetLanguage is null && TranslationBackend is null && AiUrl is null && AiModel is null
         && AiApiKey is null && GoogleApiKey is null && DeeplApiKey is null && DeeplUseFree is null
         && SettingsHotkey is null && SourceLanguage is null && StrictSourceLanguage is null
+        && (Shortcuts is null || Shortcuts.Count == 0)
         && ModOnlineMode is null && AutoDownload is null
         && NotifyUpdates is null && CheckModUpdates is null && MergeStrategy is null
         && NotificationsEnabled is null && NotificationPosition is null && Channel is null;
@@ -169,7 +181,8 @@ public sealed class GameModOverrides
         + (ModOnlineMode is null ? 0 : 1) + (AutoDownload is null ? 0 : 1)
         + (NotifyUpdates is null ? 0 : 1) + (CheckModUpdates is null ? 0 : 1)
         + (MergeStrategy is null ? 0 : 1) + (NotificationsEnabled is null ? 0 : 1)
-        + (NotificationPosition is null ? 0 : 1) + (Channel is null ? 0 : 1);
+        + (NotificationPosition is null ? 0 : 1) + (Channel is null ? 0 : 1)
+        + (Shortcuts?.Count ?? 0);
 
     /// <summary>
     /// How many of these answers the game does not hold yet — the figure on the Apply button.
@@ -235,6 +248,17 @@ public sealed class GameModOverrides
         Flag(CheckModUpdates, held.CheckModUpdates);
         Flag(NotificationsEnabled, held.NotificationsEnabled);
 
+        // One per shortcut answered here and not in the file yet. Empty and absent are both "none"
+        // to the mod, so a shortcut cleared here on a game that has none is nothing to write.
+        if (Shortcuts is not null)
+        {
+            foreach (var (key, value) in Shortcuts)
+            {
+                var has = held.Shortcuts is not null && held.Shortcuts.TryGetValue(key, out var fileKey) ? fileKey : null;
+                if (ModShortcuts.Norm(value) != ModShortcuts.Norm(has)) pending++;
+            }
+        }
+
         return pending;
     }
 
@@ -260,8 +284,18 @@ public sealed class GameModOverrides
         DeeplApiKey = Secrets.Unprotect(DeeplApiKeyStored);
     }
 
-    /// <summary>An independent copy, for a screen that must be able to mean Cancel.</summary>
-    public GameModOverrides Copy() => (GameModOverrides)MemberwiseClone();
+    /// <summary>
+    /// An independent copy, for a screen that must be able to mean Cancel.
+    ///
+    /// ⚠ The shortcut map is copied apart: a memberwise clone would share it, and editing the draft
+    /// would then edit what the game's preferences hold.
+    /// </summary>
+    public GameModOverrides Copy()
+    {
+        var copy = (GameModOverrides)MemberwiseClone();
+        copy.Shortcuts = ModShortcuts.CopyOf(Shortcuts);
+        return copy;
+    }
 }
 
 /// <summary>

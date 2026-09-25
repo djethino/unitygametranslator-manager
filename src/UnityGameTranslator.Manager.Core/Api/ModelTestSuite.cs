@@ -467,7 +467,7 @@ public static class ModelTestSuite
                 // The one failure the mod repairs by itself: it puts back trailing line breaks a
                 // model trimmed, rather than throwing the answer away. Kept as a test because a
                 // model that needs the repair is a model that will need it constantly.
-                Expectation = "a trailing [!nl] is not swallowed (the mod can repair this one)",
+                Expectation = "a trailing [!nl] is not swallowed (UGT Mod can repair this one)",
             },
 
             // The three below exist because the ones above were too kind, and a real translation
@@ -588,8 +588,8 @@ public static class ModelTestSuite
                 // word, and this case fails on most models: somebody then sees a perfectly good
                 // translation marked wrong, against an expectation naming a token nothing explains,
                 // and concludes the tester is broken.
-                Expectation = $"declines with the mod's skip marker ({SkipMarker}) instead of "
-                            + "translating, so the mod leaves the line as it is",
+                Expectation = $"declines with UGT Mod's skip marker ({SkipMarker}) instead of "
+                            + "translating, so UGT Mod leaves the line as it is",
                 ExpectsRefusal = true,
                 UnlocksOption = "strict_source",
 
@@ -609,7 +609,7 @@ public static class ModelTestSuite
                 Prompt(language, Fixtures.Klingon, gameContext, from.Language, strictSource: true, gameName: gameName),
                 (_, answer) => Answers.Read(answer) == AnswerKind.Skip)
             {
-                Expectation = $"declines with the mod's skip marker ({SkipMarker}) instead of "
+                Expectation = $"declines with UGT Mod's skip marker ({SkipMarker}) instead of "
                             + "inventing a translation for words it cannot know",
                 ExpectsRefusal = true,
                 UnlocksOption = "strict_source",

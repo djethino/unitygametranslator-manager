@@ -165,7 +165,7 @@ public sealed class DeviceFlowClient
                     if (string.IsNullOrWhiteSpace(token))
                     {
                         return new DeviceFlowResult(false, null, null,
-                            "The site said you were signed in but sent no token.");
+                            "UGT Website confirmed the sign-in but sent no token. Click Start over.");
                     }
 
                     var name = root.TryGetProperty("user", out var user)
@@ -178,16 +178,16 @@ public sealed class DeviceFlowClient
                 catch
                 {
                     return new DeviceFlowResult(false, null, null,
-                        "The site's answer could not be read.");
+                        "UGT Website's answer could not be read. Click Start over.");
                 }
 
             case "expired":
                 return new DeviceFlowResult(false, null, null,
-                    "That code expired. Ask for a new one — they last fifteen minutes.");
+                    "This code expired (codes last fifteen minutes). Click Start over for a new one.");
 
             case "error":
                 return new DeviceFlowResult(false, null, null,
-                    "The site refused the sign-in. Nothing was changed.");
+                    "UGT Website refused the sign-in. Nothing was changed.");
 
             default:
                 return null;

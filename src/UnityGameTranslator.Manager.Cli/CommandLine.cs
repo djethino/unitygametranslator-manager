@@ -110,41 +110,41 @@ public static class CommandLine
 
               scan [--offline] [--all]     List Unity games found on this machine
               report <path or name>        Everything known about one game
-              install <path or name>       Set up the loader and the plugin
+              install <path or name>       Set up the loader and UGT Mod
               update <path or name>        Same thing: reinstalls the current release
               uninstall <path or name>     Remove what was installed
               restore <path or name>       Restore the files this game had before UGT Manager replaced them
-              forget <path or name>        Undo what you told us about a game
+              forget <path or name>        Forget the answers given for a game (--runtime, --arch, --force)
               ai [--test] [--model M]      Find a local AI server, optionally translate one line
-              ai --compare a,b,c            Score several models on the job the mod asks of them
-              ai --suite --model M          Put one model through the mod's instructions, hardest last
-                  [--context "..."]         ...with the game description the mod would send
-                  [--game "..."]            ...and the game name, as the mod sends it
+              ai --compare a,b,c            Score several models on the job UGT Mod asks of them
+              ai --suite --model M          Put one model through UGT Mod's instructions, hardest last
+                  [--context "..."]         ...with the game description UGT Mod would send
+                  [--game "..."]            ...and the game name, as UGT Mod sends it
                   [--no-rate]               skip the marks it gives its own answers
                   [--judge M]               ...or have another model give them
               ai --ollama [--yes]           Start an installed Ollama, or price installing one
               urls <address>                Show which endpoints an address resolves to
-              self-update [--check]        Update this tool itself (--check only looks)
+              self-update [--check]        Update UGT Manager itself (--check only looks)
               catalog [--offline]          Show the loader catalog and where it came from
               diagnose                     Printable report, safe to paste in a public issue
               help                         This text
 
             --offline skips every network call (catalog and community translations).
-            --online  lets this tool use the internet, and remembers the answer. It asks the site
-                      whether a translation exists for the games found here, sending their names
-                      or Steam ids. Until this is answered — here or in the window — the tool
-                      works offline. Finding games on this machine never needs it.
+            --online  lets UGT Manager use the internet, and remembers the answer. It asks UGT
+                      Website whether a translation exists for the games found here, sending
+                      their names or Steam ids. Until this is answered (here or in the window),
+                      UGT Manager works offline. Finding games on this machine never needs it.
             --all also lists games that cannot be modded, with the reason.
-            --beta uses pre-release plugin builds.
-            --runtime mono|il2cpp   tell us what we could not read
-            --arch x86|x64          tell us what we could not read
+            --beta uses pre-release UGT Mod builds.
+            --runtime mono|il2cpp   set what could not be read from the game
+            --arch x86|x64          set what could not be read from the game
             --force                 proceed despite a refusal (never for an anti-cheat)
             --libraries-from N      (install) take the .NET libraries a game lacks from source N,
                                     as numbered by `report`
             --modules-from N        (install) take the Unity engine modules a game lacks from
                                     source N, as numbered by `report`
             --yes skips the confirmation prompt.
-            --loader, --settings  (uninstall) also remove the mod loader / your settings
+            --loader, --settings  (uninstall) also remove the mod loader / the game's settings
                                   and translations. Both are off by default. The translation
                                   is backed up one last time first, and the backups stay.
             """);
@@ -243,10 +243,10 @@ public static class CommandLine
         {
             // Said rather than silently obeyed: a command that quietly returns less than it could
             // reads as a broken lookup, and the way out is not guessable.
-            Console.WriteLine("Working offline: nobody has been asked yet whether this tool may "
-                              + "use the internet.");
-            Console.WriteLine("It searches for games on this machine either way. Online, it asks "
-                              + "the site whether a translation exists for the games it finds, "
+            Console.WriteLine("Working offline: UGT Manager has not been allowed to use the "
+                              + "internet yet.");
+            Console.WriteLine("It finds games on this machine either way. Online, it asks UGT "
+                              + "Website whether a translation exists for the games it finds, "
                               + "sending their names or Steam ids.");
             Console.WriteLine("Open the window once to answer, or pass --online to allow it here.");
             Console.WriteLine();
@@ -597,11 +597,11 @@ public static class CommandLine
         // "6.0.2 available" on somebody else's loader reads as a job this tool is failing to do.
         if (report.InstalledLoader is { InstalledByUs: false })
         {
-            Console.WriteLine("              not installed by this tool - other mods may need this "
-                              + "exact version, so it is never updated or removed from here");
+            Console.WriteLine("              not installed by UGT Manager - other mods may need this "
+                              + "exact version, so UGT Manager never updates or removes it");
         }
 
-        Console.WriteLine($"Plugin      : {report.InstalledPluginVersion ?? "not installed"}");
+        Console.WriteLine($"UGT Mod     : {report.InstalledPluginVersion ?? "not installed"}");
 
         if (report.PluginStanding is { } pluginStanding) Console.WriteLine($"              {Standing(pluginStanding)}");
 
@@ -702,7 +702,7 @@ public static class CommandLine
         else if (report.OnlineSearchError is not null)
         {
             Console.WriteLine($"Online      : search failed — {report.OnlineSearchError}");
-            Console.WriteLine("              (a firewall or proxy blocking the tool looks exactly like this)");
+            Console.WriteLine("              (a firewall or proxy blocking UGT Manager looks exactly like this)");
         }
         else
         {
@@ -1012,7 +1012,7 @@ public static class CommandLine
         }
 
         Console.WriteLine($"Testing on {server.Product} at {server.Url}");
-        Console.WriteLine("Each model translates a line carrying the placeholders the mod uses.");
+        Console.WriteLine("Each model translates a line carrying the placeholders UGT Mod uses.");
         Console.WriteLine();
         Console.WriteLine($"{"model",-24} {"keeps",-6} {"only",-6} {"per line",-9} {"VRAM",-8} {"GPU",-8}");
         Console.WriteLine(new string('-', 66));
@@ -1046,9 +1046,9 @@ public static class CommandLine
 
         Console.WriteLine();
         Console.WriteLine("keeps = of how many answers the placeholders came back untouched, in order.");
-        Console.WriteLine("        The mod checks this itself and retries up to three times, so a model");
-        Console.WriteLine("        that misses costs you those extra calls — and when it keeps missing,");
-        Console.WriteLine("        the line is left untranslated rather than shown mangled.");
+        Console.WriteLine($"        UGT Mod checks this itself and tries up to {Placeholders.MaxAttempts} times per line. Each");
+        Console.WriteLine("        miss costs an extra call, and a line that keeps failing stays");
+        Console.WriteLine("        untranslated rather than shown broken.");
         Console.WriteLine("only  = answered with the translation and nothing else.");
         Console.WriteLine("Times are measured with no game running; in play the model shares the GPU.");
         return 0;
@@ -1095,12 +1095,12 @@ public static class CommandLine
 
                 if (outcome.Command is not null)
                 {
-                    Console.Error.WriteLine("This needs administrator rights, which we will not ask for. Run:");
+                    Console.Error.WriteLine("This needs administrator rights, which UGT Manager does not ask for. Run:");
                     Console.Error.WriteLine($"    {outcome.Command}");
                 }
                 else
                 {
-                    Console.Error.WriteLine(outcome.Failure ?? "It would not start from here.");
+                    Console.Error.WriteLine(outcome.Failure ?? "Ollama did not start.");
                 }
                 return 4;
         }
@@ -1179,7 +1179,7 @@ public static class CommandLine
 
         Console.WriteLine($"{model} on {server.Product}, translating to {Languages.NameOf(language)}");
         Console.WriteLine(gameContext is null
-            ? "Game context: none (the mod's default wording)"
+            ? "Game context: none (UGT Mod's default wording)"
             : $"Game context: {gameContext}");
         Console.WriteLine(gameName is null
             ? "Game name: none (as in a game that does not state one)"
@@ -1272,11 +1272,11 @@ public static class CommandLine
                         : $"{result.Attempts} request — nothing to check, so no second one");
 
             if (!result.Accepted) cost += ", refused — left untranslated";
-            else if (result.Repaired) cost += ", repaired by the mod";
+            else if (result.Repaired) cost += ", repaired by UGT Mod";
             // Not a failure: the mod takes this off before a player sees it. Said
             // because it is a habit rather than an accident — a model that wraps one
             // answer wraps them all, and that separates two models that both pass.
-            if (result.NeededCleaning) cost += ", wrapped, cleaned by the mod";
+            if (result.NeededCleaning) cost += ", wrapped, cleaned by UGT Mod";
 
             Console.Write($"{result.Test.Difficulty,-7} {result.Test.Name}");
             Write(cost + Environment.NewLine,
@@ -1296,7 +1296,7 @@ public static class CommandLine
             {
                 echoed++;
                 Console.WriteLine($"       !!     : the model repeated the instructions. That alone makes it");
-                Console.WriteLine($"                unusable as is — the mod prints this verbatim into the game.");
+                Console.WriteLine($"                unusable as is — UGT Mod shows this word for word in the game.");
                 Console.WriteLine($"       judged : {result.Translation}");
             }
 
@@ -1323,8 +1323,8 @@ public static class CommandLine
             // Said plainly: a mark obtained after the mod corrected something is not the same as
             // one obtained first time. Both lines work in a game; only one model got them right.
             Console.WriteLine(helped == 1
-                ? "1 of those was wrong at first and passed only after the mod corrected it."
-                : $"{helped} of those were wrong at first and passed only after the mod corrected them.");
+                ? "1 of those was wrong at first and passed only after UGT Mod corrected it."
+                : $"{helped} of those were wrong at first and passed only after UGT Mod corrected them.");
         }
 
         if (ModelTestSuite.Summarise(outcomes) is { Length: > 0 } summary)
@@ -1360,9 +1360,9 @@ public static class CommandLine
             Console.WriteLine("not to use this model, whatever the marks above say.");
         }
         Console.WriteLine();
-        Console.WriteLine("Read the answers, not just the marks: these checks are heuristics on free");
-        Console.WriteLine("text and can be wrong either way. Whether this model is good enough is");
-        Console.WriteLine("your call, not the tool's.");
+        Console.WriteLine("Read the answers, not just the marks: these checks are guesses on free");
+        Console.WriteLine("text and can be wrong either way. You decide whether this model is good");
+        Console.WriteLine("enough.");
         return 0;
     }
 
@@ -1384,7 +1384,7 @@ public static class CommandLine
                 "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
                 "https://api.groq.com/openai/v1",
             };
-            Console.WriteLine("No address given — showing the cases the mod documents.");
+            Console.WriteLine("No address given — showing the cases UGT Mod documents.");
             Console.WriteLine();
         }
 
@@ -1465,11 +1465,11 @@ public static class CommandLine
 
         if (ReceiptStore.Read(report.Game.Path) is not null)
         {
-            Console.WriteLine("Something is still installed here. Uninstall it first, or the " +
-                              "files stay behind and this tool will no longer offer to remove them.");
+            Console.WriteLine("Something is still installed here. Uninstall it first, or its " +
+                              "files stay behind and UGT Manager will no longer offer to remove them.");
         }
 
-        if (!Confirm(args, "Forget what you told us about this game?")) return 0;
+        if (!Confirm(args, "Forget the answers given for this game?")) return 0;
 
         inventory.Overrides.Clear(report.Game.Path);
         Console.WriteLine("Done. It will be judged from its files again.");
@@ -1488,8 +1488,8 @@ public static class CommandLine
         if (!available.RemovePlugin && !available.RemoveLoader)
         {
             Console.Error.WriteLine(
-                $"{report.Game.Name} has no install receipt — this tool did not set it up, so " +
-                "it will not remove anything.");
+                $"{report.Game.Name} has no install receipt: UGT Manager did not set it up, so " +
+                "it removes nothing.");
             return 3;
         }
 
@@ -1499,16 +1499,16 @@ public static class CommandLine
             RemoveUserData: args.Contains("--settings", StringComparer.OrdinalIgnoreCase));
 
         Console.WriteLine("This will remove:");
-        Console.WriteLine("  - the plugin");
-        if (choice.RemoveLoader) Console.WriteLine("  - the mod loader (we installed it, nothing else uses it)");
+        Console.WriteLine("  - UGT Mod");
+        if (choice.RemoveLoader) Console.WriteLine("  - the mod loader (UGT Manager installed it, nothing else uses it)");
         else if (!available.RemoveLoader) Console.WriteLine("  (the loader stays: it was already there, or other mods use it)");
 
         // ⚠ Says which of the two things survives, because they do not survive alike: the
         // backups stay with the game, the settings do not come back.
         Console.WriteLine(choice.RemoveUserData
-            ? "  - your settings and this game's translation (backed up one last time first,"
-              + " and the backups themselves stay)"
-            : "  (your settings and translations stay — add --settings to remove them)");
+            ? "  - this game's settings and translation (backed up one last time first,"
+              + " and the backups stay)"
+            : "  (this game's settings and translations stay — add --settings to remove them)");
         Console.WriteLine();
 
         if (!Confirm(args, "Proceed?")) { Console.WriteLine("Cancelled. Nothing was removed."); return 0; }
@@ -1817,7 +1817,7 @@ public static class CommandLine
         }
         else
         {
-            Console.WriteLine("No Unity game was found on this machine, so the block above is just the tool");
+            Console.WriteLine("No Unity game was found on this machine, so the block above is just UGT Manager");
             Console.WriteLine("and the catalogue it reached. It carries no account name and no home directory.");
         }
 

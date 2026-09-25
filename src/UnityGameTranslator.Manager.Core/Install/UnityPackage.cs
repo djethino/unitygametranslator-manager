@@ -99,12 +99,12 @@ public static class UnityPackage
         // ── xar header and table of contents ──
         var header = ReadExactly(package, 28);
         if (Encoding.ASCII.GetString(header, 0, 4) != "xar!")
-            throw new InvalidDataException("Unity's package is not in the format this tool reads (no xar header).");
+            throw new InvalidDataException("Unity's package is not in the format UGT Managerreads (no xar header).");
 
         var headerSize = BinaryPrimitives.ReadUInt16BigEndian(header.AsSpan(4));
         var tocCompressed = BinaryPrimitives.ReadUInt64BigEndian(header.AsSpan(8));
         if (headerSize < 28 || tocCompressed > 64 * 1024 * 1024)
-            throw new InvalidDataException("Unity's package has a table of contents this tool cannot read.");
+            throw new InvalidDataException("Unity's package has a table of contents UGT Managercannot read.");
 
         Skip(package, headerSize - 28);
         var toc = ReadExactly(package, (int)tocCompressed);
@@ -112,7 +112,7 @@ public static class UnityPackage
         var heap = position;
 
         var payload = FindPayload(toc)
-            ?? throw new InvalidDataException("Unity's package holds no Payload where this tool expects one.");
+            ?? throw new InvalidDataException("Unity's package holds no Payload where UGT Managerexpects one.");
 
         // ── the Payload: skip to it, then read it as it streams ──
         var start = heap + payload.Offset;
@@ -163,12 +163,12 @@ public static class UnityPackage
         {
             var header = ReadExactly(cpio, 76);
             if (Encoding.ASCII.GetString(header, 0, 6) != "070707")
-                throw new InvalidDataException("Unity's package holds an archive in a format this tool does not read.");
+                throw new InvalidDataException("Unity's package holds an archive in a format UGT Managerdoes not read.");
 
             var nameSize = Octal(header, 59, 6);
             var fileSize = Octal(header, 65, 11);
             if (nameSize is <= 0 or > 4096 || fileSize < 0)
-                throw new InvalidDataException("Unity's package holds an entry this tool cannot read.");
+                throw new InvalidDataException("Unity's package holds an entry UGT Managercannot read.");
 
             var name = Encoding.UTF8.GetString(ReadExactly(cpio, (int)nameSize), 0, (int)nameSize - 1);
             if (name == "TRAILER!!!") break;
@@ -210,7 +210,7 @@ public static class UnityPackage
         }
 
         if (taken.Count == 0)
-            throw new InvalidDataException($"Unity's package holds no {what} where this tool expects them.");
+            throw new InvalidDataException($"Unity's package holds no {what} where UGT Managerexpects them.");
 
         return taken;
     }

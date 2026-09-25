@@ -1013,7 +1013,7 @@ public sealed class UninstallEngine
             var full = Path.GetFullPath(source);
             if (!full.StartsWith(Path.GetFullPath(userData), StringComparison.OrdinalIgnoreCase))
             {
-                kept.Add($"{relative} (outside the mod's folder)");
+                kept.Add($"{relative} (outside UGT Mod's folder)");
                 continue;
             }
 

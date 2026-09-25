@@ -64,7 +64,7 @@ public sealed class AboutWindow : Window
         new("MelonLoader", "The other mod loader, for games and setups BepInEx does not cover.",
             "Apache-2.0", "https://github.com/LavaGang/MelonLoader"),
 
-        new("Ollama", "Runs a language model on your own machine, so translating costs nothing.",
+        new("Ollama", "Runs AI models on your computer, for free translation.",
             "MIT", "https://github.com/ollama/ollama"),
     };
 
@@ -72,7 +72,7 @@ public sealed class AboutWindow : Window
     {
         new("Avalonia", "The interface you are looking at.", "MIT", "https://avaloniaui.net"),
         new(".NET", "The runtime, shipped inside this executable.", "MIT", "https://dotnet.microsoft.com"),
-        new("UniverseLib", "Used by the mod for its in-game interface.", "LGPL-2.1",
+        new("UniverseLib", "Used by UGT Mod for its in-game interface.", "LGPL-2.1",
             "https://github.com/sinai-dev/UniverseLib"),
     };
 
@@ -106,20 +106,21 @@ public sealed class AboutWindow : Window
             "they translate. UGT Manager sets it up for you."));
 
         layout.Children.Add(Section("The UGT Ecosystem",
-            "Three programs and the data they share. You are using at least two of them: the mod "
-            + "plays, the Manager sets up, and the website is where translations live.",
+            "Three programs and the data they share: UGT Mod translates in the game, UGT Manager "
+            + "sets it up, and UGT Website stores the shared translations.",
             Ecosystem));
 
-        layout.Children.Add(Section("What this installer downloads for you",
-            "These projects are downloaded from their own official releases, verified, and never " +
-            "hosted or modified by us. They are the reason this works — please consider supporting them.",
+        // ⚠ "this installer" was the product's name before the 2026-08-11 rename; it is UGT Manager.
+        layout.Children.Add(Section("Downloaded by UGT Manager",
+            "From their official releases, checked, and never hosted or modified by us. "
+            + "They make this possible: please consider supporting them.",
             Distributed));
 
         layout.Children.Add(Section("Built with", null, BuiltWith));
 
+        // ⚠ Not "no account": signing in is optional, but it exists (UGT Manager settings > Account).
         layout.Children.Add(Paragraph(
-            "This installer is free software under AGPL-3.0. It collects nothing: no telemetry, " +
-            "no account, no identifier."));
+            "UGT Manager is free software (AGPL-3.0). It collects no data: no telemetry, no tracking."));
 
         var links = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         // ⚠ "UGT Website", not "Website": three programs, and one of them IS a website. The bare
@@ -319,13 +320,7 @@ public sealed class AboutWindow : Window
         return panel;
     }
 
-    private TextBlock Paragraph(string text) => new()
-    {
-        Text = text,
-        FontSize = 12,
-        TextWrapping = TextWrapping.Wrap,
-        Foreground = this.FindResource("TextSecondary") as IBrush,
-    };
+    private static TextBlock Paragraph(string text) => Ui.Intro(text);
 
     private Button LinkButton(string label, string url, bool small = false)
     {

@@ -25,7 +25,7 @@ public sealed class SelfRemoveWindow : Window
 
     public SelfRemoveWindow(IPlatform platform, SelfInstaller installer, bool standalone = false)
     {
-        Title = "Remove UnityGameTranslator Manager";
+        Title = "Uninstall UnityGameTranslator Manager";
         Width = 620;
         SizeToContent = SizeToContent.Height;
         MinHeight = 240;
@@ -51,23 +51,19 @@ public sealed class SelfRemoveWindow : Window
     {
         var layout = new StackPanel { Spacing = 14, Margin = new Thickness(24) };
 
-        layout.Children.Add(Text("Remove UnityGameTranslator Manager", 15, FontWeight.SemiBold,
+        layout.Children.Add(Text("Uninstall UnityGameTranslator Manager", 15, FontWeight.SemiBold,
                                  "TextPrimary"));
 
         // Which of the two things bearing that name is going, said before anything else: this
         // window can be reached from Windows' own list of installed applications, where nothing
         // around it explains that the mod inside the games is a different matter.
-        layout.Children.Add(Text(
-            "The program that sets your games up. The mod already inside your games is a separate "
-            + "matter and is not affected.", 12, FontWeight.Normal, "TextSecondary"));
+        layout.Children.Add(Ui.Intro("This removes UGT Manager only. UGT Mod in your games is not affected."));
 
         var plan = installer.PlanRemoval();
 
         if (plan is null)
         {
-            layout.Children.Add(Text(
-                "This copy was never installed — it is running from wherever you put it. Deleting "
-                + "the file is all there is to do.", 12, FontWeight.Normal, "TextSecondary"));
+            layout.Children.Add(Ui.Intro("This copy is not installed. To remove it, delete the file."));
 
             var close = new Button { Content = "Close", IsCancel = true, IsDefault = true };
             close.Click += (_, _) => Close();
@@ -83,7 +79,7 @@ public sealed class SelfRemoveWindow : Window
         }
 
         var listing = new StackPanel { Spacing = 4 };
-        listing.Children.Add(Text("What goes", 12, FontWeight.SemiBold, "TextPrimary"));
+        listing.Children.Add(Text("What will be removed", 12, FontWeight.SemiBold, "TextPrimary"));
 
         var items = new StackPanel { Spacing = 2 };
         items.Children.Add(Text(plan.Directory, 11, FontWeight.Normal, "TextMuted"));
@@ -93,7 +89,7 @@ public sealed class SelfRemoveWindow : Window
 
         if (plan.Registration is not null)
         {
-            items.Children.Add(Text("Its entry in the system's list of installed apps",
+            items.Children.Add(Text("Its entry in the system's installed apps",
                 11, FontWeight.Normal, "TextMuted"));
         }
 
@@ -106,35 +102,34 @@ public sealed class SelfRemoveWindow : Window
 
         layout.Children.Add(listing);
 
+        // ⚠ "data", not "settings": the folder also holds the translation backups, and ticking this
+        // deletes them. The note under it is amber for that reason — work can be lost.
         var settings = new CheckBox
         {
-            Content = "Also remove my settings",
+            Content = "Also delete UGT Manager's data",
             IsChecked = false,
             FontSize = 12,
         };
 
         layout.Children.Add(settings);
-        layout.Children.Add(Text(
-            $"Your settings live in {plan.SettingsDirectory} — the language you chose, any API key, "
-            + "the folders you added, the games you overruled, and the translations this tool moved "
-            + "aside before replacing one. Left alone by default: reinstalling then finds everything "
-            + "where you left it.", 11, FontWeight.Normal, "TextMuted"));
+        layout.Children.Add(Ui.Note(
+            $"{plan.SettingsDirectory} holds your settings, API keys and translation backups. Kept "
+            + "unless you tick this, so a reinstall finds everything.", Tone.Warning));
 
-        layout.Children.Add(Text(
-            "Your games are not touched. The mod and the translations already in them stay exactly "
-            + "as they are — removing those is done from each game's own card, one at a time.",
-            11, FontWeight.Normal, "TextMuted"));
+        layout.Children.Add(Ui.Note(
+            "Your games are not changed: UGT Mod and translations stay in them. To remove them, use "
+            + "each game's page."));
 
         var outcome = new StackPanel { Spacing = 6, IsVisible = false };
         layout.Children.Add(outcome);
 
         // Cancel carries both: Escape and Enter both mean "leave it alone". Removing is only ever
         // reached by aiming at it.
-        var cancel = new Button { Content = "Keep it", IsCancel = true, IsDefault = true };
+        var cancel = new Button { Content = "Cancel", IsCancel = true, IsDefault = true };
         cancel.Click += (_, _) => Close();
 
-        var openFolder = new Button { Content = "Open the folder", IsVisible = false };
-        var remove = new Button { Content = "Remove", Classes = { "primary" } };
+        var openFolder = new Button { Content = "Open folder", IsVisible = false };
+        var remove = new Button { Content = "Uninstall", Classes = { "primary" } };
 
         remove.Click += (_, _) =>
         {
@@ -213,15 +208,13 @@ public sealed class SelfRemoveWindow : Window
 
         if (report.BeingDeletedAfterExit is { } pending)
         {
-            panel.Children.Add(Text(
-                $"{pending} is the file this window is running from, so it cannot be deleted while "
-                + "you are reading this. It goes on its own within a minute of you closing.",
-                11, FontWeight.Normal, "TextSecondary"));
+            panel.Children.Add(Ui.Note(
+                $"{pending} is in use by this window. It will be deleted automatically after you close it."));
         }
 
         if (report.Left.Count > 0)
         {
-            panel.Children.Add(Text($"Still there ({report.Left.Count})", 12, FontWeight.SemiBold,
+            panel.Children.Add(Text($"Could not remove ({report.Left.Count})", 12, FontWeight.SemiBold,
                                     "StatusError"));
 
             foreach (var item in report.Left)

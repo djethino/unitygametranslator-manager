@@ -50,36 +50,28 @@ public sealed class FirstRunWindow : Window
 
         var layout = new StackPanel { Spacing = 14, Margin = new Thickness(24) };
 
-        layout.Children.Add(Heading("Before this program starts"));
+        layout.Children.Add(Heading("Welcome to UnityGameTranslator Manager"));
 
         // ⚠ The two halves are separated on purpose, and in this order: what stays here, then what
         // leaves. Somebody worried about a tool that reads their machine gets their answer in the
         // first line instead of hunting for it under a heading about the internet.
         layout.Children.Add(Section(
-            "On this machine",
-            "It finds Unity games in the folders used by Steam, Epic and GOG, and in folders you "
-            + "add yourself. It does not search your disks, and it reads nothing outside those "
-            + "folders."));
+            "On this computer",
+            "UGT Manager finds Unity games in the Steam, Epic and GOG folders, and in folders you "
+            + "add. It does not search your whole disk."));
 
         layout.Children.Add(Section(
             "On the internet, if you allow it",
-            "It asks the site if a translation exists for the games it found, sending their names "
-            + "or Steam ids. It also checks which mod loaders and versions have been published. "
-            + "Nothing else leaves this machine, and it never sends what is inside your games."));
+            "UGT Manager asks UGT Website for translations of the games it found (it sends their "
+            + "names or Steam IDs), and checks for new versions of UGT Mod and mod loaders. Nothing "
+            + "else is sent, and nothing from inside your games."));
 
-        layout.Children.Add(new TextBlock
-        {
-            // Named, not implied: "you can change this later" is worth nothing without the place.
-            // The wording is the one the switch itself carries under Tool settings > Network, so
-            // somebody looking for it later recognises what they are looking at.
-            Text = "Offline, everything else still works: it finds your games, installs the mod and "
-                 + "manages what is already on this machine. You can change this at any time with "
-                 + "\"Work online\" in the tool's settings, and the bar at the bottom of the window "
-                 + "always says which one you are in.",
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = this.FindResource("TextMuted") as IBrush,
-        });
+        // Named, not implied: "you can change this later" is worth nothing without the place. The
+        // words are the switch's own ("Work online") and the header button's ("Settings").
+        layout.Children.Add(Ui.Note(
+            "Offline, everything else still works: finding games, installing UGT Mod and managing "
+            + "local files. You can change this at any time with \"Work online\" in Settings. The "
+            + "bar at the bottom of the window shows which mode you are in."));
 
         var offline = new Button { Content = "Stay offline" };
         offline.Click += (_, _) => Answer(false);

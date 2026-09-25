@@ -55,18 +55,17 @@ public sealed class SelfInstallWindow : Window
     {
         var layout = new StackPanel { Spacing = 14, Margin = new Thickness(24) };
 
-        layout.Children.Add(Heading("Install UnityGameTranslator Manager on this machine"));
+        layout.Children.Add(Heading("Install UnityGameTranslator Manager on this computer"));
 
         // Named, and told apart from the mod. A dialog is read out of context by definition — it
         // covers whatever it was opened from — so it cannot lean on the window behind it to say
         // what "it" is.
-        layout.Children.Add(Body(
-            "This is the program that sets your games up, not the mod that goes into them. You are "
-            + "running the file you downloaded; keeping it means copying it somewhere it belongs, "
-            + "so it is there next time without you having to find the download again."));
+        layout.Children.Add(Ui.Intro(
+            "UGT Manager sets up your games. It is not UGT Mod, which goes into them. Installing "
+            + "copies UGT Manager to a permanent folder, so you no longer need the downloaded file."));
 
         var written = new StackPanel { Spacing = 4 };
-        written.Children.Add(Label("What gets written"));
+        written.Children.Add(Label("What will be written"));
 
         var paths = new StackPanel { Spacing = 2 };
         foreach (var file in _plan.Files) paths.Children.Add(Path(file));
@@ -84,7 +83,7 @@ public sealed class SelfInstallWindow : Window
         if (_plan.RegistersWithTheSystem)
         {
             written.Children.Add(Path(
-                "An entry in Windows' list of installed apps, so it can be removed from there too"));
+                "An entry in Windows' installed apps, to uninstall it from there too"));
         }
 
         layout.Children.Add(written);
@@ -107,14 +106,12 @@ public sealed class SelfInstallWindow : Window
 
         layout.Children.Add(choices);
 
-        layout.Children.Add(Note(
-            "The file you downloaded is left exactly where it is — this copies, it does not move. "
-            + "You can delete it afterwards, or keep it on a stick."));
+        // Copied, not moved: the download stays usable, on a USB stick for instance.
+        layout.Children.Add(Ui.Note("The downloaded file stays where it is. You can delete it afterwards."));
 
-        layout.Children.Add(Note("Nothing in your games is touched by this."));
+        layout.Children.Add(Ui.Note("Your games are not changed."));
 
-        var problem = Note("");
-        problem.Foreground = this.FindResource("StatusError") as IBrush;
+        var problem = Ui.Note("", Tone.Error);
         problem.IsVisible = false;
         layout.Children.Add(problem);
 
@@ -128,11 +125,7 @@ public sealed class SelfInstallWindow : Window
             IsEnabled = _plan.Refusal is null,
         };
 
-        if (_plan.Refusal is { } refusal)
-        {
-            problem.Text = refusal;
-            problem.IsVisible = true;
-        }
+        if (_plan.Refusal is { } refusal) Ui.Say(problem, refusal, Tone.Error);
 
         accept.Click += (_, _) =>
         {
@@ -152,10 +145,8 @@ public sealed class SelfInstallWindow : Window
                 var missing = chosen.Count > 0 && Installed.Launchers.Count == 0;
                 if (missing)
                 {
-                    problem.Text = "Installed, but the shortcut could not be created. "
-                                   + $"The tool is in {Installed.Directory}.";
-                    problem.Foreground = this.FindResource("StatusWarning") as IBrush;
-                    problem.IsVisible = true;
+                    Ui.Say(problem, "Installed, but the shortcut could not be created. "
+                                    + $"UGT Manager is in {Installed.Directory}.", Tone.Warning);
                     accept.Content = "Done";
                     accept.IsEnabled = false;
                     cancel.Content = "Close";
@@ -166,8 +157,7 @@ public sealed class SelfInstallWindow : Window
             }
             catch (Exception ex)
             {
-                problem.Text = ex.Message;
-                problem.IsVisible = true;
+                Ui.Say(problem, ex.Message, Tone.Error);
                 accept.IsEnabled = true;
             }
         };
@@ -195,14 +185,6 @@ public sealed class SelfInstallWindow : Window
         Foreground = this.FindResource("TextPrimary") as IBrush,
     };
 
-    private TextBlock Body(string text) => new()
-    {
-        Text = text,
-        FontSize = 12,
-        TextWrapping = TextWrapping.Wrap,
-        Foreground = this.FindResource("TextSecondary") as IBrush,
-    };
-
     private TextBlock Label(string text) => new()
     {
         Text = text,
@@ -211,19 +193,6 @@ public sealed class SelfInstallWindow : Window
         Foreground = this.FindResource("TextPrimary") as IBrush,
     };
 
-    private TextBlock Path(string text) => new()
-    {
-        Text = text,
-        FontSize = 11,
-        TextWrapping = TextWrapping.Wrap,
-        Foreground = this.FindResource("TextMuted") as IBrush,
-    };
-
-    private TextBlock Note(string text) => new()
-    {
-        Text = text,
-        FontSize = 11,
-        TextWrapping = TextWrapping.Wrap,
-        Foreground = this.FindResource("TextMuted") as IBrush,
-    };
+    /// <summary>One line of what will be written: a path, in a note's size and colour.</summary>
+    private static TextBlock Path(string text) => Ui.Note(text);
 }

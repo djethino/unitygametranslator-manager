@@ -30,6 +30,7 @@ internal static class Program
         PluginWriteChecks.WhenTheModWouldBeWritten();
         TranslationChoiceChecks.WhichTranslationAGameWouldGet();
         TranslationChoiceChecks.WhenNothingIsWaiting();
+        TranslationChoiceChecks.OneFigureForUnpublishedLines();
         LanguagePairChecks.WhichLanguagesAGameShows();
         PublishLanguagesChecks.WhichLanguagesAPublicationTravelsUnder();
         PublishLanguagesChecks.WhatASourceMayBe();

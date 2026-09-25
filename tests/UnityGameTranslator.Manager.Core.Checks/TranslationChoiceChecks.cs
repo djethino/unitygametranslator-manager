@@ -147,4 +147,47 @@ internal static class TranslationChoiceChecks
             TranslationChoice.Waiting(Report(Local(), online), "fr", chosen: null, installed: 99) is null,
             "local work refuses a proposal on its own", "whatever was installed before");
     }
+
+    internal static void OneFigureForUnpublishedLines()
+    {
+        Program.Section("How many lines are not published");
+
+        // A file whose bookkeeping outlived a publication: the counter and the ancestor still say
+        // 14, while the content is what the site holds.
+        LocalTranslation Stale() => new()
+        {
+            Path = @"C:\games\a-game\translations.json",
+            Uuid = "uuid-12",
+            EntryCount = 3340,
+            LocalChanges = 14,
+            ChangedSinceAncestor = 14,
+            SourceHash = "old",
+        };
+
+        // 🔴 The card read "14 not published" above "Up to date with the published version"
+        // (2026-09-25). The verdict compares CONTENT; the figures are bookkeeping, and lose.
+        var inStep = new GameReport { Game = Game(), LocalTranslation = Stale(), Sync = Common.SyncDirection.InSync };
+        Program.Check(inStep.UnpublishedLines == 0, "up to date means nothing unpublished",
+            "whatever a stale counter or ancestor still says");
+        Program.Check(inStep.LinesAtStake == 0, "and nothing at stake in a replacement",
+            "a warning about lines the site already holds is a false alarm");
+        Program.Check(TranslationOffers.For(inStep, Published(30)) != TranslationOffer.ReplacesWork,
+            "so replacing it is not called losing work", "the same figure decides the offer");
+
+        var ahead = new GameReport { Game = Game(), LocalTranslation = Stale(), Sync = Common.SyncDirection.Upload };
+        Program.Check(ahead.UnpublishedLines == 14, "otherwise the measured figure", "the ancestor, first");
+
+        // ⚠ A file never synced: nothing to measure, so the card says nothing — and the warning
+        // still fires, on the mod's counter, which there counts every line as never uploaded.
+        var neverSynced = new GameReport
+        {
+            Game = Game(),
+            LocalTranslation = new LocalTranslation
+            {
+                Path = @"C:\games\a-game\translations.json", Uuid = "local-only", EntryCount = 123, LocalChanges = 123,
+            },
+        };
+        Program.Check(neverSynced.UnpublishedLines is null, "never synced: no figure printed", "nobody can vouch for one");
+        Program.Check(neverSynced.LinesAtStake == 123, "but the warning still counts them", "errs towards protecting the file");
+    }
 }

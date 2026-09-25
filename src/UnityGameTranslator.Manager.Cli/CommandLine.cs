@@ -636,7 +636,8 @@ public static class CommandLine
         {
             var count = local.EntryCount < 0 ? "unreadable file" : $"{local.EntryCount} entries";
             Console.WriteLine($"Local trans.: {count}"
-                              + (local.LocalChanges > 0 ? $", {Composition.Amount(local.LocalChanges, "unsynced change", "unsynced changes")}" : "")
+                              // The window's figure (GameReport.UnpublishedLines), not the raw counter.
+                              + (report.UnpublishedLines is > 0 and var unsent ? $", {Composition.Amount(unsent, "unsynced change", "unsynced changes")}" : "")
                               + (local.Uuid is null ? "" : $"  [{local.Uuid}]"));
 
             // Where this file came from, on the same rule and in the same words as the window's

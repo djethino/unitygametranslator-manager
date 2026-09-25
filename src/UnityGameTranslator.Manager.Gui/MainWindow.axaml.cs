@@ -3872,7 +3872,7 @@ public partial class MainWindow : Window
             // counter describes what the MOD did — a file edited from a browser or by hand carries
             // a number that stopped describing it. Silent when neither can be trusted: a count
             // nobody can vouch for is worse than none.
-            var unpublished = local.ChangedSinceAncestor ?? (local.SourceHash is null ? null : local.LocalChanges);
+            var unpublished = Unpublished(report);
 
             var detail = local.EntryCount < 0
                 ? "The file could not be read."
@@ -4628,8 +4628,7 @@ public partial class MainWindow : Window
         {
             if (r.LocalTranslation is not { } local || local.EntryCount <= 0) return null;
 
-            var unpublished = local.ChangedSinceAncestor
-                              ?? (local.SourceHash is null ? null : local.LocalChanges);
+            var unpublished = Unpublished(r);
 
             // 🔴 **Says LOCAL first, because the sentence is frightening without it.** Somebody who
             // leads a Main reads "applying removes 3231 lines" and has every reason to think their
@@ -4648,20 +4647,12 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// How many lines this game holds that were never published, or null when nobody can say.
-    ///
-    /// ⚠ The measured figure first, the mod's counter only as a fallback — the same order the card
-    /// uses when it prints "N never uploaded". One screen must not carry two numbers for one fact.
+    /// How many lines this game holds that were never published, or null when there are none or
+    /// nobody can say — <see cref="GameReport.UnpublishedLines"/>, the one figure every line of this
+    /// window prints.
     /// </summary>
-    private static int? Unpublished(GameReport report)
-    {
-        if (report.LocalTranslation is not { } local) return null;
-
-        var count = local.ChangedSinceAncestor
-                    ?? (local.SourceHash is null ? null : local.LocalChanges);
-
-        return count > 0 ? count : null;
-    }
+    private static int? Unpublished(GameReport report) =>
+        report.UnpublishedLines is > 0 and var count ? count : null;
 
     /// <summary>
     /// Asks each publisher what it currently offers, in the background, and redraws what changed.
@@ -5512,7 +5503,8 @@ public partial class MainWindow : Window
         if (report.LocalTranslation is { } local)
         {
             var count = local.EntryCount < 0 ? "unreadable file" : $"{local.EntryCount} lines";
-            var unsynced = local.LocalChanges > 0 ? $", {local.LocalChanges} not published" : "";
+            // The same figure as the card on This game (Unpublished), never the mod's raw counter.
+            var unsynced = Unpublished(report) is { } notSent ? $", {notSent} not published" : "";
 
             // The pair comes first, as it does on every community entry below. Without it the two
             // lines invite a comparison they do not support: a local file and a published one can
@@ -11679,11 +11671,11 @@ public partial class MainWindow : Window
         // Already the one being taken, untouched: nothing is at stake beyond a re-download.
         if (TranslationInstaller.LooksRecoverableOnline(local, taking)) yield break;
 
-        if (local.LocalChanges > 0)
+        if (report.LinesAtStake is > 0 and var atStake)
         {
             yield return new TextBlock
             {
-                Text = $"This game has {Composition.Amount(local.LocalChanges, "unpublished line", "unpublished lines")}. "
+                Text = $"This game has {Composition.Amount(atStake, "unpublished line", "unpublished lines")}. "
                      + "They are backed up, but this game will stop using them.",
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("StatusWarning"),
@@ -13512,8 +13504,8 @@ public partial class MainWindow : Window
                 ? "It is published on UGT Website and can be downloaded again."
                 : "It has never been published: the backup made now will be the only copy.";
 
-        var unpublished = report.LocalTranslation?.ChangedSinceAncestor;
-        var changed = unpublished is int differing and > 0
+        var unpublished = Unpublished(report);
+        var changed = unpublished is int differing
             ? $" {Composition.Amount(differing, "line", "lines")} changed since the last sync."
             : "";
 

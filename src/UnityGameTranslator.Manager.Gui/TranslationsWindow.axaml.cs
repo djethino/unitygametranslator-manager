@@ -226,15 +226,16 @@ public sealed class TranslationsWindow : Window
             : local.EntryCount < 0
                 ? "This game's translation file could not be read. Taking another one backs it up "
                   + "first."
-                : local.LocalChanges > 0
-                    ? $"This game has {local.EntryCount} lines{pair}, {local.LocalChanges} of them not "
+                : _report.LinesAtStake > 0
+                    ? $"This game has {local.EntryCount} lines{pair}, {_report.LinesAtStake} of them not "
                       + "published. Taking another translation replaces the file: the current one is "
                       + "backed up, and merging the two is done in UGT Mod."
                     : $"This game has {local.EntryCount} lines{pair}, with no unpublished changes.";
 
         // Amber when taking another one costs something: work not published anywhere, or a file
-        // that cannot be read.
-        var risky = local is { EntryCount: < 0 } || local?.LocalChanges > 0;
+        // that cannot be read. The figure is the report's (LinesAtStake), the one the game card
+        // warns with — the mod's raw counter can outlive a publication.
+        var risky = local is { EntryCount: < 0 } || _report.LinesAtStake > 0;
 
         var card = new StackPanel { Spacing = 4 };
 

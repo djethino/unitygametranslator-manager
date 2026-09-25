@@ -820,6 +820,35 @@ public sealed class GameReport
     /// </summary>
     public SyncDirection? Sync { get; set; }
 
+    /// <summary>
+    /// How many lines this game holds that the site does not, or null when nobody can say.
+    ///
+    /// 🔴 **Zero whenever the verdict is <see cref="SyncDirection.InSync"/>.** That verdict compares
+    /// the CONTENT with what the site holds, and it outranks the ancestor and the mod's counter: both
+    /// are bookkeeping about the last sync, and both go stale when a publication or a download was
+    /// not recorded in the file. A card reading "14 not published" above "Up to date with the
+    /// published version" was the two disagreeing (2026-09-25).
+    ///
+    /// Otherwise the measured figure first, the mod's counter only as a fallback — one number for
+    /// one fact on every screen.
+    /// </summary>
+    public int? UnpublishedLines =>
+        LocalTranslation is not { } local ? null
+        : Sync == SyncDirection.InSync ? 0
+        : local.ChangedSinceAncestor ?? (local.SourceHash is null ? null : local.LocalChanges);
+
+    /// <summary>
+    /// How many lines a replacement would put out of this game's reach — for WARNINGS, which err
+    /// towards protecting the file.
+    ///
+    /// ⚠ Not <see cref="UnpublishedLines"/>, on one point: where that one says "nobody can say" (a
+    /// file never synced, no ancestor), this takes the mod's counter, which on such a file counts
+    /// every line as never uploaded. A figure nobody can vouch for is not printed as a fact; it is
+    /// still reason enough to warn. Zero when the content is what the site holds.
+    /// </summary>
+    public int LinesAtStake =>
+        LocalTranslation is not { } local ? 0 : UnpublishedLines ?? local.LocalChanges;
+
     /// <summary>Blocking prerequisites, e.g. a missing .NET Desktop Runtime.</summary>
     public List<string> Blockers { get; } = new();
 

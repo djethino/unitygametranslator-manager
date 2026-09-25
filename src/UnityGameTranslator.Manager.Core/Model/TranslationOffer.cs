@@ -61,7 +61,10 @@ public static class TranslationOffers
         // reports every one of its entries as a local change, so this covers both "I have edited
         // the download" and "this is entirely my own work" — the two cases where a replacement is
         // not recoverable from anywhere.
-        if (local.LocalChanges > 0) return TranslationOffer.ReplacesWork;
+        //
+        // ⚠ LinesAtStake rather than the mod's counter alone: zero when the content is what the
+        // site holds, whatever a stale counter still says after an unrecorded publication.
+        if (report.LinesAtStake > 0) return TranslationOffer.ReplacesWork;
 
         // A file we cannot even read is not one to overwrite on a default: whatever is in it, we
         // are not the ones who can say it is worthless.

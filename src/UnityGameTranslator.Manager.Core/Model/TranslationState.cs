@@ -514,6 +514,19 @@ public sealed class GameReport
     public required GameInstall Game { get; init; }
     public DetectedLoader? InstalledLoader { get; set; }
     public LocalTranslation? LocalTranslation { get; set; }
+
+    /// <summary>
+    /// The text systems UGT Mod recorded this game SHOWING (texts-seen.json). Null when nothing is
+    /// recorded — the game never ran with a mod that writes it. Read for every report: one small file.
+    /// </summary>
+    public Detection.TextsSeen? TextsSeen { get; set; }
+
+    /// <summary>
+    /// The text systems this game's files CONTAIN. Null when not read: it costs tens of megabytes
+    /// on an IL2CPP game, so only the card being opened and the command line ask for it — see
+    /// <see cref="Detection.TextSystemsProbe.ReadContained"/>.
+    /// </summary>
+    public IReadOnlyList<Common.TextSystem>? TextsContained { get; set; }
     public IReadOnlyList<OnlineTranslation> OnlineTranslations { get; set; } = Array.Empty<OnlineTranslation>();
 
     /// <summary>

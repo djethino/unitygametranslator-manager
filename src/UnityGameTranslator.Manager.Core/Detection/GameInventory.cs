@@ -339,6 +339,7 @@ public sealed class GameInventory
             report.PluginBuildId = ResolvePluginBuild(descriptor, game.Runtime);
             CollectRequirements(report, descriptor, game);
 
+            report.TextsSeen = TextSystemsProbe.ReadSeen(game.Path, descriptor);
             report.SiteAccount = LocalTranslationProbe.ReadSiteAccount(game.Path, descriptor);
             report.DismissedNotices = LocalTranslationProbe.ReadDismissedNotices(game.Path, descriptor);
             report.LoaderStanding = ReadLoaderStanding(report);
@@ -416,6 +417,11 @@ public sealed class GameInventory
             step?.Report("Looking for the libraries this game lacks...");
             await Task.Run(report.RuntimeLibraries.WarmSources, ct).ConfigureAwait(false);
         }
+
+        // What the game's files contain, off the caller's thread: tens of megabytes on an IL2CPP
+        // game, the first time — remembered afterwards (TextSystemsProbe.ReadContained).
+        step?.Report("Reading which text systems this game contains...");
+        report.TextsContained = await Task.Run(() => TextSystemsProbe.ReadContained(game), ct).ConfigureAwait(false);
 
         var descriptor = ResolveDescriptor(report, game);
 

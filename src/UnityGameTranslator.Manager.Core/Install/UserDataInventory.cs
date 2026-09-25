@@ -93,6 +93,7 @@ public static class UserDataInventory
         var configuration = new List<UserDataItem>();
         var fonts = new List<UserDataItem>();
         var images = new List<UserDataItem>();
+        var textsShown = new List<UserDataItem>();
         var other = new List<UserDataItem>();
 
         foreach (var path in Enumerate(folder))
@@ -133,6 +134,8 @@ public static class UserDataInventory
                 fonts.Add(item);
             else if (string.Equals(top, "images", StringComparison.OrdinalIgnoreCase))
                 images.Add(item);
+            else if (string.Equals(top, Common.TextSystems.FileName, StringComparison.OrdinalIgnoreCase))
+                textsShown.Add(item);
             else
                 other.Add(item);
         }
@@ -167,6 +170,10 @@ public static class UserDataInventory
 
         Add(groups, "Replacement images", images,
             "Images put in place of the game's own. Lost unless the originals are kept elsewhere.");
+
+        // Named like the card's row, "Text shown": the same record, seen from the other end.
+        Add(groups, "Text shown", textsShown,
+            "Which kinds of text this game showed. Recorded again the next time it runs with UGT Mod.");
 
         Add(groups, "Other files", other,
             "Written here by UGT Mod or by hand. Not recognised: check them yourself.");

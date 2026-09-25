@@ -109,6 +109,7 @@ public static class CommandLine
             UnityGameTranslator Manager {BuildInfo.Version} (command line)
 
               scan [--offline] [--all]     List Unity games found on this machine
+                  [--texts]                 ...with the text systems each one shows and contains
               report <path or name>        Everything known about one game
               install <path or name>       Set up the loader and UGT Mod
               update <path or name>        Same thing: reinstalls the current release
@@ -259,6 +260,7 @@ public static class CommandLine
     private static async Task<int> ScanAsync(string[] args, bool offline)
     {
         var showAll = args.Contains("--all", StringComparer.OrdinalIgnoreCase);
+        var showTexts = args.Contains("--texts", StringComparer.OrdinalIgnoreCase);
         var platform = PlatformFactory.Create();
         var catalog = new CatalogProvider(platform).Get(offline);
 
@@ -282,6 +284,16 @@ public static class CommandLine
 
             var loader = LoaderProbe.Detect(game.Path, catalog.Document);
             Console.WriteLine(FormatGameLine(game, loader));
+
+            // The question the test bench asks of the whole library: which game shows which kind
+            // of text. Opt-in — "in files" reads each IL2CPP game's metadata, tens of megabytes.
+            if (showTexts)
+            {
+                var report = inventory.BuildReport(game);
+                Console.WriteLine($"          shown:    {TextShown(report)}");
+                var contained = TextSystemsProbe.ReadContained(game);
+                Console.WriteLine($"          in files: {(contained.Count == 0 ? "none found" : TextSystems.Describe(contained))}");
+            }
         }
 
         Console.WriteLine();
@@ -568,6 +580,11 @@ public static class CommandLine
         _ => "no version information",
     };
 
+    /// <summary>What UGT Mod recorded this game showing — the card's "Text shown".</summary>
+    private static string TextShown(GameReport report) => report.TextsSeen is not { } seen
+        ? "not recorded yet (run the game once with UGT Mod)"
+        : seen.Line.Length == 0 ? "none yet" : seen.Line;
+
     private static void PrintReport(GameReport report, GameConfigSnapshot config)
     {
         var game = report.Game;
@@ -579,6 +596,10 @@ public static class CommandLine
         Console.WriteLine($"Unity       : {game.UnityVersion ?? "unknown"}");
         Console.WriteLine($"Architecture: {game.Architecture}");
         if (game.RunsUnderProton) Console.WriteLine($"Proton      : yes ({game.ProtonPrefix})");
+        // The same two lines as the card's first block, from the same socle words.
+        Console.WriteLine($"Text shown  : {TextShown(report)}");
+        if (report.TextsContained is { } contained)
+            Console.WriteLine($"Text in files: {(contained.Count == 0 ? "none found" : TextSystems.Describe(contained))}");
         Console.WriteLine();
 
         Console.WriteLine($"Loader      : {(report.InstalledLoader is null

@@ -5077,6 +5077,15 @@ public partial class MainWindow : Window
                                   report.PluginStanding)),
         };
 
+        // Two rows, never one: what the game SHOWED is UGT Mod's record, what its files CONTAIN is
+        // read from them — a shipped library is whole, so the second says what could appear and
+        // never that it does (Common.TextSystems). Input fields only in the first, for that reason.
+        rows.Add(("Text shown", report.TextsSeen is not { } seen
+            ? "not recorded yet (run the game once with UGT Mod)"
+            : seen.Line.Length == 0 ? "none yet" : seen.Line));
+        if (report.TextsContained is { } contained)
+            rows.Add(("Text in files", contained.Count == 0 ? "none found" : TextSystems.Describe(contained)));
+
         if (report.RecommendationReason is not null)
             rows.Add(("Recommended", report.RecommendationReason));
 

@@ -43,6 +43,7 @@ internal static class Program
         ConfigContractChecks.ShortcutsFillThenReplace();
         ConfigContractChecks.TheInterfaceFileFillsOnly();
         MomentsContractChecks.WhatTheFileSaysAfterEachMoment();
+        TextsSeenContractChecks.WhatAGameShowed();
         InstallLedgerChecks.WhatTheToolRemembersDoing();
         ProbeMemoryChecks.WhatARememberedReadAnswers();
         SetupWayChecks.WhenTheSetupHasBeenAnswered();

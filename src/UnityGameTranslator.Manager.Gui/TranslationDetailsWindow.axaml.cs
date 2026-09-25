@@ -262,8 +262,8 @@ public sealed class TranslationDetailsWindow : Window
                 layout.Children.Add(_source);
 
                 // Why it is asked here and nowhere else: one sentence, the fact only.
-                layout.Children.Add(Hint("Asked once, at the first publication. The mod detects it "
-                                         + "line by line until then."));
+                layout.Children.Add(Hint("Asked once, at the first publication. Until then, UGT Mod "
+                                         + "detects it line by line."));
             }
             else
             {
@@ -301,9 +301,9 @@ public sealed class TranslationDetailsWindow : Window
         };
         layout.Children.Add(_url);
 
-        layout.Children.Add(Hint("Optional. Some translations need a font or replacement images "
-                                 + "that cannot travel inside the file; this is where players are "
-                                 + "told to find them."));
+        // UGT Mod's own hint for the same field (spec/screens/upload.json, UrlHint), plus "Optional".
+        layout.Children.Add(Hint("Optional. External link to custom fonts or replacement images. "
+                                 + "Not hosted by us."));
 
         if (onABranch)
         {
@@ -428,12 +428,12 @@ public sealed class TranslationDetailsWindow : Window
         query = query?.Trim();
         if (steamId is null && (query is null || query.Length < 2))
         {
-            _gameSearchStatus.Text = "Enter at least 2 characters";
+            Ui.Say(_gameSearchStatus, "Enter at least 2 characters", Tone.Warning);
             return null;
         }
 
         _gameSearchButton.IsEnabled = false;
-        _gameSearchStatus.Text = "Searching…";
+        Ui.Say(_gameSearchStatus, "Searching…");
         _gameResults.ItemsSource = null;
 
         var found = await _game.Search(query, steamId);
@@ -445,10 +445,10 @@ public sealed class TranslationDetailsWindow : Window
             // The reason, then the consequence — and the consequence is only true on a Steam id
             // lookup (see ConfirmDetectedGameAsync); a name search that fails leaves the person
             // to try again, so it says nothing it cannot keep.
-            var why = _game.WhyNot() ?? "The site could not be reached.";
-            _gameSearchStatus.Text = steamId is not null
+            var why = _game.WhyNot() ?? "UGT Website could not be reached.";
+            Ui.Say(_gameSearchStatus, steamId is not null
                 ? why + " The game is taken as detected."
-                : why;
+                : why, Tone.Warning);
             return null;
         }
 
@@ -461,9 +461,9 @@ public sealed class TranslationDetailsWindow : Window
             .ToList();
 
         _gameResults.ItemsSource = rows;
-        _gameSearchStatus.Text = rows.Count == 0
+        Ui.Say(_gameSearchStatus, rows.Count == 0
             ? "No games found"
-            : rows.Count == 1 ? "Found 1 game" : $"Found {rows.Count} games";
+            : rows.Count == 1 ? "Found 1 game" : $"Found {rows.Count} games");
 
         return found;
     }

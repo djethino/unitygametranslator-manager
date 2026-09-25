@@ -178,8 +178,8 @@ public sealed class TranslationPublisher
 
         if (string.IsNullOrWhiteSpace(uuid))
         {
-            LastError = "This translation file has no lineage identifier, so it cannot be published "
-                      + "from here. Opening it once in the game gives it one.";
+            LastError = "This translation file has no lineage ID, so UGT Manager cannot publish it. "
+                      + "Launch the game once with UGT Mod to give it one.";
             return null;
         }
 
@@ -266,8 +266,8 @@ public sealed class TranslationPublisher
             // than saying so.
             if (exists)
             {
-                LastError = "The server answered about this lineage in a way this version does not "
-                          + "understand. Publishing from the game will use its own, newer, rules.";
+                LastError = "UGT Website answered in a way this version of UGT Manager does not "
+                          + "understand. Update UGT Manager, or publish from the game with UGT Mod.";
                 return null;
             }
 
@@ -275,7 +275,7 @@ public sealed class TranslationPublisher
         }
         catch (Exception ex)
         {
-            LastError = Net.Http.Describe(ex, "the community site");
+            LastError = Net.Http.Describe(ex, "UGT Website");
             return null;
         }
     }
@@ -333,7 +333,7 @@ public sealed class TranslationPublisher
         // this is called; a blank here is a caller that skipped it.
         if (string.IsNullOrWhiteSpace(sourceLanguage) || string.IsNullOrWhiteSpace(targetLanguage))
         {
-            LastError = "Publishing needs to know which language this translates from, and into.";
+            LastError = "Set the source and target languages before publishing.";
             return null;
         }
 
@@ -418,7 +418,7 @@ public sealed class TranslationPublisher
         }
         catch (Exception ex)
         {
-            LastError = Net.Http.Describe(ex, "the community site");
+            LastError = Net.Http.Describe(ex, "UGT Website");
             return null;
         }
     }
@@ -495,15 +495,15 @@ public sealed class TranslationPublisher
             // site that has not been updated answers "no such route" — which is not the user
             // having done anything wrong, and must not read as one.
             LastError = (int)response.StatusCode == 404
-                ? "This site does not offer editing the details on their own yet. Publishing from "
-                  + "the game can still change them."
+                ? "This version of UGT Website cannot edit the details alone yet. Publish from the "
+                  + "game with UGT Mod to change them."
                 : Describe((int)response.StatusCode, body);
 
             return false;
         }
         catch (Exception ex)
         {
-            LastError = Net.Http.Describe(ex, "the community site");
+            LastError = Net.Http.Describe(ex, "UGT Website");
             return false;
         }
     }
@@ -544,11 +544,10 @@ public sealed class TranslationPublisher
 
         return status switch
         {
-            401 => "The site did not accept this account's sign-in. Signing in again from this "
-                   + "window usually settles it.",
-            413 => "That translation file is larger than the site accepts.",
-            422 => "The site refused the file's contents.",
-            429 => "The site is asking us to slow down. Try again in a moment.",
+            401 => "UGT Website no longer accepts this sign-in. Sign in again.",
+            413 => "This translation file is larger than UGT Website accepts.",
+            422 => "UGT Website refused the file's contents.",
+            429 => "Too many requests to UGT Website. Try again in a moment.",
             _ => $"The server answered {status}.",
         };
     }

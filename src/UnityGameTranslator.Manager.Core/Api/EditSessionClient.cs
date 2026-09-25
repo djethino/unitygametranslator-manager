@@ -145,7 +145,7 @@ public sealed class EditSessionClient
 
                 if (string.IsNullOrWhiteSpace(modKey) || string.IsNullOrWhiteSpace(url))
                 {
-                    LastError = "The site opened a session but did not say where to find it.";
+                    LastError = "UGT Website opened a session but did not say where to find it.";
                     return null;
                 }
 
@@ -160,7 +160,7 @@ public sealed class EditSessionClient
             }
             catch (Exception ex)
             {
-                LastError = $"The site's answer could not be read: {ex.Message}";
+                LastError = $"UGT Website's answer could not be read: {ex.Message}";
                 return null;
             }
         }
@@ -235,7 +235,7 @@ public sealed class EditSessionClient
         }
         catch (Exception ex)
         {
-            LastError = Net.Http.Describe(ex, "the community site");
+            LastError = Net.Http.Describe(ex, "UGT Website");
             return null;
         }
     }
@@ -331,7 +331,7 @@ public sealed class EditSessionClient
         }
         catch (Exception ex)
         {
-            LastError = Net.Http.Describe(ex, "the community site");
+            LastError = Net.Http.Describe(ex, "UGT Website");
             return null;
         }
     }
@@ -369,7 +369,7 @@ public sealed class EditSessionClient
         }
         catch (Exception ex)
         {
-            LastError = Net.Http.Describe(ex, "the community site");
+            LastError = Net.Http.Describe(ex, "UGT Website");
             return false;
         }
     }
@@ -409,7 +409,7 @@ public sealed class EditSessionClient
         }
         catch (Exception ex)
         {
-            LastError = Net.Http.Describe(ex, "the community site");
+            LastError = Net.Http.Describe(ex, "UGT Website");
             return null;
         }
     }
@@ -445,7 +445,7 @@ public sealed class EditSessionClient
         return status switch
         {
             413 => "That translation file is too large for an edit session.",
-            429 => "The site is asking us to slow down. Try again in a moment.",
+            429 => "Too many requests to UGT Website. Try again in a moment.",
             404 => "That edit session has expired or was closed.",
             _ => $"The server answered {status}.",
         };

@@ -333,8 +333,8 @@ internal static class SituationChecks
         // review that would never come. The abandoned one said exactly that (2026-09-18).
         foreach (var (position, fragment, never) in new[]
         {
-            (new LineagePosition { Uuid = "u-1", IsMain = false, MainMissing = true }, "is gone", "reviewed by"),
-            (new LineagePosition { Uuid = "u-1", IsMain = false, MainAbandoned = true }, "account behind the Main was deleted", "reviewed by"),
+            (new LineagePosition { Uuid = "u-1", IsMain = false, MainMissing = true }, "Main was removed", "reviewed by"),
+            (new LineagePosition { Uuid = "u-1", IsMain = false, MainAbandoned = true }, "Main's account was deleted", "reviewed by"),
             (new LineagePosition { Uuid = "u-1", IsMain = false, BranchFrozen = true }, "no longer takes contributions", "reviewed by"),
         })
         {

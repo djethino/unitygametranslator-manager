@@ -267,7 +267,7 @@ public static class Http
         // connection problem, so none of the advice below applies to it.
         if (exception is HttpRequestException { StatusCode: not null } http)
             return $"Could not reach {what}: the server answered {(int)http.StatusCode}. "
-                 + "Nothing was lost — you can try again.";
+                 + "Nothing was lost. Try again.";
 
         // 🔴 The cause comes from the shared library, not from a guess made here. This used to
         // say "a firewall or antivirus blocking this program is the usual cause" whatever had
@@ -283,21 +283,24 @@ public static class Http
 
         // The guess is still worth making when nothing could be named — that is what a guess is for.
         var hint = problem == ConnectionProblem.Unknown
-            ? "A firewall or antivirus blocking this program is the usual cause."
+            ? "A firewall or antivirus blocking UGT Manager is the usual cause."
             : null;
 
         return string.Join(" ", new[]
         {
-            $"Could not reach {what}.", cause, hint, route, "Nothing was lost — you can try again.",
+            $"Could not reach {what}.", cause, hint, route, "Nothing was lost. Try again.",
         }.Where(part => !string.IsNullOrEmpty(part)));
     }
 
-    /// <summary>Where requests actually go, so the person knows what to check.</summary>
+    /// <summary>
+    /// Where requests actually go, so the person knows what to check. Names the screen and card
+    /// where it is set ("UGT Manager settings", "Network") rather than "the settings".
+    /// </summary>
     private static string RouteNote() => (Proxy.Mode ?? "default").Trim().ToLowerInvariant() switch
     {
-        "custom" => $"Requests go through the proxy you configured ({Proxy.Url}).",
-        "none" => "Requests bypass any proxy, as you asked.",
-        "system" => "Requests follow the system proxy settings.",
-        _ => "If you are behind a company proxy, set it in the network settings.",
+        "custom" => $"Requests go through the manual proxy ({Proxy.Url}) set in UGT Manager settings.",
+        "none" => "Requests use no proxy (UGT Manager settings, Network).",
+        "system" => "Requests use the system proxy settings.",
+        _ => "Behind a company proxy? Set it in UGT Manager settings, under Network.",
     };
 }

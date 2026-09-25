@@ -550,7 +550,7 @@ public sealed class GameConfigWriter
             // first_run_completed claims the question was answered — AnswersTheWizard counts this
             // setting among the answers. So: always on a fresh config, only on demand afterwards.
             intents.Add(new Intent(null, HotkeyKey, chosenKey, "in-game hotkey",
-                Note: "set in the game itself — applying replaces the key you chose there",
+                Note: "set in the game. Applying replaces it",
                 OnlyIfAbsent: !replaces,
                 AskedSeparately: true));
         }
@@ -922,8 +922,8 @@ public sealed class GameConfigWriter
 
         return node as JsonObject
             ?? throw new InvalidOperationException(
-                "This game's config.json is not a JSON object. It was left untouched — "
-                + "opening it and fixing it by hand is safer than us guessing.");
+                "This game's config.json is not a JSON object. It was not changed: open it and "
+                + "fix it by hand.");
     }
 
     /// <summary>

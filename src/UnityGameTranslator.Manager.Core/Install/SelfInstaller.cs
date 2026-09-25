@@ -241,9 +241,8 @@ public sealed class SelfInstaller
         {
             if (!File.Exists(Path.Combine(folder, stem + suffix))) continue;
 
-            return "This is a development build: its runtime files sit beside it rather than "
-                   + "inside it, so an installed copy would not start. Install from a published "
-                   + "build instead.";
+            return "This is a development build: its runtime files are beside it, not inside it, "
+                   + "so an installed copy would not start. Install from a published build.";
         }
 
         return null;
@@ -410,7 +409,7 @@ public sealed class SelfInstaller
         {
             if (!LooksLikeOurLauncher(launcher))
             {
-                left.Add($"{launcher} — left alone: it is not a shortcut this tool would have made");
+                left.Add($"{launcher} — not changed: it is not a shortcut made by UGT Manager");
                 continue;
             }
 
@@ -430,7 +429,7 @@ public sealed class SelfInstaller
         {
             if (!Inside(installation.Directory, file))
             {
-                left.Add($"{file} — left alone: it is outside {installation.Directory}");
+                left.Add($"{file} — not changed: it is outside {installation.Directory}");
                 continue;
             }
 
@@ -510,8 +509,8 @@ public sealed class SelfInstaller
                               Path.GetFullPath(installation.Directory).TrimEnd(Path.DirectorySeparatorChar),
                               ArchiveFetcher.PathComparison))
         {
-            left.Add($"{installation.Directory} — left alone: it is not where this tool installs "
-                     + $"itself ({expectedDirectory}). Delete it by hand if it is yours to delete.");
+            left.Add($"{installation.Directory} — not changed: UGT Manager installs itself in "
+                     + $"{expectedDirectory}, not here. Delete it by hand if you are sure.");
             return;
         }
 
@@ -526,9 +525,9 @@ public sealed class SelfInstaller
         // in order to finish it themselves.
         if (Unquotable(executable) || Unquotable(installation.Directory))
         {
-            left.Add($"{executable} — in use, and its path contains a character this cannot safely "
-                     + $"hand to the shell. Delete {installation.Directory} by hand once this "
-                     + "window has closed.");
+            left.Add($"{executable} — in use, and its path contains a character that cannot be "
+                     + $"passed safely to the shell. Delete {installation.Directory} by hand once "
+                     + "UGT Manager is closed.");
             return;
         }
 
@@ -563,8 +562,8 @@ public sealed class SelfInstaller
         {
             // Said rather than swallowed: the person can delete the folder themselves, and they can
             // only do that if they are told which one and why it is still there.
-            left.Add($"{executable} — in use, and the deletion could not be handed on ({ex.Message}). "
-                     + $"Delete {installation.Directory} by hand once this window has closed.");
+            left.Add($"{executable} — in use, and could not be scheduled for deletion ({ex.Message}). "
+                     + $"Delete {installation.Directory} by hand once UGT Manager is closed.");
         }
     }
 
@@ -692,7 +691,7 @@ public sealed class SelfInstaller
             // rather than counted as something that went wrong.
             if (Directory.EnumerateFileSystemEntries(directory).Any())
             {
-                left.Add($"{directory} — left alone: it holds something that is not ours");
+                left.Add($"{directory} — not changed: it holds files UGT Manager did not install");
                 return;
             }
 

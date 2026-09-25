@@ -141,8 +141,8 @@ public sealed class OllamaModelPuller
 
             return sawSuccess
                 ? null
-                : "The download stopped before finishing. Running it again resumes where it left "
-                + "off — Ollama keeps what it already has.";
+                : "The download stopped before finishing. Run it again to resume: Ollama keeps "
+                + "what it already has.";
         }
         catch (OperationCanceledException)
         {

@@ -100,7 +100,7 @@ public sealed class MergePreviewClient
 
                 if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(url))
                 {
-                    LastError = "The site opened a comparison but did not say where to find it.";
+                    LastError = "UGT Website opened a comparison but did not say where to find it.";
                     return null;
                 }
 
@@ -108,7 +108,7 @@ public sealed class MergePreviewClient
             }
             catch (Exception ex)
             {
-                LastError = Net.Http.Describe(ex, "the community site");
+                LastError = Net.Http.Describe(ex, "UGT Website");
                 return null;
             }
         }
@@ -148,7 +148,7 @@ public sealed class MergePreviewClient
             if (!document.RootElement.TryGetProperty("content", out var content)
                 || content.ValueKind != JsonValueKind.Object)
             {
-                LastError = "The site sent a result that is not a translation file. Nothing was written.";
+                LastError = "UGT Website sent a result that is not a translation file. Nothing was written.";
                 return null;
             }
 
@@ -156,7 +156,7 @@ public sealed class MergePreviewClient
         }
         catch (Exception ex)
         {
-            LastError = Net.Http.Describe(ex, "the community site");
+            LastError = Net.Http.Describe(ex, "UGT Website");
             return null;
         }
     }
@@ -188,10 +188,10 @@ public sealed class MergePreviewClient
 
         return status switch
         {
-            401 => "The site did not accept this account's sign-in.",
-            403 => "This translation is not one this account may compare against.",
-            409 => "That comparison was published rather than brought back here.",
-            429 => "The site is asking us to slow down. Try again in a moment.",
+            401 => "UGT Website no longer accepts this sign-in. Sign in again.",
+            403 => "This account cannot compare against this translation.",
+            409 => "This comparison was published on UGT Website, so there is nothing to bring back.",
+            429 => "Too many requests to UGT Website. Try again in a moment.",
             _ => $"The server answered {status}.",
         };
     }

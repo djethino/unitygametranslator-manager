@@ -437,27 +437,29 @@ public sealed class LineagePosition
             // promises: "reviewed by its owner" is no longer true once the Main is gone, its
             // owner's account is, or they have closed — and leaving it there kept somebody
             // working towards a review that would never come. The facts are the socle's walls
-            // (Uploads.Wall), said here in this card's own shape.
+            // (Uploads.Wall), said here in this card's own shape — and the way out in the socle's
+            // own words ("Fork keeps your lines as your own version."), so the mod's wall and this
+            // card name the same act.
             if (MainMissing == true)
             {
-                return "This is your branch, and the Main it contributed to is gone: it can no "
-                     + "longer be sent anywhere. Turn it into your own translation to carry on.";
+                return "This is your branch, and its Main was removed: it can no longer be sent. "
+                     + "Fork keeps your lines as your own version.";
             }
 
             if (MainAbandoned == true)
             {
-                return "This is your branch, and the account behind the Main was deleted: nobody "
-                     + "will read contributions any more. The Main itself is still published. Turn "
-                     + "it into your own translation to carry on.";
+                return "This is your branch, and the Main's account was deleted: contributions will "
+                     + "not be read any more. The Main is still published. Fork keeps your lines as "
+                     + "your own version.";
             }
 
             if (BranchFrozen == true)
             {
                 return mainOwner is null
-                    ? "This is your branch, and the Main no longer takes contributions: it can no "
-                      + "longer be sent. Turn it into your own translation to carry on."
-                    : $"This is your branch, and {mainOwner} no longer takes contributions: it can "
-                      + "no longer be sent. Turn it into your own translation to carry on.";
+                    ? "This is your branch, and the Main no longer takes contributions. Fork keeps "
+                      + "your lines as your own version."
+                    : $"This is your branch, and {mainOwner} no longer takes contributions. Fork "
+                      + "keeps your lines as your own version.";
             }
 
             return mainOwner is null

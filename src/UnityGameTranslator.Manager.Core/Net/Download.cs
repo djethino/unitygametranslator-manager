@@ -54,8 +54,8 @@ public static class Download
         if (!DownloadOrigins.IsAllowedDownload(url))
         {
             throw new InvalidOperationException(
-                $"Refusing to download from {Sanitize.Url(url)}: that address is not one of the "
-                + "publishers this tool downloads from. Nothing was fetched.");
+                $"Refusing to download from {Sanitize.Url(url)}: UGT Manager does not download "
+                + "from that address. Nothing was fetched.");
         }
 
         var requested = new Uri(url);

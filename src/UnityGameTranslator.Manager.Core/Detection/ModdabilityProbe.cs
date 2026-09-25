@@ -149,17 +149,17 @@ public static class ModdabilityProbe
     public static string OverrideCaveat(ModdabilityVerdict verdict) => verdict switch
     {
         ModdabilityVerdict.RuntimeUnknown =>
-            "Pick the wrong one and the game starts without the mod, or not at all. Uninstalling puts it back.",
+            "With the wrong one, the game starts without UGT Mod, or not at all. Uninstall to undo it.",
         ModdabilityVerdict.ArchitectureUnknown =>
-            "Pick the wrong one and the loader silently never runs. Uninstalling puts it back.",
+            "With the wrong one, the loader never runs. Uninstall to undo it.",
         ModdabilityVerdict.StrippedRuntime =>
-            "Without complete libraries, every mod loader fails at start on such a game. Uninstalling puts the game back.",
+            "Without complete libraries, no mod loader starts on such a game. Uninstall to undo it.",
         ModdabilityVerdict.MissingRuntimeLibraries =>
-            "The loader will start and the mod will not: it stops at load on the missing library. Uninstalling puts the game back.",
+            "The loader will start, but UGT Mod stops at load on the missing library. Uninstall to undo it.",
         ModdabilityVerdict.LegacyRuntime =>
-            "The loader will start and the mod will not load. Uninstalling puts the game back.",
+            "The loader will start, but UGT Mod will not load. Uninstall to undo it.",
         ModdabilityVerdict.StoreProtected =>
-            "The folder is usually read-only, so the install will most likely be refused by the system rather than by us.",
+            "The folder is usually read-only, so Windows will most likely refuse the install.",
         _ => "",
     };
 
@@ -223,32 +223,32 @@ public static class ModdabilityProbe
     {
         ModdabilityVerdict.Ok => "Ready to install.",
         ModdabilityVerdict.AntiCheat =>
-            $"Refused: this game ships {game.VerdictDetail}. Modding a protected game can get " +
-            "your account banned. This is not a limitation of the tool.",
+            $"Refused: this game uses {game.VerdictDetail}. Modding a game with anti-cheat can get " +
+            "your account banned.",
         ModdabilityVerdict.StoreProtected =>
-            "Refused: Microsoft Store / Game Pass builds cannot be modified (locked folder, " +
-            "encrypted binaries).",
+            "Refused: Microsoft Store and Game Pass games cannot be modified (locked folder, " +
+            "encrypted files).",
         ModdabilityVerdict.RuntimeUnknown =>
-            "Refused: could not tell whether this game uses Mono or IL2CPP. Installing the " +
+            "Refused: UGT Manager could not tell whether this game uses Mono or IL2CPP. The " +
             "wrong loader would stop the game from starting.",
         // 🔴 Says the REAL reason (user's decision, 2026-09-21). It used to report that loaders and
         // unstripped libraries had all been tried and failed — true when written, false since
         // complete libraries of the right generation were shown to start such a game. A game is
         // refused here only when no such copy can be found, and that is what it says.
         ModdabilityVerdict.StrippedRuntime =>
-            "Refused: this game was built with its runtime library stripped (missing: " +
-            $"{game.VerdictDetail}), so every mod loader fails at start without complete libraries. " +
-            $"They cannot be added here: {game.RuntimeLibraries?.CannotSupply ?? "no copy fits this game"}.",
+            "Refused: this game was built with a stripped runtime library (missing: " +
+            $"{game.VerdictDetail}), so no mod loader can start without complete libraries. " +
+            $"They cannot be added: {game.RuntimeLibraries?.CannotSupply ?? "no copy fits this game"}.",
         ModdabilityVerdict.MissingRuntimeLibraries =>
-            $"Refused: this game lacks what the mod needs ({game.RuntimeLibraries?.Lacking}), and it cannot be " +
-            $"added: {game.VerdictDetail}. The loader would start and the mod would stop at load. This is how the " +
-            "game was built, not a limitation of the tool or of the mod.",
+            $"Refused: this game lacks what UGT Mod needs ({game.RuntimeLibraries?.Lacking}), and it cannot be " +
+            $"added: {game.VerdictDetail}. The loader would start, but UGT Mod would stop at load. This comes " +
+            "from how the game was built.",
         ModdabilityVerdict.LegacyRuntime =>
-            "Refused: this game runs Unity's old .NET 3.5 runtime. The mod needs .NET 4 or later. " +
-            "This is how the game was built, not a limitation of the tool.",
+            "Refused: this game runs Unity's old .NET 3.5 runtime. UGT Mod needs .NET 4 or later. " +
+            "This comes from how the game was built.",
         ModdabilityVerdict.ArchitectureUnknown =>
-            "Refused: could not read whether this game is 32-bit or 64-bit. A 64-bit loader in a " +
-            "32-bit game does not crash, it simply never runs — which looks exactly like a broken mod.",
+            "Refused: UGT Manager could not read whether this game is 32-bit or 64-bit. A loader " +
+            "for the wrong one never runs, and the game looks like it has a broken mod.",
         ModdabilityVerdict.NotUnity => "Not a Unity game.",
         _ => "Unknown state.",
     };

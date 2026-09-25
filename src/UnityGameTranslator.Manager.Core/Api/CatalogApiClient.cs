@@ -103,7 +103,7 @@ public sealed class CatalogApiClient
         }
         catch (Exception ex)
         {
-            LastError = Net.Http.Describe(ex, "the community site");
+            LastError = Net.Http.Describe(ex, "UGT Website");
             return Array.Empty<OnlineTranslation>();
         }
     }
@@ -178,8 +178,8 @@ public sealed class CatalogApiClient
             // The status when there is one: a 401 or a 429 is not "could not be reached", and
             // the sentence under the search field is the only place the reason ever shows.
             LastError = LastStatus is { } status && (int)status >= 400
-                ? $"The site answered {(int)status}."
-                : Net.Http.Describe(ex, "the community site");
+                ? $"UGT Website answered {(int)status}."
+                : Net.Http.Describe(ex, "UGT Website");
             return null;
         }
     }
@@ -230,8 +230,8 @@ public sealed class CatalogApiClient
         catch (Exception ex)
         {
             LastError = LastStatus is { } status && (int)status >= 400
-                ? $"The site answered {(int)status}."
-                : Net.Http.Describe(ex, "the community site");
+                ? $"UGT Website answered {(int)status}."
+                : Net.Http.Describe(ex, "UGT Website");
             return null;
         }
     }
@@ -339,7 +339,7 @@ public sealed class CatalogApiClient
         }
         catch (Exception ex)
         {
-            LastError = Net.Http.Describe(ex, "the community site");
+            LastError = Net.Http.Describe(ex, "UGT Website");
             return new Dictionary<string, GameCatalog>();
         }
 
@@ -414,7 +414,7 @@ public sealed class CatalogApiClient
         }
         catch (Exception ex)
         {
-            error = Net.Http.Describe(ex, "the community site");
+            error = Net.Http.Describe(ex, "UGT Website");
             return null;
         }
     }
@@ -519,7 +519,7 @@ public sealed class CatalogApiClient
         }
         catch (Exception ex)
         {
-            LastError = Net.Http.Describe(ex, "the community site");
+            LastError = Net.Http.Describe(ex, "UGT Website");
             return Array.Empty<OnlineTranslation>();
         }
     }
@@ -576,7 +576,7 @@ public sealed class CatalogApiClient
         }
         catch (Exception ex)
         {
-            error = Net.Http.Describe(ex, "the community site");
+            error = Net.Http.Describe(ex, "UGT Website");
             return Array.Empty<OnlineTranslation>();
         }
     }
@@ -620,8 +620,8 @@ public sealed class CatalogApiClient
             {
                 // Said in the terms that actually apply, rather than as a bare 403: this is what a
                 // branch belonging to somebody else answers.
-                LastError = "This translation is a private branch: only its author and the owner "
-                          + "of the main version can fetch it.";
+                LastError = "This translation is a branch: only its author and the owner of its "
+                          + "Main can download it.";
                 return null;
             }
 
@@ -646,7 +646,7 @@ public sealed class CatalogApiClient
         }
         catch (Exception ex)
         {
-            LastError = Net.Http.Describe(ex, "the community site");
+            LastError = Net.Http.Describe(ex, "UGT Website");
             return null;
         }
     }

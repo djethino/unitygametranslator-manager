@@ -53,8 +53,8 @@ public static class GameLaunch
         if (game.Store == GameStore.Steam && game.SteamAppId is { Length: > 0 } appId)
         {
             return new LaunchRoute($"steam://rungameid/{appId}", true,
-                "Started through Steam, so its launch options apply — the Proton override lives "
-                + "there, and starting the binary directly would leave the mod unloaded.");
+                "Started through Steam, so the game's launch options apply. Under Proton, UGT Mod "
+                + "only loads with them.");
         }
 
         // Epic keeps its own id in the manifest we already read. Same reasoning as Steam: the
@@ -69,7 +69,7 @@ public static class GameLaunch
         if (game.ExecutablePath is { Length: > 0 } exe && File.Exists(exe))
         {
             return new LaunchRoute(exe, false,
-                "Started directly. Nothing here needs a launcher.");
+                "Started directly: this game needs no launcher.");
         }
 
         return null;
@@ -105,8 +105,8 @@ public static class GameLaunch
             // The common one is a store that is not installed, which the message should say
             // plainly rather than reporting a Win32 error nobody can act on.
             return route.ThroughStore
-                ? $"The store could not be asked to start it ({ex.Message}). Is it installed?"
-                : $"It could not be started ({ex.Message}).";
+                ? $"The store app could not start the game ({ex.Message}). Check that it is installed."
+                : $"The game could not be started ({ex.Message}).";
         }
     }
 }

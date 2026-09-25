@@ -95,8 +95,8 @@ public sealed class GitHubReleaseClient
         if (document.RootElement.ValueKind != JsonValueKind.Array)
         {
             throw new InvalidOperationException(
-                "The release list did not come back as a list. Something is answering for GitHub "
-                + "that is not GitHub — a captive portal or a company proxy, most likely.");
+                "GitHub's release list could not be read. Something else answered in its place, "
+                + "most likely a Wi-Fi login page or a company proxy.");
         }
 
         PublishedRelease? best = null;
@@ -212,8 +212,8 @@ public sealed class GitHubReleaseClient
         if (sha is null)
         {
             throw new InvalidOperationException(
-                $"Release {release.TagName} publishes {assetName} without its .sha256 checksum. " +
-                "Refusing to install an archive that cannot be verified.");
+                $"Release {release.TagName} has no .sha256 checksum for {assetName}, so it cannot " +
+                "be verified. Nothing was installed.");
         }
 
         return (url, sha);

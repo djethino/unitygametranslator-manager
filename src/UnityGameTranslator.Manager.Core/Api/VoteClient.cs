@@ -77,8 +77,8 @@ public sealed class VoteClient
                 // ⚠ 403 is the ordinary refusal, not a fault: the rules moved under us, or this
                 // translation became ours. Said in the server's terms rather than as a code.
                 LastError = response.StatusCode == System.Net.HttpStatusCode.Forbidden
-                    ? "The site refused this vote — it may be your own translation."
-                    : $"The site answered {(int)response.StatusCode}.";
+                    ? "UGT Website refused this vote. It may be your own translation."
+                    : $"UGT Website answered {(int)response.StatusCode}.";
                 return null;
             }
 

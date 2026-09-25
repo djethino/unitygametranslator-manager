@@ -91,18 +91,17 @@ public sealed record ServerStanding(ServerStandingKind Kind, string? GameAccount
     public string? Reason => Kind switch
     {
         ServerStandingKind.SignedOut =>
-            "Sign in to the community site from this window first: publishing, contributing and "
-            + "being credited all happen under a name.",
+            "Sign in to UGT Website first (UGT Manager settings, Account). Publishing and "
+            + "contributing need an account.",
 
         ServerStandingKind.OtherAccount =>
-            $"This game is linked to the account \"{GameAccount}\", and this window is signed in as "
-            + $"\"{SignedInAs}\". Nothing will be sent under the wrong name — sign in as "
-            + $"\"{GameAccount}\" to act on this game's translation, or publish it from inside the "
-            + "game, which uses that account by itself.",
+            $"This game uses the account \"{GameAccount}\", but UGT Manager is signed in as "
+            + $"\"{SignedInAs}\". Sign in as \"{GameAccount}\" to change this game's translation, "
+            + "or publish it from the game with UGT Mod.",
 
         ServerStandingKind.OtherServer =>
-            $"This game is linked to a different site ({GameAccount}). Its translation belongs "
-            + "there, and this window talks to another server.",
+            $"This game uses a different site ({GameAccount}). Its translation belongs to that "
+            + "site, not to the one UGT Manager uses.",
 
         _ => null,
     };
@@ -121,21 +120,20 @@ public sealed record ServerStanding(ServerStandingKind Kind, string? GameAccount
     public string? SetupRefusal => Kind switch
     {
         ServerStandingKind.OtherAccount =>
-            $"This game is set up under the account \"{GameAccount}\", and this window is signed in "
-            + $"as \"{SignedInAs}\". Its settings and installed files are shared by everyone using "
-            + $"this computer. Sign in as \"{GameAccount}\" to change them, or change them in the "
-            + "game.",
+            $"This game uses the account \"{GameAccount}\", but UGT Manager is signed in as "
+            + $"\"{SignedInAs}\". Everyone on this computer shares this game's settings and files. "
+            + $"Sign in as \"{GameAccount}\" to change them, or change them in the game.",
 
         ServerStandingKind.OtherServer =>
-            $"This game is set up against a different site ({GameAccount}). Its configuration "
-            + "belongs there, and this window talks to another server.",
+            $"This game uses a different site ({GameAccount}) from the one UGT Manager uses. "
+            + "Change its settings in the game.",
 
         // Nobody signed in here, and the game belongs to somebody. Whose it is decides — the same
         // reading as Standing above, and it must stay the same one.
         ServerStandingKind.SignedOut when GameAccount is not null =>
-            $"This game is set up under the account \"{GameAccount}\" and this window is signed in "
-            + "as nobody. Its settings and installed files are shared by everyone using this "
-            + $"computer. Sign in as \"{GameAccount}\" to change them, or change them in the game.",
+            $"This game uses the account \"{GameAccount}\", and UGT Manager is not signed in. "
+            + "Everyone on this computer shares this game's settings and files. "
+            + $"Sign in as \"{GameAccount}\" to change them, or change them in the game.",
 
         _ => null,
     };

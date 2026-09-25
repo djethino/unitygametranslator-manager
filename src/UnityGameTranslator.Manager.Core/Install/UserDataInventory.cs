@@ -142,36 +142,34 @@ public static class UserDataInventory
         // Translation first, and it is not alphabetical: it is the one thing here that may exist
         // nowhere else, so it is the one somebody must see before ticking anything.
         Add(groups, "Translation", translation,
-            "Lines captured while playing may exist nowhere else. Anything never uploaded is gone.");
+            "Lines captured in the game may exist nowhere else. Anything never uploaded is lost.");
 
         // Right after the translation in place, because it is the same thing at an earlier date.
         // ⚠ Named from Common.Backups, not spelled out here: this list and the screen that manages
         // the same folder must call it the same thing, or ticking this reads as removing something
         // else. One word for the thing — see the vocabulary note in Backups.
         Add(groups, Common.Backups.ScreenTitle, setAside,
-            "Earlier versions of this game's translation, taken when something replaced them and "
-            + $"whenever you asked. {Common.Backups.ScreenTitle} restores one; deleting them ends "
-            + "that.");
+            "Earlier versions of this game's translation, saved when something replaced them or on "
+            + $"request. {Common.Backups.ScreenTitle} can restore them. Once deleted, they are gone.");
 
         // After the translation and its history, before the settings: it IS translated work, just
         // not this game's. Redoing it costs another pass of the translator, which is worth saying
         // and is not the same as losing lines that exist nowhere else.
-        Add(groups, "Mod interface", modInterface,
-            "The mod's own window, translated into your language. Removing it means translating "
-            + "it again the next time you turn that option on.");
+        Add(groups, "UGT Mod interface", modInterface,
+            "UGT Mod's own panels, translated into your language. If deleted, they are translated "
+            + "again the next time that option is on.");
 
         Add(groups, "Settings", configuration,
-            "Your language, translator and sign-in for this game. The mod asks again from scratch.");
+            "Language, translator and sign-in for this game. UGT Mod asks its questions again.");
 
         Add(groups, "Fonts", fonts,
-            "Font files and their generated atlases. Rebuilt on demand, so nothing is lost for good.");
+            "Font files and their generated atlases. Rebuilt when needed, so nothing is lost.");
 
         Add(groups, "Replacement images", images,
-            "Images you put in place of the game's own. Not recoverable unless you have the "
-            + "originals elsewhere.");
+            "Images put in place of the game's own. Lost unless the originals are kept elsewhere.");
 
         Add(groups, "Other files", other,
-            "Written here by the mod or by you. Not recognised, so judge them yourself.");
+            "Written here by UGT Mod or by hand. Not recognised: check them yourself.");
 
         return groups;
     }

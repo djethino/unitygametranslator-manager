@@ -356,14 +356,14 @@ public sealed class GameInventory
         if (game is { VerdictOverridden: true, OverriddenVerdict: { } overruled })
         {
             report.Warnings.Add(
-                $"You chose to proceed here despite a refusal. {ModdabilityProbe.OverrideCaveat(overruled)}");
+                $"This game was refused, and the refusal was overridden. {ModdabilityProbe.OverrideCaveat(overruled)}");
         }
 
         if (game.RuntimeIsAssumed)
-            report.Warnings.Add($"The runtime ({Describe(game.Runtime)}) is what you told us, not what we read.");
+            report.Warnings.Add($"The runtime ({Describe(game.Runtime)}) was set by hand, not read from the game.");
 
         if (game.ArchitectureIsAssumed)
-            report.Warnings.Add($"The architecture ({game.Architecture}) is what you told us, not what we read.");
+            report.Warnings.Add($"The architecture ({game.Architecture}) was set by hand, not read from the game.");
 
         // What the sweep already brought back for this game, when somebody handed us the cache.
         //
@@ -432,7 +432,7 @@ public sealed class GameInventory
         // whose translation was sitting on the site.
         if (_api is not null && (game.SteamAppId is not null || !string.IsNullOrWhiteSpace(game.Name)))
         {
-            step?.Report("Asking the community site...");
+            step?.Report("Asking UGT Website...");
 
             report.OnlineTranslations = game.SteamAppId is not null
                 ? await _api.SearchBySteamIdAsync(game.SteamAppId, apiToken: _apiToken, ct: ct).ConfigureAwait(false)
@@ -648,7 +648,7 @@ public sealed class GameInventory
             {
                 report.RecommendedLoader = installed;
                 report.RecommendationReason =
-                    $"{installed.Display} is already installed — the plugin is simply added to it.";
+                    $"{installed.Display} is already installed. UGT Mod is added to it.";
                 return installed;
             }
         }
@@ -656,7 +656,7 @@ public sealed class GameInventory
         if (candidates.Count == 0)
         {
             report.RecommendationReason = game.Runtime == UnityRuntime.Unknown
-                ? "No recommendation: the scripting backend could not be identified."
+                ? "No loader chosen: this game's runtime (Mono or IL2CPP) could not be read."
                 : $"No loader in the catalog supports {Describe(game.Runtime)} on this system.";
             return null;
         }
@@ -669,8 +669,8 @@ public sealed class GameInventory
             // 🔴 Not "recommended". The order comes from an integer in the catalog whose only
             // documentation is "higher wins" — calling that a recommendation claims a judgement
             // nobody has made. What is true is that this one is used if nothing is changed.
-            ? $"This game is {Describe(game.Runtime)}. {best.Display} unless you choose otherwise — {string.Join(" and ", alternatives)} also fit."
-            : $"This game is {Describe(game.Runtime)} — {best.Display} is the only option.";
+            ? $"This game is {Describe(game.Runtime)}. {best.Display} is used unless you choose another: {string.Join(" and ", alternatives)} also fit."
+            : $"This game is {Describe(game.Runtime)}. {best.Display} is the only option.";
 
         return best;
     }
@@ -762,16 +762,16 @@ public sealed class GameInventory
             {
                 report.Warnings.Add(
                     $"{descriptor.Display} needs the .NET {descriptor.Requires.DotnetDesktop} " +
-                    "Desktop Runtime; we could not verify it on this system.");
+                    "Desktop Runtime. UGT Manager could not check whether it is installed.");
             }
         }
 
         if (_platform.NeedsDllOverride(game) && descriptor.ProtonDllOverride is not null)
         {
             report.Warnings.Add(
-                $"Runs through Proton: Steam launch options must contain " +
-                $"WINEDLLOVERRIDES=\"{descriptor.ProtonDllOverride}=n,b\" %command% " +
-                "or the loader is never injected.");
+                $"Runs through Proton: the game's Steam launch options must contain " +
+                $"WINEDLLOVERRIDES=\"{descriptor.ProtonDllOverride}=n,b\" %command%, " +
+                "or the loader never starts.");
         }
 
         // A missing download for this OS/architecture IS blocking: there is nothing to install.

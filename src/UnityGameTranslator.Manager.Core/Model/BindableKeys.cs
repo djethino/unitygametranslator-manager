@@ -249,9 +249,9 @@ public static class BindableKeys
 
         var key = BaseKeyOf(hotkey!);
 
-        return $"The mod cannot use \"{key}\" — it would silently never open. "
-             + "Function keys (F1 to F15), letters, and named keys like Space, Tab or Escape work; "
-             + "digits are written Alpha1 to Alpha9. Modifiers go in front: Ctrl+, Alt+, Shift+.";
+        return $"UGT Mod cannot use \"{key}\": its panel would never open. "
+             + "Allowed: F1 to F15, letters, and named keys like Space, Tab or Escape. "
+             + "Digits are written Alpha1 to Alpha9. Modifiers go first: Ctrl+, Alt+, Shift+.";
     }
 
     /// <summary>

@@ -56,8 +56,8 @@ public static class PublishLanguages
     /// translated a line of, which the site would refuse anyway as empty.
     /// </summary>
     public const string NoTargetYet =
-        "This translation has no target language yet. The mod sets it with the first line it "
-        + "translates: play once with the mod, then publish.";
+        "This translation has no target language yet. UGT Mod sets it with the first line it "
+        + "translates: play once with UGT Mod, then publish.";
 
     /// <summary>
     /// Said on an update or a contribution when the site did not say which pair the lineage was
@@ -65,8 +65,8 @@ public static class PublishLanguages
     /// that way; the pair is fixed there and cannot be invented here.
     /// </summary>
     public const string LineagePairUnknown =
-        "The site did not say which languages this translation is published in, and this game "
-        + "does not name them either. Open the game once, signed in: the mod takes them from the site.";
+        "UGT Website did not say which languages this translation uses, and this game does not "
+        + "either. Launch the game once, signed in: UGT Mod gets them from UGT Website.";
 
     /// <summary>
     /// The mod's own words on the same screen, kept to the letter — one fact, one sentence, in

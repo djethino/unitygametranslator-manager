@@ -88,7 +88,7 @@ public sealed class AccountLineages
 
             if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             {
-                LastError = "The site no longer accepts this token. Signing in again will fix it.";
+                LastError = "UGT Website no longer accepts this sign-in. Sign in again.";
                 TokenRefused = true;
                 return;
             }
@@ -116,7 +116,7 @@ public sealed class AccountLineages
         }
         catch (Exception ex)
         {
-            LastError = Http.Describe(ex, "the community site");
+            LastError = Http.Describe(ex, "UGT Website");
         }
     }
 

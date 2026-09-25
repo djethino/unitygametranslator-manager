@@ -177,7 +177,7 @@ public static class ClassLibrarySources
 
             var selection = RuntimeLibraries.Select(needs, own, copies);
             if (!selection.Complete)
-                return new[] { $"its own copies are stripped too, and lack what the mod needs ({selection.Unresolved[0].Use.Type})" };
+                return new[] { $"its own copies are stripped too, and lack what UGT Mod needs ({selection.Unresolved[0].Use.Type})" };
 
             if (game.IsWindowsBuild && RuntimeLibraries.UnixOnly(selection.Chosen, copies) is { Count: > 0 } linux)
                 return new[] { $"its copies of {string.Join(", ", linux)} are built for Linux" };

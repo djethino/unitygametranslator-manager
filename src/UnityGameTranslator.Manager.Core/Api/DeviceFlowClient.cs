@@ -95,8 +95,8 @@ public sealed class DeviceFlowClient
             if (!response.IsSuccessStatusCode)
             {
                 return new DeviceFlowResult(false, null, null,
-                    $"The sign-in service answered {(int)response.StatusCode}. Your code is still "
-                    + "valid — try again in a moment.");
+                    $"UGT Website answered {(int)response.StatusCode}. Wait a moment, then click "
+                    + "Start over.");
             }
 
             await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
@@ -128,8 +128,8 @@ public sealed class DeviceFlowClient
 
             // The stream ended without a verdict: the server closed it, or the network did.
             return new DeviceFlowResult(false, null, null,
-                "The connection closed before you finished. Nothing was changed — start again "
-                + "when you are ready.");
+                "The connection closed before sign-in finished. Nothing was changed. Click Start "
+                + "over to try again.");
         }
         catch (OperationCanceledException)
         {
@@ -137,7 +137,7 @@ public sealed class DeviceFlowClient
         }
         catch (Exception ex)
         {
-            return new DeviceFlowResult(false, null, null, Http.Describe(ex, "the sign-in service"));
+            return new DeviceFlowResult(false, null, null, Http.Describe(ex, "UGT Website"));
         }
     }
 

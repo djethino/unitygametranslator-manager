@@ -165,11 +165,11 @@ public sealed record RuntimeLibrariesState(RuntimeLibrariesStatus Status, Runtim
             Online ? $"lacks {Need!.Lacking} - it cannot be added: {none}" : $"lacks {Need!.Lacking} - {none}",
 
         RuntimeLibrariesStatus.Missing =>
-            $"lacks {Need!.Lacking} - not added, so the mod will not start"
+            $"lacks {Need!.Lacking} - not added, so UGT Mod will not start"
             + (Detail is null ? "" : $" ({Detail})"),
 
         RuntimeLibrariesStatus.WrongVersion =>
-            $"lacks {Need!.Lacking} - the copies added no longer fit ({Detail}), so the mod will not start",
+            $"lacks {Need!.Lacking} - the copies added no longer fit ({Detail}), so UGT Mod will not start",
 
         RuntimeLibrariesStatus.InPlace =>
             $"lacks {Need!.Lacking} - added ({InstalledSummary})",

@@ -14,6 +14,7 @@ using UnityGameTranslator.Manager.Core.Platform;
 using UnityGameTranslator.Manager.Core.Settings;
 using UnityGameTranslator.Manager.Core.Update;
 using UnityGameTranslator.Common;
+using static UnityGameTranslator.Manager.Gui.Ui;
 
 namespace UnityGameTranslator.Manager.Gui;
 
@@ -8317,8 +8318,8 @@ public partial class MainWindow : Window
         {
             // ⚠ Two words. It was "Put back what was here before", then "Restore this game's own
             // files" — a sentence either way. "Restore" is the verb every program has used for
-            // thirty years; "files" is what tells it apart from "Restore local…", the translation
-            // button. The count and the reason belong in the tooltip, which is where somebody
+            // thirty years; "files" is what tells it apart from the translation's own Restore (in
+            // Backups…). The count and the reason belong in the tooltip, which is where somebody
             // looks once the label has told them which button this is.
             var putBack = ScopeMark.Marked(EditSide.Local, $"Restore files ({missing.Count})",
                                            enabled: false);
@@ -12507,7 +12508,7 @@ public partial class MainWindow : Window
             var body = new StackPanel { Spacing = 6 };
             foreach (var warning in ReplacementWarnings(report, local, picked)) body.Children.Add(warning);
 
-            if (!await ConfirmAsync($"Replace the translation in {report.Game.Name}?", body, "Replace it"))
+            if (!await ConfirmAsync($"Replace the translation in {report.Game.Name}?", body, "Replace"))
                 return;
         }
 
@@ -12654,8 +12655,8 @@ public partial class MainWindow : Window
         {
             "llm" when !string.IsNullOrWhiteSpace(settings.AiUrl) =>
                 string.IsNullOrWhiteSpace(settings.AiModel)
-                    ? $"Using your own AI at {settings.AiUrl} — no model chosen yet"
-                    : $"Using {settings.AiModel} on your own AI at {settings.AiUrl}",
+                    ? $"Using the AI at {settings.AiUrl} (no model chosen yet)"
+                    : $"Using {settings.AiModel} at {settings.AiUrl}",
 
             "google" when !string.IsNullOrWhiteSpace(settings.GoogleApiKey) =>
                 "Using Google Translate with your key",
@@ -12666,7 +12667,7 @@ public partial class MainWindow : Window
             // ⚠ Nothing to check: this answer needs no server and no key. It is a complete setup —
             // the mod captures the text and somebody writes the lines — and saying so is what
             // stops the rest of this program treating it as "no translator configured".
-            "capture" => "Capturing the game's text for you to translate by hand",
+            "capture" => "Collecting the game's text for you to translate by hand",
 
             // Everything else — "none", or a backend chosen but left without what it needs — is
             // reported as nothing set up. A key that is missing translates exactly as little as a
@@ -12692,14 +12693,16 @@ public partial class MainWindow : Window
             // Same three verbs as the mod's section, in the same order, for the same reasons.
             // "Reinstall" is what puts back a loader whose files were damaged — reachable only by
             // removing everything first, until now.
+            // The same words as the UGT Mod card below ("Update to X", "Reinstall"): the section
+            // title already says which program they act on.
             return report.LoaderUpdateOffered
-                ? $"Update the loader to {report.LoaderStanding!.Available}"
-                : "Reinstall the loader";
+                ? $"Update to {report.LoaderStanding!.Available}"
+                : "Reinstall";
         }
 
         // Nothing installed: offered as soon as something could be. The picker beside it says
         // which one, so the button does not repeat the name and cannot drift from the choice.
-        return report.EligibleLoaders.Count > 0 ? "Install the loader" : null;
+        return report.EligibleLoaders.Count > 0 ? "Install loader" : null;
     }
 
     /// <summary>
@@ -12739,7 +12742,7 @@ public partial class MainWindow : Window
             result.Written ? "Applied" : "Nothing was changed",
             result.Written
                 ? $"Applied to {report.Game.Name}: {string.Join(", ", result.Applied)}."
-                : $"Your settings could not be written ({result.Failure}).");
+                : $"Mod defaults could not be written ({result.Failure}).");
 
         await ShowSelectedAsync();
     }
@@ -12763,7 +12766,7 @@ public partial class MainWindow : Window
         var body = new StackPanel { Spacing = 10 };
         body.Children.Add(new TextBlock
         {
-            Text = "This game will be listed as not possible again, and the tool will stop " +
+            Text = "This game will be marked as not moddable again, and UGT Manager will stop " +
                    "offering to install into it.",
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("TextSecondary"),
@@ -12774,14 +12777,14 @@ public partial class MainWindow : Window
         {
             body.Children.Add(new TextBlock
             {
-                Text = "Something is still installed here. Uninstall it first, otherwise the " +
-                       "files stay behind and the tool will no longer offer to remove them.",
+                Text = "Files installed by UGT Manager are still in this game. Uninstall them " +
+                       "first, or UGT Manager will no longer offer to remove them.",
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("StatusWarning"),
             });
         }
 
-        if (!await ConfirmAsync($"Treat {report.Game.Name} as not possible?", body, "Confirm"))
+        if (!await ConfirmAsync($"Mark {report.Game.Name} as not moddable?", body, "Confirm"))
             return;
 
         _inventory.Overrides.Clear(report.Game.Path);
@@ -12816,7 +12819,8 @@ public partial class MainWindow : Window
         // How long the choice lasts — GameOverrides.Apply.
         body.Children.Add(new TextBlock
         {
-            Text = "This lasts until the Manager is closed. After that, only while something installed here stays installed.",
+            Text = "This lasts until UGT Manager is closed, then as long as something it installed "
+                 + "stays in this game.",
             TextWrapping = TextWrapping.Wrap,
             FontSize = 12,
             Foreground = Brush("TextMuted"),
@@ -12887,9 +12891,9 @@ public partial class MainWindow : Window
         // engine raises a Stage for, so each line is ticked by the fact and not by a sentence.
         var stages = new List<(InstallStage Stage, string Line)>();
         if (plan.InstallLoader) stages.Add((InstallStage.Loader, $"Install {plan.Loader.Display}"));
-        if (plan.InstallPlugin) stages.Add((InstallStage.Plugin, "Install the mod"));
-        if (plan.SupplyRuntimeLibraries) stages.Add((InstallStage.RuntimeLibraries, "Add the libraries this game lacks"));
-        if (plan.WritesSettings) stages.Add((InstallStage.Settings, "Apply the settings"));
+        if (plan.InstallPlugin) stages.Add((InstallStage.Plugin, "Install UGT Mod"));
+        if (plan.SupplyRuntimeLibraries) stages.Add((InstallStage.RuntimeLibraries, "Add missing libraries"));
+        if (plan.WritesSettings) stages.Add((InstallStage.Settings, "Apply settings"));
 
         void OnStage(InstallStage stage) =>
             Dispatcher.UIThread.Post(() => Work.Begin(stages.FindIndex(s => s.Stage == stage)));
@@ -12965,23 +12969,25 @@ public partial class MainWindow : Window
         // Three situations, and the difference is what somebody stands to lose. Published work
         // comes back with its role; unpublished work comes back only from the copy set aside.
         var stake = mine is not null
-            ? $"It is published under your account, so you can take it back at any time — with your "
-              + (mine.IsMain ? "Main." : "contribution.")
+            ? $"It is published under your account ({(mine.IsMain ? "Main" : "branch")}), so you "
+              + "can download it again at any time."
             : report.MatchingOnline is not null
-                ? "It came from the community and can be downloaded again."
-                : "🔴 It has never been published, so the copy set aside here is the only one left.";
+                ? "It is published on UGT Website and can be downloaded again."
+                : "It has never been published: the backup made now will be the only copy.";
 
         var unpublished = report.LocalTranslation?.ChangedSinceAncestor;
         var changed = unpublished is int differing and > 0
-            ? $" {Composition.Amount(differing, "line", "lines")} {(differing == 1 ? "differs" : "differ")} from what was last synced."
+            ? $" {Composition.Amount(differing, "line", "lines")} changed since the last sync."
             : "";
 
+        // ⚠ The way back is named by the button that holds it, "Backups…" on this card ("Restore
+        // local" was its name before the Backups window replaced it).
         if (!await ConfirmAsync($"Remove the local translation from {report.Game.Name}?",
-                $"{Composition.Amount(lines, "line", "lines")} will be moved out of the game.{changed} {stake}"
+                $"{Composition.Amount(lines, "line", "lines")} will be removed from the game.{changed} {stake}"
                 + Environment.NewLine + Environment.NewLine
-                + $"A copy is kept aside — the last {TranslationInstaller.BackupsKept} are, and "
-                + "Restore local brings them back.",
-                "Remove it")) return;
+                + $"It is backed up first (the last {TranslationInstaller.BackupsKept} automatic "
+                + "backups are kept). Use Backups to restore it.",
+                "Remove")) return;
 
         Working($"Removing the translation from {report.Game.Name}...");
 
@@ -13057,18 +13063,17 @@ public partial class MainWindow : Window
 
         var modBox = new CheckBox
         {
-            Content = "Also remove the mod",
+            Content = "Also remove UGT Mod",
             IsEnabled = false,
             IsChecked = true,
             IsVisible = fromLoaderSection,
         };
-        ToolTip.SetTip(modBox,
-            $"Required: with {loaderName} gone, nothing would ever load the mod again.");
+        ToolTip.SetTip(modBox, $"Required: without {loaderName}, UGT Mod cannot run.");
 
         // Off by default, and deliberately worded so nobody deletes months of work by reflex.
         var dataBox = new CheckBox
         {
-            Content = "Also remove settings and translations (a copy is kept aside)",
+            Content = "Also remove settings and translations (backed up first)",
             IsChecked = false,
         };
 
@@ -13080,10 +13085,10 @@ public partial class MainWindow : Window
         content.Children.Add(new TextBlock
         {
             Text = fromLoaderSection
-                ? $"{loaderName} and the mod will both be removed. Nothing else in this game is "
-                  + "touched, and files you changed since installing are left alone."
-                : "The mod will be removed. Nothing else in this game is touched, and files you "
-                  + "changed since installing are left alone.",
+                ? $"{loaderName} and UGT Mod will be removed. Nothing else in this game is "
+                  + "changed, and files you edited since installing are kept."
+                : "UGT Mod will be removed. Nothing else in this game is changed, and files you "
+                  + "edited since installing are kept.",
             TextWrapping = TextWrapping.Wrap,
         });
 
@@ -13112,7 +13117,7 @@ public partial class MainWindow : Window
                      + (loaderFiles.Count > 3 ? $", and {loaderFiles.Count - 3} more" : ""),
                 FontSize = 11,
                 TextWrapping = TextWrapping.Wrap,
-                Opacity = 0.6,
+                Foreground = Brush("TextMuted"),
                 Margin = new Avalonia.Thickness(24, -4, 0, 0),
                 IsVisible = loaderBox.IsChecked == true,
             };
@@ -13129,10 +13134,10 @@ public partial class MainWindow : Window
         {
             content.Children.Add(new TextBlock
             {
-                Text = $"{loaderName} stays: {Composition.Amount(foreign.Count, "other mod", "other mods")} {(foreign.Count == 1 ? "needs" : "need")} it — "
+                Text = $"{loaderName} stays: {Composition.Amount(foreign.Count, "other mod", "other mods")} {(foreign.Count == 1 ? "needs" : "need")} it ("
                      + string.Join(", ", foreign.Take(6))
                      + (foreign.Count > 6 ? $", and {foreign.Count - 6} more" : "")
-                     + ". They are never touched.",
+                     + "). They are not changed.",
                 FontSize = 11,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("StatusWarning"),
@@ -13143,8 +13148,8 @@ public partial class MainWindow : Window
         {
             content.Children.Add(new TextBlock
             {
-                Text = $"{loaderName} stays: it was already in this game before "
-                     + "UnityGameTranslator Manager was used here, so it is not ours to remove.",
+                Text = $"{loaderName} stays: it was in this game before UGT Manager, so UGT Manager "
+                     + "does not remove it.",
                 FontSize = 11,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("TextMuted"),
@@ -13170,7 +13175,7 @@ public partial class MainWindow : Window
         // the object of the sentence, on the one screen where being wrong about it costs files.
         var title = fromLoaderSection
             ? $"Uninstall the mod loader from {report.Game.Name}"
-            : $"Uninstall the mod from {report.Game.Name}";
+            : $"Uninstall UGT Mod from {report.Game.Name}";
 
         if (!await ConfirmAsync(title, content, "Uninstall")) return;
 
@@ -13190,15 +13195,15 @@ public partial class MainWindow : Window
             var history = chosenData.Count(UserDataInventory.IsBackup);
 
             var summary = history == 0
-                ? $"{Composition.Amount(chosenData.Count, "file", "files")} will be deleted from {report.Game.Name}, including "
-                  + "anything captured while playing that was never uploaded.\n\nThe translation is "
-                  + $"backed up one last time first, and this game's {Backups.ScreenTitle.ToLowerInvariant()} "
-                  + "stay where they are."
-                : $"{Composition.Amount(chosenData.Count, "file", "files")} will be deleted from {report.Game.Name}, including "
-                  + $"{Composition.Amount(history, "backup file", "backup files")} and anything captured while playing that was never "
-                  + "uploaded.\n\nNothing is kept aside. This cannot be undone.";
+                ? $"{Composition.Amount(chosenData.Count, "file", "files")} will be deleted from {report.Game.Name}, "
+                  + "including lines captured in the game and never uploaded.\n\nThe translation is "
+                  + $"backed up one last time first. This game's {Backups.ScreenTitle.ToLowerInvariant()} "
+                  + "are kept."
+                : $"{Composition.Amount(chosenData.Count, "file", "files")} will be deleted from {report.Game.Name}, "
+                  + $"including {Composition.Amount(history, "backup file", "backup files")} and lines captured in the "
+                  + "game and never uploaded.\n\nNo backup is kept. This cannot be undone.";
 
-            if (!await ConfirmAsync("Delete this game's data?", summary, "Delete them")) return;
+            if (!await ConfirmAsync("Delete this game's data?", summary, "Delete")) return;
         }
 
         // Read off the boxes HERE, on this thread: the work below runs elsewhere and must not reach
@@ -13210,8 +13215,8 @@ public partial class MainWindow : Window
             UserDataFiles: chosenData);
 
         Working(choice.RemoveLoader
-            ? $"Removing the mod loader and the mod from {report.Game.Name}..."
-            : $"Removing the mod from {report.Game.Name}...");
+            ? $"Removing the mod loader and UGT Mod from {report.Game.Name}..."
+            : $"Removing UGT Mod from {report.Game.Name}...");
 
         engine.Status += OnEngineStatus;
 
@@ -13231,8 +13236,8 @@ public partial class MainWindow : Window
             // this card.
             if (outcome.LastBackupTaken)
                 message += Environment.NewLine + Environment.NewLine +
-                           "The translation was backed up one last time. It is under Backups, with the "
-                           + "fonts and images it used.";
+                           "The translation was backed up one last time, with its fonts and images. "
+                           + "Find it in Backups.";
 
             await MessageAsync("Uninstalled", message);
         }
@@ -13258,7 +13263,7 @@ public partial class MainWindow : Window
         var aside = UninstallEngine.RestorableFiles(report.Game);
         if (aside.Count == 0)
         {
-            await MessageAsync("Nothing to put back",
+            await MessageAsync("Nothing to restore",
                 "Every file this game had before is already in place.");
             return;
         }
@@ -13269,17 +13274,20 @@ public partial class MainWindow : Window
         // ⚠ "Nothing is deleted" first, in its own sentence. A confirmation naming two hundred
         // files invites exactly one question — what am I about to lose — and the answer is
         // nothing: this only fills the gaps its own uninstall left.
-        var body = "Nothing is deleted. These files were here before UnityGameTranslator Manager "
-                 + $"replaced them, and are missing from {report.Game.Name} now — writing them "
-                 + "back restores the mod loader it came with, so it will be detected again."
+        //
+        // The dialog says "Restore" because the button that opens it says "Restore files (N)":
+        // it used to say "Put back", a second verb for the same act one click later.
+        var body = "Nothing is deleted. UGT Manager replaced these files, and they are missing from "
+                 + $"{report.Game.Name} now. Restoring them brings back the mod loader they belong to, "
+                 + "and it will be detected again."
                  + Environment.NewLine + Environment.NewLine + shown
                  + Environment.NewLine + Environment.NewLine
-                 + "Anything already in place is left exactly as it is.";
+                 + "Files already in place are not changed.";
 
-        if (!await ConfirmAsync($"Put back what {report.Game.Name} had before?", body, "Put them back"))
+        if (!await ConfirmAsync($"Restore the files {report.Game.Name} had before?", body, "Restore"))
             return;
 
-        Working($"Putting back what {report.Game.Name} had before...");
+        Working($"Restoring the files {report.Game.Name} had before...");
 
         try
         {
@@ -13293,7 +13301,7 @@ public partial class MainWindow : Window
                 message += Environment.NewLine + Environment.NewLine +
                            string.Join(Environment.NewLine, outcome.PutBack.Select(f => "• " + f));
 
-            await MessageAsync("Put back", message);
+            await MessageAsync("Files restored", message);
         }
         finally
         {
@@ -13688,60 +13696,4 @@ public partial class MainWindow : Window
         ok.Click += (_, _) => dialog.Close();
         await dialog.ShowDialog(this);
     }
-
-    /// <summary>
-    /// The site's card, reproduced: gray-800 fill, gray-700 edge, 8px radius, generous padding.
-    /// Framing each section is what turns a wall of lines into things you can look at one at a
-    /// time — which is the whole reason the site uses them.
-    /// </summary>
-    private static Control Card(Control content) => new Border
-    {
-        Background = Brush("SurfaceCard"),
-        BorderBrush = Brush("BorderSubtle"),
-        BorderThickness = new Avalonia.Thickness(1),
-        CornerRadius = new Avalonia.CornerRadius(8),
-        Padding = new Avalonia.Thickness(18, 15),
-        Child = content,
-    };
-
-    /// <summary>
-    /// Looks a brush up in the shared palette (Theme.axaml), through Palette — which will not let
-    /// an unknown key pass unnoticed.
-    /// </summary>
-    private static IBrush? Brush(string key) => Palette.Of(key);
-
-    /// <summary>
-    /// A message that needs to stand out, tinted rather than shouted: the hue laid over the base
-    /// surface, with a coloured edge. A flat saturated block would fight the rest of the window.
-    /// </summary>
-    private static Control Callout(string text, Tone tone) =>
-        Callout(new TextBlock
-        {
-            Text = text,
-            TextWrapping = TextWrapping.Wrap,
-            FontSize = 12,
-            Foreground = Brush("TextPrimary"),
-        }, tone);
-
-    /// <summary>
-    /// The same notice, around something richer than a sentence — a list, a button, both.
-    ///
-    /// ⚠ One shape for every notice on this screen, and it had drifted into three: the blockers
-    /// used this, the configuration differences built their own Border with a full outline and a
-    /// different radius, and the newest warnings were dressed as plain cards, which made a problem
-    /// look like a section. A notice is recognised by its edge before it is read; three edges mean
-    /// nothing is recognised at all.
-    /// </summary>
-    private static Control Callout(Control content, Tone tone) => new Border
-    {
-        Background = Brush(Tones.CalloutBackground(tone)),
-        BorderBrush = Brush(Tones.Edge(tone)),
-
-        // The left rule, not a box: it reads as a margin note against the cards it sits between,
-        // and an outlined rectangle inside another outlined rectangle reads as a dialog.
-        BorderThickness = new Avalonia.Thickness(3, 0, 0, 0),
-        CornerRadius = new Avalonia.CornerRadius(4),
-        Padding = new Avalonia.Thickness(12, 9),
-        Child = content,
-    };
 }

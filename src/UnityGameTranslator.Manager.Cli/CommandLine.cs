@@ -113,7 +113,7 @@ public static class CommandLine
               install <path or name>       Set up the loader and the plugin
               update <path or name>        Same thing: reinstalls the current release
               uninstall <path or name>     Remove what was installed
-              restore <path or name>       Put back the files this game had before we replaced them
+              restore <path or name>       Restore the files this game had before UGT Manager replaced them
               forget <path or name>        Undo what you told us about a game
               ai [--test] [--model M]      Find a local AI server, optionally translate one line
               ai --compare a,b,c            Score several models on the job the mod asks of them
@@ -1423,22 +1423,21 @@ public static class CommandLine
         if (aside.Count == 0)
         {
             Console.WriteLine($"Every file {report.Game.Name} had before is already in place. "
-                              + "There is nothing to put back.");
+                              + "Nothing to restore.");
             return 0;
         }
 
         Console.WriteLine($"{report.Game.Name}");
         Console.WriteLine($"{report.Game.Path}");
         Console.WriteLine();
-        Console.WriteLine("These files were here before UnityGameTranslator Manager replaced them:");
+        Console.WriteLine("UGT Manager replaced these files, and they are missing now:");
         foreach (var file in aside) Console.WriteLine($"  {file}");
         Console.WriteLine();
-        Console.WriteLine("Putting them back restores the mod loader this game came with, so it "
-                          + "will be detected again. Anything sitting at one of those paths right "
-                          + "now is left alone.");
+        Console.WriteLine("Restoring them brings back the mod loader they belong to, and it will be "
+                          + "detected again. Files already in place are not changed.");
         Console.WriteLine();
 
-        if (!Confirm(args, "Put them back?"))
+        if (!Confirm(args, "Restore them?"))
         {
             Console.WriteLine("Cancelled. Nothing was written.");
             return 0;

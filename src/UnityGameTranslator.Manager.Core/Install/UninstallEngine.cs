@@ -567,8 +567,10 @@ public sealed class UninstallEngine
         // in a hidden folder without a word would be losing them by silence.
         if (waiting > 0)
         {
-            message += $" {Composition.Amount(waiting, "file", "files")} this game had before {(waiting == 1 ? "is" : "are")} kept aside — "
-                     + "\"Put back what was here before\" restores them.";
+            // Names the button as it reads on the game's page ("Restore files (N)"); it used to
+            // name one that had been renamed twice since.
+            message += $" {Composition.Amount(waiting, "file", "files")} this game had before {(waiting == 1 ? "is" : "are")} kept. "
+                     + "\"Restore files\" brings them back.";
         }
 
         return new UninstallOutcome(true, message, removed, kept, lastBackupTaken);
@@ -759,8 +761,8 @@ public sealed class UninstallEngine
         return new RestoreOutcome(
             restored.Count > 0,
             restored.Count == 0
-                ? "There is nothing to put back: this game had no file of its own where ours went."
-                : $"Put back {Composition.Amount(restored.Count, "file", "files")} this game had before.",
+                ? "Nothing to restore: UGT Manager did not replace any file of this game."
+                : $"Restored {Composition.Amount(restored.Count, "file", "files")} this game had before.",
             restored);
     }
 

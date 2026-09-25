@@ -895,6 +895,10 @@ public sealed class SettingsWindow : Window
             var refusal = library.Import(path);
             Ui.Say(problem, refusal ?? "", Tone.Error);
             Show();
+
+            // Importing a file IS saying one wants it used (user, 2026-09-25): ticked for them — a
+            // pending change like any other, counted in Apply (N), never saved by the import itself.
+            if (refusal is null) _translateModUi.IsChecked = true;
         };
 
         remove.Click += (_, _) =>

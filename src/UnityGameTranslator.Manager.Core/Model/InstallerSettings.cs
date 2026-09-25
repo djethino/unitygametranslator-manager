@@ -232,6 +232,8 @@ public sealed class InstallerSettings
     ///
     /// ⚠ **Off until somebody ticks it** (user, 2026-09-25): an option is never chosen on the
     /// person's behalf. Off, the file is still placed and the game can switch it on in its Options.
+    /// Importing a file ticks it on the screen (SettingsWindow.ModUiCard) — the import is the act
+    /// that says so — and Apply (N) is still what keeps it.
     /// </summary>
     [JsonPropertyName("translate_mod_ui")] public bool TranslateModUi { get; set; }
 

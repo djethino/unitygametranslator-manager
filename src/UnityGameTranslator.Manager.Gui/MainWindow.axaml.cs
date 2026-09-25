@@ -611,6 +611,7 @@ public partial class MainWindow : Window
 
         _games.Clear();
         _games.AddRange(found.OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase));
+        _scannedOnce = true;
 
         // Before the rows are built, so the first thing drawn is already right rather than correct
         // itself four seconds later.
@@ -932,14 +933,6 @@ public partial class MainWindow : Window
     {
         RecomputeSituations();
 
-        // ⚠ Counted here, with the rows, and no longer once at the scan: overruling a refusal
-        // ("Let me try anyway") or taking the overrule back changes it, and the subtitle went on
-        // counting the game among those that cannot be modded (2026-09-21).
-        var blocked = _games.Count(g => !g.IsModdable);
-        SubtitleText.Text = blocked == 0
-            ? $"{_games.Count} Unity games found"
-            : $"{_games.Count} Unity games found, {blocked} that cannot be modded";
-
         // Contents rather than a rebuild wherever membership cannot move — which is everywhere
         // except under a filter, where learning something about a game can put it in or out of the
         // visible set. Rebuilding drops the selection and restores it, and doing that on every
@@ -956,6 +949,11 @@ public partial class MainWindow : Window
         // once a list exists.
         if (_lens == Lens.All && _rows.Count > 0) RefreshRowContents();
         else RefreshList();
+
+        // ⚠ Counted here, with the rows, and not once at the scan: overruling a refusal ("Let me
+        // try anyway") or taking the overrule back changes it, and the subtitle went on counting
+        // the game among those that cannot be modded (2026-09-21).
+        UpdateSubtitle();
     }
 
     /// <summary>
@@ -1472,6 +1470,59 @@ public partial class MainWindow : Window
         };
     }
 
+    /// <summary>
+    /// A filter's name as its button reads — one spelling, because the subtitle names the filter in
+    /// force and has to use the word the person can see on the bar.
+    /// </summary>
+    private static string LensLabel(Lens lens) => lens switch
+    {
+        Lens.Playable => "In my language",
+        Lens.NeedsTranslator => "Untranslated",
+        Lens.Ready => "Set up",
+        Lens.Mine => "Mine",
+        Lens.Running => "Running",
+        Lens.Blocked => "Not moddable",
+        _ => "All",
+    };
+
+    /// <summary>
+    /// The line under the title: how many games were found — and, whenever a filter or a search is
+    /// narrowing the list, how many of them are shown and why.
+    ///
+    /// 🔴 **Why the second half exists** (2026-09-25). A filter left on survives a rescan, as it
+    /// should — it is somebody's choice. But nothing on screen said the list was partial, so games
+    /// installed since were found and then hidden, and the rescan read as broken until a restart put
+    /// the filter back on All. The count comes from the rows actually drawn, never from a second
+    /// reading of the filter.
+    /// </summary>
+    private void UpdateSubtitle()
+    {
+        // Before the first scan the line says "Scanning..." (the markup's), and a keystroke in the
+        // search box must not replace it with "0 Unity games found".
+        if (!_scannedOnce) return;
+
+        var search = SearchBox.Text?.Trim() ?? "";
+        var narrowing = new List<string>();
+        if (_lens != Lens.All) narrowing.Add($"filter: {LensLabel(_lens)}");
+        if (search.Length > 0) narrowing.Add($"search: \"{search}\"");
+
+        // ⚠ The partial count LEADS when there is one: the line is cut with an ellipsis in a narrow
+        // column, and "12 of 60" at its end would be the part cut off.
+        if (narrowing.Count > 0)
+        {
+            SubtitleText.Text = $"Showing {_rows.Count} of {_games.Count} Unity games ({string.Join(", ", narrowing)})";
+            return;
+        }
+
+        var blocked = _games.Count(g => !g.IsModdable);
+        SubtitleText.Text = blocked == 0
+            ? $"{_games.Count} Unity games found"
+            : $"{_games.Count} Unity games found, {blocked} that cannot be modded";
+    }
+
+    /// <summary>Whether a scan has filled the list yet — see UpdateSubtitle.</summary>
+    private bool _scannedOnce;
+
     private void BuildFilterBar()
     {
         FilterBar.Children.Clear();
@@ -1482,10 +1533,10 @@ public partial class MainWindow : Window
         // visit.
         var filters = new List<(string Label, string Meaning, Lens Value)>
         {
-            ("All", "Every game found, whatever its state.", Lens.All),
-            ("In my language", "Games with a translation in your language.", Lens.Playable),
-            ("Untranslated", "Games with no translation in your language yet.", Lens.NeedsTranslator),
-            ("Set up", "Games with UGT Mod installed.", Lens.Ready),
+            (LensLabel(Lens.All), "Every game found, whatever its state.", Lens.All),
+            (LensLabel(Lens.Playable), "Games with a translation in your language.", Lens.Playable),
+            (LensLabel(Lens.NeedsTranslator), "Games with no translation in your language yet.", Lens.NeedsTranslator),
+            (LensLabel(Lens.Ready), "Games with UGT Mod installed.", Lens.Ready),
         };
 
         // Only offered when there is an account to answer it. A filter that can only ever return
@@ -1493,8 +1544,8 @@ public partial class MainWindow : Window
         // know". The bar is rebuilt when the account changes, so it appears on signing in.
         if (_settings.Current.SignedIn)
         {
-            filters.Add(("Mine", "Games with a translation you publish (Main) or contribute to "
-                               + "(branch).", Lens.Mine));
+            filters.Add((LensLabel(Lens.Mine), "Games with a translation you publish (Main) or contribute to "
+                                               + "(branch).", Lens.Mine));
         }
 
         // Before "not moddable", and only while something is running: a lens that can only ever
@@ -1503,11 +1554,11 @@ public partial class MainWindow : Window
         // changes its mind.
         if (_running.Paths.Count > 0)
         {
-            filters.Add(("Running", "Games running now. Close a game to set it up or remove it.",
+            filters.Add((LensLabel(Lens.Running), "Games running now. Close a game to set it up or remove it.",
                          Lens.Running));
         }
 
-        filters.Add(("Not moddable", "Games no mod loader can run in. The reason is on each game's page.",
+        filters.Add((LensLabel(Lens.Blocked), "Games no mod loader can run in. The reason is on each game's page.",
                      Lens.Blocked));
 
         foreach (var (label, meaning, value) in filters)
@@ -1615,6 +1666,10 @@ public partial class MainWindow : Window
         if (previous is not null) SelectByPath(previous);
 
         _restoringSelection = false;
+
+        // Every search keystroke and every filter change comes through here, and each changes how
+        // many rows are shown.
+        UpdateSubtitle();
     }
 
     /// <summary>

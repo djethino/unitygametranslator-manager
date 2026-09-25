@@ -41,7 +41,7 @@ internal static class Program
         ConfigContractChecks.WhatThisToolWritesStaysWhatWasAsked();
         ConfigContractChecks.TheSourceLanguageIsDeclaredNeverGuessed();
         ConfigContractChecks.ShortcutsFillThenReplace();
-        ConfigContractChecks.TheInterfaceFileFillsOnly();
+        ConfigContractChecks.TheInterfaceFileFollowsTheAct();
         MomentsContractChecks.WhatTheFileSaysAfterEachMoment();
         TextsSeenContractChecks.WhatAGameShowed();
         InstallLedgerChecks.WhatTheToolRemembersDoing();

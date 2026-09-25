@@ -237,10 +237,11 @@ internal static class ConfigContractChecks
 
     /// <summary>
     /// The interface file kept by UGT Manager: imported only when it states its language, placed
-    /// only in a game of that language that has none, and its switch written only beside it
-    /// (analyse/manager-reglages-avances.md, part C).
+    /// only in a game of that language, and replaced only by an act that says so — Mod defaults
+    /// applied, or the game's Replace — while its switch is overridable per game like the rest
+    /// (analyse/manager-reglages-avances.md, part C; user's rules, 2026-09-25).
     /// </summary>
-    internal static void TheInterfaceFileFillsOnly()
+    internal static void TheInterfaceFileFollowsTheAct()
     {
         Program.Section("The UGT Mod interface file");
 
@@ -301,10 +302,72 @@ internal static class ConfigContractChecks
                 "not placed in a game of another language, and its switch not written",
                 "the mod would set it aside; the switch without the file says nothing");
 
-            var own = GameWith("""{ "_target_language": "French", "Apply": { "v": "Valider", "t": "M" } }""");
+            const string itsOwn = """{ "_target_language": "French", "Apply": { "v": "Valider", "t": "M" } }""";
+            var own = GameWith(itsOwn);
             writer.Apply(own, descriptor, settings, "French");
-            Program.Check(InterfaceFile(own)?.Contains("Valider") == true,
-                "a game's own interface file is kept", "it may be the better one — fill, never replace");
+            Program.Check(InterfaceFile(own)?.Contains("Valider") == true
+                          && !writer.Compare(own, descriptor, settings, "French").Any(d => d.Key == ModUi.FileName),
+                "a game's own settings keep its own interface file, and do not offer to replace it",
+                "replacing it is somebody's act — Mod defaults applied, or the game's Replace button");
+
+            // Applying Mod defaults replaces it, and says so first (user's decision, 2026-09-25).
+            var defaulted = GameWith(itsOwn);
+            var listed = writer.Compare(defaulted, descriptor, settings, "French", modUi: ModUiWrite.Replace)
+                               .FirstOrDefault(d => d.Key == ModUi.FileName);
+            writer.Apply(defaulted, descriptor, settings, "French", modUi: ModUiWrite.Replace);
+            Program.Check(listed is { Writes: true, Note: not null } && InterfaceFile(defaulted)?.Contains("Appliquer") == true,
+                "Mod defaults applied to a game replace its own file, listed with a note first",
+                "the differences are what the act is confirmed from");
+
+            var twice = new GameConfigWriter(library)
+                .Compare(defaulted, descriptor, settings, "French", modUi: ModUiWrite.Replace);
+            Program.Check(!twice.Any(d => d.Key == ModUi.FileName),
+                "the same file is not offered again", "nothing would change");
+
+            // The switch: Mod defaults replace the game's answer; a game's own answer wins in its own act.
+            var said = GameWith(null);
+            File.WriteAllText(Path.Combine(said, "BepInEx", "plugins", "UnityGameTranslator", LocalTranslationProbe.ConfigFileName),
+                              """{ "translate_mod_ui": false }""");
+            writer.Apply(said, descriptor, settings, "French");
+            Program.Check(Config(said)[GameConfigWriter.TranslateModUiKey]?.GetValue<bool>() == false && InterfaceFile(said) is null,
+                "a game's own no is kept by its own settings, and no file goes in",
+                "the file is placed only while the game is to translate the interface");
+
+            writer.Apply(said, descriptor, settings, "French", modUi: ModUiWrite.Replace);
+            Program.Check(Config(said)[GameConfigWriter.TranslateModUiKey]?.GetValue<bool>() == true
+                          && InterfaceFile(said)?.Contains("Appliquer") == true,
+                "Mod defaults applied write their switch over the game's, with the file",
+                "Mod defaults replace, like every setting they hold");
+
+            var answered = new GamePreference { Mod = new GameModOverrides { TranslateModUi = false } };
+            writer.Apply(said, descriptor, settings, "French", perGame: answered);
+            Program.Check(Config(said)[GameConfigWriter.TranslateModUiKey]?.GetValue<bool>() == false,
+                "an answer given for this game is written over what the game holds",
+                "overridable per game like the rest");
+
+            var off = GameWith(null);
+            writer.Apply(off, descriptor, new InstallerSettings { TranslateModUi = false }, "French");
+            Program.Check(InterfaceFile(off) is null,
+                "no file goes into a game that is not to translate the interface", "it would say nothing there");
+
+            var on = GameWith(null);
+            writer.Apply(on, descriptor, new InstallerSettings { TranslateModUi = false }, "French",
+                         perGame: new GamePreference { Mod = new GameModOverrides { TranslateModUi = true } });
+            Program.Check(InterfaceFile(on)?.Contains("Appliquer") == true
+                          && Config(on)[GameConfigWriter.TranslateModUiKey]?.GetValue<bool>() == true,
+                "turned on for a game with no file, its Apply places the one from Mod defaults",
+                "the switch and the file go in together");
+
+            Program.Check(new GameModOverrides { TranslateModUi = true }
+                              .PendingAgainst(new GameModOverrides { TranslateModUi = false }) == 1,
+                "a game's own answer about the interface counts in its Apply (N)", "it is a setting like the others");
+
+            var view = library.ViewOf(Path.Combine(own, "BepInEx", "plugins", "UnityGameTranslator"), "French");
+            Program.Check(view is { Replaceable: true, InGame.Lines: 1, KeptFits: true, Same: false },
+                "Set up sees a game's own file and offers to replace it", "both files, the kept one fits, they differ");
+            library.PlaceInto(Path.Combine(own, "BepInEx", "plugins", "UnityGameTranslator"), "French", replace: true);
+            Program.Check(InterfaceFile(own)?.Contains("Appliquer") == true,
+                "Replace puts the kept file in place of the game's", "the one act that does, on a game set up here");
         }
         finally
         {

@@ -9110,7 +9110,14 @@ public partial class MainWindow : Window
         // the hotkey's, so this form neither shows it nor needs to know what settles it.
         var form = new GameModSettingsForm(_platform, _settings.Current, snapshot, stored,
                                            installed: snapshot.IsConfigured,
-                                           refusal: SetupRefusal(report));
+                                           refusal: SetupRefusal(report),
+                                           modUi: ModUiViewOf(report, preference));
+
+        form.ReplaceModUi += async () =>
+        {
+            await ReplaceModUiAsync(report, preference);
+            refresh();
+        };
 
         // 🔴 **Stored as they are typed, and only where nothing else would store them.** Before the
         // mod is installed there is no Apply — see the note on the form's `installed` — so this is
@@ -9190,6 +9197,61 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// The UGT Mod interface file of this game and of Mod defaults, as Set up shows it — or null
+    /// before there is a data folder to read.
+    /// </summary>
+    private ModUiView? ModUiViewOf(GameReport report, GamePreference preference)
+    {
+        if (InstalledDescriptor(report) is not { } descriptor) return null;
+        if (UserDataInventory.DataFolder(report.Game.Path, descriptor) is not { } folder) return null;
+
+        return new ModUiLibrary(_platform).ViewOf(folder,
+            TargetFor(report, descriptor, SettingsFor(report, preference)));
+    }
+
+    /// <summary>
+    /// Replaces this game's own interface file with the one kept in Mod defaults — the one act that
+    /// does, on a game set up here (user's decision, 2026-09-25). Confirmed first: the game's file
+    /// may hold corrections made in the game, and it is not kept.
+    /// </summary>
+    private async Task ReplaceModUiAsync(GameReport report, GamePreference preference)
+    {
+        if (InstalledDescriptor(report) is not { } descriptor) return;
+        if (UserDataInventory.DataFolder(report.Game.Path, descriptor) is not { } folder) return;
+
+        var library = new ModUiLibrary(_platform);
+        var view = library.ViewOf(folder, TargetFor(report, descriptor, SettingsFor(report, preference)));
+        if (!view.Replaceable || view.InGame is not { } own || view.Kept is not { } kept) return;
+
+        if (_running.IsRunning(report.Game))
+        {
+            await MessageAsync("Nothing was changed", "The game is running. Close it and try again.");
+            return;
+        }
+
+        var body = new TextBlock
+        {
+            Text = $"This game's file ({Composition.Amount(own.Lines, "line", "lines")}) is replaced by the one "
+                   + $"in Mod defaults ({kept.Language}, {Composition.Amount(kept.Lines, "line", "lines")}). "
+                   + "Corrections made in this game are lost unless its file was imported in Mod defaults first.",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brush("TextSecondary"),
+        };
+
+        if (!await ConfirmAsync($"Replace the UGT Mod interface file in {report.Game.Name}?", body, "Replace"))
+            return;
+
+        try
+        {
+            library.PlaceInto(folder, view.TargetLanguage, replace: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            await MessageAsync("Nothing was changed", $"The file could not be replaced ({ex.Message}).");
+        }
+    }
+
+    /// <summary>
     /// Writes THIS GAME's own settings into its config.json — the verb of that brick.
     ///
     /// 🔴 It exists because a brick whose verb never reaches the game is not a brick. The form used
@@ -9215,7 +9277,8 @@ public partial class MainWindow : Window
         var result = new GameConfigWriter(new ModUiLibrary(_platform)).Apply(
             report.Game.Path, descriptor, settings,
             TargetFor(report, descriptor, settings),
-            skipWizard: !LetsWizardAsk(report, preference), perGame: preference);
+            skipWizard: !LetsWizardAsk(report, preference), perGame: preference,
+            modUi: ModUiWriteFor(report, preference));
 
         Busy(false, "Ready.");
 
@@ -9257,6 +9320,14 @@ public partial class MainWindow : Window
     /// </summary>
     private InstallerSettings SettingsFor(GameReport report, GamePreference preference) =>
         ModSettingsResolver.Resolve(_settings.Current, preference, GameConfig(report));
+
+    /// <summary>
+    /// How writing <see cref="SettingsFor"/> treats the UGT Mod interface file: a game that follows
+    /// Mod defaults is written with them, and Mod defaults replace its file; one set up here only
+    /// gets a file where it has none (<see cref="ModUiWrite"/>).
+    /// </summary>
+    private ModUiWrite ModUiWriteFor(GameReport report, GamePreference preference) =>
+        preference.UsesModDefaults(GameConfig(report)) ? ModUiWrite.Replace : ModUiWrite.Fill;
 
     /// <summary>
     /// The language THIS game is to be set to, from the settings it is actually written with.
@@ -10352,7 +10423,7 @@ public partial class MainWindow : Window
 
         return new GameConfigWriter(new ModUiLibrary(_platform)).Compare(
             report.Game.Path, descriptor, settings,
-            TargetFor(report, descriptor, settings), preference);
+            TargetFor(report, descriptor, settings), preference, ModUiWrite.Replace);
     }
 
     /// <summary>
@@ -10437,7 +10508,7 @@ public partial class MainWindow : Window
 
         return new GameConfigWriter(new ModUiLibrary(_platform)).Compare(
             report.Game.Path, descriptor, settings,
-            TargetFor(report, descriptor, settings), preference);
+            TargetFor(report, descriptor, settings), preference, ModUiWriteFor(report, preference));
     }
 
     /// <summary>
@@ -12144,6 +12215,10 @@ public partial class MainWindow : Window
             // built from PluginWriteOffered — said nothing about the mod at all.
             InstallPlugin = plugin && (force || report.PluginWriteOffered),
 
+            // Mod defaults written onto this game replace its interface file too, as the
+            // differences the one-click confirms say; its own settings only fill.
+            ModUi = writeSettings && usesDefaults ? ModUiWrite.Replace : ModUiWrite.Fill,
+
             // Weighed: asked, and answered by WouldWriteSettings/SettingsWouldChangeAnything —
             // whichever way. See InstallPlan.SettingsWeighed.
             SettingsWeighed = settings,
@@ -13298,7 +13373,8 @@ public partial class MainWindow : Window
 
         var result = new GameConfigWriter(new ModUiLibrary(_platform))
             .Apply(report.Game.Path, descriptor, settings, target,
-                   skipWizard: !LetsWizardAsk(report, preference), perGame: preference);
+                   skipWizard: !LetsWizardAsk(report, preference), perGame: preference,
+                   modUi: ModUiWrite.Replace);
 
         Busy(false, "Ready.");
 

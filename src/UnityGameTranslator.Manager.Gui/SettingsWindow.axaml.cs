@@ -868,8 +868,8 @@ public sealed class SettingsWindow : Window
             IsChecked = _draft.TranslateModUi,
         };
         ToolTip.SetTip(_translateModUi,
-            "Written with the file, into games that have no answer of their own. A game where it was "
-            + "switched on or off keeps its choice.");
+            "Written with the file when Mod defaults are applied to a game. "
+            + "A game's own settings can turn it on or off for that game.");
 
         void Show()
         {
@@ -925,8 +925,8 @@ public sealed class SettingsWindow : Window
         panel.Children.Add(problem);
         panel.Children.Add(_translateModUi);
         panel.Children.Add(Note(
-            "Placed only in games translating into the same language, and only where the game has no "
-            + "interface file yet. Improved it in a game? Import that game's file again."));
+            "Placed only in games translating into the same language. Applying Mod defaults to a game "
+            + "replaces its own file. Improved it in a game? Import that game's file again."));
 
         Show();
 

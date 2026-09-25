@@ -129,6 +129,13 @@ public sealed record InstallPlan(
     public GamePreference? Preference { get; init; }
 
     /// <summary>
+    /// Whether the settings written are Mod defaults applied to this game (the one-click on a game
+    /// that follows them) — then the UGT Mod interface file replaces the game's own, as the
+    /// confirmation listed — or this game's own settings, which only fill a game that has none.
+    /// </summary>
+    public ModUiWrite ModUi { get; init; } = ModUiWrite.Fill;
+
+    /// <summary>
     /// The language this game is to be set to. Decided when the plan is made, from what is
     /// published for this game, so the confirmation shown to the user and the file written
     /// afterwards cannot say two different things.
@@ -473,7 +480,7 @@ public sealed class InstallEngine
                 Status?.Invoke("Applying settings...");
                 configured = new GameConfigWriter(new ModUiLibrary(_platform))
                     .Apply(plan.Game.Path, plan.Loader, plan.Settings, plan.TargetLanguage,
-                           skipWizard: !plan.LetWizardAsk, perGame: plan.Preference);
+                           skipWizard: !plan.LetWizardAsk, perGame: plan.Preference, modUi: plan.ModUi);
             }
 
             // 🔴 **The copies were for the rollback, and the rollback is over.** They existed so a

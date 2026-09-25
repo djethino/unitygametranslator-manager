@@ -529,7 +529,9 @@ public static class CommandLine
         }
 
         var differences = new GameConfigWriter(new ModUiLibrary(platform))
-            .Compare(report.Game.Path, descriptor, settings, target, preference);
+            .Compare(report.Game.Path, descriptor, settings, target, preference,
+                     // As the window decides it (MainWindow.ModUiWriteFor): Mod defaults replace.
+                     preference.UsesModDefaults(snapshot) ? ModUiWrite.Replace : ModUiWrite.Fill);
 
         if (differences.Count == 0)
         {

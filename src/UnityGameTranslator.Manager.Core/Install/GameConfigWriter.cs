@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using UnityGameTranslator.Manager.Core.Ai;
@@ -54,6 +54,24 @@ public sealed record ConfigDifference(string Key, string Label, string InGame, s
                                       string? Note = null, bool Writes = true);
 
 /// <summary>
+/// How an act treats the UGT Mod interface file kept in Mod defaults (user's decision, 2026-09-25).
+/// </summary>
+public enum ModUiWrite
+{
+    /// <summary>
+    /// A game's own settings, or an install that does not apply Mod defaults: the file goes only
+    /// into a game that has none, and only while that game translates UGT Mod's interface.
+    /// </summary>
+    Fill,
+
+    /// <summary>
+    /// Applying Mod defaults to a game — its own button, or the one-click on a game that follows
+    /// them: the file and its switch replace what the game holds, listed among the differences first.
+    /// </summary>
+    Replace,
+}
+
+/// <summary>
 /// Puts the installer's settings into a game's config.json, and nothing else.
 ///
 /// ⚠ **Merge, never rewrite.** The file belongs to the mod, not to us. It holds an api_token we
@@ -90,6 +108,44 @@ public sealed class GameConfigWriter
 
     /// <summary>The mod's key for translating its own interface (three states; null = let the file decide).</summary>
     public const string TranslateModUiKey = "translate_mod_ui";
+
+    private const string TranslateModUiLabel = "UGT Mod interface translated";
+    private const string ModUiFileLabel = "UGT Mod interface translation";
+
+    /// <summary>What becomes of the interface file in one game.</summary>
+    private enum ModUiPlacement { None, Place, Replace }
+
+    /// <summary>
+    /// The interface file's fate in one game, decided once and read by the writing and the
+    /// comparing alike — so a difference listed is exactly a file written.
+    /// </summary>
+    private readonly record struct ModUiPlan(ModUiWrite Mode, bool FileFits, ModUiPlacement Placement);
+
+    /// <summary>
+    /// Whether the kept file goes into this game, and how. Nothing without a kept file in the game's
+    /// language, and nothing while the game is not to translate UGT Mod's interface
+    /// (<paramref name="settings"/> is what the act writes: Mod defaults, or this game's resolved
+    /// answers). A game with a file of its own is replaced only by <see cref="ModUiWrite.Replace"/>,
+    /// and only when the two differ.
+    /// </summary>
+    private ModUiPlan PlanModUi(string folder, JsonObject root, InstallerSettings settings,
+                                GamePreference? perGame, string targetLanguage, ModUiWrite mode)
+    {
+        var fits = _modUi?.Current is not null && _modUi.Fits(targetLanguage);
+
+        // In a game's own act: its own answer, then what the game holds, then the act's settings —
+        // the resolver's order, read here too so no caller can hand in values that skip the game's
+        // own no. Mod defaults applied answer with their own switch.
+        var translates = mode == ModUiWrite.Fill
+            ? perGame?.Mod?.TranslateModUi ?? Flag(root, null, TranslateModUiKey) ?? settings.TranslateModUi
+            : settings.TranslateModUi;
+
+        if (!fits || !translates) return new ModUiPlan(mode, fits, ModUiPlacement.None);
+        if (!ModUiLibrary.GameHasOne(folder)) return new ModUiPlan(mode, fits, ModUiPlacement.Place);
+
+        return new ModUiPlan(mode, fits,
+            mode == ModUiWrite.Replace && !_modUi!.SameAs(folder) ? ModUiPlacement.Replace : ModUiPlacement.None);
+    }
 
     private static readonly JsonSerializerOptions WriteOptions = new()
     {
@@ -252,6 +308,7 @@ public sealed class GameConfigWriter
                 DeeplApiKey = Secret(root, "deepl_api_key"),
                 DeeplUseFree = Flag(root, null, "deepl_use_free"),
                 ModOnlineMode = Flag(root, null, "online_mode"),
+                TranslateModUi = Flag(root, null, TranslateModUiKey),
                 AutoDownload = Flag(root, "sync", "auto_download"),
                 NotifyUpdates = Flag(root, "sync", "notify_updates"),
                 CheckModUpdates = Flag(root, "sync", "check_mod_updates"),
@@ -472,17 +529,31 @@ public sealed class GameConfigWriter
     /// </summary>
     private static List<Intent> Intended(InstallerSettings settings, GamePreference? perGame,
                                          string targetLanguage, bool skipWizard,
-                                         out bool wizardSkipped, bool placesModUi = false)
+                                         out bool wizardSkipped, ModUiPlan modUi = default)
     {
         var intents = new List<Intent>();
 
-        // Beside the interface file placed in this game, and only then: the switch without the file
-        // says nothing. OnlyIfAbsent — the mod's null (let the file decide) reads as absent — so a
-        // yes or a no given inside the game is kept.
-        if (placesModUi)
+        // Whether this game translates UGT Mod's interface — overridable per game like the rest.
+        //
+        // · Applying Mod defaults writes Mod defaults' switch, replacing the game's, when Mod
+        //   defaults holds a file for this game's language: the switch travels with the file and
+        //   says nothing without it.
+        // · Otherwise an answer given for this game is written as given, file or not.
+        // · Otherwise it is filled beside a file placed in a game that had none, and only where the
+        //   game has no answer — the mod's null ("let the file decide") reads as absent.
+        if (modUi.Mode == ModUiWrite.Replace)
         {
-            intents.Add(new Intent(null, TranslateModUiKey, settings.TranslateModUi,
-                "UGT Mod interface translated", OnlyIfAbsent: true));
+            if (modUi.FileFits)
+                intents.Add(new Intent(null, TranslateModUiKey, settings.TranslateModUi, TranslateModUiLabel));
+        }
+        else if (perGame?.Mod?.TranslateModUi is { } own)
+        {
+            intents.Add(new Intent(null, TranslateModUiKey, own, TranslateModUiLabel));
+        }
+        else if (modUi.Placement != ModUiPlacement.None)
+        {
+            intents.Add(new Intent(null, TranslateModUiKey, settings.TranslateModUi, TranslateModUiLabel,
+                OnlyIfAbsent: true));
         }
 
         // ⚠ The mod stores a language NAME here, never an ISO code: GetSystemLanguageName
@@ -771,9 +842,14 @@ public sealed class GameConfigWriter
     /// game — which this class has no business knowing about — and because the same decision has
     /// to be made identically by the screen that only shows it.
     /// </param>
+    /// <param name="modUi">
+    /// Whether this act applies Mod defaults (<see cref="ModUiWrite.Replace"/>) or this game's own
+    /// settings — see <see cref="ModUiWrite"/>. Fill unless the caller says it applies Mod defaults.
+    /// </param>
     public ConfigWriteResult Apply(string gamePath, LoaderDescriptor descriptor,
                                    InstallerSettings settings, string targetLanguage,
-                                   bool skipWizard = true, GamePreference? perGame = null)
+                                   bool skipWizard = true, GamePreference? perGame = null,
+                                   ModUiWrite modUi = ModUiWrite.Fill)
     {
         var folder = UserDataInventory.DataFolder(gamePath, descriptor);
         if (folder is null)
@@ -787,11 +863,9 @@ public sealed class GameConfigWriter
             var root = Load(path);
             var applied = new List<string>();
 
-            // Whether the kept interface file goes into this game: it fits the language, and the game
-            // has none of its own.
-            var placesModUi = _modUi is not null && _modUi.Fits(targetLanguage) && !ModUiLibrary.GameHasOne(folder);
+            var plan = PlanModUi(folder, root, settings, perGame, targetLanguage, modUi);
 
-            var intents = Intended(settings, perGame, targetLanguage, skipWizard, out var wizardSkipped, placesModUi);
+            var intents = Intended(settings, perGame, targetLanguage, skipWizard, out var wizardSkipped, plan);
 
             foreach (var intent in intents)
             {
@@ -817,8 +891,9 @@ public sealed class GameConfigWriter
             File.Move(temp, path, overwrite: true);
 
             // After the config, so a failure here never leaves the settings half written.
-            if (placesModUi && _modUi!.FillInto(folder, targetLanguage))
-                applied.Add("UGT Mod interface translation");
+            if (plan.Placement != ModUiPlacement.None
+                && _modUi!.PlaceInto(folder, targetLanguage, replace: plan.Placement == ModUiPlacement.Replace))
+                applied.Add(ModUiFileLabel);
 
             return new ConfigWriteResult(true, applied, wizardSkipped, null);
         }
@@ -940,7 +1015,8 @@ public sealed class GameConfigWriter
     /// </summary>
     public IReadOnlyList<ConfigDifference> Compare(string gamePath, LoaderDescriptor descriptor,
                                                    InstallerSettings settings, string targetLanguage,
-                                                   GamePreference? perGame = null)
+                                                   GamePreference? perGame = null,
+                                                   ModUiWrite modUi = ModUiWrite.Fill)
     {
         var path = ConfigPath(gamePath, descriptor);
 
@@ -961,22 +1037,26 @@ public sealed class GameConfigWriter
 
         var differences = new List<ConfigDifference>();
 
-        // The kept interface file, when it would be placed here — a difference like any setting, so
-        // "Use Mod defaults" counts it in its Apply (N).
+        // The kept interface file, when it would be placed or replace the game's own — a difference
+        // like any setting, so the act that writes it counts it, and says so before writing.
         var folder = Path.GetDirectoryName(path)!;
-        var placesModUi = _modUi?.Current is { } modUi && _modUi.Fits(targetLanguage) && !ModUiLibrary.GameHasOne(folder);
+        var plan = PlanModUi(folder, root, settings, perGame, targetLanguage, modUi);
 
-        if (placesModUi)
+        if (plan.Placement != ModUiPlacement.None)
         {
             var file = _modUi!.Current!;
-            differences.Add(new ConfigDifference(ModUi.FileName, "UGT Mod interface translation", "none",
-                $"{file.Language}, {Composition.Amount(file.Lines, "line", "lines")}"));
+            var own = plan.Placement == ModUiPlacement.Replace ? ModUiLibrary.InGame(folder) : null;
+
+            differences.Add(new ConfigDifference(ModUi.FileName, ModUiFileLabel,
+                own is null ? "none" : $"this game's own file, {Composition.Amount(own.Lines, "line", "lines")}",
+                $"{file.Language}, {Composition.Amount(file.Lines, "line", "lines")}",
+                own is null ? null : "replaces this game's own file"));
         }
 
         // ⚠ skipWizard: false. first_run_completed is not a preference, it is a latch — a game
         // that has been through the wizard carries true, and comparing it would report "the
         // first-run wizard differs" on every game somebody has actually played.
-        foreach (var intent in Intended(settings, perGame, targetLanguage, skipWizard: false, out _, placesModUi))
+        foreach (var intent in Intended(settings, perGame, targetLanguage, skipWizard: false, out _, plan))
         {
             // A key we would only remove has nothing to compare WHEN THE GAME DOES NOT CARRY IT —
             // its absence is already our intent, and reporting it would announce a change to

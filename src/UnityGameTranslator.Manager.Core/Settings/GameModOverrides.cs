@@ -132,6 +132,14 @@ public sealed class GameModOverrides
     /// <summary>Whether the MOD may reach the internet from inside this game.</summary>
     [JsonPropertyName("mod_online_mode")] public bool? ModOnlineMode { get; set; }
 
+    /// <summary>
+    /// Whether this game translates UGT Mod's interface — Mod defaults' switch, overridable here like
+    /// the rest (user's decision, 2026-09-25). Written as given by this game's Apply. Turned on in a
+    /// game with no interface file, that Apply also places the file kept in Mod defaults; a game
+    /// with a file of its own keeps it until its Replace button is used (GameConfigWriter.ModUiWrite).
+    /// </summary>
+    [JsonPropertyName("translate_mod_ui")] public bool? TranslateModUi { get; set; }
+
     [JsonPropertyName("auto_download")] public bool? AutoDownload { get; set; }
 
     [JsonPropertyName("notify_updates")] public bool? NotifyUpdates { get; set; }
@@ -160,7 +168,7 @@ public sealed class GameModOverrides
         && AiApiKey is null && GoogleApiKey is null && DeeplApiKey is null && DeeplUseFree is null
         && SettingsHotkey is null && SourceLanguage is null && StrictSourceLanguage is null
         && (Shortcuts is null || Shortcuts.Count == 0)
-        && ModOnlineMode is null && AutoDownload is null
+        && ModOnlineMode is null && TranslateModUi is null && AutoDownload is null
         && NotifyUpdates is null && CheckModUpdates is null && MergeStrategy is null
         && NotificationsEnabled is null && NotificationPosition is null && Channel is null;
 
@@ -178,7 +186,7 @@ public sealed class GameModOverrides
         + (AiUrl is null ? 0 : 1) + (AiModel is null ? 0 : 1) + (AiApiKey is null ? 0 : 1)
         + (GoogleApiKey is null ? 0 : 1) + (DeeplApiKey is null ? 0 : 1)
         + (DeeplUseFree is null ? 0 : 1)
-        + (ModOnlineMode is null ? 0 : 1) + (AutoDownload is null ? 0 : 1)
+        + (ModOnlineMode is null ? 0 : 1) + (TranslateModUi is null ? 0 : 1) + (AutoDownload is null ? 0 : 1)
         + (NotifyUpdates is null ? 0 : 1) + (CheckModUpdates is null ? 0 : 1)
         + (MergeStrategy is null ? 0 : 1) + (NotificationsEnabled is null ? 0 : 1)
         + (NotificationPosition is null ? 0 : 1) + (Channel is null ? 0 : 1)
@@ -243,6 +251,7 @@ public sealed class GameModOverrides
 
         Flag(DeeplUseFree, held.DeeplUseFree);
         Flag(ModOnlineMode, held.ModOnlineMode);
+        Flag(TranslateModUi, held.TranslateModUi);
         Flag(AutoDownload, held.AutoDownload);
         Flag(NotifyUpdates, held.NotifyUpdates);
         Flag(CheckModUpdates, held.CheckModUpdates);
@@ -421,6 +430,7 @@ public static class ModSettingsResolver
         // equal the key the game already has: the comparison then finds nothing, and "replace this
         // game's key" vanishes from the screen the moment somebody unticks the box. That happened.
         resolved.ModOnlineMode = own?.ModOnlineMode ?? inGame?.ModOnlineMode ?? defaults.ModOnlineMode;
+        resolved.TranslateModUi = own?.TranslateModUi ?? inGame?.TranslateModUi ?? defaults.TranslateModUi;
         resolved.AutoDownload = own?.AutoDownload ?? inGame?.AutoDownload ?? defaults.AutoDownload;
         resolved.NotifyUpdates = own?.NotifyUpdates ?? inGame?.NotifyUpdates ?? defaults.NotifyUpdates;
         resolved.CheckModUpdates = own?.CheckModUpdates ?? inGame?.CheckModUpdates ?? defaults.CheckModUpdates;

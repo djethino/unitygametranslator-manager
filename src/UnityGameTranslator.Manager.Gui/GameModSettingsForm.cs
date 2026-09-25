@@ -4,6 +4,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using UnityGameTranslator.Manager.Core.Ai;
 using UnityGameTranslator.Manager.Core.Api;
+using UnityGameTranslator.Manager.Core.Install;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
 using UnityGameTranslator.Manager.Core.Settings;
@@ -164,7 +165,8 @@ public sealed class GameModSettingsForm
     public GameModSettingsForm(IPlatform platform, InstallerSettings defaults,
                                GameConfigSnapshot snapshot, GameModOverrides? stored,
                                bool installed = true,
-                               string? refusal = null)
+                               string? refusal = null,
+                               ModUiView? modUi = null)
     {
         _platform = platform;
         _defaults = defaults;
@@ -173,7 +175,20 @@ public sealed class GameModSettingsForm
         _draft = stored?.Copy() ?? new GameModOverrides();
         _installed = installed;
         _refusal = refusal;
+        _modUi = modUi;
     }
+
+    /// <summary>
+    /// The UGT Mod interface file in this game and in Mod defaults, or null when the game has no
+    /// data folder to read it from yet.
+    /// </summary>
+    private readonly ModUiView? _modUi;
+
+    /// <summary>
+    /// Asked to replace this game's own interface file with the one kept in Mod defaults — an act on
+    /// a file, confirmed and done at once by the window, like Import in Mod defaults.
+    /// </summary>
+    public event Action? ReplaceModUi;
 
     /// <summary>What the person has answered for this game, ready to be stored.</summary>
     public GameModOverrides Draft => _draft;
@@ -363,6 +378,9 @@ public sealed class GameModSettingsForm
 
         _host.Children.Add(Separator());
         foreach (var control in InGameBlock()) AddField(control);
+
+        _host.Children.Add(Separator());
+        foreach (var control in ModUiBlock()) AddField(control);
 
         _host.Children.Add(Separator());
         foreach (var control in UpdatesBlock()) AddField(control);
@@ -807,6 +825,76 @@ public sealed class GameModSettingsForm
         };
     }
 
+    /// <summary>
+    /// UGT Mod's own interface in this game — Mod defaults' card, overridable here like the rest
+    /// (user's decision, 2026-09-25). The import stays in Mod defaults; what is decided here is
+    /// whether this game translates the interface, and which file it uses.
+    ///
+    /// 🔴 **Nothing replaces a game's own file without somebody asking.** Ticked on a game with no
+    /// file, this form's Apply places the one from Mod defaults — counted in its Apply (N). A game
+    /// that has its own keeps it, and only the Replace button below changes it.
+    /// </summary>
+    private IEnumerable<Control> ModUiBlock()
+    {
+        var translate = Toggle("Translate UGT Mod's interface",
+            o => o.TranslateModUi, _defaults.TranslateModUi, v => _draft.TranslateModUi = v);
+
+        yield return WithOrigin(translate, _draft.TranslateModUi, _inGame.TranslateModUi,
+                                () => _draft.TranslateModUi = null);
+
+        if (_modUi is not { } view) yield break;
+
+        var lines = (ModUiFile file) => Composition.Amount(file.Lines, "line", "lines");
+
+        yield return Note(view.InGame is { } own
+            ? $"Interface file in this game: {(own.Language.Length > 0 ? own.Language + ", " : "")}{lines(own)}."
+            : "No interface file in this game.");
+
+        if (view.Kept is not { } kept)
+        {
+            yield return DefaultsLink("Mod defaults has no interface file. Import one there to use it in games.");
+            yield break;
+        }
+
+        if (!view.KeptFits)
+        {
+            yield return Note($"The file in Mod defaults is in {kept.Language}. This game translates into "
+                              + $"{Languages.NameOf(view.TargetLanguage) ?? view.TargetLanguage}.");
+            yield break;
+        }
+
+        if (view.InGame is null)
+        {
+            yield return Note($"Ticked, Apply places the file from Mod defaults ({kept.Language}, {lines(kept)}).");
+            yield break;
+        }
+
+        if (view.Same)
+        {
+            yield return Note("Same file as in Mod defaults.");
+            yield break;
+        }
+
+        // ⚠ An act on a file, like Import in Mod defaults: confirmed, then done at once — never held
+        // for Apply, which writes settings. Posted, because the window redraws this form after it.
+        var replace = ScopeMark.Marked(EditSide.Local, "Replace file", enabled: _installed && _refusal is null);
+        replace.FontSize = 12;
+        ToolTip.SetTip(replace, _refusal ?? $"Replaces this game's interface file with the one in Mod defaults "
+                                              + $"({kept.Language}, {lines(kept)}).");
+        replace.Click += (_, _) => Dispatcher.UIThread.Post(() => ReplaceModUi?.Invoke());
+
+        yield return Row($"Mod defaults: {kept.Language}, {lines(kept)}", replace, new Panel());
+    }
+
+    /// <summary>
+    /// Whether this form's Apply also places the interface file: the game has none, the one kept in
+    /// Mod defaults fits it, and the game is to translate the interface. The writer's own rule
+    /// (GameConfigWriter.PlanModUi, fill) read from what the form shows.
+    /// </summary>
+    private bool PlacesModUiFile() =>
+        _modUi is { InGame: null, KeptFits: true }
+        && EffectiveFlag(o => o.TranslateModUi, _defaults.TranslateModUi);
+
     private IEnumerable<Control> UpdatesBlock()
     {
         // First, as in Mod defaults' "Updates and notifications": off, the mod gets no update
@@ -955,6 +1043,9 @@ public sealed class GameModSettingsForm
         // ⚠ Against this game's config.json. Applying Mod defaults is a different act, with its own
         // button in the block that lists the differences with them.
         var count = _draft.PendingAgainst(_inGame);
+
+        // The interface file going into a game that has none is something Apply writes too.
+        if (PlacesModUiFile()) count++;
 
         // ⚠ SetLabel, never Content: the button holds the scope marks beside its text, and
         // assigning Content would throw them away on the first change.

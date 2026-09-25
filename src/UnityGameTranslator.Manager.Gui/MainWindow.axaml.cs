@@ -3793,7 +3793,7 @@ public partial class MainWindow : Window
 
                     body.Children.Add(new TextBlock
                     {
-                        Text = "This game holds no translation.",
+                        Text = "This game has no translation.",
                         FontSize = 13,
                         FontWeight = FontWeight.SemiBold,
                         TextWrapping = TextWrapping.Wrap,
@@ -4322,7 +4322,8 @@ public partial class MainWindow : Window
     ///
     /// 🔴 **Silent when this game already runs that very translation**, whether or not the server
     /// has moved since. Bringing down a newer version of the file already here is the workbench's
-    /// act — "Download what changed online…", which weighs the merge and carries its own scope mark.
+    /// act — "Download the update…" (DownloadUpdateLabel), which weighs the merge and carries its
+    /// own scope mark.
     /// Offering it here as well put two buttons three inches apart doing one thing.
     /// </summary>
     /// ⚠ The rule itself lives in <see cref="TranslationChoice"/>, where it can be checked. What
@@ -5943,8 +5944,8 @@ public partial class MainWindow : Window
         {
             button.IsEnabled = true;
             ScopeMark.SetLabel(button, report.Sync == SyncDirection.Merge
-                ? "Merge with the published version…"
-                : "Download what changed online…");
+                ? MergeLabel
+                : DownloadUpdateLabel);
         }
     }
 
@@ -6020,6 +6021,13 @@ public partial class MainWindow : Window
 
     /// <summary>What every dialog says when the site gave no reason of its own — one wording.</summary>
     private const string SiteSilent = "UGT Website did not answer.";
+
+    /// <summary>
+    /// The settle button's two labels, written once: the button is labelled where it is built and
+    /// labelled again when its act finishes, and the two used to be separate literals.
+    /// </summary>
+    private const string MergeLabel = "Merge with the published version…";
+    private const string DownloadUpdateLabel = "Download the update…";
 
     /// <summary>Lines, counted so no language has to decode a stray s.</summary>
     private static string Lines(int count) =>
@@ -6254,7 +6262,7 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(target))
         {
             await ConfirmationWindow.TellAsync(this, "Nothing was published",
-                "Publishing needs to know which language this translates from, and into.");
+                "Choose the source and target languages first.");
             return;
         }
 
@@ -6307,7 +6315,7 @@ public partial class MainWindow : Window
 
         await ConfirmationWindow.TellAsync(this, "Sent",
             branchWork
-                ? "Your contribution is updated and waiting for the translation's owner to review it."
+                ? "Your contribution is updated. It is waiting for the Main's owner to review it."
                 : "Your translation is published.");
 
         // ⚠ redraw: publishing changes what the SITE holds — the badges, the votes, the author's
@@ -6366,8 +6374,7 @@ public partial class MainWindow : Window
         if (!lineage.HasARowOfItsOwn || lineage.RowId is not { } rowId)
         {
             await ConfirmationWindow.TellAsync(this, "Nothing is published yet",
-                "These details belong to a published translation. Publish this one first: the "
-                + "description and the link are asked for as part of it.");
+                "Publish this translation first. The description and link are asked when you publish.");
             return;
         }
 
@@ -6382,9 +6389,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var heading = lineage.OnABranch
-            ? "What your contribution says about itself"
-            : "What your translation says about itself";
+        var heading = lineage.OnABranch ? "Contribution details" : "Translation details";
 
         var edited = await TranslationDetailsWindow.EditAsync(
             this, heading, lineage.Notes, lineage.ResourcesUrl,
@@ -6717,9 +6722,9 @@ public partial class MainWindow : Window
         var back = ScopeMark.Marked(EditSide.Local, "Backups…", standing.CanWriteLocally);
 
         ToolTip.SetTip(back, kept.Count == 0
-            ? "Back this translation up before you try something, and come back to it."
-            : $"{Backups.SavedCount(kept)} of your own, "
-              + $"{kept.Count - Backups.SavedCount(kept)} taken automatically.");
+            ? "Back up this translation before trying something, so you can restore it."
+            : $"{Backups.SavedCount(kept)} saved by you, "
+              + $"{kept.Count - Backups.SavedCount(kept)} automatic.");
 
         back.Click += async (_, _) => await ShowBackupsAsync(report, descriptor);
         return back;
@@ -6750,8 +6755,8 @@ public partial class MainWindow : Window
             {
                 // ⚠ Same word as the window, the folder and the button under this line — see the
                 // twin of this block on the workbench card.
-                Text = "This game holds no translation. "
-                       + (left.Count == 1 ? "One backup is kept." : $"{left.Count} backups are kept."),
+                Text = "This game has no translation. "
+                       + (left.Count == 1 ? "1 backup available." : $"{left.Count} backups available."),
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Avalonia.Thickness(0, 12, 0, 0),
@@ -6826,18 +6831,20 @@ public partial class MainWindow : Window
                 // Only OUR side is counted, and the wording says so. How far the published version
                 // has moved cannot be known without fetching it, and inventing a figure for it
                 // would be worse than leaving the question open.
+                // ⚠ The ecosystem's four words (Up to date / Update available / Unpublished changes /
+                // Conflict) lead where they apply, so the mod and this card name a state alike.
                 Text = sync switch
                 {
                     SyncDirection.InSync => "Up to date with the published version.",
-                    SyncDirection.Download => "The published version has moved on. Nothing of yours "
-                                            + "is at risk — this game holds no unpublished change.",
+                    SyncDirection.Download => "Update available. This game has no unpublished "
+                                            + "changes, so nothing is lost by updating.",
                     SyncDirection.Upload => Unpublished(report) is { } up
-                        ? $"This game holds {Composition.Amount(up, "line", "lines")} the published version does not."
-                        : "This game holds changes the published version does not.",
+                        ? $"Unpublished changes: {Composition.Amount(up, "line", "lines")} in this game."
+                        : "Unpublished changes in this game.",
                     _ => Unpublished(report) is { } mine
-                        ? $"Both have moved: {Composition.Amount(mine, "line", "lines")} here {(mine == 1 ? "is" : "are")} unpublished, and the published "
-                          + "version changed too. Settling that is done line by line."
-                        : "Both this file and the published one have moved. Settling that is done "
+                        ? $"Conflict: this game has {Composition.Amount(mine, "unpublished line", "unpublished lines")}, "
+                          + "and the published version changed too. Merge them line by line."
+                        : "Conflict: this game and the published version both changed. Merge them "
                           + "line by line.",
                 },
                 FontSize = 12,
@@ -6882,10 +6889,8 @@ public partial class MainWindow : Window
         var lines = report.LocalTranslation?.EntryCount ?? 0;
         var nothingYet = lines switch
         {
-            < 0 => "This game's translation file cannot be read, so nothing can be sent from it "
-                 + "or edited in it.",
-            0 => "This game holds no translated line yet — play it so the mod captures some, then "
-               + "publish or edit them.",
+            < 0 => "This game's translation file cannot be read, so it cannot be edited or published.",
+            0 => "No lines yet. Play the game so UGT Mod collects its text, then edit or publish.",
             _ => null,
         };
 
@@ -6905,8 +6910,8 @@ public partial class MainWindow : Window
         // game set up a minute ago and missed the ordinary case: hundreds of lines translated for
         // one's own use, in somebody else's lineage, never published. Nothing to edit there either.
         var noDetailsYet = _lineages.Known && _lineages.For(report.LocalTranslation?.Uuid) is null
-            ? "Nothing has been published under this account for this game, so there are no "
-              + "details to edit. Publish first, and the description follows."
+            ? "Nothing is published under this account for this game. Publish first to add a "
+              + "description."
             : null;
 
         var edit = ScopeMark.Marked(EditSide.Local, "Edit in browser",
@@ -6928,16 +6933,15 @@ public partial class MainWindow : Window
         // nothing to publish". A greyed control with its reason under it says which.
         var nothingToSend = report.Sync switch
         {
-            SyncDirection.InSync => "Already up to date with the published version — nothing to send.",
+            SyncDirection.InSync => "Up to date with the published version. Nothing to send.",
 
             // Behind means the site moved and this file did not. Publishing would push older
             // content over newer, which is not an update, it is a rollback nobody asked for.
-            SyncDirection.Download => "The published version is ahead of this file. Take what "
-                                    + "changed first.",
+            SyncDirection.Download => "A newer version is published. Download it first.",
 
             // Both moved. Publishing now would drop whatever the other side gained.
-            SyncDirection.Merge => "Both sides have moved. Settle the difference before publishing, "
-                                 + "or what is online is overwritten.",
+            SyncDirection.Merge => "Both sides changed. Merge first, or the published changes would "
+                                 + "be lost.",
 
             _ => null,
         };
@@ -6974,8 +6978,7 @@ public partial class MainWindow : Window
 
             var merge = ScopeMark.Marked(
                 EditScope.SideAfter(onThisMachine: true, yourPublishedCopy: oursOnline),
-                merging ? "Merge with the published version…"
-                        : "Download what changed online…",
+                merging ? MergeLabel : DownloadUpdateLabel,
                 standing.CanWriteLocally);
             merge.Click += async (_, _) => await MergeWithPublishedAsync(report, descriptor, merge);
             actions.Children.Add(merge);
@@ -7008,9 +7011,10 @@ public partial class MainWindow : Window
                 standing.CanWriteLocally);
 
             ToolTip.SetTip(takeTheirs, Unpublished(report) is { } dropped
-                ? $"Replaces this game's file with the published one. The {Composition.Amount(dropped, "line", "lines")} not "
-                  + "published are set aside, not merged."
-                : "Replaces this game's file with the published one, as it stands.");
+                ? $"Replaces this game's file with the published version. The "
+                  + $"{Composition.Amount(dropped, "unpublished line is", "unpublished lines are")} "
+                  + "backed up, not merged."
+                : "Replaces this game's file with the published version.");
 
             takeTheirs.Click += async (_, _) =>
                 await TakeSelectedTranslationAsync(report, onServer, replacing: true);
@@ -7224,13 +7228,8 @@ public partial class MainWindow : Window
             IsEnabled = false,
             TextOf = item => (item as LoaderBuild)?.Describe() ?? "",
         };
-        var note = new TextBlock
-        {
-            FontSize = 11,
-            Opacity = 0.6,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Avalonia.Thickness(0, 4, 0, 0),
-        };
+        var note = Ui.Note("");
+        note.Margin = new Avalonia.Thickness(0, 4, 0, 0);
 
         var body = new StackPanel { Spacing = 4 };
         body.Children.Add(builds);
@@ -7285,7 +7284,7 @@ public partial class MainWindow : Window
             asking = loader;
 
             builds.IsEnabled = false;
-            note.Text = $"Asking what {loader.Display} currently offers...";
+            Ui.Say(note, $"Checking {loader.Display} versions...");
 
             var channel = loader.Id.StartsWith("bepinex6", StringComparison.OrdinalIgnoreCase)
                 ? _settings.Current.BepInEx6Channel
@@ -7327,10 +7326,12 @@ public partial class MainWindow : Window
             // the source could not be reached; marking that as loaded would freeze the catalogue's
             // entry in place for the life of the card, and reopening the expander would keep
             // showing it long after the network came back.
-            note.Text = found[0].IsPinnedFallback
-                ? $"Could not reach the place {loader.Display} is published, so only the build "
-                  + "recorded in the catalog is available. It may be far behind."
-                : $"From {found[0].SourceLabel}. The newest is used unless another is picked in this list.";
+            // Amber when only the pinned build is left: it can be far behind, and that is a risk.
+            if (found[0].IsPinnedFallback)
+                Ui.Say(note, $"Could not reach {loader.Display}'s download site. Only the version in "
+                             + "the loader list is available, and it may be old.", Tone.Warning);
+            else
+                Ui.Say(note, $"From {found[0].SourceLabel}. The newest is used unless you pick another.");
 
             loaded = !found[0].IsPinnedFallback;
         }
@@ -7393,9 +7394,9 @@ public partial class MainWindow : Window
             // tool" was — three things the reader has to supply themselves to make sense of it.
             panel.Children.Add(StandingLine(standing, installed.InstalledByUs
                 ? null
-                : $"{installed.Display} {installed.Version} was not installed by "
-                + "UnityGameTranslator Manager. Other mods may need this exact version, so it is "
-                + "never updated or removed from here."));
+                : $"{installed.Display} {installed.Version} was not installed by UGT Manager. "
+                + "Other mods may need this exact version, so UGT Manager does not update or "
+                + "remove it."));
 
             // 🔴 **The way to take it over, asked once and never assumed.**
             //
@@ -7416,15 +7417,15 @@ public partial class MainWindow : Window
 
                 var adopt = new CheckBox
                 {
-                    Content = $"Let UnityGameTranslator Manager update {installed.Display} in this game",
+                    Content = $"Let UGT Manager update {installed.Display} in this game",
                     IsChecked = preference.AdoptLoader,
                     FontSize = 12,
                     Margin = new Avalonia.Thickness(0, 4, 0, 0),
                 };
 
                 ToolTip.SetTip(adopt,
-                    "Installs and updates this loader from here, in this game only. Other mods "
-                    + "keep their files — only the loader's own are replaced.");
+                    "UGT Manager can then install and update this loader, in this game only. Other "
+                    + "mods keep their files: only the loader's own files are replaced.");
 
                 adopt.IsCheckedChanged += async (_, _) =>
                 {
@@ -7497,10 +7498,10 @@ public partial class MainWindow : Window
             var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
             row.Children.Add(new TextBlock
             {
-                Text = "None installed — we would use",
+                Text = "Not installed. Will install:",
                 VerticalAlignment = VerticalAlignment.Center,
-                Opacity = 0.55,
                 FontSize = 12,
+                Foreground = Brush("TextMuted"),
             });
             row.Children.Add(loaderPicker);
             panel.Children.Add(row);
@@ -7508,13 +7509,10 @@ public partial class MainWindow : Window
         }
         else
         {
-            panel.Children.Add(new TextBlock
-            {
-                Text = report.RecommendationReason ?? "No loader in the catalog fits this game.",
-                FontSize = 12,
-                Opacity = 0.6,
-                TextWrapping = TextWrapping.Wrap,
-            });
+            // Amber, not faded: no loader means the mod cannot run here, which is a limit to read.
+            var none = Ui.Note(report.RecommendationReason ?? "No mod loader fits this game.", Tone.Warning);
+            none.FontSize = 12;
+            panel.Children.Add(none);
         }
 
         // Read back by every action on this card and by the bar below it, so the loader somebody
@@ -7575,7 +7573,7 @@ public partial class MainWindow : Window
         // gone has to be told where to look. So the way to act becomes a way to act BY HAND.
         if (report.InstalledLoader is { InstalledByUs: false } theirs)
         {
-            var open = Glyphs.Button(Glyphs.Folder(), "Open the game folder");
+            var open = Glyphs.Button(Glyphs.Folder(), "Open game folder");
             open.FontSize = 12;
             open.HorizontalAlignment = HorizontalAlignment.Left;
             open.Click += (_, _) => Shell.OpenFolder(report.Game.Path);
@@ -7585,7 +7583,7 @@ public partial class MainWindow : Window
             {
                 Header = new TextBlock
                 {
-                    Text = "How to let this Manager look after the loader",
+                    Text = "How to let UGT Manager manage this loader",
                     FontSize = 12,
                     Foreground = Brush("TextSecondary"),
                 },
@@ -7615,7 +7613,7 @@ public partial class MainWindow : Window
         // by design, so the way back has to be as reachable as the way in.
         if (report.Game.VerdictOverridden)
         {
-            var reconsider = new Button { Content = "Treat as not possible again", FontSize = 12 };
+            var reconsider = new Button { Content = "Mark as not moddable again", FontSize = 12 };
             reconsider.Click += async (_, _) => await ClearOverrideAsync(report);
             panel.Children.Add(reconsider);
         }
@@ -7645,8 +7643,8 @@ public partial class MainWindow : Window
         panel.Children.Add(new TextBlock
         {
             Text = need is not null
-                ? "This game lacks libraries the mod needs."
-                : "This game no longer lacks any library.",
+                ? "This game is missing libraries UGT Mod needs."
+                : "This game no longer needs extra libraries.",
             FontSize = 13,
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("TextPrimary"),
@@ -7666,7 +7664,7 @@ public partial class MainWindow : Window
 
         if (need?.Modules is { } modules)
         {
-            panel.Children.Add(Muted($"Unity engine modules its build stripped: {string.Join(", ", modules.Stripped)}. "
+            panel.Children.Add(Muted($"Unity modules removed from this game's build: {string.Join(", ", modules.Stripped)}. "
                                      + $"All {modules.Set.Count} are replaced together."));
 
             if (modules.CannotSupply is null) panel.Children.Add(ModuleSourceChoice(report, running));
@@ -7687,13 +7685,13 @@ public partial class MainWindow : Window
                 ("They are added together with the mod loader.", null),
 
             RuntimeLibrariesStatus.Missing when installed is not null =>
-                ($"Not all in place ({state.Detail}). The mod will not start.", "StatusWarning"),
+                ($"Not all in place ({state.Detail}). UGT Mod will not start.", "StatusWarning"),
 
             RuntimeLibrariesStatus.Missing =>
-                ("Not added yet. The mod will not start.", "StatusWarning"),
+                ("Not added yet. UGT Mod will not start.", "StatusWarning"),
 
             RuntimeLibrariesStatus.WrongVersion =>
-                ($"The copies added no longer fit ({state.Detail}). The mod will not start.", "StatusWarning"),
+                ($"The added libraries no longer match ({state.Detail}). UGT Mod will not start.", "StatusWarning"),
 
             // A new source picked above: said, since nothing changes in the game until reinstalled.
             RuntimeLibrariesStatus.InPlace when state.SourceChanged =>
@@ -7705,17 +7703,21 @@ public partial class MainWindow : Window
                 ($"Added: {state.InstalledSummary}. In {LoaderSearchPath.Folder}/.", null),
 
             RuntimeLibrariesStatus.NoLongerNeeded =>
-                ($"Still in {LoaderSearchPath.Folder}/: {state.InstalledSummary}.", null),
+                ($"No longer needed, still in {LoaderSearchPath.Folder}/: {state.InstalledSummary}.", null),
 
             _ => ("", null),
         };
 
         if (standing.Length > 0)
         {
-            var line = new TextBlock { Text = standing, FontSize = 12, TextWrapping = TextWrapping.Wrap };
-            if (tone is null) line.Opacity = 0.6;
-            else line.Foreground = Brush(tone);
-            panel.Children.Add(line);
+            // Neutral lines in the muted grey every note uses, rather than faded default text.
+            panel.Children.Add(new TextBlock
+            {
+                Text = standing,
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Brush(tone ?? "TextMuted"),
+            });
         }
 
         var buttons = new StackPanel
@@ -7731,17 +7733,17 @@ public partial class MainWindow : Window
         {
             var add = new Button
             {
-                Content = state.Status == RuntimeLibrariesStatus.WrongVersion ? "Update the libraries"
-                        : installed is not null ? "Reinstall the libraries"
-                        : "Install the libraries",
+                Content = state.Status == RuntimeLibrariesStatus.WrongVersion ? "Update libraries"
+                        : installed is not null ? "Reinstall libraries"
+                        : "Install libraries",
                 IsEnabled = !running,
                 Classes = { "primary" },
             };
 
             ToolTip.SetTip(add,
-                $"Puts what this game lacks in {LoaderSearchPath.Folder}/, from the sources named above, after "
-                + $"checking every file against this game's own. {report.InstalledLoader.Display} is told to read "
-                + "them first. None of the game's own files is replaced.");
+                $"Copies the missing files to {LoaderSearchPath.Folder}/ from the source chosen above, "
+                + $"after checking them against this game. {report.InstalledLoader.Display} loads them "
+                + "first. No game file is replaced.");
 
             add.Click += async (_, _) => await RunRuntimeLibrariesInstallAsync(report);
             buttons.Children.Add(add);

@@ -10129,10 +10129,10 @@ public partial class MainWindow : Window
             return report.Blockers[0];
 
         if (_running.IsRunning(report.Game))
-            return "The game is running — its files are locked until it closes.";
+            return "The game is running. Close it first.";
 
         if (report.RecommendedLoader is null && report.InstalledLoader is null)
-            return report.RecommendationReason ?? "No loader in the catalog fits this game.";
+            return report.RecommendationReason ?? "No mod loader fits this game.";
 
         // The prerequisite that is about the person rather than the game. Without it we do not
         // know their language, so "install everything and be ready to play" is a promise we
@@ -10152,7 +10152,7 @@ public partial class MainWindow : Window
         // written, and the mod's own first-run wizard asks inside the game, which is the fallback
         // this whole guard exists to protect.
         if (!_settings.Current.Reviewed && NeedsModDefaults(report))
-            return "Mod defaults comes first.";
+            return "Fill in Mod defaults first.";
 
         // 🔴 **Nothing to translate with, so nothing to set up for.** Community translations are
         // the chosen source, this game has none, and no translator is named: the one click would
@@ -10239,13 +10239,14 @@ public partial class MainWindow : Window
             // button they just walked past would be the one wrong turn left on this screen.
             var done = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
 
+            // Green, not faded: this is the state somebody wanted, and faded text reads as disabled.
             var settled = new TextBlock
             {
-                Text = "This game is fully set up. Nothing left for one click to do.",
+                Text = "This game is fully set up.",
                 FontSize = 12,
-                Opacity = 0.6,
                 TextWrapping = TextWrapping.Wrap,
                 VerticalAlignment = VerticalAlignment.Center,
+                Foreground = Brush("StatusSuccess"),
             };
 
             Grid.SetColumn(settled, 0);
@@ -10365,8 +10366,8 @@ public partial class MainWindow : Window
 
             ToolTip.SetTip(withTranslation, replaces
                 ? "Not ticked on purpose. " + TranslationOffers.Caution(offer)
-                  + " Tick it to take the community one anyway — you will be asked again, with "
-                  + "what is at stake spelled out, and a copy is kept aside either way."
+                  + " Tick it to take the community translation anyway: you will be asked to "
+                  + "confirm, and the current file is backed up."
                 // ⚠ Says what unticking DOES — skip the download — not what it feels like. The
                 // previous wording, "untick to start from a blank sheet", promised a reset this
                 // box has never performed: it decides whether a translation comes down with the
@@ -10422,8 +10423,8 @@ public partial class MainWindow : Window
         {
             var undo = new Button { Content = "Undo", MinWidth = 90 };
 
-            ToolTip.SetTip(undo, "Forgets the answers given on this card and not yet applied. "
-                                 + "Nothing already written into the game is touched.");
+            ToolTip.SetTip(undo, "Clears the choices on this page that are not applied yet. Nothing "
+                                 + "in the game is changed.");
 
             undo.Click += async (_, _) =>
             {
@@ -10504,8 +10505,8 @@ public partial class MainWindow : Window
         if (report.PluginWriteOffered)
         {
             yield return report.InstalledPluginVersion is null
-                ? new(OneClickAct.InstallMod, "install the mod")
-                : new(OneClickAct.UpdateMod, $"update the mod to {report.PluginStanding!.Available}");
+                ? new(OneClickAct.InstallMod, "install UGT Mod")
+                : new(OneClickAct.UpdateMod, $"update UGT Mod to {report.PluginStanding!.Available}");
         }
 
         // ⚠ The same condition the plan reads (RuntimeLibrariesState.WriteOffered), so the list
@@ -10516,7 +10517,7 @@ public partial class MainWindow : Window
             // ⚠ The sources are part of the promise, and the confirmation names them in pickers
             // right under this line (SourcePicker) — not here, where a sentence would go on naming
             // the first source after somebody picked another.
-            yield return new(OneClickAct.AddRuntimeLibraries, $"add what this game lacks ({need.Lacking})");
+            yield return new(OneClickAct.AddRuntimeLibraries, $"add missing libraries ({need.Lacking})");
         }
 
         // ⚠ Only when it would actually change something. This step used to be listed whenever the
@@ -10584,9 +10585,9 @@ public partial class MainWindow : Window
         yield return TranslationOffers.For(report, chosen) switch
         {
             TranslationOffer.ReplacesWork => new(OneClickAct.ReplaceTranslation,
-                $"replace the translation here, losing what was never uploaded{andLanguage} (it will ask first)"),
+                $"replace this game's translation, losing unpublished lines{andLanguage} (asks first)"),
             TranslationOffer.ReplacesChoice => new(OneClickAct.ReplaceTranslation,
-                $"swap the translation here for another one{andLanguage} (it will ask first)"),
+                $"replace this game's translation with another one{andLanguage} (asks first)"),
             TranslationOffer.FreeToTake when report.LocalTranslation is not null =>
                 new(OneClickAct.UpdateTranslation, $"update the translation{andLanguage}"),
             _ => new(OneClickAct.TakeTranslation,
@@ -10616,8 +10617,8 @@ public partial class MainWindow : Window
         // name the one thing it does not do. Same words as the radio that chose it.
         if (preference.LetWizardAsk && !preference.UsesModDefaults(GameConfig(report)))
             return GameConfig(report).FirstRunCompleted
-                ? "show the mod's Setup again the next time the game starts"
-                : "let the mod show its Setup when the game starts";
+                ? "show UGT Mod's setup screen again at the next game start"
+                : "let UGT Mod show its setup screen when the game starts";
 
         // ⚠ **Two sources when there are two, because "apply Mod defaults" was only half true.** A
         // game that answered for itself is set up from the defaults EXCEPT where it answered, and
@@ -10813,7 +10814,7 @@ public partial class MainWindow : Window
         {
             body.Children.Add(new TextBlock
             {
-                Text = "This game keeps its own settings — nothing in its configuration changes.",
+                Text = "This game keeps its own settings. Its configuration is not changed.",
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("TextMuted"),
@@ -10826,7 +10827,7 @@ public partial class MainWindow : Window
                 body.Children.Add(warning);
         }
 
-        if (!await ConfirmAsync($"Set up {report.Game.Name}?", body, "Set it up",
+        if (!await ConfirmAsync($"Set up {report.Game.Name}?", body, "Set up",
                                 acceptances: new[] { unityBox, localBox })) return;
 
         // ⚠ Read BEFORE anything is written: applying the settings makes this game "configured",
@@ -11116,7 +11117,7 @@ public partial class MainWindow : Window
         {
             Header = new TextBlock
             {
-                Text = "what changes",
+                Text = "What changes",
                 FontSize = 11,
                 Foreground = Brush("TextMuted"),
             },
@@ -11144,8 +11145,8 @@ public partial class MainWindow : Window
         {
             yield return new TextBlock
             {
-                Text = $"You have {Composition.Amount(local.LocalChanges, "line", "lines")} here that {(local.LocalChanges == 1 ? "has" : "have")} never been uploaded. "
-                     + "A copy is kept aside, but this game will stop using them.",
+                Text = $"This game has {Composition.Amount(local.LocalChanges, "unpublished line", "unpublished lines")}. "
+                     + "They are backed up, but this game will stop using them.",
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("StatusWarning"),
             };
@@ -11154,8 +11155,8 @@ public partial class MainWindow : Window
             // merge, and pretending otherwise here would be the moment it lost somebody's work.
             yield return new TextBlock
             {
-                Text = "To keep your work AND take this one, do it from inside the mod: it holds "
-                     + "the original version and the screens to settle line by line.",
+                // UGT Mod holds the ancestor and the merge screens; this tool does not merge here.
+                Text = "To keep your work and take this translation too, merge them in UGT Mod.",
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("TextMuted"),
                 FontSize = 12,
@@ -11165,7 +11166,8 @@ public partial class MainWindow : Window
         {
             yield return new TextBlock
             {
-                Text = $"The {Composition.Amount(local.EntryCount, "line", "lines")} already here will be replaced. A copy is kept aside.",
+                Text = $"The {Composition.Amount(local.EntryCount, "line", "lines")} in this game will be replaced. "
+                     + "The current file is backed up.",
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("TextSecondary"),
             };
@@ -11184,9 +11186,9 @@ public partial class MainWindow : Window
         {
             yield return new TextBlock
             {
-                Text = $"This game is set to {switching.From} and this translation is in "
-                     + $"{switching.To}. It will be set to {switching.To} — this game only, your "
-                     + "default does not move.",
+                Text = $"This game is set to {switching.From}, and this translation is in "
+                     + $"{switching.To}. The game will be switched to {switching.To}. Mod defaults "
+                     + "does not change.",
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("TextSecondary"),
                 FontSize = 12,
@@ -11198,10 +11200,10 @@ public partial class MainWindow : Window
         yield return new TextBlock
         {
             Text = position.IsMain
-                ? "This translation is yours — you are its Main. Replacing the file here does not "
-                + "touch what you published, but anything you have not published yet leaves this game."
-                : "You contribute a branch to this translation. Replacing the file here leaves "
-                + "your branch untouched on the site, and this game stops showing your version of it.",
+                ? "You own the Main of this translation. Your published version is not changed, but "
+                + "unpublished lines leave this game."
+                : "You have a branch of this translation. It stays on UGT Website, but this game "
+                + "stops using your version.",
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("StatusWarning"),
             FontSize = 12,
@@ -11261,7 +11263,7 @@ public partial class MainWindow : Window
         // "Backups" is a button they have already seen on this card.
         var message = "The translation is in place.";
         if (result.KeptPrevious)
-            message += " What was here is kept under Backups.";
+            message += " The previous file is in Backups.";
 
         return (true, message);
     }
@@ -11631,9 +11633,10 @@ public partial class MainWindow : Window
         {
             Text = duplicate
                 ? strays.Count == 1
-                    ? $"The mod is installed twice — here and in {strays[0]}/."
-                    : $"The mod is installed more than once — here and in {string.Join(", ", strays)}."
-                : $"The mod is installed in {strays[0]}/ instead of {descriptor.PluginDir}/.",
+                    ? $"UGT Mod is installed twice: in {descriptor.PluginDir}/ and in {strays[0]}/."
+                    : $"UGT Mod is installed more than once: in {descriptor.PluginDir}/ and in "
+                      + $"{string.Join(", ", strays)}."
+                : $"UGT Mod is installed in {strays[0]}/ instead of {descriptor.PluginDir}/.",
             FontSize = 12,
             FontWeight = FontWeight.SemiBold,
             TextWrapping = TextWrapping.Wrap,
@@ -11647,12 +11650,10 @@ public partial class MainWindow : Window
             // assemblies carrying the same plugin id by their own rules, which differ between
             // loaders and between versions of one.
             Text = duplicate
-                ? $"This tool only ever updates the one in {descriptor.PluginDir}/. Which of the two "
-                  + "the loader actually runs is its own decision, so an update can install "
-                  + "correctly and change nothing you can see."
-                : "It was not put there by this tool. Depending on the loader and its version, a "
-                  + "copy outside the documented folder may load late or not at all — and this is "
-                  + "not where an update or a removal looks first.",
+                ? $"UGT Manager only updates the one in {descriptor.PluginDir}/. The mod loader "
+                  + "decides which copy runs, so an update may seem to change nothing."
+                : $"UGT Manager did not put it there. Outside {descriptor.PluginDir}/ it may load "
+                  + $"late or not at all, and updates and removals look in {descriptor.PluginDir}/.",
             FontSize = 11,
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("TextMuted"),
@@ -11662,7 +11663,7 @@ public partial class MainWindow : Window
         {
             Content = duplicate
                 ? strays.Count == 1 ? "Remove the other copy" : "Remove the other copies"
-                : "Put it back where it belongs",
+                : "Move to the right folder",
             FontSize = 12,
             Classes = { "primary" },
             HorizontalAlignment = HorizontalAlignment.Left,
@@ -11695,9 +11696,9 @@ public partial class MainWindow : Window
         var confirmed = await ConfirmAsync(
             strays.Count == 1 ? "Remove the other copy?" : "Remove the other copies?",
             "This deletes:" + Environment.NewLine + listed + Environment.NewLine + Environment.NewLine
-            + $"The mod stays installed in {descriptor.PluginDir}/, and that is the version this "
-            + "game will run. Nothing else in those folders is touched.",
-            strays.Count == 1 ? "Remove the copy" : "Remove the copies");
+            + $"UGT Mod stays installed in {descriptor.PluginDir}/, and this game will run that "
+            + "version. Nothing else in those folders is changed.",
+            "Remove");
 
         if (!confirmed) return;
 
@@ -11727,8 +11728,8 @@ public partial class MainWindow : Window
 
         await MessageAsync(failed.Count == 0 ? "Removed" : "Partly removed",
             failed.Count == 0
-                ? $"The extra copy in {string.Join(", ", removed)} is gone. This game now runs the "
-                  + "one version installed here."
+                ? $"The extra copy in {string.Join(", ", removed)} was removed. This game now runs "
+                  + $"the version in {descriptor.PluginDir}/."
                 : "Some copies could not be removed:" + Environment.NewLine
                   + string.Join(Environment.NewLine, failed.Select(f => "- " + f)));
 
@@ -11754,19 +11755,20 @@ public partial class MainWindow : Window
             ? UserDataInventory.RecognisedDataIn(from)
             : Array.Empty<string>();
 
-        var body = $"The mod moves from {stray}/ to {descriptor.PluginDir}/, where the loader reads it.";
+        var body = $"UGT Mod moves from {stray}/ to {descriptor.PluginDir}/, where the mod loader reads it.";
 
         if (carry.Count > 0)
         {
+            // Under BepInEx the mod keeps its files beside its own assembly.
             body += Environment.NewLine + Environment.NewLine
-                  + "Your files move with it, because the mod keeps them beside itself:"
+                  + "Its files move with it:"
                   + Environment.NewLine
                   + string.Join(Environment.NewLine, carry.Select(c => "- " + c))
                   + Environment.NewLine + Environment.NewLine
-                  + "Left behind, the mod would start over on an empty folder.";
+                  + "Otherwise UGT Mod would start with an empty folder.";
         }
 
-        if (!await ConfirmAsync("Put the mod back where it belongs?", body, "Put it back")) return;
+        if (!await ConfirmAsync("Move UGT Mod to the right folder?", body, "Move")) return;
 
         Directory.CreateDirectory(home);
 
@@ -11799,7 +11801,7 @@ public partial class MainWindow : Window
         if (stuck.Count > 0)
         {
             await MessageAsync("Some files stayed behind",
-                "These were left in " + stray + "/ and the mod will not read them there:"
+                "These stayed in " + stray + "/, where UGT Mod does not read them:"
                 + Environment.NewLine
                 + string.Join(Environment.NewLine, stuck.Select(f => "- " + f))
                 + Environment.NewLine + Environment.NewLine
@@ -11860,8 +11862,8 @@ public partial class MainWindow : Window
 
         body.Children.Add(new TextBlock
         {
-            Text = $"{string.Join(", ", strays)} sit in {descriptor.PluginDir}/../ rather than "
-                 + "beside the mod. It reads none of them.",
+            Text = $"{string.Join(", ", strays)}: in the folder above {descriptor.PluginDir}/, where "
+                 + "UGT Mod does not read them.",
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("StatusWarning"),
@@ -11869,15 +11871,15 @@ public partial class MainWindow : Window
 
         body.Children.Add(new TextBlock
         {
-            Text = "Nothing here moves or deletes them: a translation there may be work nobody "
-                 + "else has, and the mod may already have its own file in the right place. "
-                 + "Compare them yourself and keep the one you want.",
+            Text = "UGT Manager does not move or delete them: they may hold work that exists nowhere "
+                 + $"else. Compare them with the files in {descriptor.PluginDir}/ and keep the ones "
+                 + "you want.",
             FontSize = 11,
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("TextMuted"),
         });
 
-        var open = Glyphs.Button(Glyphs.Folder(), "Open that folder");
+        var open = Glyphs.Button(Glyphs.Folder(), "Open folder");
         open.FontSize = 12;
         open.HorizontalAlignment = HorizontalAlignment.Left;
         open.Click += (_, _) => Shell.OpenFolder(parent);
@@ -11901,15 +11903,16 @@ public partial class MainWindow : Window
 
         var lines = new List<string>
         {
-            $"{theirs.Display} was not installed by UnityGameTranslator Manager, so it is never "
-            + "modified or removed from here.",
+            $"{theirs.Display} was not installed by UGT Manager, so UGT Manager does not change or "
+            + "remove it.",
         };
 
         // The count is already measured for the uninstaller's refusal; saying it here turns that
         // refusal into something checkable rather than something to take on trust.
         if (theirs.ForeignPluginCount > 0)
         {
-            lines.Add($"{Composition.Amount(theirs.ForeignPluginCount, "other mod", "other mods")} {(theirs.ForeignPluginCount == 1 ? "sits" : "sit")} beside ours in "
+            lines.Add($"{Composition.Amount(theirs.ForeignPluginCount, "other mod", "other mods")} "
+                    + $"{(theirs.ForeignPluginCount == 1 ? "is" : "are")} installed next to UGT Mod in "
                     + $"{theirs.PluginDir}/. Removing the loader removes those too.");
         }
 
@@ -11919,14 +11922,12 @@ public partial class MainWindow : Window
         // is a DLL in Mods/ rather than a folder at all, and under BepInEx the named directory is
         // the one holding everything. Removing OUR files is what the Uninstall button is for, and
         // it asks about your data first.
-        lines.Add($"To let UnityGameTranslator Manager look after the loader instead, remove "
-                + $"{theirs.Display} by hand — follow its own documentation — then install it "
-                + "again from this card.");
+        lines.Add($"To let UGT Manager manage the loader, remove {theirs.Display} by hand (see its "
+                + "documentation), then install it again from this page.");
 
-        lines.Add("⚠ Do not delete the mod's folder or files to do that. They hold your settings "
-                + "and your translation, including lines captured while playing that may exist "
-                + "nowhere else. Use \"Uninstall...\" above instead: it asks whether to keep them, "
-                + "and copies them aside before removing anything.");
+        lines.Add("⚠ Do not delete UGT Mod's folder or files for this: they hold your settings and "
+                + "translation, which may exist nowhere else. Use \"Uninstall...\" instead: it asks "
+                + "whether to keep them and backs them up first.");
 
         return string.Join(Environment.NewLine + Environment.NewLine, lines);
     }
@@ -12076,7 +12077,7 @@ public partial class MainWindow : Window
 
         yield return new TextBlock
         {
-            Text = "What is this game about?    (optional)",
+            Text = "What is this game about? (optional)",
             FontSize = 12,
             Margin = new Avalonia.Thickness(0, 10, 0, 0),
             Foreground = Brush("TextSecondary"),
@@ -12084,8 +12085,7 @@ public partial class MainWindow : Window
 
         yield return new TextBlock
         {
-            Text = "Sent with every line it translates, so it reaches for the right words: a game "
-                 + "about starships and one about Roman legions do not share a vocabulary.",
+            Text = "Sent to the translator with each line, so it picks the right words for this game.",
             FontSize = 11,
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("TextMuted"),
@@ -12126,8 +12126,8 @@ public partial class MainWindow : Window
         yield return new TextBlock
         {
             Text = InGameContext(report, InstalledDescriptor(report)) is { } written
-                ? $"This game currently says: {written}"
-                : "This game has nothing written for it yet.",
+                ? $"Currently in the game: {written}"
+                : "Nothing set in the game yet.",
             FontSize = 11,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Avalonia.Thickness(0, 2, 0, 0),
@@ -12231,8 +12231,8 @@ public partial class MainWindow : Window
         {
             yield return new TextBlock
             {
-                Text = "No translator is set up, so nothing can be translated as you play. "
-                     + "A published translation still works — it is already written.",
+                Text = "No translator is set up, so new text is not translated while you play. A "
+                     + "published translation still works.",
                 FontSize = 11,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Avalonia.Thickness(24, 0, 0, 0),
@@ -12315,7 +12315,7 @@ public partial class MainWindow : Window
             {
                 View = new TextBlock
                 {
-                    Text = "Written into the game when the mod is installed.",
+                    Text = "Written into the game when UGT Mod is installed.",
                     FontSize = 11,
                     TextWrapping = TextWrapping.Wrap,
                     Margin = new Avalonia.Thickness(0, 6, 0, 0),
@@ -12342,7 +12342,7 @@ public partial class MainWindow : Window
 
             ToolTip.SetTip(apply, count > 0
                 ? $"Writes {(count == 1 ? "this" : "these")} {Composition.Amount(count, "setting", "settings")} into the game."
-                : "Nothing has been changed here.");
+                : "No change to apply.");
 
             // Last, so the refusal replaces the tooltip above rather than the reverse.
             var mine = MaySetUp(report, apply);
@@ -12461,8 +12461,8 @@ public partial class MainWindow : Window
         {
             yield return new TextBlock
             {
-                Text = "The Manager will not set this game up — the card above says why. "
-                     + "Install the mod yourself and its translation is managed from here "
+                Text = "UGT Manager will not set up this game (the reason is at the top of this "
+                     + "page). If you install UGT Mod yourself, its translation can be managed here "
                      + "like any other.",
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
@@ -12477,11 +12477,10 @@ public partial class MainWindow : Window
         yield return new TextBlock
         {
             Text = TranslationBackendLabel(_settings.Current) is not null
-                ? "Yours would be the first: play with the mod on and it translates as it "
-                  + "meets text, then you can publish it for everyone else."
-                : "You can still make one without any translator. The mod captures the game's "
-                  + "text as you play, and its live editor lets you write the lines yourself, "
-                  + "in game, one at a time — that is how a translation is made by hand.",
+                ? "Yours could be the first: play with UGT Mod and it translates the text as it "
+                  + "appears. Then you can publish it."
+                : "You can make one without a translator: UGT Mod collects the game's text as you "
+                  + "play, and its editor lets you write each line yourself.",
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Avalonia.Thickness(0, 2, 0, 0),

@@ -100,6 +100,14 @@ public sealed class SearchPicker : UserControl
         _list.Background = Brushes.Transparent;
         _list.BorderThickness = new Thickness(0);
 
+        // 🔴 **Not virtualised, because the list is MEASURED to size its popup** (2026-09-25). The
+        // default panel realises only some rows and estimates the others, and on a first opening its
+        // estimate is wrong: "Translate with" (four entries) opened showing three behind a scrollbar,
+        // and correctly the second time, once real heights were remembered. Every row realised means
+        // the first layout pass states the real height. The longest list here is the languages, a
+        // couple of hundred rows — nothing a plain panel cannot hold.
+        _list.ItemsPanel = new FuncTemplate<Panel?>(() => new StackPanel());
+
         // 🔴 **Our own ScrollViewer, holding the list unbounded inside it.** The height belongs
         // here rather than on the list because the wheel has to be scrolled BY HAND — see
         // OnWheelWhileOpen — and doing that needs a scroller we hold a reference to. Left on the
@@ -233,6 +241,7 @@ public sealed class SearchPicker : UserControl
         _search.IsVisible = false;
         _scroll.MaxHeight = double.PositiveInfinity;
         _shell.Opacity = 0;
+        _settledHeight = -1;
 
         _list.LayoutUpdated -= OnListLaidOut;
         _list.LayoutUpdated += OnListLaidOut;
@@ -244,11 +253,18 @@ public sealed class SearchPicker : UserControl
         PopupWheel.Follow(this, () => _popup.IsOpen, () => _scroll);
     }
 
+    /// <summary>The list height the open popup was last sized for; -1 before the first sizing.</summary>
+    private double _settledHeight = -1;
+
     /// <summary>
-    /// The first layout pass of an opening list: the moment its real height exists.
+    /// Every layout pass of an open list: the first sizes it, the later ones re-size it if the
+    /// whole list turned out taller or shorter than measured (a row whose content arrived late).
     ///
     /// ⚠ An event, not a posted guess at when layout will be done: a pass that has not reached the
     /// list yet reports nothing and is simply skipped, and the next one is what answers.
+    ///
+    /// ⚠ Only while nothing is typed. Filtering shrinks the list on purpose, and a popup that
+    /// shrank with every letter would jump under the pointer; it keeps the size of the full list.
     /// </summary>
     private void OnListLaidOut(object? sender, EventArgs e)
     {
@@ -257,12 +273,15 @@ public sealed class SearchPicker : UserControl
         var rows = _list.ItemCount;
         var tall = _list.Bounds.Height;
 
-        // Not laid out yet — the next pass answers. An empty list has nothing to measure and is
-        // settled at once.
+        // Not laid out yet — the next pass answers.
         if (rows > 0 && tall <= 0) return;
 
-        _list.LayoutUpdated -= OnListLaidOut;
-        Settle(rows, tall);
+        var first = _settledHeight < 0;
+        if (!first && (!string.IsNullOrEmpty(_search.Text) || Math.Abs(tall - _settledHeight) < 0.5))
+            return;
+
+        _settledHeight = tall;
+        Settle(rows, tall, first);
     }
 
     /// <summary>
@@ -273,13 +292,17 @@ public sealed class SearchPicker : UserControl
     /// search" is exactly "does not fit". A per-row figure without the padding would leave a
     /// scrollbar for the last few pixels.
     /// </summary>
-    private void Settle(int rows, double tall)
+    private void Settle(int rows, double tall, bool first)
     {
         var room = TopLevel.GetTopLevel(this)?.ClientSize.Height ?? 0;
         var row = rows > 0 ? tall / rows : 0;
 
         _scroll.MaxHeight = rows > 0 ? DropdownFit.Height(rows, row, room) : 0;
         _search.IsVisible = DropdownFit.NeedsSearch(rows, row, room);
+
+        // A later re-sizing only corrects the height: the popup is already shown and has the
+        // keyboard, and taking it back would pull focus from under somebody using the arrows.
+        if (!first) return;
 
         _shell.Opacity = 1;
 

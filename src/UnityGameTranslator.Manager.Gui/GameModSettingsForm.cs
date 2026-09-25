@@ -726,20 +726,6 @@ public sealed class GameModSettingsForm
         yield return Note("The in-game hotkey has its own setting: \"Key for this game\".");
 
         yield return AdditionalHotkeys();
-
-        _modOnline = new CheckBox
-        {
-            Content = "Allow UGT Mod to go online",
-            IsChecked = EffectiveFlag(o => o.ModOnlineMode, _defaults.ModOnlineMode),
-            FontSize = 12,
-        };
-
-        _modOnline.IsCheckedChanged += (_, _) => Answer(
-            v => _draft.ModOnlineMode = v, _modOnline.IsChecked == true,
-            _inGame.ModOnlineMode ?? _defaults.ModOnlineMode);
-
-        yield return WithOrigin(_modOnline, _draft.ModOnlineMode, _inGame.ModOnlineMode,
-                                () => _draft.ModOnlineMode = null);
     }
 
     /// <summary>
@@ -823,6 +809,22 @@ public sealed class GameModSettingsForm
 
     private IEnumerable<Control> UpdatesBlock()
     {
+        // First, as in Mod defaults' "Updates and notifications": off, the mod gets no update
+        // notices and no community translations, so it governs the rows below it.
+        _modOnline = new CheckBox
+        {
+            Content = "Allow UGT Mod to go online",
+            IsChecked = EffectiveFlag(o => o.ModOnlineMode, _defaults.ModOnlineMode),
+            FontSize = 12,
+        };
+
+        _modOnline.IsCheckedChanged += (_, _) => Answer(
+            v => _draft.ModOnlineMode = v, _modOnline.IsChecked == true,
+            _inGame.ModOnlineMode ?? _defaults.ModOnlineMode);
+
+        yield return WithOrigin(_modOnline, _draft.ModOnlineMode, _inGame.ModOnlineMode,
+                                () => _draft.ModOnlineMode = null);
+
         _channel = ModSettingControls.ChannelPicker(200);
         ModSettingControls.Select(_channel, EffectiveText(o => o.Channel, _defaults.Channel));
 

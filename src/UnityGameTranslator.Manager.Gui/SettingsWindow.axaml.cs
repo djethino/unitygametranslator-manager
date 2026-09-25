@@ -243,7 +243,7 @@ public sealed class SettingsWindow : Window
         layout.Children.Add(_aiCard);
         layout.Children.Add(_testCard);
         layout.Children.Add(_apiCard);
-        layout.Children.Add(ModCard());
+        layout.Children.Add(HotkeysCard());
         layout.Children.Add(ModUiCard());
         layout.Children.Add(SyncCard());
 
@@ -364,6 +364,22 @@ public sealed class SettingsWindow : Window
     /// </summary>
     private Control SyncCard()
     {
+        // The mod's own connection, not this tool's. Someone who installs everything from here,
+        // translation included, has what they need before the game starts.
+        //
+        // ⚠ FIRST in this card: off, there are no update notices and no community translations in
+        // the game — it governs everything below it, so it is read before them.
+        _modOnline = new CheckBox
+        {
+            Content = "Allow UGT Mod to go online",
+            IsChecked = _draft.ModOnlineMode,
+        };
+
+        // 🔸 Shared with a game's own card — see ModSettingControls. Which builds are installed and
+        // announced: an update matter, so here rather than beside the hotkey where it used to sit.
+        _channel = ModSettingControls.ChannelPicker(200);
+        Select(_channel, _draft.Channel);
+
         _checkModUpdates = new CheckBox { Content = "Notify me about mod updates",
                                           IsChecked = _draft.CheckModUpdates };
         _notifyUpdates = new CheckBox { Content = "Notify me about translation updates",
@@ -390,6 +406,11 @@ public sealed class SettingsWindow : Window
         Select(_notificationPosition, _draft.NotificationPosition);
 
         var panel = new StackPanel { Spacing = 10 };
+        panel.Children.Add(_modOnline);
+        panel.Children.Add(Note(
+            "Off: UGT Mod stays offline in the game. No update notices, no community translations. "
+            + "What is already installed keeps working."));
+        panel.Children.Add(Row("Update channel", _channel));
         panel.Children.Add(_checkModUpdates);
         panel.Children.Add(Note("UGT Mod is only updated from UGT Manager, after you confirm."));
         panel.Children.Add(_notifyUpdates);
@@ -783,7 +804,12 @@ public sealed class SettingsWindow : Window
             panel);
     }
 
-    private Control ModCard()
+    /// <summary>
+    /// The panel key and the mod's optional shortcuts — one subject, one card, as the mod has one
+    /// "Hotkeys" tab (user's decision, 2026-09-25). The update channel and the online switch left
+    /// for "Updates and notifications": they were three subjects under one title.
+    /// </summary>
+    private Control HotkeysCard()
     {
         // 🔴 The capture itself lives in HotkeyEditor, shared with a game's own card. It is ninety
         // lines of refusals — a key Unity cannot name, a key that means something different from
@@ -793,12 +819,6 @@ public sealed class SettingsWindow : Window
         _hotkey = new HotkeyEditor(_draft.SettingsHotkey, Brush("TextMuted"), Brush("StatusWarning"));
         _hotkeyProblem = _hotkey.Problem;
 
-        var hotkeyRow = _hotkey.Row;
-
-        // 🔸 Shared with a game's own card — see ModSettingControls.
-        _channel = ModSettingControls.ChannelPicker(200);
-        Select(_channel, _draft.Channel);
-
         // ⚠ There is no "replace it in games too" box here any more, and putting one back would be
         // a step backwards. The hotkey is the one setting a game may legitimately know better than
         // we do — inside it, the mod captured the key against the real keyboard — so the question
@@ -807,31 +827,18 @@ public sealed class SettingsWindow : Window
         // somebody decide for every game at once, out of sight of all of them, and showed nothing
         // afterwards — a game keeping its own key never appeared as a difference anywhere.
 
-        // The mod's own connection, not this tool's. Someone who installs everything from here,
-        // translation included, has what they need before the game starts.
-        _modOnline = new CheckBox
-        {
-            Content = "Allow UGT Mod to go online",
-            IsChecked = _draft.ModOnlineMode,
-        };
-
         var panel = new StackPanel { Spacing = 10 };
 
-        panel.Children.Add(Row("In-game hotkey", hotkeyRow));
+        panel.Children.Add(Row("In-game hotkey", _hotkey.Row));
         panel.Children.Add(Note(ModSettingControls.HotkeyAdvice));
         panel.Children.Add(_hotkeyProblem);
         panel.Children.Add(Note(
             "A game that already has a hotkey keeps it. You can replace it on that game's page."));
         panel.Children.Add(AdditionalHotkeys());
-        panel.Children.Add(Row("Update channel", _channel));
-        panel.Children.Add(_modOnline);
-        panel.Children.Add(Note(
-            "Off: UGT Mod stays offline in the game. No update notices, no community translations. "
-            + "What is already installed keeps working."));
 
         // The hotkey is asked here because the mod's first-run wizard asks for it — the window's
         // intro says when that wizard is skipped.
-        return Card("In the game", "The hotkey opens the UGT Mod panel in the game.", panel);
+        return Card("Hotkeys", "The hotkey opens the UGT Mod panel in the game.", panel);
     }
 
     private CheckBox _translateModUi = null!;
@@ -941,9 +948,9 @@ public sealed class SettingsWindow : Window
     {
         var body = new StackPanel { Spacing = 8, Margin = new Thickness(0, 6, 0, 0) };
 
+        // ⚠ No second copy of HotkeyAdvice: it is written once, under the panel key, in this same card.
         body.Children.Add(Note("Optional. None is set by default. A game that already has a shortcut "
                                + "keeps it; change it on that game's page."));
-        body.Children.Add(Note(ModSettingControls.HotkeyAdvice));
 
         foreach (var shortcut in ModShortcuts.All)
         {

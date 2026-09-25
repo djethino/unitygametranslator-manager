@@ -163,7 +163,7 @@ public sealed class TranslationsWindow : Window
         layout.Children.Add(LocalState());
         layout.Children.Add(Filters());
 
-        _searching = new SpinningGear("Asking the site...") { IsVisible = false };
+        _searching = new SpinningGear("Searching UGT Website...") { IsVisible = false };
         layout.Children.Add(_searching);
 
         _list = new StackPanel { Spacing = 10 };
@@ -222,16 +222,19 @@ public sealed class TranslationsWindow : Window
         var pair = languages is null ? "" : $" ({languages})";
 
         var text = local is null
-            ? "Nothing is installed for this game yet, so taking one costs you nothing."
+            ? "No translation is installed for this game yet."
             : local.EntryCount < 0
-                ? "There is a translation file here, but it could not be read. Taking another one "
-                  + "will move it aside rather than delete it."
+                ? "This game's translation file could not be read. Taking another one backs it up "
+                  + "first."
                 : local.LocalChanges > 0
-                    ? $"You already have {local.EntryCount} lines here{pair}, and {local.LocalChanges} of "
-                      + "them have not been uploaded anywhere. Taking another translation replaces "
-                      + "the file — your copy is kept aside, but the mod is where you merge the two."
-                    : $"You already have {local.EntryCount} lines here{pair}, with nothing waiting to be "
-                      + "uploaded.";
+                    ? $"This game has {local.EntryCount} lines{pair}, {local.LocalChanges} of them not "
+                      + "published. Taking another translation replaces the file: the current one is "
+                      + "backed up, and merging the two is done in UGT Mod."
+                    : $"This game has {local.EntryCount} lines{pair}, with no unpublished changes.";
+
+        // Amber when taking another one costs something: work not published anywhere, or a file
+        // that cannot be read.
+        var risky = local is { EntryCount: < 0 } || local?.LocalChanges > 0;
 
         var card = new StackPanel { Spacing = 4 };
 
@@ -240,7 +243,7 @@ public sealed class TranslationsWindow : Window
             Text = text,
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
-            Foreground = Brush(local?.LocalChanges > 0 ? "StatusWarning" : "TextSecondary"),
+            Foreground = Brush(risky ? "StatusWarning" : "TextSecondary"),
         });
 
         // Where the account stands in this very lineage, in the same words the game card uses —
@@ -367,9 +370,9 @@ public sealed class TranslationsWindow : Window
 
         if (!hasTarget && _everything.Count > 0)
         {
-            _status.Text = $"Nothing in {target} for this game yet, so every language is shown. "
-                         + "Taking one in another language is a normal thing to do — the screen "
-                         + "will offer to point the game at it.";
+            Status($"No translation into {target} for this game yet, so all languages are shown. "
+                   + "You can take one in another language: the game's page then offers to switch "
+                   + "the game to it.");
         }
     }
 
@@ -449,7 +452,7 @@ public sealed class TranslationsWindow : Window
 
         if (_api.LastError is not null)
         {
-            _status.Text = _api.LastError;
+            Status(_api.LastError, Tone.Error);
             return;
         }
 
@@ -478,14 +481,16 @@ public sealed class TranslationsWindow : Window
 
         if (all.Count == 0)
         {
-            _status.Text = _report.OnlineSearchError is not null
-                ? $"Could not reach the community site ({_report.OnlineSearchError})."
-                : "Nobody has published a translation for this game yet — the mod builds one as you "
-                  + "play, and you can be the first to share it.";
+            if (_report.OnlineSearchError is not null)
+                Status($"Could not reach UGT Website ({_report.OnlineSearchError}).", Tone.Error);
+            else
+                Status("No translation published for this game yet. UGT Mod builds one as you play, "
+                       + "and you can be the first to share it.");
             return;
         }
 
-        _status.Text = $"{Composition.Amount(all.Count, "translation", "translations")} for this game, in the order the site ranks them.";
+        Status($"{Composition.Amount(all.Count, "translation", "translations")} for this game, "
+               + "ranked as on UGT Website.");
 
         foreach (var translation in all) _list.Children.Add(Card(translation, all));
     }
@@ -659,32 +664,29 @@ public sealed class TranslationsWindow : Window
             Margin = new Thickness(0, 8, 0, 0),
         };
 
-        var outcome = new TextBlock
-        {
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            IsVisible = false,
-        };
+        var outcome = Ui.Note("");
+        outcome.IsVisible = false;
 
+        // ⚠ "This game" is the name of the tab on the game's page (MainWindow.GameTabs), where the
+        // choice is applied — named, never "the game's card".
         if (chosen)
         {
-            Show(outcome, installed
-                ? "This is the one in the game."
-                : "Chosen. Apply it on this game's page, under \"This game\".", "StatusSuccess");
+            Ui.Say(outcome, installed
+                ? "Installed in this game."
+                : ChosenMessage, Tone.Success);
         }
         else if (installed)
         {
             // What to do INSTEAD, named. Taking the published version again is how somebody drops
             // what they changed locally — a real thing to want — and it is offered on the game's
-            // card, where a replacement can be weighed against what the file already holds.
-            Show(outcome, _report.Sync is SyncDirection.Upload or SyncDirection.Merge
-                ? "This is the one in the game. To drop the changes made here and take the "
-                  + "published version again, use \"Take the published version\" on the game's card."
-                : "This is the one in the game.", "TextMuted");
+            // page, where a replacement can be weighed against what the file already holds.
+            Ui.Say(outcome, _report.Sync is SyncDirection.Upload or SyncDirection.Merge
+                ? "Installed in this game. To discard local changes and get the published version, "
+                  + "use \"Take the published version…\" in the game's \"This game\" tab."
+                : "Installed in this game.");
         }
 
-        take.Click += (_, _) => Select(translation.Id, outcome,
-            "Chosen. Apply it on this game's page, under \"This game\".");
+        take.Click += (_, _) => Select(translation.Id, outcome, ChosenMessage);
 
         body.Children.Add(take);
 
@@ -701,11 +703,11 @@ public sealed class TranslationsWindow : Window
             };
 
             ToolTip.SetTip(takeMine,
-                "Your own work on this lineage, as you published it. The Main above is what its "
-                + "owner has kept; the two differ by whatever has not been merged yet.");
+                "Your branch, as you published it. It differs from the Main by what its owner has "
+                + "not merged yet.");
 
             takeMine.Click += (_, _) => Select(mine, outcome,
-                "Your contribution is chosen. Apply it on this game's page, under \"This game\".");
+                "Your contribution is selected. Apply it in the game's \"This game\" tab.");
 
             body.Children.Add(takeMine);
         }
@@ -789,7 +791,7 @@ public sealed class TranslationsWindow : Window
         ChosenTranslation = translationId;
         Changed = true;
 
-        Show(outcome, message, "StatusSuccess");
+        Ui.Say(outcome, message, Tone.Success);
 
         // The other cards carry the old selection in their own buttons, so the list is redrawn
         // rather than left with two of them claiming to be the chosen one.
@@ -810,11 +812,17 @@ public sealed class TranslationsWindow : Window
     /// </summary>
     private string? ApiToken() => _settings.Current.ApiToken;
 
-    private static void Show(TextBlock block, string text, string colour)
+    /// <summary>What a chosen card says, and where the choice is carried out.</summary>
+    private const string ChosenMessage = "Selected. Apply it in the game's \"This game\" tab.";
+
+    /// <summary>
+    /// The line above the list: how many, or why there are none. Neutral in the reading grey of an
+    /// intro — it heads the list — and red when the search itself failed.
+    /// </summary>
+    private void Status(string text, Tone tone = Tone.Neutral)
     {
-        block.Text = text;
-        block.Foreground = Brush(colour);
-        block.IsVisible = true;
+        _status.Text = text;
+        _status.Foreground = Brush(tone == Tone.Neutral ? "TextSecondary" : Ui.TextColour(tone));
     }
 
     /// <summary>Through Palette, which will not let an unknown key pass unnoticed.</summary>

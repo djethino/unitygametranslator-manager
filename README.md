@@ -68,6 +68,7 @@ There is nothing extra to download, and nothing to keep in step.
 
 ```
 ugt-manager scan [--all]        List the Unity games found on this machine
+                 [--texts]      ...with the kinds of text each game shows and contains
 ugt-manager report <game>       Everything known about one game
 ugt-manager catalog             Show the loader catalog and where it came from
 ugt-manager diagnose            Printable report, safe to paste into an issue

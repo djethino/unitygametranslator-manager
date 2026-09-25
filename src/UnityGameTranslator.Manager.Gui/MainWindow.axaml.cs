@@ -8066,7 +8066,7 @@ public partial class MainWindow : Window
     /// </summary>
     private static string FromUnitySays(bool cached, string whatIsDownloaded) =>
         (cached
-            ? "Already downloaded from Unity's server and kept on this computer: nothing is downloaded again. "
+            ? "Already downloaded from Unity's server. Nothing is downloaded again. "
             : whatIsDownloaded + " ")
         + "Unity's terms apply. " + LocalCopies.NotAffiliated;
 
@@ -8084,7 +8084,7 @@ public partial class MainWindow : Window
             candidate.Source.Kind switch
             {
                 ClassLibrarySourceKind.UnityDownload => FromUnitySays(candidate.Source.Cached,
-                    "Only the part of Unity's editor package that holds them is downloaded, a few hundred MB, once for this Unity version."),
+                    "Downloads only the needed part of Unity's editor package: a few hundred MB, once per Unity version."),
                 ClassLibrarySourceKind.Game => LocalCopies.Disclaimer(signed: false),
                 _ when !candidate.Source.SameRelease =>
                     $"Unity {candidate.Source.Version} ships the same .NET runtime as this game, so its libraries fit.",
@@ -8116,7 +8116,7 @@ public partial class MainWindow : Window
             candidate.Source.Kind switch
             {
                 EngineModuleSourceKind.UnityDownload => FromUnitySays(candidate.Source.Cached,
-                    "Only the part of Unity's package that holds the modules is downloaded, a few MB."),
+                    "Downloads only the needed part of Unity's package: a few MB."),
                 EngineModuleSourceKind.Game when !candidate.Source.SameRelease =>
                     $"An older release of the same branch ({state.Need?.Modules?.Build} is the game's). " + LocalCopies.Disclaimer(signed: true),
                 EngineModuleSourceKind.Game => LocalCopies.Disclaimer(signed: true),
@@ -8153,9 +8153,9 @@ public partial class MainWindow : Window
         var body = new StackPanel { Spacing = 10 };
         body.Children.Add(new TextBlock
         {
-            Text = $"{Composition.Amount(count, "file", "files")} in {LoaderSearchPath.Folder}/ "
-                 + $"{(count == 1 ? "is" : "are")} deleted ({report.RuntimeLibraries.InstalledSummary}), and {loader} "
-                 + "is no longer told to read them. The game's own files are not touched.",
+            Text = $"Deletes {Composition.Amount(count, "file", "files")} from {LoaderSearchPath.Folder}/ "
+                 + $"({report.RuntimeLibraries.InstalledSummary}), and {loader} stops loading them. "
+                 + "The game's own files are not changed.",
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("TextSecondary"),
         });
@@ -8165,8 +8165,8 @@ public partial class MainWindow : Window
             body.Children.Add(new TextBlock
             {
                 Text = report.RuntimeLibraries.Need.LoaderCannotStart
-                    ? $"This game lacks them: {loader} will not start until they are installed again."
-                    : "This game lacks them: the mod will stop at load until they are installed again.",
+                    ? $"This game needs them: {loader} will not start until they are installed again."
+                    : "This game needs them: UGT Mod will not start until they are installed again.",
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("StatusWarning"),
             });
@@ -8241,7 +8241,7 @@ public partial class MainWindow : Window
     private Control ModSection(GameReport report)
     {
         var panel = new StackPanel { Spacing = 8 };
-        panel.Children.Add(SectionTitle("UnityGameTranslator"));
+        panel.Children.Add(SectionTitle("UGT Mod"));
 
         var running = _running.IsRunning(report.Game);
         var standing = report.PluginStanding;
@@ -8278,7 +8278,7 @@ public partial class MainWindow : Window
             {
                 Content = installed
                     ? standing is { UpdateAvailable: true } ? $"Update to {standing.Available}" : "Reinstall"
-                    : "Install the mod",
+                    : "Install UGT Mod",
                 IsEnabled = !running,
                 Classes = { "primary" },
             };
@@ -8324,9 +8324,9 @@ public partial class MainWindow : Window
                                            enabled: false);
 
             ToolTip.SetTip(putBack,
-                $"{Composition.Amount(missing.Count, "file", "files")} this game had before UnityGameTranslator Manager "
-                + "replaced them are missing — its previous mod loader, most often. This writes "
-                + "them back. Nothing is deleted: anything already in place is left alone.");
+                $"{Composition.Amount(missing.Count, "file", "files")} this game had before UGT Manager "
+                + "replaced them are missing (usually its previous mod loader). This puts them back. "
+                + "Nothing is deleted.");
 
             // ⚠ Set AFTER the tooltip above, so a refusal replaces the explanation rather than
             // being replaced by it. Writing another account's mod loader back into their game is
@@ -8402,7 +8402,7 @@ public partial class MainWindow : Window
 
         yield return new TextBlock
         {
-            Text = "What the mod uses in this game.",
+            Text = "What UGT Mod uses in this game.",
             FontSize = 11,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Avalonia.Thickness(0, 0, 0, 4),
@@ -8619,8 +8619,8 @@ public partial class MainWindow : Window
         source.Children.Add(Way(
             "Set it up in the game",
             firstTime
-                ? "The mod shows its Setup when the game starts."
-                : "The mod shows its Setup again the next time the game starts.",
+                ? "UGT Mod shows its setup screen when the game starts."
+                : "UGT Mod shows its setup screen again the next time the game starts.",
             chosenWay == SetupWay.Wizard,
             enabled: true,
             () => { preference.ApplyModDefaults = false; preference.LetWizardAsk = true; }));
@@ -8629,7 +8629,7 @@ public partial class MainWindow : Window
 
         source.Children.Add(Way(
             "Set it up here",
-            "Choose the settings below.",
+            "Choose this game's own settings.",
             chosenWay == SetupWay.Custom,
             enabled: true,
             () => { preference.ApplyModDefaults = false; preference.LetWizardAsk = false; }));
@@ -8701,8 +8701,8 @@ public partial class MainWindow : Window
             };
 
             ToolTip.SetTip(seed,
-                $"Fills Mod defaults in with what {report.Game.Name} already holds, so the other "
-                + "games can be set up from it. Nothing in this game changes.");
+                $"Copies {report.Game.Name}'s settings to Mod defaults, for your other games. This "
+                + "game is not changed.");
 
             seed.Click += async (_, _) =>
             {
@@ -8713,8 +8713,8 @@ public partial class MainWindow : Window
                 _settings.Save(seeded);
 
                 await MessageAsync("Mod defaults filled in",
-                    $"Mod defaults now holds what {report.Game.Name} was set up with. Open it to "
-                    + "check it over — nothing in this game was changed.");
+                    $"Mod defaults now has {report.Game.Name}'s settings. Open it to check them. "
+                    + "This game was not changed.");
 
                 SyncLanguageBox();
                 await RepublishAsync();
@@ -9109,7 +9109,8 @@ public partial class MainWindow : Window
             // ⚠ The sentence NAMES what it will be written with, because that is now a real
             // question: Mod defaults and this game's own settings are two different sources, and
             // the reader cannot tell which is in force from the values alone.
-            Text = (writes == 1 ? "One setting here differs from " : $"{writes} settings here differ from ")
+            Text = (writes == 1 ? "1 setting in this game differs from "
+                                : $"{writes} settings in this game differ from ")
                  + (ticked ? "Mod defaults:" : "this game's own settings:"),
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
@@ -9254,24 +9255,10 @@ public partial class MainWindow : Window
         var picker = ModSettingControls.LanguagePicker(_platform, 220);
         ModSettingControls.Select(picker, shown);
 
-        var row = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 10,
-            Margin = new Avalonia.Thickness(0, 12, 0, 0),
-        };
-
-        row.Children.Add(new TextBlock
-        {
-            Text = "Language for this game",
-            Width = 120,
-            FontSize = 12,
-            TextWrapping = TextWrapping.Wrap,
-            VerticalAlignment = VerticalAlignment.Center,
-            Foreground = Brush("TextMuted"),
-        });
-
-        row.Children.Add(picker);
+        // Ui.Row: the same label column as "Key for this game" and the settings form, so the two
+        // bricks and the form line up.
+        var row = (StackPanel)Ui.Row("Language for this game", picker);
+        row.Margin = new Avalonia.Thickness(0, 12, 0, 0);
 
         // ⚠ The same rule as the hotkey editor: greyed and explained, never greyed alone.
         ToolTip.SetTip(picker, pinnedTo is not null
@@ -9364,9 +9351,8 @@ public partial class MainWindow : Window
                 Text = pinnedPublished
                     ? $"Stays on {pinnedTo}: this game holds a published {pinnedTo} translation. "
                       + "Take one in another language to change it."
-                    : $"Stays on {pinnedTo}: a {pinnedTo} translation is being written in this "
-                      + "game. Change it in the game, or the lines already captured would be left "
-                      + "behind.",
+                    : $"Stays on {pinnedTo}: this game has a {pinnedTo} translation in progress. "
+                      + "Change it in UGT Mod, or the lines already collected would no longer match.",
                 FontSize = 11,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Avalonia.Thickness(0, 4, 0, 0),
@@ -9386,14 +9372,10 @@ public partial class MainWindow : Window
         // held instead, and the line below says where it goes. Same shape as the hotkey's.
         if (descriptor is not null && pinnedTo is null && !configured)
         {
-            yield return new TextBlock
-            {
-                Text = "Written into the game when the mod is installed.",
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Avalonia.Thickness(0, 6, 0, 0),
-                Foreground = Brush("TextMuted"),
-            };
+            // The same sentence as the settings form, for the same fact.
+            var later = Ui.Note("Written into the game when UGT Mod is installed.");
+            later.Margin = new Avalonia.Thickness(0, 6, 0, 0);
+            yield return later;
         }
 
         if (descriptor is not null && pinnedTo is null && configured)
@@ -9654,8 +9636,8 @@ public partial class MainWindow : Window
         // the key from Mod defaults", which is an answer to this very question — leaving the
         // capture live would offer a third key that would then not be written.
         ToolTip.SetTip(editor.Row, takesDefault
-            ? "Untick the box above to choose a key here instead."
-            : "Only keys every game detects the same way can be set from here.");
+            ? "Untick \"Replace this game's key…\" to choose a key here instead."
+            : "Only keys detected the same way in every game can be set in UGT Manager.");
 
         // Last, so the account refusal has the final word on both — capturing a key one may not
         // write is the same dead end as ticking a box one may not apply.
@@ -9739,14 +9721,9 @@ public partial class MainWindow : Window
                 _pendingMod[report.Game.Path] = held;
             };
 
-            yield return new TextBlock
-            {
-                Text = "Written into the game when the mod is installed.",
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Avalonia.Thickness(0, 6, 0, 0),
-                Foreground = Brush("TextMuted"),
-            };
+            var later = Ui.Note("Written into the game when UGT Mod is installed.");
+            later.Margin = new Avalonia.Thickness(0, 6, 0, 0);
+            yield return later;
         }
 
         void RefreshHotkeyApply()
@@ -9761,10 +9738,10 @@ public partial class MainWindow : Window
             ToolTip.SetTip(write, !pending
                 ? "This game already uses that key."
                 : takesDefault
-                    ? "Untick the box above to choose a key here instead."
+                    ? "Untick \"Replace this game's key…\" to choose a key here instead."
                     : _running.IsRunning(report.Game)
                         ? $"{report.Game.Name} is running, so its files are locked."
-                        : "Writes this key into the game, and remembers it for a later install.");
+                        : "Writes this key into the game, and keeps it for later installs.");
 
             // Last, so it has the final word on the tooltip as well as on the state: this writes
             // into a config.json shared by every account on this computer.
@@ -9777,15 +9754,11 @@ public partial class MainWindow : Window
         // has no intent. Two facts make the replacement worth asking about, and both are ordinary:
         // the same physical key is not detected identically by every game, and the game may already
         // have bound that key to something of its own.
-        yield return new TextBlock
-        {
-            Text = "The same key is not detected the same way in every game, and this game may "
-                 + "already use it for something else.",
-            FontSize = 11,
-            Margin = new Avalonia.Thickness(0, 4, 0, 0),
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Brush("TextMuted"),
-        };
+        // ⚠ Worded like Mod defaults' own hotkey note (ModSettingControls.HotkeyAdvice): one fact.
+        var why = Ui.Note("Letters and symbols are read differently by some games, and this game may "
+                          + "already use the key for something else.");
+        why.Margin = new Avalonia.Thickness(0, 4, 0, 0);
+        yield return why;
 
     }
 
@@ -9933,7 +9906,7 @@ public partial class MainWindow : Window
             yield return new TextBlock
             {
                 Text = way == SetupWay.Wizard
-                    ? "Mod defaults is empty, so the mod asks in the game."
+                    ? "Mod defaults is empty, so UGT Mod asks in the game."
                     : "Mod defaults is empty. This game uses its own settings.",
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
@@ -10076,7 +10049,8 @@ public partial class MainWindow : Window
 
         if (standing.UpToDate)
         {
-            return new TextBlock { Text = "Up to date.", FontSize = 12, Opacity = 0.6 };
+            // Green: the state somebody wanted is reached (the card's own colour rules, above).
+            return new TextBlock { Text = "Up to date.", FontSize = 12, Foreground = Brush("StatusSuccess") };
         }
 
         // Both numbers known, neither rankable — two publication lines of the same version. Said
@@ -10086,8 +10060,8 @@ public partial class MainWindow : Window
         {
             return new TextBlock
             {
-                Text = $"{standing.Available} is published on the channel you chose. It is a "
-                     + $"different line from {standing.Installed}, so neither is newer.",
+                Text = $"{standing.Available} is published on your chosen channel. It is a "
+                     + $"different branch from {standing.Installed}, so neither is newer.",
                 FontSize = 12,
                 TextWrapping = Avalonia.Media.TextWrapping.Wrap,
                 Foreground = Brush("TextMuted"),
@@ -10100,7 +10074,7 @@ public partial class MainWindow : Window
             {
                 Text = $"{offered} would be installed.",
                 FontSize = 12,
-                Opacity = 0.6,
+                Foreground = Brush("TextMuted"),
             };
         }
 

@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using UnityGameTranslator.Manager.Core.Ai;
 using UnityGameTranslator.Manager.Core.Api;
@@ -165,6 +166,7 @@ public sealed class SettingsWindow : Window
             OnlineMode = current.OnlineMode,
             SettingsHotkey = current.SettingsHotkey,
             Shortcuts = ModShortcuts.CopyOf(current.Shortcuts) ?? new Dictionary<string, string>(),
+            TranslateModUi = current.TranslateModUi,
             Channel = current.Channel,
             AiApiKey = current.AiApiKey,
             GoogleApiKey = current.GoogleApiKey,
@@ -242,6 +244,7 @@ public sealed class SettingsWindow : Window
         layout.Children.Add(_testCard);
         layout.Children.Add(_apiCard);
         layout.Children.Add(ModCard());
+        layout.Children.Add(ModUiCard());
         layout.Children.Add(SyncCard());
 
 
@@ -829,6 +832,95 @@ public sealed class SettingsWindow : Window
         // The hotkey is asked here because the mod's first-run wizard asks for it — the window's
         // intro says when that wizard is skipped.
         return Card("In the game", "The hotkey opens the UGT Mod panel in the game.", panel);
+    }
+
+    private CheckBox _translateModUi = null!;
+
+    /// <summary>
+    /// The one translation of UGT Mod's own interface UGT Manager keeps, and whether games use it
+    /// (user's decision, 2026-09-25 — see Install.ModUiLibrary for the rules).
+    ///
+    /// ⚠ Import and Remove are ACTS on a file and act at once, like Backup: there is nothing to hold
+    /// for Apply. The switch beside them is a setting like the others, and waits for Apply (N).
+    /// </summary>
+    private Control ModUiCard()
+    {
+        var library = new ModUiLibrary(_platform);
+        var panel = new StackPanel { Spacing = 10 };
+
+        var state = new TextBlock { FontSize = 12, TextWrapping = TextWrapping.Wrap };
+        var problem = Note("");
+        problem.IsVisible = false;
+
+        var import = new Button { Content = "Import…", FontSize = 12 };
+        var remove = new Button { Content = "Remove", FontSize = 12 };
+
+        _translateModUi = new CheckBox
+        {
+            Content = "Translate UGT Mod's interface",
+            IsChecked = _draft.TranslateModUi,
+        };
+        ToolTip.SetTip(_translateModUi,
+            "Written with the file, into games that have no answer of their own. A game where it was "
+            + "switched on or off keeps its choice.");
+
+        void Show()
+        {
+            var file = library.Current;
+
+            Ui.Say(state, file is null
+                    ? $"No file imported. Take the {ModUi.FileName} of a game where UGT Mod translated its interface."
+                    : $"{file.Language} · {Composition.Amount(file.Lines, "line", "lines")} · "
+                      + $"imported {file.ImportedUtc.ToLocalTime():d MMM yyyy}",
+                file is null ? Tone.Neutral : Tone.Success);
+
+            remove.IsVisible = file is not null;
+
+            // Only with a file: the switch travels with it, and says nothing on its own.
+            _translateModUi.IsEnabled = file is not null;
+        }
+
+        import.Click += async (_, _) =>
+        {
+            var picked = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = $"Select a {ModUi.FileName}",
+                AllowMultiple = false,
+                FileTypeFilter = new[] { new FilePickerFileType("JSON") { Patterns = new[] { "*.json" } } },
+            });
+
+            var path = picked.FirstOrDefault()?.TryGetLocalPath();
+            if (path is null) return;
+
+            var refusal = library.Import(path);
+            Ui.Say(problem, refusal ?? "", Tone.Error);
+            Show();
+        };
+
+        remove.Click += (_, _) =>
+        {
+            library.Remove();
+            Ui.Say(problem, "");
+            Show();
+        };
+
+        panel.Children.Add(state);
+        panel.Children.Add(new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Children = { import, remove },
+        });
+        panel.Children.Add(problem);
+        panel.Children.Add(_translateModUi);
+        panel.Children.Add(Note(
+            "Placed only in games translating into the same language, and only where the game has no "
+            + "interface file yet. Improved it in a game? Import that game's file again."));
+
+        Show();
+
+        return Card("UGT Mod interface",
+            "A translation of UGT Mod's own panels, placed in your games.", panel);
     }
 
     /// <summary>
@@ -2359,6 +2451,7 @@ public sealed class SettingsWindow : Window
         // behaviour this whole mechanism exists to avoid.
         if (!string.IsNullOrWhiteSpace(_hotkey.Value)) _draft.SettingsHotkey = _hotkey.Value;
         _draft.Shortcuts = ShortcutsOnScreen();
+        _draft.TranslateModUi = _translateModUi.IsChecked == true;
         _draft.Channel = Tag(_channel) ?? "stable";
 
         // Reviewed is what allows the mod's first-run wizard to be skipped later, and it is set
@@ -2397,6 +2490,7 @@ public sealed class SettingsWindow : Window
         stored.NotificationPosition = _draft.NotificationPosition;
         stored.SettingsHotkey = _draft.SettingsHotkey;
         stored.Shortcuts = ModShortcuts.CopyOf(_draft.Shortcuts) ?? new Dictionary<string, string>();
+        stored.TranslateModUi = _draft.TranslateModUi;
         stored.Channel = _draft.Channel;
         stored.Reviewed = true;
 
@@ -2463,6 +2557,7 @@ public sealed class SettingsWindow : Window
         if ((_notifyUpdates.IsChecked == true) != saved.NotifyUpdates) changes.Add("translation update notifications");
         if ((_checkModUpdates.IsChecked == true) != saved.CheckModUpdates) changes.Add("UGT Mod update notifications");
         if ((_notificationsEnabled.IsChecked == true) != saved.NotificationsEnabled) changes.Add("in-game notifications");
+        if ((_translateModUi.IsChecked == true) != saved.TranslateModUi) changes.Add("UGT Mod interface translated");
 
         Compare("Google key", _draft.GoogleApiKey, saved.GoogleApiKey);
         Compare("DeepL key", _draft.DeeplApiKey, saved.DeeplApiKey);
@@ -2533,7 +2628,7 @@ public sealed class SettingsWindow : Window
         foreach (var editor in _shortcuts.Values) editor.Changed += RefreshApplyButton;
 
         _modOnline.IsCheckedChanged += (_, _) => RefreshApplyButton();
-        foreach (var box in new[] { _autoDownload, _notifyUpdates, _checkModUpdates, _notificationsEnabled })
+        foreach (var box in new[] { _autoDownload, _notifyUpdates, _checkModUpdates, _notificationsEnabled, _translateModUi })
             box.IsCheckedChanged += (_, _) => RefreshApplyButton();
         _deeplFree.IsCheckedChanged += (_, _) => RefreshApplyButton();
         _providerKey.TextChanged += (_, _) => RefreshApplyButton();

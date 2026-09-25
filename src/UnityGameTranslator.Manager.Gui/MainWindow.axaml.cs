@@ -9090,7 +9090,7 @@ public partial class MainWindow : Window
         // already holds next, Mod defaults last.
         var settings = SettingsFor(report, preference);
 
-        var result = new GameConfigWriter().Apply(
+        var result = new GameConfigWriter(new ModUiLibrary(_platform)).Apply(
             report.Game.Path, descriptor, settings,
             TargetFor(report, descriptor, settings),
             skipWizard: !LetsWizardAsk(report, preference), perGame: preference);
@@ -10204,7 +10204,7 @@ public partial class MainWindow : Window
         // writes them.
         var settings = _settings.Current;
 
-        return new GameConfigWriter().Compare(
+        return new GameConfigWriter(new ModUiLibrary(_platform)).Compare(
             report.Game.Path, descriptor, settings,
             TargetFor(report, descriptor, settings), preference);
     }
@@ -10289,7 +10289,7 @@ public partial class MainWindow : Window
 
         var settings = SettingsFor(report, preference);
 
-        return new GameConfigWriter().Compare(
+        return new GameConfigWriter(new ModUiLibrary(_platform)).Compare(
             report.Game.Path, descriptor, settings,
             TargetFor(report, descriptor, settings), preference);
     }
@@ -13147,7 +13147,7 @@ public partial class MainWindow : Window
         var settings = _settings.Current;
         var target = TargetFor(report, descriptor, settings);
 
-        var result = new GameConfigWriter()
+        var result = new GameConfigWriter(new ModUiLibrary(_platform))
             .Apply(report.Game.Path, descriptor, settings, target,
                    skipWizard: !LetsWizardAsk(report, preference), perGame: preference);
 

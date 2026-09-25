@@ -471,7 +471,7 @@ public sealed class InstallEngine
             {
                 Stage?.Invoke(InstallStage.Settings);
                 Status?.Invoke("Applying settings...");
-                configured = new GameConfigWriter()
+                configured = new GameConfigWriter(new ModUiLibrary(_platform))
                     .Apply(plan.Game.Path, plan.Loader, plan.Settings, plan.TargetLanguage,
                            skipWizard: !plan.LetWizardAsk, perGame: plan.Preference);
             }

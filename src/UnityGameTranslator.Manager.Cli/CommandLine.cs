@@ -516,7 +516,7 @@ public static class CommandLine
                               + $"that language, so {Languages.NameOf(picked)} is not written");
         }
 
-        var differences = new GameConfigWriter()
+        var differences = new GameConfigWriter(new ModUiLibrary(platform))
             .Compare(report.Game.Path, descriptor, settings, target, preference);
 
         if (differences.Count == 0)

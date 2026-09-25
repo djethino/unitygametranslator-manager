@@ -40,6 +40,7 @@ internal static class Program
         ConfigContractChecks.WhatThisToolWritesStaysWhatWasAsked();
         ConfigContractChecks.TheSourceLanguageIsDeclaredNeverGuessed();
         ConfigContractChecks.ShortcutsFillThenReplace();
+        ConfigContractChecks.TheInterfaceFileFillsOnly();
         MomentsContractChecks.WhatTheFileSaysAfterEachMoment();
         InstallLedgerChecks.WhatTheToolRemembersDoing();
         ProbeMemoryChecks.WhatARememberedReadAnswers();

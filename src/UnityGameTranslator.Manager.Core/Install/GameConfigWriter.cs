@@ -77,6 +77,20 @@ public sealed record ConfigDifference(string Key, string Label, string InGame, s
 /// </summary>
 public sealed class GameConfigWriter
 {
+    /// <summary>
+    /// The interface file kept by UGT Manager, placed in a game when its settings are applied — or
+    /// null for a caller that places none (reading, comparing a single key).
+    ///
+    /// ⚠ Here, in the one place every path that applies settings goes through (install, Mod
+    /// defaults, a game's own Apply), so none of them can forget it.
+    /// </summary>
+    private readonly ModUiLibrary? _modUi;
+
+    public GameConfigWriter(ModUiLibrary? modUi = null) => _modUi = modUi;
+
+    /// <summary>The mod's key for translating its own interface (three states; null = let the file decide).</summary>
+    public const string TranslateModUiKey = "translate_mod_ui";
+
     private static readonly JsonSerializerOptions WriteOptions = new()
     {
         WriteIndented = true,
@@ -458,9 +472,18 @@ public sealed class GameConfigWriter
     /// </summary>
     private static List<Intent> Intended(InstallerSettings settings, GamePreference? perGame,
                                          string targetLanguage, bool skipWizard,
-                                         out bool wizardSkipped)
+                                         out bool wizardSkipped, bool placesModUi = false)
     {
         var intents = new List<Intent>();
+
+        // Beside the interface file placed in this game, and only then: the switch without the file
+        // says nothing. OnlyIfAbsent — the mod's null (let the file decide) reads as absent — so a
+        // yes or a no given inside the game is kept.
+        if (placesModUi)
+        {
+            intents.Add(new Intent(null, TranslateModUiKey, settings.TranslateModUi,
+                "UGT Mod interface translated", OnlyIfAbsent: true));
+        }
 
         // ⚠ The mod stores a language NAME here, never an ISO code: GetSystemLanguageName
         // returns "French", its dropdown lists names, and GetTargetLanguage hands the value
@@ -764,7 +787,11 @@ public sealed class GameConfigWriter
             var root = Load(path);
             var applied = new List<string>();
 
-            var intents = Intended(settings, perGame, targetLanguage, skipWizard, out var wizardSkipped);
+            // Whether the kept interface file goes into this game: it fits the language, and the game
+            // has none of its own.
+            var placesModUi = _modUi is not null && _modUi.Fits(targetLanguage) && !ModUiLibrary.GameHasOne(folder);
+
+            var intents = Intended(settings, perGame, targetLanguage, skipWizard, out var wizardSkipped, placesModUi);
 
             foreach (var intent in intents)
             {
@@ -788,6 +815,10 @@ public sealed class GameConfigWriter
             var temp = path + ".tmp";
             File.WriteAllText(temp, root.ToJsonString(WriteOptions), new UTF8Encoding(false));
             File.Move(temp, path, overwrite: true);
+
+            // After the config, so a failure here never leaves the settings half written.
+            if (placesModUi && _modUi!.FillInto(folder, targetLanguage))
+                applied.Add("UGT Mod interface translation");
 
             return new ConfigWriteResult(true, applied, wizardSkipped, null);
         }
@@ -892,10 +923,22 @@ public sealed class GameConfigWriter
 
         var differences = new List<ConfigDifference>();
 
+        // The kept interface file, when it would be placed here — a difference like any setting, so
+        // "Use Mod defaults" counts it in its Apply (N).
+        var folder = Path.GetDirectoryName(path)!;
+        var placesModUi = _modUi?.Current is { } modUi && _modUi.Fits(targetLanguage) && !ModUiLibrary.GameHasOne(folder);
+
+        if (placesModUi)
+        {
+            var file = _modUi!.Current!;
+            differences.Add(new ConfigDifference(ModUi.FileName, "UGT Mod interface translation", "none",
+                $"{file.Language}, {Composition.Amount(file.Lines, "line", "lines")}"));
+        }
+
         // ⚠ skipWizard: false. first_run_completed is not a preference, it is a latch — a game
         // that has been through the wizard carries true, and comparing it would report "the
         // first-run wizard differs" on every game somebody has actually played.
-        foreach (var intent in Intended(settings, perGame, targetLanguage, skipWizard: false, out _))
+        foreach (var intent in Intended(settings, perGame, targetLanguage, skipWizard: false, out _, placesModUi))
         {
             // A key we would only remove has nothing to compare WHEN THE GAME DOES NOT CARRY IT —
             // its absence is already our intent, and reporting it would announce a change to

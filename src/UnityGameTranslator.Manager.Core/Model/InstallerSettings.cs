@@ -223,6 +223,15 @@ public sealed class InstallerSettings
     /// </summary>
     [JsonPropertyName("shortcuts")] public Dictionary<string, string> Shortcuts { get; set; } = new();
 
+    /// <summary>
+    /// Whether UGT Mod translates its own interface, written beside the interface file UGT Manager
+    /// places in a game (Install.ModUiLibrary) — and only then: without a file this says nothing.
+    ///
+    /// ⚠ Fills a game that has no answer of its own (the mod's null, "let the file decide"), never
+    /// replaces a yes or a no somebody gave in the game.
+    /// </summary>
+    [JsonPropertyName("translate_mod_ui")] public bool TranslateModUi { get; set; } = true;
+
     // ⚠ There is deliberately no "write this hotkey into games" setting here, and adding one back
     // would undo a decision rather than fill a gap. Whether a game's own hotkey is replaced is
     // asked on that game's card (GamePreference.ReplaceHotkey), because this tool cannot know what

@@ -4,6 +4,7 @@ using UnityGameTranslator.Manager.Core.Detection;
 using UnityGameTranslator.Manager.Core.Install;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Settings;
+using UnityGameTranslator.Common;
 
 namespace UnityGameTranslator.Manager.Core.Checks;
 
@@ -232,6 +233,79 @@ internal static class ConfigContractChecks
         Program.Check(own.Shortcuts["toggle_ai_hotkey"] == "F2",
             "a copy of a game's answers does not share its shortcut map",
             "a draft edited on screen would otherwise edit what is stored");
+    }
+
+    /// <summary>
+    /// The interface file kept by UGT Manager: imported only when it states its language, placed
+    /// only in a game of that language that has none, and its switch written only beside it
+    /// (analyse/manager-reglages-avances.md, part C).
+    /// </summary>
+    internal static void TheInterfaceFileFillsOnly()
+    {
+        Program.Section("The UGT Mod interface file");
+
+        var root = Path.Combine(Path.GetTempPath(), "ugt-modui-" + Guid.NewGuid().ToString("N"));
+        var descriptor = new LoaderDescriptor { Id = "bepinex5", UserDataDir = "BepInEx/plugins/UnityGameTranslator" };
+
+        try
+        {
+            Directory.CreateDirectory(root);
+            var library = new ModUiLibrary(Path.Combine(root, "manager"));
+
+            var nameless = Path.Combine(root, "nameless.json");
+            File.WriteAllText(nameless, """{ "Apply": { "v": "Appliquer", "t": "M" } }""");
+            Program.Check(library.Import(nameless) is not null && library.Current is null,
+                "a file that does not state its language is refused",
+                "nothing could say which games it fits, and the mod would set it aside in all of them");
+
+            var french = Path.Combine(root, "french.json");
+            File.WriteAllText(french, """{ "_target_language": "French", "Apply": { "v": "Appliquer", "t": "M" }, "Close": { "v": "Fermer", "t": "M" } }""");
+            Program.Check(library.Import(french) is null && library.Current is { Language: "French", Lines: 2 },
+                "a file stating its language is kept, and read back", "language and line count come from the file");
+
+            string GameWith(string? ownFile)
+            {
+                var game = Path.Combine(root, "game-" + Guid.NewGuid().ToString("N"));
+                var data = Path.Combine(game, "BepInEx", "plugins", "UnityGameTranslator");
+                Directory.CreateDirectory(data);
+                File.WriteAllText(Path.Combine(data, LocalTranslationProbe.ConfigFileName), """{ "translate_mod_ui": null }""");
+                if (ownFile is not null) File.WriteAllText(Path.Combine(data, ModUi.FileName), ownFile);
+                return game;
+            }
+
+            JsonObject Config(string game) => JsonNode.Parse(File.ReadAllText(Path.Combine(
+                game, "BepInEx", "plugins", "UnityGameTranslator", LocalTranslationProbe.ConfigFileName)))!.AsObject();
+
+            string? InterfaceFile(string game)
+            {
+                var file = Path.Combine(game, "BepInEx", "plugins", "UnityGameTranslator", ModUi.FileName);
+                return File.Exists(file) ? File.ReadAllText(file) : null;
+            }
+
+            var writer = new GameConfigWriter(library);
+            var settings = new InstallerSettings { TranslateModUi = true };
+
+            var empty = GameWith(null);
+            writer.Apply(empty, descriptor, settings, "French");
+            Program.Check(InterfaceFile(empty)?.Contains("Appliquer") == true
+                          && Config(empty)[GameConfigWriter.TranslateModUiKey]?.GetValue<bool>() == true,
+                "placed in a French game that has none, with its switch", "the undecided null is filled");
+
+            var other = GameWith(null);
+            writer.Apply(other, descriptor, settings, "German");
+            Program.Check(InterfaceFile(other) is null && Config(other)[GameConfigWriter.TranslateModUiKey] is null,
+                "not placed in a game of another language, and its switch not written",
+                "the mod would set it aside; the switch without the file says nothing");
+
+            var own = GameWith("""{ "_target_language": "French", "Apply": { "v": "Valider", "t": "M" } }""");
+            writer.Apply(own, descriptor, settings, "French");
+            Program.Check(InterfaceFile(own)?.Contains("Valider") == true,
+                "a game's own interface file is kept", "it may be the better one — fill, never replace");
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { /* a temp folder left behind proves nothing */ }
+        }
     }
 
     private static Dictionary<string, object?> Derive(GameConfigSnapshot s, GameAiSettings ai) => new()

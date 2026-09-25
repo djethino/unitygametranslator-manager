@@ -2490,7 +2490,9 @@ public partial class MainWindow : Window
         // Tonal green, and only on the full-size one: the small mark in the list has no fill at
         // all, so there is nothing there to tint. See the Button.play block in App.axaml for why
         // this is the single control in the application allowed a colour of its own.
-        if (!small) button.Classes.Add("play");
+        // The list's mark has its own hover (App.axaml, Button.play-mark): the ordinary one is the
+        // colour of the row it sits in.
+        button.Classes.Add(small ? "play-mark" : "play");
 
         // The promise in words on every size now that the list's mark carries it too: a mark that
         // says something needs its sentence one hover away.

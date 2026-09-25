@@ -129,6 +129,21 @@
     </Style>
 
     <!--
+      The play MARK in the game list: no fill at rest, and the Play family's green tint on hover.
+      ⚠ Not the ordinary button hover: that is SurfaceCardHover, the very colour the list row itself
+      takes under the pointer — so the button vanished into its own row, only its first frame of
+      transition showing (user, 2026-09-25).
+    -->
+    <Style Selector="Button.play-mark:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource CalloutSuccessBg}" />
+      <Setter Property="CornerRadius" Value="{DynamicResource RadiusControl}" />
+    </Style>
+    <Style Selector="Button.play-mark:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource CalloutSuccessHoverBg}" />
+      <Setter Property="CornerRadius" Value="{DynamicResource RadiusControl}" />
+    </Style>
+
+    <!--
       Fields. The site makes a distinction worth keeping: a SEARCH field is a lighter grey,
       because it sits ON a surface and has to read as something you act on, while a FORM field
       inside a card is darker, recessed into the card it belongs to. The default here is the

@@ -13,6 +13,12 @@ public enum PlayPromise
 
     /// <summary>Lines are translated as they appear, by the backend this game is configured with.</summary>
     Translating,
+
+    /// <summary>
+    /// The mod is there and could translate, but the game's translation switch is off: it starts
+    /// in its original text. Named apart from <see cref="Plain"/> so the tooltip can say why.
+    /// </summary>
+    TranslationOff,
 }
 
 /// <summary>
@@ -44,14 +50,20 @@ public static class PlayPromises
 
         // Both halves, and neither is enough on its own: a backend that is configured but switched
         // off produces nothing, and the switch on its own has nothing to run.
-        if (config.AutoTranslate == true && BackendIsUsable(config.Values))
-            return PlayPromise.Translating;
+        var translating = config.AutoTranslate == true && BackendIsUsable(config.Values);
 
         // ⚠ Lines, not merely a file. A translations.json with no entry in it — what a game holds
         // a minute after being set up — displays exactly as much as no file at all.
-        return (report.LocalTranslation?.EntryCount ?? 0) > 0
-            ? PlayPromise.Translated
-            : PlayPromise.Plain;
+        var translated = (report.LocalTranslation?.EntryCount ?? 0) > 0;
+
+        // 🔴 **The game's translation switch outranks both** (enable_translations). Off, the mod
+        // neither shows the file nor asks a backend — it starts in its original text — so promising
+        // "Play translated" there would be found out on the first screen.
+        if (!config.ShowsTranslation && (translating || translated)) return PlayPromise.TranslationOff;
+
+        if (translating) return PlayPromise.Translating;
+
+        return translated ? PlayPromise.Translated : PlayPromise.Plain;
     }
 
     /// <summary>
@@ -89,6 +101,7 @@ public static class PlayPromises
     {
         PlayPromise.Translating => "This game is set up to translate lines as they appear.",
         PlayPromise.Translated => "This game holds a translation and will show it.",
+        PlayPromise.TranslationOff => "Translations are turned off in this game: it shows its original text.",
         _ => "This game is not set up to change any text.",
     };
 }

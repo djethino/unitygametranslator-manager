@@ -3766,7 +3766,8 @@ public partial class MainWindow : Window
         {
             var body = new StackPanel { Spacing = 4 };
 
-            body.Children.Add(new TextBlock
+            // The translation switch sits top-right — a quick action here, written on the click.
+            body.Children.Add(WithTranslationSwitch(new TextBlock
             {
                 // ⚠ Three answers, not two. Naming the author is what a reader needs before doing
                 // anything here, and it is the one the card never gave: "already has a translation
@@ -3782,7 +3783,7 @@ public partial class MainWindow : Window
                 FontWeight = FontWeight.SemiBold,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("TextPrimary"),
-            });
+            }, report, quick: true));
 
             // ⚠ The measured figure when there is one, and the mod's counter only otherwise. That
             // counter describes what the MOD did — a file edited from a browser or by hand carries
@@ -5299,10 +5300,122 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>The mod's own words for its switch (options.json, EnableTranslationsToggle) — one fact, one wording.</summary>
+    private const string TranslationSwitchLabel = "Enable translations";
+
+    private const string TranslationSwitchTip =
+        "Turn UGT Mod's translations on or off in this game. When off, the game shows its original text.";
+
+    /// <summary>
+    /// The game's translation switch — the mod's `enable_translations` — in the top-right corner of
+    /// a translation card, or null when there is no configuration to switch yet.
+    ///
+    /// 🔴 **One control, two verbs, decided by the tab** (user's decision, 2026-09-25): on This game
+    /// it is a quick action and writes the moment it is clicked; on Set up it waits for its own
+    /// Apply (1), like every other setting there. Same control, same wording, same guards — the
+    /// difference is only when the file is written.
+    ///
+    /// ⚠ Read from the game, never remembered: the mod's own hotkey flips it while playing, so the
+    /// box starts from what the file says now.
+    /// </summary>
+    private Control? TranslationSwitch(GameReport report, bool quick)
+    {
+        var descriptor = InstalledDescriptor(report);
+        var snapshot = GameConfig(report);
+
+        // Nothing to switch before the mod has written its configuration — and the mod's default is on.
+        if (descriptor is null || !snapshot.Exists) return null;
+
+        var inGame = snapshot.ShowsTranslation;
+
+        var box = new CheckBox
+        {
+            Content = TranslationSwitchLabel,
+            IsChecked = inGame,
+            FontSize = 12,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        ToolTip.SetTip(box, TranslationSwitchTip);
+        ToolTip.SetShowOnDisabled(box, true);
+
+        // ⚠ The mod rewrites config.json from memory while the game runs, so a write now would be
+        // undone at the next save — refused, and said, like every other write into a game.
+        var running = _running.IsRunning(report.Game);
+        box.IsEnabled = !running && MaySetUp(report, box);
+        if (running) ToolTip.SetTip(box, TranslationInstaller.GameRunningRefusal);
+
+        async Task WriteAsync(bool wanted)
+        {
+            var result = new GameConfigWriter().ApplyOne(
+                report.Game.Path, descriptor, GameConfigWriter.TranslationsShownKey, wanted, "translations");
+
+            if (!result.Written)
+            {
+                await MessageAsync("Nothing was changed",
+                    $"The translation switch could not be written ({result.Failure}).");
+            }
+
+            // In place: the Play button's promise follows the game's switch.
+            await ShowSelectedAsync();
+        }
+
+        if (quick)
+        {
+            box.IsCheckedChanged += async (_, _) =>
+            {
+                var wanted = box.IsChecked == true;
+                if (wanted != inGame) await WriteAsync(wanted);
+            };
+
+            return box;
+        }
+
+        // Its own verb, shown only when the box differs from the game — the language brick's shape.
+        var apply = ScopeMark.Marked(EditSide.Local, "Apply (1)", enabled: false);
+        apply.FontSize = 12;
+        apply.IsVisible = false;
+        apply.VerticalAlignment = VerticalAlignment.Center;
+
+        box.IsCheckedChanged += (_, _) =>
+        {
+            var differs = (box.IsChecked == true) != inGame;
+            apply.IsVisible = differs;
+            apply.IsEnabled = differs && box.IsEnabled;
+        };
+
+        apply.Click += async (_, _) => await WriteAsync(box.IsChecked == true);
+
+        return new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            VerticalAlignment = VerticalAlignment.Center,
+            Children = { box, apply },
+        };
+    }
+
+    /// <summary>A card's first line with the translation switch in its top-right corner, when there is one.</summary>
+    private Control WithTranslationSwitch(Control heading, GameReport report, bool quick)
+    {
+        if (TranslationSwitch(report, quick) is not { } control) return heading;
+
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        Grid.SetColumn(heading, 0);
+        Grid.SetColumn(control, 1);
+        control.Margin = new Avalonia.Thickness(12, 0, 0, 0);
+        control.VerticalAlignment = VerticalAlignment.Top;
+        row.Children.Add(heading);
+        row.Children.Add(control);
+        return row;
+    }
+
     private Control Translations(GameReport report)
     {
         var panel = new StackPanel { Spacing = 6, Margin = new Avalonia.Thickness(0, 10, 0, 0) };
-        panel.Children.Add(new TextBlock { Text = "Translations", FontWeight = FontWeight.SemiBold, Foreground = Brush("TextPrimary") });
+        panel.Children.Add(WithTranslationSwitch(
+            new TextBlock { Text = "Translations", FontWeight = FontWeight.SemiBold, Foreground = Brush("TextPrimary") },
+            report, quick: false));
 
         if (report.LocalTranslation is { } local)
         {

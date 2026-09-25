@@ -276,9 +276,18 @@ public sealed class GameModOverrides
 ///
 /// Null means the game names no answer: written before the key existed, or never configured.
 /// </param>
+/// <param name="TranslationsShown">
+/// The mod's `enable_translations` — whether this game shows its translation at all. An
+/// OBSERVATION too: the mod's own hotkey flips it while playing. Null when the game names none,
+/// which the mod reads as on.
+/// </param>
 public sealed record GameConfigSnapshot(bool Exists, bool FirstRunCompleted, string? InGameHotkey,
-                                        GameModOverrides Values, bool? AutoTranslate = null)
+                                        GameModOverrides Values, bool? AutoTranslate = null,
+                                        bool? TranslationsShown = null)
 {
+    /// <summary>Whether the game will show its translation — the mod's own default when it names none.</summary>
+    public bool ShowsTranslation => TranslationsShown ?? true;
+
     /// <summary>
     /// Whether somebody has configured this game — as opposed to the mod having dropped a file.
     ///

@@ -193,6 +193,21 @@ internal static class SituationChecks
                 Values: new Settings.GameModOverrides()));
         Program.Check(promise == PlayPromise.Plain,
             "and Play promises nothing", "one rule, both screens");
+
+        // 🔴 The game's translation switch outranks the file it holds: off, the mod shows the
+        // original text, and "Play translated" would be found out on the first screen.
+        var ready = new GameReport
+        {
+            Game = Game(), InstalledLoader = Loader(), InstalledPluginVersion = "0.12.1", LocalTranslation = Local(),
+        };
+        var config = new Settings.GameConfigSnapshot(
+            Exists: true, FirstRunCompleted: true, InGameHotkey: null, Values: new Settings.GameModOverrides());
+
+        Program.Check(PlayPromises.For(ready, config) == PlayPromise.Translated
+                      && PlayPromises.For(ready, config with { TranslationsShown = false }) == PlayPromise.TranslationOff
+                      && PlayPromises.Label(PlayPromise.TranslationOff) == "Play",
+            "translations switched off in the game: Play promises the original text",
+            "the switch outranks the file, as it does in the mod");
     }
 
     /// <summary>

@@ -112,6 +112,16 @@ public sealed class GameConfigWriter
     public const string SourceLanguageKey = "source_language";
 
     /// <summary>
+    /// The mod's own switch: whether this game shows its translation at all.
+    ///
+    /// ⚠ Written from the game's page only (its quick switch, and the Set up card's Apply), never
+    /// from Mod defaults: it is a decision about one game at one moment — "play this one in the
+    /// original tonight" — not a preference about a person. Read back as an observation
+    /// (<see cref="GameConfigSnapshot.TranslationsShown"/>), because the mod's own hotkey flips it.
+    /// </summary>
+    public const string TranslationsShownKey = "enable_translations";
+
+    /// <summary>
     /// Who the MOD is signed in as, in this game.
     ///
     /// ⚠ Read only, and never written — like api_token, which this class does not touch at all.
@@ -246,7 +256,8 @@ public sealed class GameConfigWriter
                 Flag(root, null, "first_run_completed") == true,
                 Text(root, null, HotkeyKey),
                 values,
-                Flag(root, null, "enable_ai"));
+                Flag(root, null, "enable_ai"),
+                Flag(root, null, TranslationsShownKey));
         }
         catch
         {
@@ -715,10 +726,11 @@ public sealed class GameConfigWriter
     /// saves one sentence may do. It also has to work while "use my mod defaults here" is off:
     /// that switch governs the defaults, and this value was never one of them.
     ///
-    /// Null removes the key — that is how "I emptied the box" reaches the file.
+    /// Null removes the key — that is how "I emptied the box" reaches the file. A string or a
+    /// bool, as the key holds (the translation switch is a bool).
     /// </summary>
     public ConfigWriteResult ApplyOne(string gamePath, LoaderDescriptor descriptor,
-                                      string key, string? value, string label)
+                                      string key, object? value, string label)
     {
         var folder = UserDataInventory.DataFolder(gamePath, descriptor);
         if (folder is null)

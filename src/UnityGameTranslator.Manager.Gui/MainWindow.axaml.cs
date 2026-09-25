@@ -5425,8 +5425,10 @@ public partial class MainWindow : Window
 
         var inGame = snapshot.ShowsTranslation;
 
-        // On Set up, an answer held and not applied yet shows through a redraw — see _pendingShown.
-        var held = !quick && _pendingShown.TryGetValue(report.Game.Path, out var answered) ? answered : inGame;
+        // On Set up, an answer held and not applied yet shows through a redraw — see _pendingChoices.
+        var held = !quick && _pendingChoices.TryGetValue(report.Game.Path, out var answered) && answered.Shown is { } kept
+            ? kept
+            : inGame;
 
         var box = new CheckBox
         {
@@ -5457,7 +5459,7 @@ public partial class MainWindow : Window
             }
             else
             {
-                _pendingShown.Remove(report.Game.Path);
+                Settled(report, GameConfigWriter.TranslationsShownKey);
             }
 
             // The row AND the card, in place: every Play mark — the list's, the card's, the bar's —
@@ -5492,9 +5494,9 @@ public partial class MainWindow : Window
         box.IsCheckedChanged += (_, _) =>
         {
             // Held for the session, and gone when it lands back on what the game holds — the bar
-            // and the one-click read it (PendingSwitch), so they follow the box at once.
-            if ((box.IsChecked == true) != inGame) _pendingShown[report.Game.Path] = box.IsChecked == true;
-            else _pendingShown.Remove(report.Game.Path);
+            // and the one-click read it (PendingChoices), so they follow the box at once.
+            Held(report.Game.Path).Shown = (box.IsChecked == true) != inGame ? box.IsChecked == true : null;
+            Tidy(report.Game.Path);
 
             Show();
             ShowActionBar(report);
@@ -9652,10 +9654,19 @@ public partial class MainWindow : Window
         // itself.
         var configured = snapshot.Exists;
 
+        // A language chosen here and not applied yet shows through a redraw (see _pendingChoices) —
+        // unless a translation now settles it, and then it is not a choice any more.
+        _pendingChoices.TryGetValue(report.Game.Path, out var heldChoices);
+        if (pinnedTo is not null && heldChoices?.Language is not null)
+        {
+            heldChoices.Language = null;
+            Tidy(report.Game.Path);
+        }
+
         var shown = Languages.Canonical(
             pinnedTo
             ?? (configured
-                ? snapshot.Values.TargetLanguage
+                ? heldChoices?.Language ?? snapshot.Values.TargetLanguage
                 : preference.Mod?.TargetLanguage)
             ?? settings.TargetLanguage);
 
@@ -9742,6 +9753,14 @@ public partial class MainWindow : Window
                     p.Mod ??= new GameModOverrides();
                     p.Mod.TargetLanguage = Languages.NameOf(draft);
                 });
+            }
+
+            // With a file, held for the session so the one-click can carry it too (_pendingChoices).
+            if (configured)
+            {
+                Held(report.Game.Path).Language = Differs() ? Languages.NameOf(draft) : null;
+                Tidy(report.Game.Path);
+                ShowActionBar(report);
             }
 
             RefreshApply();
@@ -9838,10 +9857,7 @@ public partial class MainWindow : Window
                 // then counted itself as "1 set for this game" and offered an Apply for a value the
                 // game already had. The rule is written twice over in this file, about the hotkey
                 // and about the pending answers; this line is what it looks like when followed.
-                SaveAnswer(report.Game.Path, p =>
-                {
-                    if (p.Mod is not null) p.Mod.TargetLanguage = null;
-                });
+                Settled(report, GameConfigWriter.TargetLanguageKey);
 
                 await ShowSelectedAsync();
             };
@@ -9891,10 +9907,23 @@ public partial class MainWindow : Window
         // and the install lays it down; with a file, the file answers and this is compared to it.
         _pendingMod.TryGetValue(path, out var held);
 
+        // With a file, what was chosen here and not applied yet shows through a redraw
+        // (_pendingChoices) — a published translation settling the source takes it back.
+        _pendingChoices.TryGetValue(path, out var chosen);
+        if (pinned is not null && chosen?.Source is not null)
+        {
+            chosen.Source = null;
+            Tidy(path);
+        }
+
+        var chosenSource = chosen?.Source is { } picked
+            ? string.Equals(picked, "auto", StringComparison.OrdinalIgnoreCase) ? null : picked
+            : snapshot.Values.SourceLanguage;
+
         var draftSource = Languages.Canonical(pinned
-            ?? (configured ? snapshot.Values.SourceLanguage : held?.SourceLanguage ?? preference.Mod?.SourceLanguage));
+            ?? (configured ? chosenSource : held?.SourceLanguage ?? preference.Mod?.SourceLanguage));
         var draftStrict = configured
-            ? inGameStrict
+            ? chosen?.Strict ?? inGameStrict
             : held?.StrictSourceLanguage ?? preference.Mod?.StrictSourceLanguage ?? false;
 
         var picker = ModSettingControls.SourceLanguagePicker(220);
@@ -9993,7 +10022,18 @@ public partial class MainWindow : Window
         // Held for the session on a game with nothing to write into yet — see _pendingMod.
         void Hold()
         {
-            if (configured) return;
+            if (configured)
+            {
+                // Held so the one-click can carry it too (_pendingChoices) — only what differs.
+                var choices = Held(path);
+                choices.Source = SourceDiffers()
+                    ? draftSource is null ? "auto" : Languages.NameOf(draftSource) ?? draftSource
+                    : null;
+                choices.Strict = StrictDiffers() ? draftStrict : null;
+                Tidy(path);
+                ShowActionBar(report);
+                return;
+            }
 
             var entry = _pendingMod.TryGetValue(path, out var kept) ? kept : preference.Mod?.Copy() ?? new GameModOverrides();
             entry.SourceLanguage = draftSource is null ? null : Languages.NameOf(draftSource);
@@ -10093,12 +10133,8 @@ public partial class MainWindow : Window
             }
 
             // The config.json IS the storage from here — see LanguageDecision.
-            SaveAnswer(path, p =>
-            {
-                if (p.Mod is null) return;
-                p.Mod.SourceLanguage = null;
-                p.Mod.StrictSourceLanguage = null;
-            });
+            Settled(report, GameConfigWriter.SourceLanguageKey);
+            Settled(report, GameConfigWriter.StrictSourceKey);
 
             await ShowSelectedAsync();
         };
@@ -10262,7 +10298,17 @@ public partial class MainWindow : Window
         //
         // ⚠ Seeded from the session-held answers first, so a key captured before the mod is
         // installed survives this card being redrawn under the person capturing it.
-        var draftKey = (_pendingMod.TryGetValue(report.Game.Path, out var pendingKeys)
+        // ⚠ And on an installed game, from what was captured here and not applied yet
+        // (_pendingChoices) — unless the box above now takes Mod defaults' key instead.
+        _pendingChoices.TryGetValue(report.Game.Path, out var heldChoices);
+        if (takesDefault && heldChoices?.Hotkey is not null)
+        {
+            heldChoices.Hotkey = null;
+            Tidy(report.Game.Path);
+        }
+
+        var draftKey = (installed ? heldChoices?.Hotkey : null)
+                       ?? (_pendingMod.TryGetValue(report.Game.Path, out var pendingKeys)
                             ? pendingKeys.SettingsHotkey : null)
                        ?? preference.Mod?.SettingsHotkey;
 
@@ -10284,6 +10330,16 @@ public partial class MainWindow : Window
         editor.Changed += () =>
         {
             draftKey = editor.Value;
+
+            // Held so the one-click can carry it too (_pendingChoices) — only a key that differs.
+            if (installed && !takesDefault)
+            {
+                Held(report.Game.Path).Hotkey =
+                    draftKey is { } key && !string.Equals(key, inGame, StringComparison.Ordinal) ? key : null;
+                Tidy(report.Game.Path);
+                ShowActionBar(report);
+            }
+
             RefreshHotkeyApply();
         };
 
@@ -10349,11 +10405,7 @@ public partial class MainWindow : Window
             preference.Mod ??= new GameModOverrides();
             preference.Mod.SettingsHotkey = chosen;
 
-            SaveAnswer(report.Game.Path, p =>
-            {
-                p.Mod ??= new GameModOverrides();
-                p.Mod.SettingsHotkey = chosen;
-            });
+            Settled(report, GameConfigWriter.HotkeyKey, chosen);
 
             await ShowSelectedAsync();
         };
@@ -10460,7 +10512,7 @@ public partial class MainWindow : Window
         || _pendingPlan.ContainsKey(report.Game.Path)
         || _pendingWay.ContainsKey(report.Game.Path)
         || _pendingTranslation.ContainsKey(report.Game.Path)
-        || _pendingShown.ContainsKey(report.Game.Path);
+        || _pendingChoices.ContainsKey(report.Game.Path);
 
     /// <summary>
     /// Drops them all, in one gesture.
@@ -10475,7 +10527,7 @@ public partial class MainWindow : Window
         _pendingPlan.Remove(report.Game.Path);
         _pendingWay.Remove(report.Game.Path);
         _pendingTranslation.Remove(report.Game.Path);
-        _pendingShown.Remove(report.Game.Path);
+        _pendingChoices.Remove(report.Game.Path);
     }
 
     /// <summary>
@@ -11138,7 +11190,7 @@ public partial class MainWindow : Window
     private enum OneClickAct
     {
         InstallLoader, UpdateLoader, InstallMod, UpdateMod, AddRuntimeLibraries,
-        ApplySettings, SwitchTranslations, TakeTranslation, UpdateTranslation, ReplaceTranslation,
+        ApplySettings, ApplyChoices, TakeTranslation, UpdateTranslation, ReplaceTranslation,
     }
 
     /// <summary>One act, and the sentence shown for it.</summary>
@@ -11210,11 +11262,10 @@ public partial class MainWindow : Window
         // explicitly refused them: "apply Mod defaults (1 change)" appeared under "set it up here",
         // offering to write a value nobody had asked for.
         //
-        // ⚠ The gap is real and is NOT closed here: a game's own answers are a different brick,
-        // written by the form's own Apply. Giving the one-click a step of its own for them needs a
-        // second comparison — against the per-game resolution rather than against Mod defaults —
-        // which is exactly what the comment above `Differences` warns must not be conflated with
-        // this one. See TODO.md.
+        // ⚠ The gap was real and is closed by a step of its own, just below, not by this one: what
+        // the bricks of Set up (language, source, key, translation switch) were given on a
+        // configured game is held in `_pendingChoices` and written by `OneClickAct.ApplyChoices`,
+        // compared against the GAME rather than against Mod defaults (2026-09-26).
         if (mayChangeThisGame
             && WouldWriteSettings(report, preference)
             && SettingsWouldChangeAnything(report, preference))
@@ -11222,12 +11273,13 @@ public partial class MainWindow : Window
             yield return new(OneClickAct.ApplySettings, SettingsStepText(report, preference));
         }
 
-        // The translation switch ticked on Set up and not applied yet — a brick answer the one-click
-        // carries out like the others (see _pendingShown), and only where this account may write.
-        if (mayChangeThisGame && PendingSwitch(report) is { } shown)
+        // What the bricks of Set up were given on this configured game and have not written yet —
+        // carried out by the one-click as well as by their own Apply (see _pendingChoices), and
+        // named one by one so the confirmation says what changes. Only where this account may write.
+        if (mayChangeThisGame && PendingChoices(report) is { Count: > 0 } choices)
         {
-            yield return new(OneClickAct.SwitchTranslations,
-                shown ? "turn translations on in this game" : "turn translations off in this game");
+            yield return new(OneClickAct.ApplyChoices,
+                "set this game's " + string.Join(", ", choices.Select(c => c.Said)));
         }
 
         // 🔴 **The one-click writes the translation file too, so it obeys the account rule.**
@@ -11587,23 +11639,26 @@ public partial class MainWindow : Window
             var message = outcome.Message;
             var complete = true;
 
-            // After the settings, so a switch answered on Set up is not overwritten by them.
-            if (steps.Any(s => s.Act is OneClickAct.SwitchTranslations) && PendingSwitch(report) is { } wantShown)
+            // After the settings, so what the bricks were given here is not overwritten by them —
+            // each written the way its own Apply writes it, then settled like it.
+            if (steps.Any(s => s.Act is OneClickAct.ApplyChoices))
             {
-                Work.Begin(StepOf(OneClickAct.SwitchTranslations));
+                Work.Begin(StepOf(OneClickAct.ApplyChoices));
 
-                var switched = new GameConfigWriter().ApplyOne(report.Game.Path, plan.Loader,
-                    GameConfigWriter.TranslationsShownKey, wantShown, "translations");
+                var writer = new GameConfigWriter();
+                foreach (var choice in PendingChoices(report))
+                {
+                    var written = writer.ApplyOne(report.Game.Path, plan.Loader, choice.Key, choice.Value, choice.Label);
 
-                if (switched.Written)
-                {
-                    _pendingShown.Remove(report.Game.Path);
-                }
-                else
-                {
+                    if (written.Written)
+                    {
+                        Settled(report, choice.Key, choice.Value);
+                        continue;
+                    }
+
                     complete = false;
                     message += Environment.NewLine + Environment.NewLine
-                               + $"The translation switch could not be written ({switched.Failure}).";
+                               + $"The {choice.Label} could not be written ({written.Failure}).";
                 }
             }
 
@@ -12012,23 +12067,146 @@ public partial class MainWindow : Window
         _pendingTranslation.TryGetValue(gamePath, out var id) ? id : null;
 
     /// <summary>
-    /// "Enable translations" as ticked on Set up and not applied yet, by game path.
-    ///
-    /// ⚠ Held for the session like every answer given before an act, and carried out by either of
-    /// the two acts that read it: the brick's own Apply (1), or the one-click, which lists it as a
-    /// step of its own (user, 2026-09-25: it was ticked on Set up and the one-click ignored it).
-    /// Never kept once written: the game's config.json is where the switch lives — the mod's own
-    /// hotkey flips it — so a remembered copy would go stale.
+    /// What the bricks of Set up — language, source language and its strict switch, the key for this
+    /// game, "Enable translations" — were given on a game that already has a configuration, and have
+    /// not written yet. Null where a brick was not changed.
     /// </summary>
-    private readonly Dictionary<string, bool> _pendingShown = new(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>The switch waiting to be written into this game, or null when there is none to write.</summary>
-    private bool? PendingSwitch(GameReport report)
+    private sealed class HeldChoices
     {
-        if (!_pendingShown.TryGetValue(report.Game.Path, out var wanted)) return null;
+        public string? Language;      // a catalogue name
+        public string? Source;        // a catalogue name, or "auto" for none
+        public bool? Strict;
+        public string? Hotkey;
+        public bool? Shown;
+
+        public bool IsEmpty => Language is null && Source is null && Strict is null && Hotkey is null && Shown is null;
+    }
+
+    /// <summary>
+    /// The bricks' answers on a configured game, held for the session, by game path.
+    ///
+    /// 🔴 **The one-click used to ignore them** (user, 2026-09-26: "il faut corriger"). Each brick
+    /// wrote with its own Apply and nothing else: the answer lived in its control, the bar never
+    /// mentioned it, the one-click passed it by, and a redraw of the card lost it. Now each brick
+    /// holds what it was given here, shows it again through a redraw, and either act carries it
+    /// out — its own Apply, or the one-click, which lists it as one step naming each choice.
+    ///
+    /// ⚠ Never kept once written: the game's config.json is where these live, and a remembered
+    /// copy would go stale (the mod changes the language, the key, the switch from inside the game).
+    /// Before there is a configuration the bricks keep using `_pendingMod`, which the install reads.
+    /// </summary>
+    private readonly Dictionary<string, HeldChoices> _pendingChoices = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>This game's held choices, created on first use.</summary>
+    private HeldChoices Held(string gamePath) =>
+        _pendingChoices.TryGetValue(gamePath, out var held) ? held : _pendingChoices[gamePath] = new HeldChoices();
+
+    /// <summary>Forgets an entry left with nothing in it, so "something is pending" stays true only when it is.</summary>
+    private void Tidy(string gamePath)
+    {
+        if (_pendingChoices.TryGetValue(gamePath, out var held) && held.IsEmpty) _pendingChoices.Remove(gamePath);
+    }
+
+    /// <summary>
+    /// One held choice that would change the game: its config.json key, the value, and how the
+    /// one-click names it.
+    /// </summary>
+    private sealed record ChoiceWrite(string Key, object Value, string Label, string Said);
+
+    /// <summary>
+    /// The held choices that differ from what the game holds now — what the one-click writes, and
+    /// names, in its step. Empty on a game with no configuration: the install lays those down.
+    /// </summary>
+    private List<ChoiceWrite> PendingChoices(GameReport report)
+    {
+        var writes = new List<ChoiceWrite>();
+        if (!_pendingChoices.TryGetValue(report.Game.Path, out var held)) return writes;
 
         var snapshot = GameConfig(report);
-        return snapshot.Exists && wanted != snapshot.ShowsTranslation ? wanted : null;
+        if (!snapshot.Exists) return writes;
+
+        var values = snapshot.Values;
+
+        if (held.Language is { } language
+            && !string.Equals(Languages.Canonical(language), Languages.Canonical(values.TargetLanguage), StringComparison.OrdinalIgnoreCase))
+            writes.Add(new(GameConfigWriter.TargetLanguageKey, language, "language", $"language {language}"));
+
+        var source = held.Source ?? values.SourceLanguage ?? "auto";
+        var sourceNamed = !string.Equals(source, "auto", StringComparison.OrdinalIgnoreCase);
+
+        if (held.Source is { } heldSource
+            && !string.Equals(Languages.Canonical(heldSource) ?? heldSource, Languages.Canonical(values.SourceLanguage) ?? "auto",
+                              StringComparison.OrdinalIgnoreCase))
+            writes.Add(new(GameConfigWriter.SourceLanguageKey, heldSource, "source language",
+                           sourceNamed ? $"source language {heldSource}" : "no source language"));
+
+        // ⚠ Strict only counts while a source is named — the brick's own rule (SourceDecision).
+        if (held.Strict is { } strict && sourceNamed && strict != (values.StrictSourceLanguage ?? false))
+            writes.Add(new(GameConfigWriter.StrictSourceKey, strict, "strict source language",
+                           strict ? "strict source language on" : "strict source language off"));
+
+        if (held.Hotkey is { } key && !string.Equals(key, snapshot.InGameHotkey, StringComparison.Ordinal))
+            writes.Add(new(GameConfigWriter.HotkeyKey, key, "in-game hotkey", $"key {key}"));
+
+        if (held.Shown is { } shown && shown != snapshot.ShowsTranslation)
+            writes.Add(new(GameConfigWriter.TranslationsShownKey, shown, "translations",
+                           shown ? "translations on" : "translations off"));
+
+        return writes;
+    }
+
+    /// <summary>
+    /// After a held choice reached the game: forgets it, and does what that brick's own Apply does
+    /// with a written answer — the key is remembered for later installs, the languages are cleared
+    /// from the preference (the config.json is their storage).
+    /// </summary>
+    /// <param name="value">The value written — the key is remembered as written, whoever wrote it.</param>
+    private void Settled(GameReport report, string key, object? value = null)
+    {
+        var path = report.Game.Path;
+        _pendingChoices.TryGetValue(path, out var held);
+
+        switch (key)
+        {
+            case GameConfigWriter.TargetLanguageKey:
+                if (held is not null) held.Language = null;
+                SaveAnswer(path, p => { if (p.Mod is not null) p.Mod.TargetLanguage = null; });
+                break;
+
+            case GameConfigWriter.SourceLanguageKey:
+            case GameConfigWriter.StrictSourceKey:
+                if (held is not null)
+                {
+                    if (key == GameConfigWriter.SourceLanguageKey) held.Source = null;
+                    else held.Strict = null;
+                }
+
+                SaveAnswer(path, p =>
+                {
+                    if (p.Mod is null) return;
+                    p.Mod.SourceLanguage = null;
+                    p.Mod.StrictSourceLanguage = null;
+                });
+                break;
+
+            case GameConfigWriter.HotkeyKey:
+                if (held is not null) held.Hotkey = null;
+                if (value is string written)
+                {
+                    SaveAnswer(path, p =>
+                    {
+                        p.Mod ??= new GameModOverrides();
+                        p.Mod.SettingsHotkey = written;
+                    });
+                }
+                break;
+
+            case GameConfigWriter.TranslationsShownKey:
+                if (held is not null) held.Shown = null;
+                break;
+        }
+
+        Tidy(path);
     }
 
     /// <summary>

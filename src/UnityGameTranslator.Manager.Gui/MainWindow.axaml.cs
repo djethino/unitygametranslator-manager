@@ -6568,7 +6568,7 @@ public partial class MainWindow : Window
         // out, the card went on saying "Unpublished changes" with Update lit (2026-09-25).
         var noted = new TranslationInstaller(_platform).NotePublished(
             report.Game, descriptor, content, published.FileHash,
-            published.Id > 0 ? published.Id : null);
+            published.Id > 0 ? published.Id : null, (source, target));
 
         // 🔴 **The source just declared goes into the game, exactly as taking a published
         // translation writes it.** It is the same fact from the same authority — the author
@@ -11781,7 +11781,10 @@ public partial class MainWindow : Window
 
                      // ⚠ And WHICH translation it is. Without it a mod with nobody signed in has
                      // no id to ask about, so it can learn nothing about the file this just wrote.
-                     translation.Id));
+                     translation.Id,
+
+                     // The pair it is published under, so the file states what it IS.
+                     (translation.SourceLanguage, translation.TargetLanguage)));
 
         if (!result.Written)
             return (false, $"The translation could not be written ({result.Failure}). Everything else is in place.");

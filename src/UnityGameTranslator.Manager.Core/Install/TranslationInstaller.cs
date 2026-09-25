@@ -122,9 +122,19 @@ public sealed class TranslationInstaller
     /// and the mod then reported a published translation as never published. The person it failed
     /// for is whoever had no account, which is most people.
     /// </param>
+    /// <param name="languages">
+    /// The pair the site publishes this translation under — fixed there, and what the file IS.
+    ///
+    /// 🔴 **Written into the file, as the mod writes it once the site has spoken**
+    /// (LanguageState.AlignFromServer). A downloaded file does not carry `_source_language` /
+    /// `_target_language` itself, so one installed from here stated no language until the game was
+    /// launched — and every screen that describes a file by what it says, the Backups rows first,
+    /// showed it without its flags.
+    /// </param>
     public TranslationWriteResult Install(GameInstall game, LoaderDescriptor descriptor,
                                           string json, string? serverHash,
-                                          string? installedFrom = null, int? siteId = null)
+                                          string? installedFrom = null, int? siteId = null,
+                                          (string? Source, string? Target) languages = default)
     {
         if (WhyNotNow(game) is { } refusal) return new TranslationWriteResult(false, false, refusal);
 
@@ -137,7 +147,7 @@ public sealed class TranslationInstaller
 
         try
         {
-            var prepared = StampSource(json, serverHash, siteId);
+            var prepared = StampSource(json, serverHash, siteId, languages);
 
             Directory.CreateDirectory(folder);
 
@@ -364,8 +374,10 @@ public sealed class TranslationInstaller
     /// <param name="sentJson">The content that was uploaded, exactly as read.</param>
     /// <param name="serverHash">The hash the site answered for it.</param>
     /// <param name="siteId">The row the site filed it under.</param>
+    /// <param name="languages">The pair it was published under — see <see cref="Install"/>.</param>
     public TranslationWriteResult NotePublished(GameInstall game, LoaderDescriptor descriptor,
-                                                string sentJson, string? serverHash, int? siteId)
+                                                string sentJson, string? serverHash, int? siteId,
+                                                (string? Source, string? Target) languages = default)
     {
         if (string.IsNullOrWhiteSpace(serverHash))
             return new TranslationWriteResult(false, false, "UGT Website did not say which version it holds.");
@@ -383,7 +395,7 @@ public sealed class TranslationInstaller
             if (!string.Equals(File.ReadAllText(target), sentJson, StringComparison.Ordinal))
                 return new TranslationWriteResult(false, false, "The file changed while it was being sent.");
 
-            var prepared = StampSource(sentJson, serverHash, siteId);
+            var prepared = StampSource(sentJson, serverHash, siteId, languages);
 
             // ⚠ The ancestor first, as the mod orders it: it is what makes "published" true, and a
             // file saying "nothing to publish" beside an ancestor that disagrees would be counted
@@ -483,9 +495,12 @@ public sealed class TranslationInstaller
     /// metadata and possibly keys we have never heard of, and rebuilding it from a model here
     /// would silently drop them.
     /// </summary>
-    private static string StampSource(string json, string? serverHash, int? siteId = null)
+    private static string StampSource(string json, string? serverHash, int? siteId = null,
+                                      (string? Source, string? Target) languages = default)
     {
-        if (string.IsNullOrWhiteSpace(serverHash) && siteId is null) return json;
+        if (string.IsNullOrWhiteSpace(serverHash) && siteId is null
+            && !Languages.IsSettled(languages.Source) && !Languages.IsSettled(languages.Target))
+            return json;
 
         var node = JsonNode.Parse(json, documentOptions: new JsonDocumentOptions
         {
@@ -506,6 +521,11 @@ public sealed class TranslationInstaller
         // ⚠ Written beside the hash, and it is what lets a mod with nobody signed in ask the
         // public endpoint whether this translation has moved. See the parameter.
         if (siteId is > 0) source["site_id"] = siteId.Value;
+
+        // The pair the site holds it under (see Install's parameter). Only a stated language: an
+        // unsettled one says nothing, and writing "auto" would claim a pair nobody gave.
+        if (Languages.IsSettled(languages.Source)) root["_source_language"] = languages.Source;
+        if (Languages.IsSettled(languages.Target)) root["_target_language"] = languages.Target;
 
         // Freshly taken from the server, so nothing has been changed locally yet. Leaving a count
         // inherited from whoever uploaded it would make the mod believe the player had edits they

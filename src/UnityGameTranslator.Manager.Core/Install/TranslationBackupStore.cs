@@ -509,18 +509,14 @@ public static class TranslationBackupStore
     {
         try
         {
-            var root = Root(gamePath, descriptor);
-            if (root is null) return;
-
+            // 🔴 **Legacy files rotate too** (2026-09-25). They were skipped here, on the reasoning
+            // that this rotation did not put them there — while the socle counted them among the
+            // automatic copies and this class's own header promised they "age out on their own".
+            // So a file from July sat below five newer copies for ever, listed and never dropped.
+            // They are what an automatic copy was before copies had folders; they go the same way,
+            // and Keep is still there to take one out of the cycle.
             foreach (var id in Backups.AutomaticToDrop(List(gamePath, descriptor)))
-            {
-                // ⚠ Never a legacy file: those are somebody's translation left by an older
-                // version, and this rotation did not put them there.
-                if (id.StartsWith(LegacyPrefix, StringComparison.Ordinal)) continue;
-
-                var directory = Path.Combine(root, id);
-                if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
-            }
+                Delete(gamePath, descriptor, id);
         }
         catch
         {

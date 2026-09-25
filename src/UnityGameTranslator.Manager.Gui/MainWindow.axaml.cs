@@ -278,7 +278,7 @@ public partial class MainWindow : Window
         // a null reference. Disabled rather than guarded silently, so the button says why it cannot
         // be pressed instead of doing nothing when it is. ScanAsync turns it on.
         FoldersButton.IsEnabled = false;
-        ToolTip.SetTip(FoldersButton, "Reading this machine first...");
+        ToolTip.SetTip(FoldersButton, "Available once the search for games is done.");
         GameList.SelectionChanged += async (_, _) =>
         {
             if (_restoringSelection) return;
@@ -351,7 +351,7 @@ public partial class MainWindow : Window
     /// a seventh control here means measuring again, not assuming.
     /// </summary>
     /// <summary>Written once: the button says this again once the first scan has run.</summary>
-    private const string FoldersTip = "Places to look for games beyond Steam, Epic and GOG";
+    private const string FoldersTip = "Folders to search for games, besides Steam, Epic and GOG";
 
     private void AdornToolbar()
     {
@@ -364,9 +364,9 @@ public partial class MainWindow : Window
         // Said once here rather than in five places: which of the two settings windows a button
         // opens is the one thing about this row people get wrong.
         ToolTip.SetTip(FoldersButton, FoldersTip);
-        ToolTip.SetTip(RescanButton, "Look for games again");
-        ToolTip.SetTip(SettingsButton, "What gets written into your games");
-        ToolTip.SetTip(ToolSettingsButton, "Settings for this program itself");
+        ToolTip.SetTip(RescanButton, "Search for games again");
+        ToolTip.SetTip(SettingsButton, "Settings written into your games");
+        ToolTip.SetTip(ToolSettingsButton, "Settings for UGT Manager itself");
         ToolTip.SetTip(AboutButton, "About UnityGameTranslator Manager");
     }
 
@@ -450,10 +450,9 @@ public partial class MainWindow : Window
 
             default:
                 ShowUpdateNotice("Couldn't check for updates",
-                    "Updates to UnityGameTranslator Manager — this program, not the mod in your "
-                    + $"games.\n\n{result.Message}\n\nA firewall, an antivirus or a company proxy "
-                    + "blocking it looks exactly like this. Open Settings to try again or to set "
-                    + "up a proxy.",
+                    $"Updates to UGT Manager, not UGT Mod.\n\n{result.Message}\n\nA firewall, "
+                    + "antivirus or proxy may be blocking UGT Manager. Open Settings to try again "
+                    + "or set a proxy.",
                     primary: false, result);
                 break;
         }
@@ -463,6 +462,10 @@ public partial class MainWindow : Window
     {
         var notice = new Button { Content = label, FontSize = 12 };
         if (primary) notice.Classes.Add("primary");
+
+        // A failed check is a warning: amber, like every warning in this program, so it is not read
+        // as one more toolbar button.
+        else notice.Foreground = Brush("StatusWarning");
 
         ToolTip.SetTip(notice, tip);
 
@@ -541,7 +544,7 @@ public partial class MainWindow : Window
 
     private async Task ScanAsync()
     {
-        Busy(true, "Looking for your games...");
+        Busy(true, "Searching for games...");
         ShowScanning();
 
         _sweep?.Cancel();
@@ -585,7 +588,8 @@ public partial class MainWindow : Window
 
         ToolTip.SetTip(FoldersButton, FoldersTip);
 
-        Status($"Catalog: {_catalog.Loaders.Count} loaders ({result.Source}). Scanning your drives...");
+        // Which copy of the catalogue is in force is for the CLI's `catalog` verb, not the status bar.
+        Status("Searching your drives for games...");
 
         // ⚠ **Ten seconds of nothing is what makes ten seconds feel long.** The gear has a second
         // line for exactly this — see SpinningGear.Detail, which exists so the caption can stay
@@ -709,18 +713,16 @@ public partial class MainWindow : Window
 
         var (label, colour, why) = !settings.OnlineAsked
             ? ("Offline", "StatusWarning",
-               "Nobody has answered yet whether this tool may use the internet, so it does not. "
-               + "The question comes back at the next launch, or answer it now with \"Work online\" "
-               + "in the tool's settings.")
+               "The question about going online was not answered, so UGT Manager stays offline. "
+               + "It is asked again at the next launch, or tick \"Work online\" in Settings.")
             : settings.OnlineMode
                 ? ("Online", "StatusSuccess",
-                   "This tool asks the site whether a translation exists for the games found here, "
-                   + "sending their names or Steam ids, and checks which loaders and versions have "
-                   + "been published. Turn it off with \"Work online\" in the tool's settings.")
+                   "UGT Manager asks UGT Website for translations of your games (it sends their "
+                   + "names or Steam IDs) and checks for new versions. To stop it, untick \"Work "
+                   + "online\" in Settings.")
                 : ("Offline", "StatusNeutral",
-                   "This tool asks nobody anything. It still finds your games, installs the mod and "
-                   + "manages what is already on this machine. Turn it on with \"Work online\" in "
-                   + "the tool's settings.");
+                   "UGT Manager sends nothing. Finding games, installing UGT Mod and managing local "
+                   + "files still work. To go online, tick \"Work online\" in Settings.");
 
         OnlineLabel.Text = label;
         OnlineDot.Fill = Brush(colour);
@@ -1081,7 +1083,7 @@ public partial class MainWindow : Window
     /// </summary>
     private async Task RetryOnlineAsync()
     {
-        Status("Asking the community site again...");
+        Status("Checking UGT Website again...");
         StartOnlineSweep();
         await ShowSelectedAsync();
     }
@@ -1125,7 +1127,7 @@ public partial class MainWindow : Window
                 {
                     // Only theirs. "0 other translations" is a sentence about nothing; what a reader
                     // needs to know is that there is nowhere else to look.
-                    0 => "The translation this game runs is the only one published.",
+                    0 => "This game's translation is the only one published.",
                     1 => "One other translation is published for this game.",
                     _ => $"{others} other translations are published for this game.",
                 },
@@ -1185,15 +1187,9 @@ public partial class MainWindow : Window
 
         if (!published.Any(t => Languages.Matches(t.TargetLanguage, target)))
         {
-            yield return new TextBlock
-            {
-                Text = $"None of them is in {Languages.NameOf(target)}, the language set in "
-                     + "your mod defaults — taking one still works, and the game can be "
-                     + "pointed at its language.",
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = Brush("TextMuted"),
-            };
+            yield return Ui.Note(
+                $"None is in {Languages.NameOf(target)}, your language in Mod defaults. You can "
+                + "still take one: the game can be switched to its language.");
         }
     }
 
@@ -1217,7 +1213,7 @@ public partial class MainWindow : Window
 
         if (descriptor is null)
         {
-            Status("No loader is set up for this game yet, so there is nowhere to put a translation.");
+            Status("No mod loader is set up for this game yet, so a translation cannot be installed.");
             return;
         }
 
@@ -1255,7 +1251,7 @@ public partial class MainWindow : Window
         {
             var signIn = new Button { Content = "Sign in", FontSize = 12 };
             signIn.Click += async (_, _) => await OpenToolSettingsAsync();
-            ToolTip.SetTip(signIn, "Optional. Published translations can be taken without an account.");
+            ToolTip.SetTip(signIn, "Optional. Downloading translations works without an account.");
             AccountSlot.Content = signIn;
             return;
         }
@@ -1287,7 +1283,7 @@ public partial class MainWindow : Window
             Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
         };
 
-        ToolTip.SetTip(button, "Open your account on the UGT Website");
+        ToolTip.SetTip(button, "Open your account on UGT Website");
         button.Click += (_, _) => OpenUrl($"{BuildInfo.WebsiteBaseUrl}/profile");
 
         AccountSlot.Content = button;
@@ -1486,9 +1482,9 @@ public partial class MainWindow : Window
         var filters = new List<(string Label, string Meaning, Lens Value)>
         {
             ("All", "Every game found, whatever its state.", Lens.All),
-            ("In my language", "Games with a translation published in the language you are setting up.", Lens.Playable),
-            ("Untranslated", "Games nobody has published a translation for in your language yet — where you would come in.", Lens.NeedsTranslator),
-            ("Set up", "Games that already have the mod installed.", Lens.Ready),
+            ("In my language", "Games with a translation in your language.", Lens.Playable),
+            ("Untranslated", "Games with no translation in your language yet.", Lens.NeedsTranslator),
+            ("Set up", "Games with UGT Mod installed.", Lens.Ready),
         };
 
         // Only offered when there is an account to answer it. A filter that can only ever return
@@ -1496,8 +1492,8 @@ public partial class MainWindow : Window
         // know". The bar is rebuilt when the account changes, so it appears on signing in.
         if (_settings.Current.SignedIn)
         {
-            filters.Add(("Mine", "Games carrying a translation you take part in — the one you "
-                               + "publish, or a branch of somebody else's.", Lens.Mine));
+            filters.Add(("Mine", "Games with a translation you publish (Main) or contribute to "
+                               + "(branch).", Lens.Mine));
         }
 
         // Before "not moddable", and only while something is running: a lens that can only ever
@@ -1506,11 +1502,11 @@ public partial class MainWindow : Window
         // changes its mind.
         if (_running.Paths.Count > 0)
         {
-            filters.Add(("Running", "Games open right now — they cannot be set up or removed until "
-                                  + "they are closed.", Lens.Running));
+            filters.Add(("Running", "Games running now. Close a game to set it up or remove it.",
+                         Lens.Running));
         }
 
-        filters.Add(("Not moddable", "Games no loader can start in, with the reason on each card.",
+        filters.Add(("Not moddable", "Games no mod loader can run in. The reason is on each game's page.",
                      Lens.Blocked));
 
         foreach (var (label, meaning, value) in filters)
@@ -2278,7 +2274,7 @@ public partial class MainWindow : Window
                 // On another site the name is followed by where it lives, because the name alone
                 // would be read as the person at the keyboard.
                 Text = elsewhere
-                    ? People.Mention(account.User) + " — another site"
+                    ? People.Mention(account.User) + " (other site)"
                     : People.Mention(account.User, yours),
                 FontSize = 10,
                 Foreground = Brush(yours ? "StatusSuccess" : "StatusWarning"),
@@ -2292,15 +2288,15 @@ public partial class MainWindow : Window
             // saying "not as the account this tool is using" about an identical spelling would
             // read as a bug rather than as a fact.
             ToolTip.SetTip(mark, elsewhere
-                ? $"This game is signed in to a different site, as {People.Mention(account.User)}. "
-                  + "That is another site's account even when the name is spelled the same, so it "
-                  + "is not the one this tool is using. Nothing here will write to it."
+                ? $"This game is signed in to another site as {People.Mention(account.User)}. It is "
+                  + "a different account, even with the same name. UGT Manager will not change "
+                  + "this game."
                 : yours
-                ? $"This game is signed in to the site as {People.Mention(account.User, true)} — the "
-                  + "account this tool is using. It can publish and contribute from inside the game."
-                : $"This game is signed in to the site as {People.Mention(account.User)}, not as the "
-                  + "account this tool is using. Nothing here will write to it: play it and look "
-                  + "at it, and sign in inside the game to change that.");
+                ? $"This game is signed in to UGT Website as {People.Mention(account.User, true)}, "
+                  + "the account UGT Manager uses. It can publish and contribute from the game."
+                : $"This game is signed in to UGT Website as {People.Mention(account.User)}, not with "
+                  + "UGT Manager's account. UGT Manager will not change this game. To change that, "
+                  + "sign in from inside the game.");
 
             named.Children.Add(mark);
             corner.Children.Add(named);
@@ -2477,7 +2473,7 @@ public partial class MainWindow : Window
 
         // Large and stacked: this is the only thing on the panel, so it is the panel's subject
         // rather than a note in a corner of it.
-        _scanGear = new SpinningGear("Looking for your games...", size: 72, stacked: true)
+        _scanGear = new SpinningGear("Searching for games...", size: 72, stacked: true)
         {
             // What the status bar says right now, so the middle of the panel does not lag behind
             // the bottom of the window between two phases.
@@ -2530,7 +2526,7 @@ public partial class MainWindow : Window
 
         DetailPanel.Children.Add(new TextBlock
         {
-            Text = $"{_games.Count} Unity games on this machine",
+            Text = $"{_games.Count} Unity games on this computer",
             FontSize = 20,
             FontWeight = FontWeight.SemiBold,
             Foreground = Brush("TextPrimary"),
@@ -2540,17 +2536,17 @@ public partial class MainWindow : Window
 
         var facts = new List<string>
         {
-            $"{moddable} can take the mod.",
+            $"{moddable} can use UGT Mod.",
             setUp > 0
                 ? $"{setUp} already have it."
                 : "None of them has it yet.",
             playable > 0
-                ? $"{playable} already have a translation in {language} waiting on the community site."
-                : $"None has a published translation in {language} yet — which is where you would come in.",
+                ? $"{playable} have a translation in {language} on UGT Website."
+                : $"None has a translation in {language} yet.",
         };
 
         if (_mine.Count > 0)
-            facts.Add($"{_mine.Count} carry a translation you take part in.");
+            facts.Add($"{_mine.Count} have a translation you publish or contribute to.");
 
         foreach (var fact in facts)
         {
@@ -2567,8 +2563,8 @@ public partial class MainWindow : Window
 
         DetailPanel.Children.Add(new TextBlock
         {
-            Text = "Pick a game on the left to see what it needs, what the community has for it, "
-                 + "and to set it up. The tags above the list narrow it down.",
+            Text = "Select a game in the list to see its translations and set it up. The filters "
+                 + "above the list narrow it down.",
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
             TextAlignment = TextAlignment.Center,
@@ -2643,10 +2639,9 @@ public partial class MainWindow : Window
         if (!settings.Reviewed)
         {
             return Banner(
-                "Nothing has been decided about what goes into your games yet",
-                "Mod defaults holds the language, how lines get translated, and the in-game "
-                + "shortcut. Until you have been through it once, each game is set up with what "
-                + "this program guessed.",
+                "Mod defaults has not been filled in yet",
+                "Mod defaults sets the language, the translation method and the in-game hotkey. "
+                + "Until you review it, games are set up with default values.",
                 "Open Mod defaults",
                 async () => await OpenSettingsAsync(),
                 // Amber: nothing is broken and every game can still be set up — but each one is
@@ -2679,14 +2674,13 @@ public partial class MainWindow : Window
             // nothing at all. Google, DeepL and the online models come last and are said to be paid
             // for by the reader — supported, and not the point. Putting "Captures only" first, as
             // this did, offered the longest road before the short one.
-            "So a game gets a translation only if somebody published one in your language. Other "
-            + "games stay in their own language. Open Mod defaults to change that: an AI on your "
-            + "own machine costs nothing if the machine can run one, and \"Captures only\" costs "
-            + "nothing at all — the mod collects the game's text and you write the lines yourself "
-            + "in its editor. Google, DeepL and online AI work too, on your own key.",
+            "So a game gets a translation only if someone published one in your language. Other "
+            + "games stay untranslated. To change this, open Mod defaults: a local AI is free if "
+            + "your computer can run one, and \"Captures only\" lets you write the translations "
+            + "yourself in UGT Mod. Google, DeepL and online AI also work, with your own key.",
             "Open Mod defaults",
             async () => await OpenSettingsAsync(),
-            ("See the games on the site",
+            ("Browse UGT Website",
              () => { OpenUrl(BuildInfo.WebsiteBaseUrl); return Task.CompletedTask; }),
             // Blue, and deliberately not amber: this is a setting doing what it was set to do.
             // What it changes is which games come out translated, so it belongs beside the list it
@@ -2766,9 +2760,9 @@ public partial class MainWindow : Window
         text.Children.Add(new TextBlock
         {
             Text = started
-                ? $"You have {report.LocalTranslation!.EntryCount} {name} lines nobody else has — "
-                  + "you could be the first to publish them"
-                : $"Nobody has published a {name} translation of this game — you could be first",
+                ? $"This game has {report.LocalTranslation!.EntryCount} {name} lines not published "
+                  + "yet. You can be the first to share them."
+                : $"No {name} translation is published for this game yet. You can be the first.",
             FontSize = 13,
             FontWeight = FontWeight.SemiBold,
             Foreground = Brush(started ? "StatusSuccess" : "TextPrimary"),
@@ -2782,17 +2776,13 @@ public partial class MainWindow : Window
                 // game, with the game's own sign-in — and the two are allowed to differ, which on
                 // a shared machine is the ordinary case rather than a mistake.
                 ? (report.SiteAccount.User is { Length: > 0 } who
-                    ? $"This game is signed in as {who}, so it can publish. Open it, press the "
-                      + "mod's hotkey and use its upload panel — sharing is a decision you take "
-                      + "there, line by line if you want to review first."
-                    : "Sharing them needs an account, and signing in happens inside the game, from "
-                      + "the mod's own panel. Until then the file stays on this machine.")
-                  + " Nothing leaves this machine until you say so."
-                : "Set the mod up and play: it collects the lines the game shows you as it shows "
-                  + "them. From there it is your choice — write the translations yourself in the "
-                  + "game, line by line, or set up a local AI under Mod defaults and let it take a "
-                  + "first pass you can correct. Either way the file stays on your machine until "
-                  + "you decide to share it.",
+                    ? $"This game is signed in as {who}, so it can publish: start the game, open "
+                      + "UGT Mod with its hotkey and use Upload."
+                    : "Publishing needs an account. Sign in from UGT Mod's panel, inside the game.")
+                  + " Nothing is sent until you choose."
+                : "Set up UGT Mod and play: it collects the game's text as it appears. Then "
+                  + "translate it yourself in the game, or set up a local AI in Mod defaults and "
+                  + "correct its work. Nothing is shared until you decide.",
             FontSize = 11,
             Foreground = Brush("TextSecondary"),
             TextWrapping = TextWrapping.Wrap,
@@ -2906,14 +2896,9 @@ public partial class MainWindow : Window
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
         };
 
-        text.Children.Add(new TextBlock
-        {
-            Text = "Everything this program remembers is in one folder — your settings, the folders "
-                 + "you added, and the translations it moved aside before replacing one.",
-            FontSize = 11,
-            Foreground = Brush("TextMuted"),
-            TextWrapping = TextWrapping.Wrap,
-        });
+        // Same words as the Data folder card in UGT Manager settings, shorter: one folder, one fact.
+        text.Children.Add(Ui.Note(
+            "UGT Manager keeps its data in this folder: settings, added folders and translation backups."));
 
         text.Children.Add(new TextBlock
         {
@@ -2926,7 +2911,7 @@ public partial class MainWindow : Window
 
         var open = new Button
         {
-            Content = "Open this folder",
+            Content = "Open folder",
             FontSize = 11,
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
             Margin = new Avalonia.Thickness(14, 0, 0, 0),
@@ -3013,7 +2998,7 @@ public partial class MainWindow : Window
         // into a paragraph of what looks like bad news.
         text.Children.Add(new TextBlock
         {
-            Text = "Install UnityGameTranslator Manager on this machine?",
+            Text = "Install UnityGameTranslator Manager on this computer?",
             FontSize = 13,
             FontWeight = FontWeight.SemiBold,
             Foreground = Brush("TextPrimary"),
@@ -3022,9 +3007,8 @@ public partial class MainWindow : Window
 
         text.Children.Add(new TextBlock
         {
-            Text = "You are running the file you downloaded — the program that sets your games up, "
-                 + "not the mod that goes into them. Kept here it lands in your menu, with a proper "
-                 + "way to remove it. Nothing in your games changes either way.",
+            Text = "You are running the downloaded file. Installing adds UGT Manager to your menu, "
+                 + "with an uninstaller. Your games are not changed.",
             FontSize = 11,
             Foreground = Brush("TextSecondary"),
             TextWrapping = TextWrapping.Wrap,
@@ -3036,7 +3020,7 @@ public partial class MainWindow : Window
         // what "install" involves here is listed in full before anything is written.
         var keep = new Button
         {
-            Content = "Install it",
+            Content = "Install",
             FontSize = 12,
             Classes = { "primary" },
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
@@ -3095,8 +3079,8 @@ public partial class MainWindow : Window
             // the first comma; "loose" is also a word few non-native readers meet. The sentence
             // underneath names both copies and both folders, which is where the detail belongs.
             Text = canUpdate
-                ? $"This manager is newer than the installed one ({running} against {installed.Version})"
-                : "This manager is not the installed one",
+                ? $"This copy of UGT Manager is newer than the installed one ({running} vs {installed.Version})"
+                : "This copy of UGT Manager is not the installed one",
             FontSize = 13,
             FontWeight = FontWeight.SemiBold,
             Foreground = Brush("TextPrimary"),
@@ -3106,13 +3090,11 @@ public partial class MainWindow : Window
         text.Children.Add(new TextBlock
         {
             Text = canUpdate
-                ? $"UnityGameTranslator Manager {installed.Version} is installed in "
-                  + $"{installed.Directory}. Putting this build over it keeps the shortcut you "
-                  + "already have, and your settings are shared by both either way."
-                : $"UnityGameTranslator Manager {installed.Version} is installed in "
-                  + $"{installed.Directory}, and this window is version {running} running from "
-                  + "somewhere else. Settings are shared, but an update applied here lands on this "
-                  + "file rather than on the copy in your menu.",
+                ? $"Version {installed.Version} is installed in {installed.Directory}. Updating it "
+                  + "keeps your shortcut. Both copies share the same settings."
+                : $"Version {installed.Version} is installed in {installed.Directory}. This window "
+                  + $"is version {running}, running from another folder. Settings are shared, but "
+                  + "updates made here apply to this copy only.",
             FontSize = 11,
             Foreground = Brush("TextSecondary"),
             TextWrapping = TextWrapping.Wrap,
@@ -3120,7 +3102,7 @@ public partial class MainWindow : Window
 
         var action = new Button
         {
-            Content = canUpdate ? "Update the installed copy" : "Open the installed copy",
+            Content = canUpdate ? "Update installed copy" : "Open installed copy",
             FontSize = 12,
             Classes = { "primary" },
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
@@ -3140,10 +3122,10 @@ public partial class MainWindow : Window
                 // Offered rather than done: they are still in the loose copy, and the point of
                 // updating the installed one is to end up in it.
                 var across = await ConfirmationWindow.AskAsync(this,
-                    $"Open the copy you just updated to {updated.Version}?",
-                    $"It is in {updated.Directory}, and it is what your shortcut points at. This "
-                    + "window is the file you downloaded; it is left exactly where it is.",
-                    "Open it");
+                    $"Open the updated copy ({updated.Version})?",
+                    $"It is in {updated.Directory}, where your shortcut points. The downloaded file "
+                    + "stays where it is.",
+                    "Open");
 
                 if (across) SwitchTo(updated); else ShowOverview();
             }
@@ -3188,9 +3170,7 @@ public partial class MainWindow : Window
 
         text.Children.Add(new TextBlock
         {
-            Text = state.Missing.Count == 1
-                ? "The installed copy is missing a piece"
-                : $"The installed copy is missing {state.Missing.Count} pieces",
+            Text = "The installed UGT Manager is incomplete",
             FontSize = 13,
             FontWeight = FontWeight.SemiBold,
             Foreground = Brush("TextPrimary"),
@@ -3199,9 +3179,8 @@ public partial class MainWindow : Window
 
         text.Children.Add(new TextBlock
         {
-            Text = $"{installed.Directory} — missing: {string.Join(", ", state.Missing)}. "
-                 + "Until it is put back, that copy may not start, and the system may have no way "
-                 + "to remove it.",
+            Text = $"{installed.Directory}: missing {string.Join(", ", state.Missing)}. Until it is "
+                 + "repaired, it may not start or uninstall correctly.",
             FontSize = 11,
             Foreground = Brush("TextSecondary"),
             TextWrapping = TextWrapping.Wrap,
@@ -3209,7 +3188,7 @@ public partial class MainWindow : Window
 
         var repair = new Button
         {
-            Content = "Repair it",
+            Content = "Repair",
             FontSize = 12,
             Classes = { "primary" },
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
@@ -3284,11 +3263,11 @@ public partial class MainWindow : Window
         // land on the file they are about to stop using. So the offer to move across is made now,
         // while the reason is obvious, rather than left as a difference nobody notices.
         var switchOver = await ConfirmationWindow.AskAsync(this,
-            "Open the copy you just installed?",
-            $"It is now in {installed.Directory}. This window is still the file you downloaded — "
-            + "switching over means updates and settings apply to the copy that stays. The "
-            + "downloaded file is left where it is; you can delete it whenever you like.",
-            "Open it");
+            "Open the installed copy?",
+            $"It is now in {installed.Directory}. This window is still the downloaded file: switch "
+            + "so that updates apply to the installed copy. You can delete the downloaded file "
+            + "afterwards.",
+            "Open");
 
         if (!switchOver)
         {
@@ -3318,7 +3297,7 @@ public partial class MainWindow : Window
         var back = Glyphs.Button(Glyphs.Home(), "Home");
         back.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left;
 
-        ToolTip.SetTip(back, "Back to the summary of every game found (Esc)");
+        ToolTip.SetTip(back, "Back to the summary of all games (Esc)");
         back.Click += (_, _) => CloseCard();
 
         // Facing it across the same line: where this game stands with the site.
@@ -3340,7 +3319,7 @@ public partial class MainWindow : Window
 
         var mark = new TextBlock
         {
-            Text = linked ? $"Signed in to the site as {user}" : "Not signed in to the site",
+            Text = linked ? $"Signed in to UGT Website as {user}" : "Not signed in to UGT Website",
             FontSize = 11,
             Foreground = Brush(linked ? "StatusSuccess" : "TextMuted"),
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
@@ -3356,15 +3335,18 @@ public partial class MainWindow : Window
                                                            StringComparison.OrdinalIgnoreCase);
 
         ToolTip.SetTip(mark, linked
-            ? (elsewhere ? $"Signed in on {server}, which is not the site UnityGameTranslator "
-                         + "Manager is set to." : null)
-              ?? "Signed in from inside the game, and remembered per game — one machine can hold "
-                 + "several accounts. This is what lets this game publish a translation or "
-                 + "contribute to somebody else's."
-            : "Not signed in. Signing in happens inside the game, in the mod's own panel. This "
-              + "game can still use community translations, but cannot publish or contribute.");
+            ? (elsewhere ? $"Signed in on {server}, not on the site UGT Manager uses." : null)
+              ?? "Signed in from inside the game. Each game keeps its own sign-in. It lets this "
+                 + "game publish or contribute."
+            : "Not signed in. Sign in from UGT Mod's panel, inside the game. Community "
+              + "translations still work; publishing and contributing need an account.");
 
-        if (elsewhere) mark.Foreground = Brush("StatusWarning");
+        // On another site the line says so itself, not only its colour.
+        if (elsewhere)
+        {
+            mark.Text = $"Signed in as {user} (other site)";
+            mark.Foreground = Brush("StatusWarning");
+        }
 
         Grid.SetColumn(mark, 1);
         grid.Children.Add(mark);

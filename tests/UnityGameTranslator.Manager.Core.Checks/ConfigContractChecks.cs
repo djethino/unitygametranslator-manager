@@ -283,6 +283,10 @@ internal static class ConfigContractChecks
             }
 
             var writer = new GameConfigWriter(library);
+            Program.Check(!new InstallerSettings().TranslateModUi,
+                "translating UGT Mod's interface is off until somebody ticks it",
+                "an option is never chosen on the person's behalf");
+
             var settings = new InstallerSettings { TranslateModUi = true };
 
             var empty = GameWith(null);

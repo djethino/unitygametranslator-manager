@@ -229,8 +229,11 @@ public sealed class InstallerSettings
     ///
     /// ⚠ Fills a game that has no answer of its own (the mod's null, "let the file decide"), never
     /// replaces a yes or a no somebody gave in the game.
+    ///
+    /// ⚠ **Off until somebody ticks it** (user, 2026-09-25): an option is never chosen on the
+    /// person's behalf. Off, the file is still placed and the game can switch it on in its Options.
     /// </summary>
-    [JsonPropertyName("translate_mod_ui")] public bool TranslateModUi { get; set; } = true;
+    [JsonPropertyName("translate_mod_ui")] public bool TranslateModUi { get; set; }
 
     // ⚠ There is deliberately no "write this hotkey into games" setting here, and adding one back
     // would undo a decision rather than fill a gap. Whether a game's own hotkey is replaced is

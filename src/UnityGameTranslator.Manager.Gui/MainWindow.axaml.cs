@@ -5425,10 +5425,13 @@ public partial class MainWindow : Window
 
         var inGame = snapshot.ShowsTranslation;
 
+        // On Set up, an answer held and not applied yet shows through a redraw — see _pendingShown.
+        var held = !quick && _pendingShown.TryGetValue(report.Game.Path, out var answered) ? answered : inGame;
+
         var box = new CheckBox
         {
             Content = TranslationSwitchLabel,
-            IsChecked = inGame,
+            IsChecked = held,
             FontSize = 12,
             VerticalAlignment = VerticalAlignment.Center,
         };
@@ -5451,6 +5454,10 @@ public partial class MainWindow : Window
             {
                 await MessageAsync("Nothing was changed",
                     $"The translation switch could not be written ({result.Failure}).");
+            }
+            else
+            {
+                _pendingShown.Remove(report.Game.Path);
             }
 
             // The row AND the card, in place: every Play mark — the list's, the card's, the bar's —
@@ -5475,12 +5482,25 @@ public partial class MainWindow : Window
         apply.IsVisible = false;
         apply.VerticalAlignment = VerticalAlignment.Center;
 
-        box.IsCheckedChanged += (_, _) =>
+        void Show()
         {
             var differs = (box.IsChecked == true) != inGame;
             apply.IsVisible = differs;
             apply.IsEnabled = differs && box.IsEnabled;
+        }
+
+        box.IsCheckedChanged += (_, _) =>
+        {
+            // Held for the session, and gone when it lands back on what the game holds — the bar
+            // and the one-click read it (PendingSwitch), so they follow the box at once.
+            if ((box.IsChecked == true) != inGame) _pendingShown[report.Game.Path] = box.IsChecked == true;
+            else _pendingShown.Remove(report.Game.Path);
+
+            Show();
+            ShowActionBar(report);
         };
+
+        Show();
 
         apply.Click += async (_, _) => await WriteAsync(box.IsChecked == true);
 
@@ -10439,7 +10459,8 @@ public partial class MainWindow : Window
         _pendingMod.ContainsKey(report.Game.Path)
         || _pendingPlan.ContainsKey(report.Game.Path)
         || _pendingWay.ContainsKey(report.Game.Path)
-        || _pendingTranslation.ContainsKey(report.Game.Path);
+        || _pendingTranslation.ContainsKey(report.Game.Path)
+        || _pendingShown.ContainsKey(report.Game.Path);
 
     /// <summary>
     /// Drops them all, in one gesture.
@@ -10454,6 +10475,7 @@ public partial class MainWindow : Window
         _pendingPlan.Remove(report.Game.Path);
         _pendingWay.Remove(report.Game.Path);
         _pendingTranslation.Remove(report.Game.Path);
+        _pendingShown.Remove(report.Game.Path);
     }
 
     /// <summary>
@@ -11116,7 +11138,7 @@ public partial class MainWindow : Window
     private enum OneClickAct
     {
         InstallLoader, UpdateLoader, InstallMod, UpdateMod, AddRuntimeLibraries,
-        ApplySettings, TakeTranslation, UpdateTranslation, ReplaceTranslation,
+        ApplySettings, SwitchTranslations, TakeTranslation, UpdateTranslation, ReplaceTranslation,
     }
 
     /// <summary>One act, and the sentence shown for it.</summary>
@@ -11198,6 +11220,14 @@ public partial class MainWindow : Window
             && SettingsWouldChangeAnything(report, preference))
         {
             yield return new(OneClickAct.ApplySettings, SettingsStepText(report, preference));
+        }
+
+        // The translation switch ticked on Set up and not applied yet — a brick answer the one-click
+        // carries out like the others (see _pendingShown), and only where this account may write.
+        if (mayChangeThisGame && PendingSwitch(report) is { } shown)
+        {
+            yield return new(OneClickAct.SwitchTranslations,
+                shown ? "turn translations on in this game" : "turn translations off in this game");
         }
 
         // 🔴 **The one-click writes the translation file too, so it obeys the account rule.**
@@ -11556,6 +11586,26 @@ public partial class MainWindow : Window
 
             var message = outcome.Message;
             var complete = true;
+
+            // After the settings, so a switch answered on Set up is not overwritten by them.
+            if (steps.Any(s => s.Act is OneClickAct.SwitchTranslations) && PendingSwitch(report) is { } wantShown)
+            {
+                Work.Begin(StepOf(OneClickAct.SwitchTranslations));
+
+                var switched = new GameConfigWriter().ApplyOne(report.Game.Path, plan.Loader,
+                    GameConfigWriter.TranslationsShownKey, wantShown, "translations");
+
+                if (switched.Written)
+                {
+                    _pendingShown.Remove(report.Game.Path);
+                }
+                else
+                {
+                    complete = false;
+                    message += Environment.NewLine + Environment.NewLine
+                               + $"The translation switch could not be written ({switched.Failure}).";
+                }
+            }
 
             if (translation is not null)
             {
@@ -11960,6 +12010,26 @@ public partial class MainWindow : Window
     /// </summary>
     private int? ChosenTranslation(string gamePath) =>
         _pendingTranslation.TryGetValue(gamePath, out var id) ? id : null;
+
+    /// <summary>
+    /// "Enable translations" as ticked on Set up and not applied yet, by game path.
+    ///
+    /// ⚠ Held for the session like every answer given before an act, and carried out by either of
+    /// the two acts that read it: the brick's own Apply (1), or the one-click, which lists it as a
+    /// step of its own (user, 2026-09-25: it was ticked on Set up and the one-click ignored it).
+    /// Never kept once written: the game's config.json is where the switch lives — the mod's own
+    /// hotkey flips it — so a remembered copy would go stale.
+    /// </summary>
+    private readonly Dictionary<string, bool> _pendingShown = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The switch waiting to be written into this game, or null when there is none to write.</summary>
+    private bool? PendingSwitch(GameReport report)
+    {
+        if (!_pendingShown.TryGetValue(report.Game.Path, out var wanted)) return null;
+
+        var snapshot = GameConfig(report);
+        return snapshot.Exists && wanted != snapshot.ShowsTranslation ? wanted : null;
+    }
 
     /// <summary>
     /// The way chosen for a game — Mod defaults, the mod's Setup, or its own settings — before

@@ -223,34 +223,82 @@ public sealed class SearchPicker : UserControl
         // ⚠ Both answers come from the socle, not from here: the mod asks the same question of the
         // same lists, and answering it twice is how the two products end up disagreeing about
         // whether four entries deserve a search box.
-        var room = TopLevel.GetTopLevel(this)?.ClientSize.Height ?? 0;
+        //
+        // 🔴 **Asked with the rows' REAL height, so asked once the list is laid out** (2026-09-25).
+        // It used to be asked before opening, with a guessed 28px row — while a row of this theme is
+        // well over that, and a row with a flag more still. Every short list came out too short: two
+        // entries showed one and a half with a scrollbar, eight showed six with no search field,
+        // because on paper they fitted. So the list opens invisible, is measured on the first layout
+        // pass, sized, and only then shown — see Settle.
+        _search.IsVisible = false;
+        _scroll.MaxHeight = double.PositiveInfinity;
+        _shell.Opacity = 0;
 
-        _scroll.MaxHeight = DropdownFit.Height(_items.Count, RowGuess, room);
-        _search.IsVisible = DropdownFit.NeedsSearch(_items.Count, RowGuess, room);
+        _list.LayoutUpdated -= OnListLaidOut;
+        _list.LayoutUpdated += OnListLaidOut;
 
         _popup.IsOpen = true;
 
         // The wheel has to be carried into a popup by hand — an Avalonia bug, not a choice. See
         // PopupWheel, which is where that lives for the whole program.
         PopupWheel.Follow(this, () => _popup.IsOpen, () => _scroll);
-
-        // ⚠ Posted: the popup's tree is not there to take focus until it has been laid out, and a
-        // search field that needs clicking before it accepts a letter is a search field nobody uses.
-        // ⚠ And the LIST takes it when there is no search field, or the arrows would do nothing
-        // until somebody had clicked a row first.
-        Dispatcher.UIThread.Post(
-            () => { if (_search.IsVisible) _search.Focus(); else _list.Focus(); },
-            DispatcherPriority.Loaded);
     }
 
     /// <summary>
-    /// What one row comes to before any of them has been laid out.
+    /// The first layout pass of an opening list: the moment its real height exists.
     ///
-    /// ⚠ Only ever used to decide how tall the list may be and whether it needs searching, both of
-    /// which are asked BEFORE the popup exists. Once it is on screen the real heights are measured
-    /// — see PopupWheel.RowOf.
+    /// ⚠ An event, not a posted guess at when layout will be done: a pass that has not reached the
+    /// list yet reports nothing and is simply skipped, and the next one is what answers.
     /// </summary>
-    private const double RowGuess = 28;
+    private void OnListLaidOut(object? sender, EventArgs e)
+    {
+        if (!_popup.IsOpen) { _list.LayoutUpdated -= OnListLaidOut; return; }
+
+        var rows = _list.ItemCount;
+        var tall = _list.Bounds.Height;
+
+        // Not laid out yet — the next pass answers. An empty list has nothing to measure and is
+        // settled at once.
+        if (rows > 0 && tall <= 0) return;
+
+        _list.LayoutUpdated -= OnListLaidOut;
+        Settle(rows, tall);
+    }
+
+    /// <summary>
+    /// Sizes the open list from what it measured, then shows it and gives it the keyboard.
+    ///
+    /// ⚠ The row height handed to the socle is the list's own height divided by its rows, padding
+    /// included: the rule "never taller than the list" then gives exactly the list, and "needs a
+    /// search" is exactly "does not fit". A per-row figure without the padding would leave a
+    /// scrollbar for the last few pixels.
+    /// </summary>
+    private void Settle(int rows, double tall)
+    {
+        var room = TopLevel.GetTopLevel(this)?.ClientSize.Height ?? 0;
+        var row = rows > 0 ? tall / rows : 0;
+
+        _scroll.MaxHeight = rows > 0 ? DropdownFit.Height(rows, row, room) : 0;
+        _search.IsVisible = DropdownFit.NeedsSearch(rows, row, room);
+
+        _shell.Opacity = 1;
+
+        // ⚠ The search field takes the keyboard when there is one — a search field that needs
+        // clicking before it accepts a letter is a search field nobody uses. And the LIST takes it
+        // when there is none, or the arrows would do nothing until somebody had clicked a row.
+        // Posted: the field was just made visible and is not laid out yet.
+        //
+        // ⚠ The row in force is brought into view HERE too: Refill asked for it while the list had
+        // no height limit yet, when there was nothing to scroll — landing at the top of a hundred
+        // and eighty languages instead of on the one chosen.
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_selected is not null && _list.ItemsSource is IList<object> shown && shown.Contains(_selected))
+                _list.ScrollIntoView(_selected);
+
+            if (_search.IsVisible) _search.Focus(); else _list.Focus();
+        }, DispatcherPriority.Loaded);
+    }
 
     /// <summary>
     /// Lets go of the wheel and of the edge, however the list was closed.
@@ -262,6 +310,9 @@ public sealed class SearchPicker : UserControl
     private void OnClosed(object? sender, EventArgs e)
     {
         PopupWheel.Drop(this);
+
+        // Closed before its first layout (a click on the face twice in a row): nothing to settle.
+        _list.LayoutUpdated -= OnListLaidOut;
 
         // ⚠ And the edge is handed back rather than left leaning. The list is torn down with the
         // popup, so nothing would ever draw the spring's return — and the next time it opened it

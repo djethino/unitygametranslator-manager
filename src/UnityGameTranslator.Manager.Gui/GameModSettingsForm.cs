@@ -375,7 +375,7 @@ public sealed class GameModSettingsForm
         // answers go instead.
         if (!_installed)
         {
-            var later = Note("Written into the game when the mod is installed.");
+            var later = Note("Written into the game when UGT Mod is installed.");
             later.Margin = new Avalonia.Thickness(0, 6, 0, 0);
             later.HorizontalAlignment = HorizontalAlignment.Right;
             _host.Children.Add(later);
@@ -727,7 +727,7 @@ public sealed class GameModSettingsForm
 
         _modOnline = new CheckBox
         {
-            Content = "Allow the mod to go online",
+            Content = "Allow UGT Mod to go online",
             IsChecked = EffectiveFlag(o => o.ModOnlineMode, _defaults.ModOnlineMode),
             FontSize = 12,
         };

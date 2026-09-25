@@ -10,6 +10,7 @@ using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
 using UnityGameTranslator.Manager.Core.Settings;
 using UnityGameTranslator.Manager.Core.Update;
+using static UnityGameTranslator.Manager.Gui.Ui;
 
 namespace UnityGameTranslator.Manager.Gui;
 
@@ -120,7 +121,7 @@ public sealed class ToolSettingsWindow : Window
             UnityDownloadNoticeRead = current.UnityDownloadNoticeRead,
         };
 
-        Title = "Settings — this tool";
+        Title = "UGT Manager settings";
 
         // Tall enough for both cards without a scrollbar in the ordinary case: a bar that appears
         // to reveal two lines is more noticeable than the two lines are worth. The scroller stays
@@ -138,16 +139,10 @@ public sealed class ToolSettingsWindow : Window
     {
         var layout = new StackPanel { Spacing = 16, Margin = new Thickness(24) };
 
-        // Named once, at the top, so every card below can go on saying "this tool" without anyone
-        // having to work out which of the two programs is meant.
-        layout.Children.Add(new TextBlock
-        {
-            Text = "These are about UnityGameTranslator Manager itself — this program. What gets "
-                 + "written into your games is under Mod defaults.",
-            FontSize = 12,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Brush("TextSecondary"),
-        });
+        // Named once, at the top, so nobody has to work out which of the programs is meant — and
+        // pointing at the other screen, since the two are easy to mistake for each other.
+        layout.Children.Add(Intro(
+            "Settings for UnityGameTranslator Manager itself. What goes into your games is in Mod defaults."));
 
         // ⚠ **Ordered by subject, and the order is the argument.** Who you are · what gets
         // updated and when · what gets installed into games · how the network is reached · where
@@ -224,9 +219,9 @@ public sealed class ToolSettingsWindow : Window
         _accountPanel = new StackPanel { Spacing = 10 };
         ShowAccount();
 
-        return Card("Your community account",
-            "Optional. Published translations can be taken without one — this is for reaching your "
-            + "own work, and for sharing what you translate.",
+        return Card("Account",
+            "Optional. Needed to publish translations and to find your own on UGT Website. "
+            + "Downloading works without an account.",
             _accountPanel);
     }
 
@@ -238,7 +233,7 @@ public sealed class ToolSettingsWindow : Window
         if (settings.SignedIn)
         {
             _accountPanel.Children.Add(Note($"Signed in as {settings.ApiUser ?? "your account"}.",
-                "StatusSuccess"));
+                Tone.Success));
 
             // 🔴 The code this access carries on the account's "Linked devices" page. That page
             // names every line "#QKADJN" and offers to rename the machine it belongs to — while the
@@ -253,7 +248,7 @@ public sealed class ToolSettingsWindow : Window
             var accessToken = settings.ApiToken;
             if (!string.IsNullOrWhiteSpace(accessToken))
             {
-                var codeRow = Note("", "TextMuted");
+                var codeRow = Note("");
                 codeRow.IsVisible = false;
                 _accountPanel.Children.Add(codeRow);
 
@@ -263,13 +258,13 @@ public sealed class ToolSettingsWindow : Window
 
                     if (string.IsNullOrEmpty(code)) return;
 
-                    codeRow.Text = $"This access is #{code} on Linked devices.";
+                    codeRow.Text = $"Shown as #{code} in Linked devices on UGT Website.";
                     codeRow.IsVisible = true;
                 });
             }
 
             var signOut = new Button { Content = "Sign out", FontSize = 12 };
-            var signOutNote = Note("Signing out hands this tool's access back to the site.", "TextMuted");
+            var signOutNote = Note("Signing out also removes this device from your account.");
 
             signOut.Click += async (_, _) =>
             {
@@ -297,8 +292,8 @@ public sealed class ToolSettingsWindow : Window
                     // Said, not swallowed: the access is still live and the only way to cut it now
                     // is from the site.
                     _accountPanel.Children.Add(Note(
-                        "Signed out here, but the site could not be reached. Cut this access from "
-                        + "Linked devices on your account.", "StatusWarning"));
+                        "Signed out, but UGT Website could not be reached. Remove this device in "
+                        + "Linked devices on your account.", Tone.Warning));
                 }
             };
 
@@ -326,7 +321,7 @@ public sealed class ToolSettingsWindow : Window
         var token = _signIn.Token;
 
         _accountPanel.Children.Clear();
-        _accountPanel.Children.Add(new SpinningGear("Asking the site for a code..."));
+        _accountPanel.Children.Add(new SpinningGear("Getting a sign-in code..."));
 
         var client = new DeviceFlowClient();
         var start = await client.BeginAsync(token);
@@ -335,8 +330,8 @@ public sealed class ToolSettingsWindow : Window
         {
             _accountPanel.Children.Clear();
             _accountPanel.Children.Add(Note(
-                "Could not reach the site to start signing in. A firewall or a proxy blocking this "
-                + "program looks exactly like this — nothing was changed.", "StatusError"));
+                "Could not reach UGT Website. A firewall or proxy may be blocking UGT Manager.",
+                Tone.Error));
 
             var again = new Button { Content = "Try again", FontSize = 12 };
             again.Click += async (_, _) => await SignInAsync();
@@ -345,9 +340,9 @@ public sealed class ToolSettingsWindow : Window
         }
 
         _accountPanel.Children.Clear();
-        _accountPanel.Children.Add(Note(
-            $"Open {start.VerificationUri} while signed in to your account, and enter this code:",
-            "TextSecondary"));
+        // The instruction the whole wait depends on: the card's reading size, not a note's.
+        _accountPanel.Children.Add(Intro(
+            $"Open {start.VerificationUri}, sign in to your account, and enter this code:"));
 
         // A field rather than a label: a code has to be selectable, and reading one off a screen
         // to retype it is exactly where a character goes missing.
@@ -381,7 +376,7 @@ public sealed class ToolSettingsWindow : Window
             Glyphs.SetLabel(copy, "Copy");
         };
 
-        var open = Glyphs.Button(Glyphs.Site(), "Open the page");
+        var open = Glyphs.Button(Glyphs.Site(), "Open page");
         open.Click += (_, _) => OpenUrl(start.VerificationUri);
 
         var row = new StackPanel
@@ -393,7 +388,7 @@ public sealed class ToolSettingsWindow : Window
 
         _accountPanel.Children.Add(row);
 
-        var waiting = new SpinningGear("Waiting for you to enter it...");
+        var waiting = new SpinningGear("Waiting for the code to be entered...");
         _accountPanel.Children.Add(waiting);
 
         var cancel = new Button { Content = "Cancel", FontSize = 12 };
@@ -407,7 +402,7 @@ public sealed class ToolSettingsWindow : Window
         {
             waiting.IsVisible = false;
             cancel.Content = "Start over";
-            if (result.Failure is not null) _accountPanel.Children.Add(Note(result.Failure, "StatusWarning"));
+            if (result.Failure is not null) _accountPanel.Children.Add(Note(result.Failure, Tone.Warning));
             return;
         }
 
@@ -428,50 +423,52 @@ public sealed class ToolSettingsWindow : Window
     private Control NetworkCard()
     {
         _proxyMode = new SearchPicker { Width = 310 };
-        _proxyMode.Items.Add(new Choice("default", "Normal (whatever this computer uses)"));
-        _proxyMode.Items.Add(new Choice("system", "Follow the system proxy settings"));
-        _proxyMode.Items.Add(new Choice("none", "Never use a proxy"));
-        _proxyMode.Items.Add(new Choice("custom", "Use this proxy"));
+        // The words every browser's connection settings use. "default" leaves .NET to pick up the
+        // machine's configuration; "system" reads the system proxy explicitly (Http.cs).
+        _proxyMode.Items.Add(new Choice("default", "Automatic"));
+        _proxyMode.Items.Add(new Choice("system", "Use system proxy settings"));
+        _proxyMode.Items.Add(new Choice("none", "No proxy"));
+        _proxyMode.Items.Add(new Choice("custom", "Manual proxy"));
         Select(_proxyMode, _draft.ProxyMode);
 
         _proxyUrl = new TextBox { Width = 300, Watermark = "http://proxy.company.com:8080", Text = _draft.ProxyUrl ?? "" };
-        _proxyUser = new TextBox { Width = 300, Watermark = "only if your proxy asks for it", Text = _draft.ProxyUsername ?? "" };
+        _proxyUser = new TextBox { Width = 300, Watermark = "Optional", Text = _draft.ProxyUsername ?? "" };
         _proxyPassword = new TextBox { Width = 300, PasswordChar = '*', Text = _draft.ProxyPassword ?? "" };
 
         _proxyInGames = new CheckBox
         {
-            Content = "Use it in your games too",
+            Content = "Also use this proxy in games",
             IsChecked = _draft.ProxyInGames,
         };
 
+        // ⚠ The box and its note sit INSIDE the manual-proxy fields: they only mean something about a
+        // proxy we name. The note used to stand outside, and stayed on screen explaining a box that
+        // was hidden.
         _proxyFields = new StackPanel { Spacing = 10, IsVisible = Tag(_proxyMode) == "custom" };
         _proxyFields.Children.Add(Row("Address", _proxyUrl));
         _proxyFields.Children.Add(Row("Username", _proxyUser));
         _proxyFields.Children.Add(Row("Password", _proxyPassword));
-        _proxyFields.Children.Add(Note(
-            "The password is stored encrypted and tied to this machine, like every other secret here.",
-            "TextMuted"));
+        _proxyFields.Children.Add(Note("The password is stored encrypted on this machine."));
+        _proxyFields.Children.Add(_proxyInGames);
+        _proxyFields.Children.Add(Note("Untick it if your games reach the internet another way."));
 
         _proxyMode.SelectionChanged += (_, _) => ShowProxyFields();
 
-        _netStatus = Note("", "TextMuted");
+        _netStatus = Note("");
         _netStatus.IsVisible = false;
 
-        var test = new Button { Content = "Test the connection", FontSize = 12 };
+        var test = new Button { Content = "Test connection", FontSize = 12 };
         test.Click += async (_, _) =>
         {
             test.IsEnabled = false;
-            _netStatus.IsVisible = true;
-            _netStatus.Text = "Trying...";
-            _netStatus.Foreground = Brush("TextMuted");
+            Ui.Say(_netStatus, "Testing...");
 
             // Applied before testing, not on save: testing anything other than what is on screen
             // answers a question nobody asked. Cancel still restores what was stored.
             SettingsStore.ApplyNetworkSettings(Collect());
 
             var (ok, detail) = await TestNetworkAsync();
-            _netStatus.Text = detail;
-            _netStatus.Foreground = Brush(ok ? "StatusSuccess" : "StatusError");
+            Ui.Say(_netStatus, detail, ok ? Tone.Success : Tone.Error);
             test.IsEnabled = true;
         };
 
@@ -493,28 +490,21 @@ public sealed class ToolSettingsWindow : Window
         // online, the first-run window offers Work online or Stay offline — one word for one thing.
         _online = new CheckBox { Content = "Work online", IsChecked = _draft.OnlineMode };
 
+        // ⚠ What is sent is said (game names or Steam IDs): it is the privacy fact this box decides.
         var panel = new StackPanel { Spacing = 10 };
         panel.Children.Add(_online);
         panel.Children.Add(Note(
-            "On, this tool asks the site whether a translation exists for the games found here, "
-            + "sending their names or Steam ids, and checks which loaders and versions have been "
-            + "published. Off, it never asks anyone anything: it still finds your games, installs "
-            + "the mod and manages what is already on this machine.", "TextMuted"));
-        panel.Children.Add(Note(
-            "It does not stop the mod from going online — that switch is under Mod defaults.",
-            "TextMuted"));
+            "On: UGT Manager asks UGT Website for translations of your games (it sends their names "
+            + "or Steam IDs) and checks for new versions. Off: nothing is sent. Finding games, "
+            + "installing UGT Mod and managing local files still work."));
+        panel.Children.Add(Note("This does not affect UGT Mod in games. That setting is in Mod defaults."));
         panel.Children.Add(Row("Connection", _proxyMode, test));
-        panel.Children.Add(_proxyFields);
-        panel.Children.Add(_proxyInGames);
         panel.Children.Add(Note(
-            "A proxy is usually a fact about the network, so the same one serves the mod. Untick it "
-            + "if your games reach the internet another way.", "TextMuted"));
+            "Change it only if UGT Manager cannot connect. Company networks often need a proxy."));
+        panel.Children.Add(_proxyFields);
         panel.Children.Add(_netStatus);
 
-        return Card("Network",
-            "Only worth touching if nothing reaches the internet. A company network usually needs a "
-            + "proxy here; at home, a firewall prompt is the more likely culprit.",
-            panel);
+        return Card("Network", null, panel);
     }
 
     private void ShowProxyFields()
@@ -536,8 +526,8 @@ public sealed class ToolSettingsWindow : Window
 
             return response.IsSuccessStatusCode
                 ? (true, "Connected. Downloads and community translations will work.")
-                : (false, $"Reached the server, which answered {(int)response.StatusCode}. "
-                        + "A proxy that intercepts requests often does this.");
+                : (false, $"The server answered with error {(int)response.StatusCode}. "
+                        + "A proxy may be blocking the request.");
         }
         catch (Exception ex)
         {
@@ -616,10 +606,10 @@ public sealed class ToolSettingsWindow : Window
         // neither option is the safe one and the reader has to be told.
         panel.Children.Add(Note(
             "BepInEx 6 has no stable release. Its GitHub page stopped in 2024; Bleeding Edge is "
-            + "where development continues. UGT works with either.", "TextMuted"));
+            + "where development continues. UGT Mod works with either."));
         // The one fact worth a line: it is not retroactive. Which loaders it concerns is
         // answered by the label on the field itself.
-        panel.Children.Add(Note("Games already set up are not changed.", "TextMuted"));
+        panel.Children.Add(Note("Games already set up are not changed."));
 
         // 🔴 **The two source warnings, said in full once, and here to see them again** (user,
         // 2026-09-21: « dans settings on laisse la possibilité de cocher/décocher ? »). Ticked means
@@ -640,16 +630,10 @@ public sealed class ToolSettingsWindow : Window
             FontSize = 12,
         };
         panel.Children.Add(_showUnityNotice);
-        panel.Children.Add(Note("Both are shown once, then only the source is named.", "TextMuted"));
+        panel.Children.Add(Note("Each is shown in full once. After that, only the source is named."));
 
         // Filled in as the answers arrive, so the screen is readable before the network is.
-        var dates = new TextBlock
-        {
-            FontSize = 11,
-            Opacity = 0.6,
-            TextWrapping = TextWrapping.Wrap,
-            Text = "Asking BepInEx what each channel currently offers...",
-        };
+        var dates = Note("Checking the latest BepInEx 6 versions...");
         panel.Children.Add(dates);
 
         _ = ShowChannelDatesAsync(dates);
@@ -667,7 +651,8 @@ public sealed class ToolSettingsWindow : Window
     private SearchPicker LoaderChoice(string runtime)
     {
         var box = new SearchPicker { Width = 320 };
-        box.Items.Add(new Choice("", "Let the catalog decide"));
+        // "Automatic": the catalog's own order decides, and "catalog" is a word of ours.
+        box.Items.Add(new Choice("", "Automatic"));
 
         foreach (var loader in _catalog?.Loaders ?? new List<LoaderDescriptor>())
         {
@@ -693,7 +678,7 @@ public sealed class ToolSettingsWindow : Window
 
         if (loader is null)
         {
-            target.Text = "The catalog holds no BepInEx 6 entry, so nothing can be offered here.";
+            Ui.Say(target, "BepInEx 6 is missing from the loader list.", Tone.Warning);
             return;
         }
 
@@ -722,7 +707,7 @@ public sealed class ToolSettingsWindow : Window
 
         panel.Children.Add(new TextBlock
         {
-            Text = $"You are running {SelfUpdater.CurrentVersion}.",
+            Text = $"Current version: {SelfUpdater.CurrentVersion}",
             FontSize = 12,
             Foreground = Brush("TextPrimary"),
         });
@@ -733,23 +718,24 @@ public sealed class ToolSettingsWindow : Window
         if (SelfUpdater.UnusualReleaseHost is { } host)
         {
             panel.Children.Add(Note(
-                $"This build looks for its updates at {host}, not at GitHub. That is either a "
-                + "self-hosted setup or a build made for testing.", "StatusWarning"));
+                $"This build checks for updates at {host} instead of GitHub (self-hosted or test build).",
+                Tone.Warning));
         }
 
+        // The same two words as UGT Mod's channel in Mod defaults (ModSettingControls.ChannelPicker).
         _toolChannel = new SearchPicker { Width = 220 };
-        _toolChannel.Items.Add(new Choice("stable", "Stable releases"));
-        _toolChannel.Items.Add(new Choice("beta", "Also test builds (beta)"));
+        _toolChannel.Items.Add(new Choice("stable", "Stable"));
+        _toolChannel.Items.Add(new Choice("beta", "Beta (test releases)"));
         Select(_toolChannel, _draft.ToolChannel);
 
-        panel.Children.Add(Row("Updates", _toolChannel));
-        panel.Children.Add(Note(
-            "This is about UnityGameTranslator Manager itself. Which build of the mod goes into "
-            + "your games is under Mod defaults, and the two are separate on purpose.", "TextMuted"));
+        // Separate from UGT Mod's channel on purpose: a beta of this program misbehaves while you
+        // watch it, a beta of the mod meets you mid-game.
+        panel.Children.Add(Row("Update channel", _toolChannel));
+        panel.Children.Add(Note("For UGT Manager only. UGT Mod has its own update channel in Mod defaults."));
 
         _checkToolUpdates = new CheckBox
         {
-            Content = "Look for a new version of UGT Manager when it starts",
+            Content = "Check for UGT Manager updates at startup",
             IsChecked = _draft.CheckToolUpdates,
             FontSize = 12,
         };
@@ -761,13 +747,12 @@ public sealed class ToolSettingsWindow : Window
         // other — the same reasoning that keeps the two update channels apart.
         _checkContentUpdates = new CheckBox
         {
-            Content = "Look for newer mod and loader builds when it starts",
+            Content = "Check for UGT Mod and loader updates at startup",
             IsChecked = _draft.CheckContentUpdates,
             FontSize = 12,
         };
         panel.Children.Add(_checkContentUpdates);
-        panel.Children.Add(Note(
-            "Without it, cards cannot show which version they would install.", "TextMuted"));
+        panel.Children.Add(Note("Without it, game pages cannot show which version would be installed."));
 
         var check = new Button { Content = "Check now", FontSize = 12 };
         check.HorizontalAlignment = HorizontalAlignment.Left;
@@ -803,18 +788,18 @@ public sealed class ToolSettingsWindow : Window
 
             case SelfUpdateState.UpToDate:
                 _updatePanel.Children.Clear();
-                _updatePanel.Children.Add(Note(result.Message ?? "You are up to date.", "StatusSuccess"));
+                _updatePanel.Children.Add(Note(result.Message ?? "UGT Manager is up to date.", Tone.Success));
                 break;
 
             default:
                 // Failing to look is not the same as having nothing to find, and it never reads as
-                // if it were. The network card is right below, and Check now is the way back.
+                // if it were. The Network card is named — it is further down — and Check now is the
+                // way back.
                 _updatePanel.Children.Clear();
                 _updatePanel.Children.Add(Note(
-                    (result.Message ?? "Could not check.")
-                    + " A firewall, an antivirus or a company proxy blocking this tool looks "
-                    + "exactly like this. Let it through and press Check now, or set up a proxy "
-                    + "below.", "StatusError"));
+                    (result.Message ?? "Could not check for updates.")
+                    + " A firewall, antivirus or proxy may be blocking UGT Manager. Allow it, then "
+                    + "click Check now, or set a proxy under Network.", Tone.Error));
                 break;
         }
     }
@@ -823,7 +808,7 @@ public sealed class ToolSettingsWindow : Window
     {
         _updatePanel.Children.Clear();
 
-        var waiting = new SpinningGear("Asking GitHub what the latest version is...");
+        var waiting = new SpinningGear("Checking for updates...");
         _updatePanel.Children.Add(waiting);
         trigger.IsEnabled = false;
 
@@ -847,9 +832,9 @@ public sealed class ToolSettingsWindow : Window
     {
         _updatePanel.Children.Clear();
 
-        var headline = $"Version {offer.NewVersion} is out"
+        var headline = $"Version {offer.NewVersion} is available"
                        + (offer.IsPrerelease ? " (beta)" : "")
-                       + (offer.PublishedAt is { } date ? $", published {date:d MMMM yyyy}" : "")
+                       + (offer.PublishedAt is { } date ? $", released {date:d MMMM yyyy}" : "")
                        + ".";
 
         _updatePanel.Children.Add(new TextBlock
@@ -860,7 +845,7 @@ public sealed class ToolSettingsWindow : Window
             Foreground = Brush("TextPrimary"),
         });
 
-        var notes = new Button { Content = "What changed", FontSize = 12 };
+        var notes = new Button { Content = "Release notes", FontSize = 12 };
         notes.Click += (_, _) => OpenUrl(offer.ReleasePageUrl);
 
         // Said before anything is downloaded rather than after: someone keeping the tool where they
@@ -868,7 +853,7 @@ public sealed class ToolSettingsWindow : Window
         var updater = new SelfUpdater(_platform);
         if (updater.WhyCannotApply() is { } blocked)
         {
-            _updatePanel.Children.Add(Note(blocked, "StatusWarning"));
+            _updatePanel.Children.Add(Note(blocked, Tone.Warning));
             _updatePanel.Children.Add(notes);
             return;
         }
@@ -882,7 +867,7 @@ public sealed class ToolSettingsWindow : Window
         };
 
         // Where a failure is said once the veil is down — beside the button that can try again.
-        var progress = Note("", "TextMuted");
+        var progress = Note("");
 
         // 🔴 Subscribed ONCE, outside the click. It was added inside it, so every retry after a
         // failure stacked one more handler and each chunk was reported that many times over.
@@ -908,14 +893,13 @@ public sealed class ToolSettingsWindow : Window
                 var result = await Task.Run(() => updater.ApplyAsync(offer));
 
                 _updatePanel.Children.Clear();
+                // The version in use is kept beside the new one until the restart (SelfUpdater).
                 _updatePanel.Children.Add(Note(
-                    $"Updated to {result.Version}. Close the tool and open it again to run it — "
-                    + "the version you were using is kept beside it until then.", "StatusSuccess"));
+                    $"Updated to {result.Version}. Restart UGT Manager to use it.", Tone.Success));
             }
             catch (Exception ex)
             {
-                progress.Text = ex.Message;
-                progress.Foreground = Brush("StatusError");
+                Ui.Say(progress, ex.Message, Tone.Error);
             }
             finally
             {
@@ -961,15 +945,15 @@ public sealed class ToolSettingsWindow : Window
                 Foreground = Brush("TextPrimary"),
             });
 
-            panel.Children.Add(Note(plan.SourceExecutable, "TextMuted"));
+            panel.Children.Add(Note(plan.SourceExecutable));
 
             if (plan.Refusal is { } refusal)
             {
-                panel.Children.Add(Note(refusal, "StatusWarning"));
+                panel.Children.Add(Note(refusal, Tone.Warning));
             }
             else
             {
-                var keep = new Button { Content = "Install it on this machine", FontSize = 12 };
+                var keep = new Button { Content = "Install on this computer", FontSize = 12 };
                 keep.HorizontalAlignment = HorizontalAlignment.Left;
                 keep.Click += async (_, _) =>
                 {
@@ -983,7 +967,7 @@ public sealed class ToolSettingsWindow : Window
                 panel.Children.Add(keep);
             }
 
-            return Card("Where this tool lives", null, panel);
+            return Card("Installation", null, panel);
         }
 
         var state = installer.Inspect();
@@ -991,23 +975,23 @@ public sealed class ToolSettingsWindow : Window
         panel.Children.Add(new TextBlock
         {
             Text = state.NeedsRepair
-                ? "Installed on this machine, but pieces of it are missing."
+                ? "Installed on this computer, but some files are missing."
                 : installer.RunningTheInstalledCopy()
-                    ? "Installed on this machine, and this is that copy."
-                    : "Installed on this machine — but this window is another copy of it.",
+                    ? "Installed on this computer."
+                    : "Installed on this computer, but you are running another copy.",
             FontSize = 12,
             Foreground = Brush("TextPrimary"),
         });
 
-        panel.Children.Add(Note(installed.Directory, "TextMuted"));
+        panel.Children.Add(Note(installed.Directory));
 
         // Named one by one, because "something is missing" leaves nobody able to judge whether it
         // matters to them.
         if (state.NeedsRepair)
         {
-            panel.Children.Add(Note("Missing: " + string.Join(", ", state.Missing), "StatusWarning"));
+            panel.Children.Add(Note("Missing: " + string.Join(", ", state.Missing), Tone.Warning));
 
-            var repair = new Button { Content = "Repair the installation...", FontSize = 12 };
+            var repair = new Button { Content = "Repair...", FontSize = 12 };
             repair.HorizontalAlignment = HorizontalAlignment.Left;
             repair.Click += async (_, _) =>
             {
@@ -1024,11 +1008,11 @@ public sealed class ToolSettingsWindow : Window
             // Worth saying because it changes what every other button here means: an update applied
             // from this window lands on the file in front of them, not on the one in their menu.
             panel.Children.Add(Note(
-                "Anything you change or update here applies to the copy you are running, not to "
-                + "the installed one.", "StatusWarning"));
+                "Changes and updates apply to the copy you are running, not to the installed one.",
+                Tone.Warning));
         }
 
-        var remove = new Button { Content = "Remove this tool...", FontSize = 12 };
+        var remove = new Button { Content = "Uninstall...", FontSize = 12 };
         remove.HorizontalAlignment = HorizontalAlignment.Left;
         remove.Click += async (_, _) =>
         {
@@ -1039,7 +1023,7 @@ public sealed class ToolSettingsWindow : Window
 
         panel.Children.Add(remove);
 
-        return Card("Where this tool lives", null, panel);
+        return Card("Installation", null, panel);
     }
 
     /// <summary>
@@ -1056,27 +1040,22 @@ public sealed class ToolSettingsWindow : Window
         var panel = new StackPanel { Spacing = 8 };
         var folder = _platform.UserDataDirectory;
 
-        panel.Children.Add(Note(
-            "Everything this tool remembers is in one folder: your settings, the folders you "
-            + "added, the games you overruled, the catalogues it caches, and the translations it "
-            + "moved aside before replacing one. Deleting it puts the tool back to how it "
-            + "arrived — it touches nothing in your games.", "TextSecondary"));
+        // ⚠ The backups are named: deleting the folder resets the tool AND loses them, and that is
+        // the one consequence somebody about to delete it must read.
+        panel.Children.Add(Intro(
+            "UGT Manager keeps all its data in this folder: settings, added folders, choices made "
+            + "for each game, cached lists and translation backups. Deleting it resets UGT Manager "
+            + "and deletes those backups. Your games are not changed."));
 
-        panel.Children.Add(new TextBlock
-        {
-            Text = folder,
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Brush("TextMuted"),
-        });
+        panel.Children.Add(Note(folder));
 
-        var open = Glyphs.Button(Glyphs.Folder(), "Open this folder");
+        var open = Glyphs.Button(Glyphs.Folder(), "Open folder");
         open.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left;
         open.Click += (_, _) => Shell.OpenFolder(folder);
 
         panel.Children.Add(open);
 
-        return Card("This tool's files", null, panel);
+        return Card("Data folder", null, panel);
     }
 
     // ---------------------------------------------------------------- saving
@@ -1150,7 +1129,7 @@ public sealed class ToolSettingsWindow : Window
         Compare("proxy username", _proxyUser.Text, saved.ProxyUsername);
         Compare("proxy password", _proxyPassword.Text, saved.ProxyPassword);
 
-        Compare("this tool's update channel", Tag(_toolChannel), saved.ToolChannel);
+        Compare("UGT Manager update channel", Tag(_toolChannel), saved.ToolChannel);
         Compare("BepInEx 6 builds", Tag(_bepinex6Channel), saved.BepInEx6Channel);
         Compare("preferred loader on Mono", Blank(Tag(_preferMono)), saved.PreferredLoaderMono);
         Compare("preferred loader on IL2CPP", Blank(Tag(_preferIl2cpp)), saved.PreferredLoaderIl2cpp);
@@ -1158,9 +1137,9 @@ public sealed class ToolSettingsWindow : Window
         if ((_proxyInGames.IsChecked == true) != saved.ProxyInGames) changes.Add("proxy in games");
         if ((_online.IsChecked == true) != saved.OnlineMode) changes.Add("work online");
         if ((_checkToolUpdates.IsChecked == true) != saved.CheckToolUpdates)
-            changes.Add("look for updates to UGT Manager");
+            changes.Add("check for UGT Manager updates");
         if ((_checkContentUpdates.IsChecked == true) != saved.CheckContentUpdates)
-            changes.Add("look for newer mod and loader builds");
+            changes.Add("check for UGT Mod and loader updates");
         if ((_showLocalCopyNotice.IsChecked != true) != saved.LocalCopyNoticeRead)
             changes.Add("warning before copying from another game");
         if ((_showUnityNotice.IsChecked != true) != saved.UnityDownloadNoticeRead)
@@ -1225,70 +1204,8 @@ public sealed class ToolSettingsWindow : Window
     /// </summary>
     private static void OpenUrl(string url) => Shell.OpenUrl(url);
 
-    /// <summary>Through Palette, which will not let an unknown key pass unnoticed.</summary>
-    private static IBrush? Brush(string key) => Palette.Of(key);
-
     private static string? Tag(SearchPicker box) => ModSettingControls.Tag(box);
 
     private static void Select(SearchPicker box, string? value) =>
         ModSettingControls.Select(box, value);
-
-    private static TextBlock Note(string text, string colour) => new()
-    {
-        Text = text,
-        FontSize = 11,
-        TextWrapping = TextWrapping.Wrap,
-        Foreground = Brush(colour),
-    };
-
-    private static Control Row(string label, params Control[] controls)
-    {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-        row.Children.Add(new TextBlock
-        {
-            Text = label,
-            Width = 130,
-            FontSize = 12,
-            VerticalAlignment = VerticalAlignment.Center,
-            Foreground = Brush("TextMuted"),
-        });
-        foreach (var control in controls) row.Children.Add(control);
-        return row;
-    }
-
-    private static Control Card(string title, string? intro, Control content)
-    {
-        var body = new StackPanel { Spacing = 10 };
-
-        body.Children.Add(new TextBlock
-        {
-            Text = title,
-            FontWeight = FontWeight.SemiBold,
-            FontSize = 14,
-            Foreground = Brush("TextPrimary"),
-        });
-
-        if (intro is not null)
-        {
-            body.Children.Add(new TextBlock
-            {
-                Text = intro,
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = Brush("TextMuted"),
-            });
-        }
-
-        body.Children.Add(content);
-
-        return new Border
-        {
-            Background = Brush("SurfaceCard"),
-            BorderBrush = Brush("BorderSubtle"),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(16),
-            Child = body,
-        };
-    }
 }

@@ -219,8 +219,9 @@ public sealed class SettingsWindow : Window
         // ⚠ "When everything is filled in": the wizard is only skipped when every answer it asks for
         // is here (InstallerSettings.AnswersTheWizard) — a partial setup still lets it run.
         layout.Children.Add(Intro(
-            "Written into every game you set up. When everything here is filled in, the mod skips "
-            + "its first-run questions. Games already set up are not changed unless you ask."));
+            "Written into every game you set up. When everything on this screen is filled in, "
+            + "UGT Mod skips its first-run questions. Games already set up are not changed unless "
+            + "you ask."));
 
         layout.Children.Add(LanguageCard());
         layout.Children.Add(BackendCard());
@@ -383,7 +384,7 @@ public sealed class SettingsWindow : Window
 
         var panel = new StackPanel { Spacing = 10 };
         panel.Children.Add(_checkModUpdates);
-        panel.Children.Add(Note("The mod is only updated from the Manager, after you confirm."));
+        panel.Children.Add(Note("UGT Mod is only updated from UGT Manager, after you confirm."));
         panel.Children.Add(_notifyUpdates);
         panel.Children.Add(_autoDownload);
         panel.Children.Add(Row("When both changed", _mergeStrategy));
@@ -770,7 +771,7 @@ public sealed class SettingsWindow : Window
         // The intro says what the card is for; that the checks can be wrong belongs there, before
         // anyone reads a verdict — they are heuristics over free text (see RunSuiteAsync).
         return Card("Test this model",
-            "Sends the model the same requests the mod makes, from easy to hard, and shows each "
+            "Sends the model the same requests UGT Mod makes, from easy to hard, and shows each "
             + "answer. The checks can be wrong: read the answers too.",
             panel);
     }
@@ -803,7 +804,7 @@ public sealed class SettingsWindow : Window
         // translation included, has what they need before the game starts.
         _modOnline = new CheckBox
         {
-            Content = "Allow the mod to go online",
+            Content = "Allow UGT Mod to go online",
             IsChecked = _draft.ModOnlineMode,
         };
 
@@ -817,12 +818,12 @@ public sealed class SettingsWindow : Window
         panel.Children.Add(Row("Update channel", _channel));
         panel.Children.Add(_modOnline);
         panel.Children.Add(Note(
-            "Off: the mod stays offline in the game. No update notices, no community translations. "
+            "Off: UGT Mod stays offline in the game. No update notices, no community translations. "
             + "What is already installed keeps working."));
 
         // The hotkey is asked here because the mod's first-run wizard asks for it — the window's
         // intro says when that wizard is skipped.
-        return Card("In the game", "The hotkey opens the mod's panel in the game.", panel);
+        return Card("In the game", "The hotkey opens the UGT Mod panel in the game.", panel);
     }
 
     // ---------------------------------------------------------------- AI
@@ -1897,7 +1898,7 @@ public sealed class SettingsWindow : Window
 
             // The ceiling is the mod's own (Placeholders.MaxAttempts), never a number typed here.
             _testOutput.Children.Add(Note(
-                $"From {from.Language} into {Languages.NameOf(language)}, like the mod: up to "
+                $"From {from.Language} into {Languages.NameOf(language)}, like UGT Mod: up to "
                 + $"{Placeholders.MaxAttempts} attempts per line, then the line is left untranslated. "
                 + "The times are what you would wait in the game."));
 
@@ -1937,7 +1938,7 @@ public sealed class SettingsWindow : Window
 
                         // Both must pass: refusing invented words while still translating other
                         // real languages is not what the option promises.
-                        var aside = Note("These two only decide whether the mod's 'strict_source' "
+                        var aside = Note("These two only decide whether UGT Mod's 'strict_source' "
                                          + "option works with this model. It is off by default, so "
                                          + "\"cannot\" is not a failure. Both must pass.");
                         aside.Margin = new Thickness(0, 0, 0, 4);
@@ -2008,7 +2009,7 @@ public sealed class SettingsWindow : Window
             if (helped > 0)
             {
                 _testOutput.Children.Add(Note(
-                    $"{Composition.Amount(helped, "test", "tests")} passed only after the mod fixed "
+                    $"{Composition.Amount(helped, "test", "tests")} passed only after UGT Mod fixed "
                     + "the answer."));
             }
 
@@ -2041,7 +2042,7 @@ public sealed class SettingsWindow : Window
                 // Reason enough on its own: the mod puts what comes back into the game, word for word.
                 _testOutput.Children.Add(Note(
                     $"{Composition.Amount(echoed, "answer", "answers")} repeated the instructions. "
-                    + "Avoid this model: the mod shows its answers in the game as they are.",
+                    + "Avoid this model: UGT Mod shows its answers in the game as they are.",
                     Tone.Warning));
             }
 
@@ -2103,12 +2104,12 @@ public sealed class SettingsWindow : Window
                     : $"{result.Attempts} request (no retry)");
 
         if (!result.Accepted) cost += " · failed, left untranslated";
-        else if (result.Repaired) cost += " · fixed by the mod";
+        else if (result.Repaired) cost += " · fixed by UGT Mod";
 
         // Not a failure: the mod takes this off before a player sees it. Said because it is a
         // habit rather than an accident — a model that wraps one answer wraps them all, and that
         // separates two models that both pass.
-        if (result.NeededCleaning) cost += " · extra text removed by the mod";
+        if (result.NeededCleaning) cost += " · extra text removed by UGT Mod";
 
         var costText = new TextBlock
         {
@@ -2192,8 +2193,8 @@ public sealed class SettingsWindow : Window
         if (experimental)
         {
             body.Children.Add(Note(result.Passed
-                ? $"Passed: the mod's '{result.Test.UnlocksOption}' option can be turned on for this model."
-                : $"Failed: keep the mod's '{result.Test.UnlocksOption}' option off."));
+                ? $"Passed: UGT Mod's '{result.Test.UnlocksOption}' option can be turned on for this model."
+                : $"Failed: keep UGT Mod's '{result.Test.UnlocksOption}' option off."));
 
             // Shown on success too, and in amber so it is not read as small print under a green
             // mark. Passing means the model is capable, not that the option is safe: the mod

@@ -401,8 +401,21 @@ public sealed class ToolSettingsWindow : Window
         if (!result.Authorised)
         {
             waiting.IsVisible = false;
-            cancel.Content = "Start over";
+
+            // "Try again", the word every other failure in this program offers — and it DOES try
+            // again (a fresh code). It used to be the Cancel button relabelled "Start over", which
+            // only went back to "Sign in": an unfamiliar phrase, and a second click to get anywhere.
+            var again = new Button { Content = "Try again", FontSize = 12, Classes = { "primary" } };
+            again.Click += async (_, _) => await SignInAsync();
+
+            _accountPanel.Children.Remove(cancel);
             if (result.Failure is not null) _accountPanel.Children.Add(Note(result.Failure, Tone.Warning));
+            _accountPanel.Children.Add(new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                Children = { again, cancel },
+            });
             return;
         }
 

@@ -95,8 +95,7 @@ public sealed class DeviceFlowClient
             if (!response.IsSuccessStatusCode)
             {
                 return new DeviceFlowResult(false, null, null,
-                    $"UGT Website answered {(int)response.StatusCode}. Wait a moment, then click "
-                    + "Start over.");
+                    $"UGT Website answered {(int)response.StatusCode}. Wait a moment before trying again.");
             }
 
             await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
@@ -128,8 +127,7 @@ public sealed class DeviceFlowClient
 
             // The stream ended without a verdict: the server closed it, or the network did.
             return new DeviceFlowResult(false, null, null,
-                "The connection closed before sign-in finished. Nothing was changed. Click Start "
-                + "over to try again.");
+                "The connection closed before sign-in finished. Nothing was changed.");
         }
         catch (OperationCanceledException)
         {
@@ -165,7 +163,7 @@ public sealed class DeviceFlowClient
                     if (string.IsNullOrWhiteSpace(token))
                     {
                         return new DeviceFlowResult(false, null, null,
-                            "UGT Website confirmed the sign-in but sent no token. Click Start over.");
+                            "UGT Website confirmed the sign-in but sent no token.");
                     }
 
                     var name = root.TryGetProperty("user", out var user)
@@ -178,12 +176,12 @@ public sealed class DeviceFlowClient
                 catch
                 {
                     return new DeviceFlowResult(false, null, null,
-                        "UGT Website's answer could not be read. Click Start over.");
+                        "UGT Website's answer could not be read.");
                 }
 
             case "expired":
                 return new DeviceFlowResult(false, null, null,
-                    "This code expired (codes last fifteen minutes). Click Start over for a new one.");
+                    "This code expired (codes last fifteen minutes).");
 
             case "error":
                 return new DeviceFlowResult(false, null, null,

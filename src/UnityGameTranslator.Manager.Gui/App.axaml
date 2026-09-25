@@ -297,6 +297,16 @@
       <Setter Property="Background" Value="{DynamicResource AccentSelected}" />
       <Setter Property="BorderBrush" Value="{DynamicResource AccentSoft}" />
     </Style>
+    <!-- A running game (MainWindow.MarkRunning): its own tint, selected or not. -->
+    <Style Selector="ListBox.cards > ListBoxItem.running /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource RunningCard}" />
+    </Style>
+    <Style Selector="ListBox.cards > ListBoxItem.running:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource RunningCardHover}" />
+    </Style>
+    <Style Selector="ListBox.cards > ListBoxItem.running:selected /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource RunningSelected}" />
+    </Style>
     <!--
       MOVEMENT — the whole of it, in one place.
 

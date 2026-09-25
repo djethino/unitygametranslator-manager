@@ -57,6 +57,13 @@ internal static class ThemeResources
         r["AccentSoft"] = Brush(Theme.AccentSoft);
         r["AccentSelected"] = Brush(Theme.RowSelected);
 
+        // A running game's row (user's choice, 2026-09-25): the Play green washed over the card, and
+        // over the selection when it is the selected one — two tints, so being played reads whether
+        // the row is picked or not. Faint: it marks a row, it does not light an alarm.
+        r["RunningCard"] = Brush(Theme.StatusSuccess.Over(Theme.SurfaceCard, 0.10));
+        r["RunningCardHover"] = Brush(Theme.StatusSuccess.Over(Theme.SurfaceRaised, 0.14));
+        r["RunningSelected"] = Brush(Theme.StatusSuccess.Over(Theme.RowSelected, 0.22));
+
         // The chosen one of the three scope marks. ⚠ Outside the accent family on purpose — it
         // sits INSIDE buttons, including accent-filled ones. See Theme.MarkLit.
         r["MarkLit"] = Brush(Theme.MarkLit);

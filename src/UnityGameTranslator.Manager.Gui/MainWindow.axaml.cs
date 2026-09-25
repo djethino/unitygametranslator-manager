@@ -151,7 +151,7 @@ public partial class MainWindow : Window
     /// and one of these describes the person — which games they take part in — so it could not be
     /// expressed as one without inventing a state a game does not have.
     /// </summary>
-    private enum Lens { All, ReadyToPlay, TranslationAvailable, NoTranslationYet, Ready, Mine, Running, Blocked }
+    private enum Lens { All, ReadyToPlay, Ready, Mine, TranslationAvailable, NoTranslationYet }
 
     private Lens _lens = Lens.All;
 
@@ -1483,8 +1483,6 @@ public partial class MainWindow : Window
         Lens.NoTranslationYet => "No translation yet",
         Lens.Ready => "Set up",
         Lens.Mine => "Mine",
-        Lens.Running => "Running",
-        Lens.Blocked => "Not moddable",
         _ => "All",
     };
 
@@ -1534,12 +1532,14 @@ public partial class MainWindow : Window
         // lines in a 370px column, which costs a row of the game list to say what a hover already
         // says — and the sentences were there for readers who did not need them by their second
         // visit.
+        // 🔴 **What I have, then what I can get** (user's order, 2026-09-25): playing, my installs,
+        // my translations — then a translation to install, then none yet. "Running" and "Not
+        // moddable" are gone: a running game is marked on its own row (RunningMark and its tint),
+        // and the games no loader can run in are in All with their reason, counted by the subtitle.
         var filters = new List<(string Label, string Meaning, Lens Value)>
         {
             (LensLabel(Lens.All), "Every game found, whatever its state.", Lens.All),
-            (LensLabel(Lens.ReadyToPlay), "Games that play translated into your language: a translation is in them, or they translate as you play.", Lens.ReadyToPlay),
-            (LensLabel(Lens.TranslationAvailable), "Games with a community translation in your language to install.", Lens.TranslationAvailable),
-            (LensLabel(Lens.NoTranslationYet), "Games with no translation in your language, here or on the website.", Lens.NoTranslationYet),
+            (LensLabel(Lens.ReadyToPlay), "Games that play in your language: a translation is in them, or they translate as you play.", Lens.ReadyToPlay),
             (LensLabel(Lens.Ready), "Games with UGT Mod installed.", Lens.Ready),
         };
 
@@ -1552,18 +1552,10 @@ public partial class MainWindow : Window
                                                + "(branch).", Lens.Mine));
         }
 
-        // Before "not moddable", and only while something is running: a lens that can only ever
-        // return nothing reads as "you have none" rather than "there are none right now". It comes
-        // and goes with the games themselves, which is why the bar is rebuilt when the sweep
-        // changes its mind.
-        if (_running.Paths.Count > 0)
-        {
-            filters.Add((LensLabel(Lens.Running), "Games running now. Close a game to set it up or remove it.",
-                         Lens.Running));
-        }
-
-        filters.Add((LensLabel(Lens.Blocked), "Games no mod loader can run in. The reason is on each game's page.",
-                     Lens.Blocked));
+        filters.Add((LensLabel(Lens.TranslationAvailable), "Games with a community translation in your language to install.",
+                     Lens.TranslationAvailable));
+        filters.Add((LensLabel(Lens.NoTranslationYet), "Games with no translation in your language, here or on the website.",
+                     Lens.NoTranslationYet));
 
         foreach (var (label, meaning, value) in filters)
         {
@@ -1801,34 +1793,15 @@ public partial class MainWindow : Window
         var was = _running;
         _running = sweep;
 
-        // The tag comes and goes with the games themselves: offered while something is running,
-        // gone when nothing is. A filter that can only return nothing reads as "you have none"
-        // rather than "there are none right now".
-        if ((was.Paths.Count == 0) != (sweep.Paths.Count == 0))
-        {
-            // Nothing running and that lens selected would leave an empty list and no way to see it
-            // was a filter doing it. Same treatment as "Mine" when somebody signs out.
-            if (_lens == Lens.Running && sweep.Paths.Count == 0) _lens = Lens.All;
-
-            BuildFilterBar();
-        }
-
-        // ⚠ Membership moves under this one lens, and only under it. Everywhere else a sweep changes
-        // what we KNOW about a game, never whether it belongs in the list — which is why rows are
-        // otherwise updated in place rather than rebuilt.
-        if (_lens == Lens.Running)
-        {
-            RefreshList();
-        }
-        else
-        {
-            // ⚠ The shared comparison, not a hand-written one. This loop used to ask only whether
-            // this game had started or stopped — the right question, asked in a second place — and
-            // it wrote the new content back WITHOUT the facts that went with it, leaving each row
-            // and the record of what it was saying out of step. RefreshRowContents answers the same
-            // question against everything a row draws from, and keeps the two together.
-            RefreshRowContents();
-        }
+        // ⚠ A sweep changes what we KNOW about a game, never whether it belongs in the list — there
+        // is no "Running" filter any more — so rows are updated in place rather than rebuilt.
+        //
+        // ⚠ The shared comparison, not a hand-written one. This loop used to ask only whether this
+        // game had started or stopped — the right question, asked in a second place — and it wrote
+        // the new content back WITHOUT the facts that went with it, leaving each row and the record
+        // of what it was saying out of step. RefreshRowContents answers the same question against
+        // everything a row draws from, and keeps the two together (the running tint included).
+        RefreshRowContents();
 
         // The card carries buttons whose enabled state is exactly this question, so it is redrawn
         // when the game it is about has started or stopped — and left alone otherwise, since
@@ -1961,6 +1934,7 @@ public partial class MainWindow : Window
         if (_rows.TryGetValue(game.Path, out var row) && row.Item.Tag is GameInstall shown)
         {
             row.Item.Content = BuildRowContent(shown, facts);
+            MarkRunning(row.Item, facts);
             _rows[game.Path] = (facts, row.Item);
         }
 
@@ -2131,6 +2105,7 @@ public partial class MainWindow : Window
             if (facts == entry.Facts) continue;
 
             entry.Item.Content = BuildRowContent(game, facts);
+            MarkRunning(entry.Item, facts);
             _rows[path] = (facts, entry.Item);
         }
     }
@@ -2163,12 +2138,6 @@ public partial class MainWindow : Window
 
         return _lens switch
         {
-            Lens.Blocked => !game.IsModdable,
-
-            // A state of this minute rather than of the game, which is why it is the one lens whose
-            // membership changes on its own — see LookForRunningGamesAsync.
-            Lens.Running => _running.IsRunning(game),
-
             // The three words the rows use, for the three things a person does next: play, get the
             // community's translation, or be the first to translate. Every moddable game whose
             // community lookup has answered is in exactly one of them.
@@ -2202,8 +2171,20 @@ public partial class MainWindow : Window
     /// answer "what is this" while someone scanning this list is asking "what can I do". They
     /// live in the card on the right, where they serve diagnosis.
     /// </summary>
-    private ListBoxItem BuildListItem(GameInstall game, RowFacts facts) =>
-        new() { Tag = game, Content = BuildRowContent(game, facts) };
+    private ListBoxItem BuildListItem(GameInstall game, RowFacts facts)
+    {
+        var item = new ListBoxItem { Tag = game, Content = BuildRowContent(game, facts) };
+        MarkRunning(item, facts);
+        return item;
+    }
+
+    /// <summary>
+    /// A running game's row wears a tint of its own, selected or not (user's choice, 2026-09-25) —
+    /// the styles are App.axaml's "running" class. Set wherever a row's contents are drawn, so it
+    /// comes and goes with the game.
+    /// </summary>
+    private static void MarkRunning(ListBoxItem item, RowFacts facts) =>
+        item.Classes.Set("running", facts.Running);
 
     /// <summary>
     /// What a row shows, separate from the row itself.
@@ -2343,7 +2324,10 @@ public partial class MainWindow : Window
     {
         var account = facts.Account;
 
-        var play = PlayButton(game, small: true, running: facts.Running, state: facts.Play);
+        // A running game shows its pulse where Play stands — see RunningMark.
+        Control? play = facts.Running
+            ? new RunningMark()
+            : PlayButton(game, small: true, running: false, state: facts.Play);
         if (account.User is null && play is null) return content;
 
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
@@ -3654,6 +3638,7 @@ public partial class MainWindow : Window
         {
             var facts = FactsFor(game);
             row.Item.Content = BuildRowContent(shown, facts);
+            MarkRunning(row.Item, facts);
             _rows[game.Path] = (facts, row.Item);
         }
     }

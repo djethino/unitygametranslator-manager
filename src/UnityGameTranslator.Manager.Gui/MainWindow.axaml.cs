@@ -2025,17 +2025,21 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, PlayState> _playStates = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// The play state from a report: its promise, and the language it translates into — the game's
-    /// configured target, else the target its translation file states.
+    /// The play state from a report: its promise, and the language it translates into — the target
+    /// the translation file states, else the game's configured one.
+    ///
+    /// ⚠ The FILE first: it is what the game will show, and the mod makes its setting follow the
+    /// file at load (LocalTranslation.TargetLanguage). Read the other way round, a restored French
+    /// backup over a game taken to English went on showing the English flag.
     /// </summary>
     private PlayState PlayStateOf(GameReport report)
     {
         var descriptor = InstalledDescriptor(report);
         var config = GameConfigWriter.Read(report.Game.Path, descriptor);
 
-        var language = config.Values.TargetLanguage;
-        if ((language is null || language.Equals("auto", StringComparison.OrdinalIgnoreCase)) && descriptor is not null)
-            language = LocalTranslationProbe.ReadLanguages(report.Game.Path, descriptor).Target;
+        var language = Languages.IsSettled(report.LocalTranslation?.TargetLanguage)
+            ? report.LocalTranslation!.TargetLanguage
+            : config.Values.TargetLanguage;
 
         return new PlayState(PlayPromises.For(report, config), language);
     }
@@ -9215,6 +9219,12 @@ public partial class MainWindow : Window
 
         // They are in the file now, so the file answers for them from here on.
         ForgetWrittenAnswers(report);
+
+        // 🔴 **The whole card and its row, not only the block that asked.** These settings decide
+        // the Play mark (AI on or off, translations shown), the action bar's OneClick steps and
+        // the row in the list; the callers' own refresh redrew the form alone, and the rest kept
+        // saying what the game held before the click.
+        await ShowSelectedAsync();
     }
 
     /// <summary>

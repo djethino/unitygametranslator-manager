@@ -830,6 +830,44 @@ public sealed class GameConfigWriter
     }
 
     /// <summary>
+    /// Points the game's languages at the ones its translation file states, when they disagree —
+    /// after an act that put a different file in place without choosing a language (a backup
+    /// restored).
+    ///
+    /// 🔴 **The mod's own rule, applied at the moment this tool writes the file.** The mod settles
+    /// it at load — "the translation decides: the setting follows it" (LanguageState.SettleFromFile)
+    /// — so the game would have come right at its next launch. This window reads the config in
+    /// between, and restoring a French backup over a game taken to English left every Play mark on
+    /// English (2026-09-25).
+    ///
+    /// ⚠ Only where the file STATES a language. A file that states none says nothing to follow,
+    /// and inventing one is the mod's call too, not this tool's.
+    /// </summary>
+    /// <returns>The labels of what was written; empty when nothing had to move.</returns>
+    public IReadOnlyList<string> FollowTheTranslation(string gamePath, LoaderDescriptor descriptor)
+    {
+        if (LocalTranslationProbe.Read(gamePath, descriptor) is not { EntryCount: > 0 } file)
+            return Array.Empty<string>();
+
+        var configured = LocalTranslationProbe.ReadLanguages(gamePath, descriptor);
+        var written = new List<string>();
+
+        if (Languages.IsSettled(file.TargetLanguage) && Languages.Disagree(file.TargetLanguage, configured.Target)
+            && ApplyOne(gamePath, descriptor, TargetLanguageKey, file.TargetLanguage, "language").Written)
+        {
+            written.Add("language");
+        }
+
+        if (Languages.IsSettled(file.SourceLanguage) && Languages.Disagree(file.SourceLanguage, configured.Source)
+            && ApplyOne(gamePath, descriptor, SourceLanguageKey, file.SourceLanguage, "source language").Written)
+        {
+            written.Add("source language");
+        }
+
+        return written;
+    }
+
+    /// <summary>
     /// Writes ONE key we own, leaving every other setting in the file exactly as the game has it.
     ///
     /// ⚠ Exists for the settings that belong to the GAME rather than to the defaults — what a game

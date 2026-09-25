@@ -659,8 +659,15 @@ public sealed class BackupsWindow : Window
             // ⚠ Busy AFTER the confirmation, not around it: a button held busy while a dialog is
             // open would say the program is working when it is waiting for an answer.
             await Busy.While(restore, () =>
-                ActAsync(() => TranslationBackupStore.Restore(_game.Path, _descriptor, entry.Id),
-                         "Restore failed"));
+                ActAsync(() =>
+                {
+                    if (!TranslationBackupStore.Restore(_game.Path, _descriptor, entry.Id)) return false;
+
+                    // The restored file may be in another language than the one the game was
+                    // pointed at: the setting follows the file, as the mod settles it at load.
+                    new GameConfigWriter().FollowTheTranslation(_game.Path, _descriptor);
+                    return true;
+                }, "Restore failed"));
         };
 
         verbs.Children.Add(restore);

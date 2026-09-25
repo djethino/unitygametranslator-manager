@@ -9664,23 +9664,10 @@ public partial class MainWindow : Window
             RefreshHotkeyApply();
         };
 
-        var row = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 10,
-            Margin = new Avalonia.Thickness(0, 8, 0, 0),
-        };
-
-        row.Children.Add(new TextBlock
-        {
-            Text = "Key for this game",
-            Width = 120,
-            FontSize = 12,
-            VerticalAlignment = VerticalAlignment.Center,
-            Foreground = Brush("TextMuted"),
-        });
-
-        row.Children.Add(editor.Row);
+        // Ui.Row, the label column every settings form uses, so this key lines up with the
+        // settings form on the same page.
+        var row = (StackPanel)Ui.Row("Key for this game", editor.Row);
+        row.Margin = new Avalonia.Thickness(0, 8, 0, 0);
 
         // ⚠ Greyed rather than hidden, and never without words. Ticking the box above means "take
         // the key from Mod defaults", which is an answer to this very question — leaving the

@@ -12,6 +12,7 @@ using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
 using UnityGameTranslator.Manager.Core.Settings;
 using UnityGameTranslator.Common;
+using static UnityGameTranslator.Manager.Gui.Ui;
 
 namespace UnityGameTranslator.Manager.Gui;
 
@@ -175,7 +176,9 @@ public sealed class SettingsWindow : Window
             Reviewed = current.Reviewed,
         };
 
-        Title = "Mod defaults — what gets written into your games";
+        // The screen's name, and nothing after it: every other screen sends people here as
+        // "Mod defaults", and the intro under it says what it does.
+        Title = "Mod defaults";
         // Wide enough for the longest row: the model list plus Refresh plus "Test this model",
         // after a 130px label. At 720 that row reached the card's edge and the last button sat
         // against it. The minimum is kept above that width rather than merely below the default,
@@ -213,15 +216,11 @@ public sealed class SettingsWindow : Window
     {
         var layout = new StackPanel { Spacing = 16, Margin = new Thickness(24) };
 
-        layout.Children.Add(new TextBlock
-        {
-            Text = "Answer once here, and every game you set up starts configured — no first-run "
-                 + "questions inside the game. A game you have already configured is not touched "
-                 + "until you ask for it.",
-            FontSize = 12,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Brush("TextSecondary"),
-        });
+        // ⚠ "When everything is filled in": the wizard is only skipped when every answer it asks for
+        // is here (InstallerSettings.AnswersTheWizard) — a partial setup still lets it run.
+        layout.Children.Add(Intro(
+            "Written into every game you set up. When everything here is filled in, the mod skips "
+            + "its first-run questions. Games already set up are not changed unless you ask."));
 
         layout.Children.Add(LanguageCard());
         layout.Children.Add(BackendCard());
@@ -325,9 +324,8 @@ public sealed class SettingsWindow : Window
 
         Select(_language, _draft.TargetLanguage);
 
-        return Card("The language you play in",
-            "Everything else follows from this: which of your games are already playable, and "
-            + "what gets written into each game's settings.",
+        return Card("Language",
+            "The language you play in. Used to find translations for your games.",
             Row("Target language", _language));
     }
 
@@ -342,10 +340,11 @@ public sealed class SettingsWindow : Window
 
         _backend.SelectionChanged += (_, _) => ShowBackendCards();
 
-        return Card("How lines get translated",
-            "A game someone has already translated needs none of this. The rest is for what "
-            + "nobody has translated yet: your own machine, free, or a paid service with your own key.",
-            Row("Backend", _backend));
+        // "Translate with", not "Backend": the mod's own screen says "Type", and neither word of
+        // developer jargon helps somebody picking between community work, an AI and their own hands.
+        return Card("Translation",
+            "For lines that no community translation covers yet.",
+            Row("Translate with", _backend));
     }
 
     /// <summary>
@@ -357,16 +356,16 @@ public sealed class SettingsWindow : Window
     /// </summary>
     private Control SyncCard()
     {
-        _checkModUpdates = new CheckBox { Content = "Tell me when a new version of the mod is out",
+        _checkModUpdates = new CheckBox { Content = "Notify me about mod updates",
                                           IsChecked = _draft.CheckModUpdates };
-        _notifyUpdates = new CheckBox { Content = "Tell me when a translation I use is updated",
+        _notifyUpdates = new CheckBox { Content = "Notify me about translation updates",
                                        IsChecked = _draft.NotifyUpdates };
         // "those updates" sat under both boxes and read as covering the mod too. It never did:
         // the mod is only ever updated from this tool, deliberately and with a confirmation. Named
         // in full, and indented under the line it depends on.
         _autoDownload = new CheckBox
         {
-            Content = "Download translation updates without asking",
+            Content = "Download translation updates automatically",
             IsChecked = _draft.AutoDownload,
             Margin = new Thickness(20, 0, 0, 0),
         };
@@ -375,7 +374,8 @@ public sealed class SettingsWindow : Window
         _mergeStrategy = ModSettingControls.MergeStrategyPicker(260);
         Select(_mergeStrategy, _draft.MergeStrategy);
 
-        _notificationsEnabled = new CheckBox { Content = "Show notices while playing",
+        // "Notifications": the mod's own word for the corner overlay (options.json).
+        _notificationsEnabled = new CheckBox { Content = "Show notifications in the game",
                                               IsChecked = _draft.NotificationsEnabled };
 
         _notificationPosition = ModSettingControls.NoticePositionPicker(260);
@@ -383,19 +383,15 @@ public sealed class SettingsWindow : Window
 
         var panel = new StackPanel { Spacing = 10 };
         panel.Children.Add(_checkModUpdates);
-        panel.Children.Add(Note(
-            "The mod itself is only ever updated from here, and always with a confirmation.",
-            "TextMuted"));
+        panel.Children.Add(Note("The mod is only updated from the Manager, after you confirm."));
         panel.Children.Add(_notifyUpdates);
         panel.Children.Add(_autoDownload);
         panel.Children.Add(Row("When both changed", _mergeStrategy));
-        panel.Children.Add(Note(
-            "When a translation you use has changed and you have edited it too: merge quietly, "
-            + "or stop and ask.", "TextMuted"));
+        panel.Children.Add(Note("A translation you use was updated, and you edited it too."));
         panel.Children.Add(_notificationsEnabled);
-        panel.Children.Add(Row("Notice position", _notificationPosition));
+        panel.Children.Add(Row("Position", _notificationPosition));
 
-        return Card("Updates and notices", null, panel);
+        return Card("Updates and notifications", null, panel);
     }
 
     /// <summary>
@@ -406,28 +402,17 @@ public sealed class SettingsWindow : Window
     /// answered in a sentence that looked exactly like the running commentary, and read as though
     /// nothing had happened at all. The words were there; nothing marked them as a failure.
     ///
-    /// Three states, three colours: what is happening is muted, what worked is green, what failed
-    /// is red. The same three the rest of this program already uses.
+    /// The colour is the tone of what is said (Ui.Say): muted while something is happening, green
+    /// when it worked, amber when it did not but nothing is broken, red when it cannot work.
     /// </summary>
-    private void Say(string text) => Say(text, "TextMuted");
+    private void Say(string text, Tone tone = Tone.Neutral) => Ui.Say(_aiStatus, text, tone);
 
-    private void SayWorked(string text) => Say(text, "StatusSuccess");
+    private void SayWorked(string text) => Say(text, Tone.Success);
 
-    private void SayFailed(string text) => Say(text, "StatusError");
-
-    private void Say(string text, string colour)
-    {
-        _aiStatus.Text = text;
-        _aiStatus.Foreground = Brush(colour);
-    }
+    private void SayFailed(string text) => Say(text, Tone.Error);
 
     /// <summary>The same, for the other card. Two translators, two conversations, two lines.</summary>
-    private void SayAboutKey(string text, string colour)
-    {
-        _apiStatus.Text = text;
-        _apiStatus.Foreground = Brush(colour);
-        _apiStatus.IsVisible = true;
-    }
+    private void SayAboutKey(string text, Tone tone) => Ui.Say(_apiStatus, text, tone);
 
     /// <summary>Only the card for the chosen backend is on screen; the other is gone entirely.</summary>
     private void ShowBackendCards()
@@ -528,14 +513,16 @@ public sealed class SettingsWindow : Window
             var deepl = Tag(_provider) == "deepl";
 
             test.IsEnabled = false;
-            SayAboutKey("Asking " + (deepl ? "DeepL" : "Google") + "...", "TextMuted");
+            SayAboutKey("Testing with " + (deepl ? "DeepL" : "Google") + "...", Tone.Neutral);
 
             var probe = new TranslatorKeyProbe();
             var result = deepl
                 ? await probe.CheckDeeplAsync(key, _deeplFree.IsChecked == true)
                 : await probe.CheckGoogleAsync(key);
 
-            SayAboutKey(result.Message, result.Works ? "StatusSuccess" : "StatusWarning");
+            // A key that does not work is the same kind of answer as an address that does not
+            // answer on the AI card — the mod would translate nothing with it — so the same red.
+            SayAboutKey(result.Message, result.Works ? Tone.Success : Tone.Error);
             test.IsEnabled = true;
         };
 
@@ -551,10 +538,12 @@ public sealed class SettingsWindow : Window
         // a free allowance", which is the half that lands — and read beside a tickbox saying "Free
         // tier", it said plainly that anybody could use these without a key. Nobody can: both
         // require an account of your own, and the free allowance is a property of that account.
+        //
+        // ⚠ Amber: it is about the reader's money. The storage line is a plain fact, apart.
         _apiPanel.Children.Add(Note(
-            "Both need an account and a key of your own. Each account comes with a free monthly "
-            + "allowance, and anything past it is billed to you. The key is stored encrypted on "
-            + "this machine.", "TextMuted"));
+            "Needs your own account and API key. Free up to a monthly limit, then billed to you.",
+            Tone.Warning));
+        _apiPanel.Children.Add(Note("The key is stored encrypted on this machine."));
 
         return Card("Google / DeepL", null, _apiPanel);
     }
@@ -586,7 +575,7 @@ public sealed class SettingsWindow : Window
         _apiKey = new TextBox
         {
             Width = 300,
-            Watermark = "leave empty for a server on your machine",
+            Watermark = "Not needed for a local server",
             PasswordChar = '*',
             Text = _draft.AiApiKey ?? "",
         };
@@ -611,7 +600,7 @@ public sealed class SettingsWindow : Window
             IsVisible = false,
         };
 
-        var refresh = new Button { Content = "Look for a local AI", FontSize = 12 };
+        var refresh = new Button { Content = "Find local AI", FontSize = 12 };
         Busy.OnClick(refresh, () =>
         {
             // Explicit means explicit: forget what we knew and sweep the ports again, even when
@@ -647,39 +636,28 @@ public sealed class SettingsWindow : Window
         // caution nobody reads, so it was also absent exactly where it mattered. The three cases
         // are settled once, in the shared library, because it is a statement about somebody's money
         // and somebody's data and the mod has to make it identically.
-        _locality = new TextBlock
-        {
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Brush("StatusWarning"),
-            IsVisible = false,
-        };
+        _locality = Note("", Tone.Warning);
+        _locality.IsVisible = false;
         _aiPanel.Children.Add(_locality);
 
-        _aiPanel.Children.Add(new TextBlock
-        {
-            // Said plainly, once, and only about the key itself — it is true wherever the server
-            // is, because a key only exists when something asks for one.
-            Text = "The key is stored encrypted and bound to this machine, so a copy of the file "
-                 + "taken elsewhere cannot be read. That protects a file that leaves; it does not "
-                 + "protect against something already running as you. Revoking the key at the "
-                 + "provider is the real defence.",
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Brush("TextMuted"),
-        });
+        // The same sentence as the Google / DeepL card: one fact, one wording. What it does not
+        // protect against (a program already running as the same user) is in TokenProtection's
+        // own documentation — the reader only needs to know the key does not sit in plain text.
+        _aiPanel.Children.Add(Note("The key is stored encrypted on this machine."));
 
         // Follows what is typed rather than what was saved: somebody pasting a provider's address
         // needs to read this before they press Save, not after.
-        _aiUrl.TextChanged += (_, _) => ShowLocality();
-        ShowLocality();
-        _modelNote = new TextBlock
+        _aiUrl.TextChanged += (_, _) =>
         {
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            IsVisible = false,
-            Foreground = Brush("TextMuted"),
+            ShowLocality();
+
+            // The test's cost line says whether it is billed, and that follows the address too.
+            // Null while the window is still being built: the test card comes after this one.
+            if (_testCost is not null) ShowTestCost();
         };
+        ShowLocality();
+        _modelNote = Note("");
+        _modelNote.IsVisible = false;
 
         _ollamaPanel = new StackPanel { Spacing = 8, IsVisible = false };
         _aiPanel.Children.Add(_ollamaPanel);
@@ -763,24 +741,14 @@ public sealed class SettingsWindow : Window
             Labelled("From", _testFrom),
             _testButton));
 
-        panel.Children.Add(new TextBlock
-        {
-            Text = "The sentences are never written in the language you translate into: asking a "
-                 + "model for English from English is a job the mod never gives it.",
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Brush("TextMuted"),
-        });
+        // Why the Into language is missing from From: the mod never asks a model for English from
+        // English, so neither does its test.
+        panel.Children.Add(Note("From never offers the Into language."));
 
         // ⚠ Same shape as the line above on purpose — a second caption under the same row, not a
         // control of its own. It says what the run costs BEFORE it is started: free on a local
         // server, billed per request and per token on a paid one, and this run is not small.
-        _testCost = new TextBlock
-        {
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Brush("TextMuted"),
-        };
+        _testCost = Note("");
         panel.Children.Add(_testCost);
 
         // Defaulted once, when the card is built, and never written anywhere: this pair aims the
@@ -797,19 +765,14 @@ public sealed class SettingsWindow : Window
         // afterwards, because it tells someone where to start rather than judging where they went.
         _aiModel.SelectionChanged += (_, _) => ShowModelNote();
 
-        panel.Children.Add(new TextBlock
-        {
-            Text = "The test asks this model to do exactly what the mod asks of it, from easy to "
-                 + "hard, and shows you its answers. Our checks are guesses about free text and "
-                 + "can be wrong either way — read the answers, and decide for yourself.",
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Brush("TextMuted"),
-        });
-
         panel.Children.Add(_testOutput);
 
-        return Card("Test this model", null, panel);
+        // The intro says what the card is for; that the checks can be wrong belongs there, before
+        // anyone reads a verdict — they are heuristics over free text (see RunSuiteAsync).
+        return Card("Test this model",
+            "Sends the model the same requests the mod makes, from easy to hard, and shows each "
+            + "answer. The checks can be wrong: read the answers too.",
+            panel);
     }
 
     private Control ModCard()
@@ -840,30 +803,26 @@ public sealed class SettingsWindow : Window
         // translation included, has what they need before the game starts.
         _modOnline = new CheckBox
         {
-            Content = "Let the mod go online while you play",
+            Content = "Allow the mod to go online",
             IsChecked = _draft.ModOnlineMode,
         };
 
         var panel = new StackPanel { Spacing = 10 };
 
         panel.Children.Add(Row("In-game hotkey", hotkeyRow));
-        panel.Children.Add(Note(ModSettingControls.HotkeyAdvice, "TextMuted"));
+        panel.Children.Add(Note(ModSettingControls.HotkeyAdvice));
         panel.Children.Add(_hotkeyProblem);
         panel.Children.Add(Note(
-            "A game that already has its own key keeps it. Its card offers to replace it.",
-            "TextMuted"));
-        panel.Children.Add(Row("Updates", _channel));
+            "A game that already has a hotkey keeps it. You can replace it on that game's page."));
+        panel.Children.Add(Row("Update channel", _channel));
         panel.Children.Add(_modOnline);
         panel.Children.Add(Note(
             "Off: the mod stays offline in the game. No update notices, no community translations. "
-            + "What is already installed keeps working.", "TextMuted"));
+            + "What is already installed keeps working."));
 
-        // The hotkey is asked here because the mod's first-run wizard asks for it: with every
-        // answer given the wizard is skipped, with one missing it still runs (AnswersTheWizard).
-        return Card("In the game",
-            "The hotkey opens the mod's panel in the game. "
-            + "When Mod defaults is complete, the mod skips its setup wizard.",
-            panel);
+        // The hotkey is asked here because the mod's first-run wizard asks for it — the window's
+        // intro says when that wizard is skipped.
+        return Card("In the game", "The hotkey opens the mod's panel in the game.", panel);
     }
 
     // ---------------------------------------------------------------- AI
@@ -874,7 +833,7 @@ public sealed class SettingsWindow : Window
     /// this dialog was closed. False for "Search again" and after anything we did ourselves.
     /// </param>
     /// <param name="asked">
-    /// True when a person pressed the button that says "look for a local AI". What is found then
+    /// True when a person pressed the button that says "Find local AI". What is found then
     /// goes into the field, whatever was in it — because that is the request. Left false, a found
     /// server only fills a field that is empty, so nothing anyone typed is taken away from them.
     /// </param>
@@ -970,17 +929,17 @@ public sealed class SettingsWindow : Window
         _ollamaPanel.IsVisible = false;
         ShowModelNote();
 
-        Say($"Set to {_draft.AiUrl}. Checking it is still there...");
+        Say($"Checking {_draft.AiUrl}...");
 
         var models = await _probe.ListModelsAsync(_draft.AiUrl, _draft.AiApiKey);
 
         if (models is null)
         {
             // Not dressed up as a failure: a laptop away from its server, or a server not started
-            // yet, is an ordinary situation and nothing here is broken.
-            Say($"Set to {_draft.AiUrl}, using {_draft.AiModel}. "
-                + "It did not answer just now — it may simply not be running. Your "
-                + "settings are unchanged.");
+            // yet, is an ordinary situation and nothing here is broken. But amber, not grey: until
+            // it answers, the mod translates nothing with it.
+            Say($"{_draft.AiUrl} did not answer. It may not be running. Your settings are unchanged.",
+                Tone.Warning);
             return;
         }
 
@@ -997,21 +956,20 @@ public sealed class SettingsWindow : Window
         if (stillThere)
         {
             Select(_aiModel, saved);
-            SayWorked($"{_draft.AiUrl} answered — {Composition.Amount(models.Count, "model", "models")}, "
-                      + $"and {saved} is still there.");
+            SayWorked($"Connected to {_draft.AiUrl}: {Composition.Amount(models.Count, "model", "models")}. "
+                      + $"{saved} is available.");
         }
         else if (!string.IsNullOrWhiteSpace(saved))
         {
             // Said loudly, and the saved value is NOT quietly replaced: swapping in another model
             // would leave someone believing they are running the one they chose. The selection is
             // left empty so the choice is visibly theirs to make.
-            SayFailed($"{_draft.AiUrl} answered, but \"{saved}\" is not among the "
-                      + $"{Composition.Amount(models.Count, "model", "models")} it offers any more. Nothing was changed — "
-                      + "pick one below, or put that model back.");
+            SayFailed($"Connected to {_draft.AiUrl}, but {saved} is no longer on this server. "
+                      + "Choose another model, or install it again.");
         }
         else
         {
-            SayWorked($"{_draft.AiUrl} answered — {Composition.Amount(models.Count, "model", "models")}. Choose one.");
+            SayWorked($"Connected to {_draft.AiUrl}: {Composition.Amount(models.Count, "model", "models")}. Choose one.");
         }
 
         _testButton.IsEnabled = _aiModel.SelectedItem is not null;
@@ -1031,8 +989,8 @@ public sealed class SettingsWindow : Window
     {
         if (servers.Count == 0)
         {
-            Say("No local AI server answered on the usual ports. "
-                + "One running elsewhere still works — type its address above.");
+            Say("No local AI server found. For a server on another computer, enter its address.",
+                Tone.Warning);
 
             // Nothing answered: this is the only moment we are allowed to talk about installing
             // anything. What we offer depends on what is already on the machine, so ask first.
@@ -1051,14 +1009,14 @@ public sealed class SettingsWindow : Window
         // with "Community translations only" set left "Apply (2)" waiting on a form nobody had
         // touched, and Apply is the natural way to leave.
         //
-        // 🔸 But pressing "Look for a local AI" IS that decision, so what turns up goes in the
+        // 🔸 But pressing "Find local AI" IS that decision, so what turns up goes in the
         // field even when something else was there. Only filling an EMPTY field made the button
         // useless in the case it exists for: someone with a wrong address typed in, who searches
         // and is shown a server that is answering while the box keeps the address that is not.
         var chosen = Tag(_backend) == "llm";
         if (chosen && (asked || string.IsNullOrWhiteSpace(_aiUrl.Text))) _aiUrl.Text = server.Url;
 
-        SayWorked($"{server.Product} answered at {server.Url} — {Composition.Amount(server.Models.Count, "model", "models")}.");
+        SayWorked($"Found {server.Product} at {server.Url}: {Composition.Amount(server.Models.Count, "model", "models")}.");
 
         // A server with nothing loaded is the state a fresh Ollama is left in, and the one that
         // reads as "it worked" while translating nothing. Offering a model here is the difference
@@ -1155,9 +1113,8 @@ public sealed class SettingsWindow : Window
 
         if (status.State == OllamaState.InstalledButStopped)
         {
-            _ollamaPanel.Children.Add(Note(
-                "Ollama is installed on this machine but is not running. Nothing to download.",
-                "TextSecondary"));
+            // Amber: nothing translates until it runs.
+            _ollamaPanel.Children.Add(Note("Ollama is installed but not running.", Tone.Warning));
 
             var start = new Button { Content = "Start Ollama", FontSize = 12, Classes = { "primary" } };
             start.Click += async (_, _) =>
@@ -1173,7 +1130,7 @@ public sealed class SettingsWindow : Window
                     // has to come with the way to undo it: a background server nobody knows how to
                     // stop is not a favour.
                     if (outcome.HowToStop is not null)
-                        _ollamaPanel.Children.Add(Note($"To stop it later: {outcome.HowToStop}", "TextMuted"));
+                        _ollamaPanel.Children.Add(Note($"To stop it later: {outcome.HowToStop}"));
 
                     // We just changed the situation ourselves, so what we remembered is wrong.
                     _aiServers.Forget();
@@ -1190,8 +1147,8 @@ public sealed class SettingsWindow : Window
                     // for one to start a translation helper would be out of proportion. The exact
                     // command is worth more than an apology.
                     _ollamaPanel.Children.Add(Note(
-                        "Starting it needs administrator rights, which we will not ask you for. "
-                        + "Run this in a terminal, then search again:", "StatusWarning"));
+                        "Starting it needs administrator rights. Run this command in a terminal, "
+                        + "then click Find local AI:", Tone.Warning));
                     _ollamaPanel.Children.Add(new TextBox
                     {
                         Text = outcome.Command,
@@ -1203,9 +1160,8 @@ public sealed class SettingsWindow : Window
                 else
                 {
                     _ollamaPanel.Children.Add(Note(
-                        outcome.Failure ?? "It would not start from here. Launching Ollama "
-                        + "yourself and searching again works — we would rather say so than keep "
-                        + "retrying.", "StatusWarning"));
+                        outcome.Failure ?? "Ollama did not start. Start it yourself, then click "
+                        + "Find local AI.", Tone.Warning));
                 }
             };
 
@@ -1217,7 +1173,7 @@ public sealed class SettingsWindow : Window
 
         // Two network calls behind this, and until now nothing on screen while they ran. On a
         // slow link that is several seconds of a panel that looks empty and finished.
-        var checking = new SpinningGear("Checking what the current Ollama release is...");
+        var checking = new SpinningGear("Checking the latest Ollama version...");
         _ollamaPanel.Children.Add(checking);
 
         var offer = await installer.PrepareAsync();
@@ -1225,19 +1181,16 @@ public sealed class SettingsWindow : Window
 
         if (!offer.CanInstall)
         {
-            _ollamaPanel.Children.Add(Note(offer.Refusal ?? "Ollama cannot be installed from here.",
-                "TextSecondary"));
+            _ollamaPanel.Children.Add(Note(offer.Refusal ?? "Ollama cannot be installed from here."));
             return;
         }
 
         _ollamaPanel.Children.Add(Note(
-            "Ollama runs a language model on your own machine: no account, no key, nothing "
-            + "billed. It is a real download and a real load on your graphics card — "
-            + $"{offer.SizeText} for the program, and a model on top of that.",
-            "TextSecondary"));
+            "Ollama runs AI models on your computer. Free, no account needed. "
+            + $"Download: {offer.SizeText} for the program, plus a model. It uses your graphics card."));
 
         // Where a failure is said once the veil is down — beside the button that can try again.
-        var progress = Note("", "TextMuted");
+        var progress = Note("");
         var install = new Button { Content = $"Install Ollama ({offer.SizeText})", FontSize = 12 };
 
         // 🔴 Subscribed ONCE, outside the click: inside it, every retry stacked another handler.
@@ -1250,7 +1203,7 @@ public sealed class SettingsWindow : Window
                     // The download is whole; what runs now is Ollama's own installer, then the
                     // wait for its server to answer. Said, so the last line is not "N of N MB"
                     // standing still for as long as that takes.
-                    ? "Installing Ollama, then waiting for it to answer..."
+                    ? "Installing Ollama and starting it..."
                     : $"Downloading... {done / 1024.0 / 1024:F0} of {t / 1024.0 / 1024:F0} MB"
                 : $"Downloading... {done / 1024.0 / 1024:F0} MB"));
 
@@ -1274,14 +1227,13 @@ public sealed class SettingsWindow : Window
 
             if (failure is null)
             {
-                progress.Text = "Installed. Looking for it now.";
+                Ui.Say(progress, "Installed. Searching for it...");
                 _aiServers.Forget();
                 await DiscoverAsync();
                 return;
             }
 
-            progress.Text = failure;
-            progress.Foreground = Brush("StatusError");
+            Ui.Say(progress, failure, Tone.Error);
         };
 
         _ollamaPanel.Children.Add(install);
@@ -1343,33 +1295,33 @@ public sealed class SettingsWindow : Window
 
         if (candidates.Count == 0)
         {
+            // Amber only when there is no model at all: then nothing translates. A server that
+            // has one is fine without our list.
             _ollamaPanel.Children.Add(Note(
                 alreadyHasModels
-                    ? "We could not reach our list of tested models just now. Nothing is wrong "
-                      + "with the one you have — the mod only needs a server that answers."
-                    : "This server has no model loaded yet, and we could not reach our list of "
-                      + "models to suggest one. Any model pulled with Ollama works — the mod only "
-                      + "needs a server that answers.",
-                alreadyHasModels ? "TextMuted" : "StatusWarning"));
+                    ? "Could not load the list of tested models. Your model still works."
+                    : "This server has no model yet, and the list of tested models could not be "
+                      + "loaded. Any Ollama model works.",
+                alreadyHasModels ? Tone.Neutral : Tone.Warning));
             return;
         }
 
         var card = vram is { } bytes
             ? $"Your graphics card has {bytes / 1024.0 / 1024 / 1024:F0} GB"
-            : "We could not read your graphics card size";
+            : "Could not read your graphics card memory";
 
         var content = new StackPanel { Spacing = 10, Margin = new Thickness(0, 8, 0, 0) };
 
+        // ⚠ "We have not tested yours" is about us, never a judgement on their models — and it is
+        // why this list opened by itself (see startExpanded).
         content.Children.Add(Note(
             noneOfTheirsTested
-                ? $"We have never run any of the models on this server, so we can tell you nothing "
-                  + $"about them — that is about us, not about them. {card}. Pulling one of these "
-                  + "changes nothing to what you already have: Ollama keeps both."
+                ? $"We have not tested the models on this server. {card}. "
+                  + "Downloading one below keeps your current models."
                 : alreadyHasModels
-                    ? $"{card}. Nothing to change if yours does the job — pulling a second one "
-                      + "costs only disk space, and Ollama keeps both."
+                    ? $"{card}. If your model works well, keep it. Downloading another one keeps both."
                     : $"No model on this server yet. {card}.",
-            "TextSecondary"));
+            alreadyHasModels ? Tone.Neutral : Tone.Warning));
 
         // Which language the figures were taken in, and — when it is not the reader's — that the
         // button beside the model list answers the same questions in theirs. A table of marks
@@ -1381,34 +1333,23 @@ public sealed class SettingsWindow : Window
 
             var sameLanguage = string.Equals(mine, measuredIn, StringComparison.OrdinalIgnoreCase);
 
-            var said = sameLanguage
-                ? $"Measured translating into {measuredIn}, as you are"
-                : $"Measured translating into {measuredIn}, not {mine} — a model can hold the "
-                  + "game's markers in one language and lose them in another";
-
             // The card matters as much as the language, and differently: what a model HOLDS is a
-            // fact about the model and travels, whether it FITS is a fact about the card. On a big
-            // one everything sits on the card; on a smaller one the same model is split with the
-            // processor and takes seconds a line instead of tenths.
-            if (_modelNotes.MeasuredOn is { Length: > 0 } testedOn)
-            {
-                said += $", on a {testedOn}";
+            // fact about the model and travels, whether it FITS is a fact about the card — and the
+            // reader's own card size is already in the line above, so it is not repeated here.
+            var said = $"Measured translating into {measuredIn}";
+            if (_modelNotes.MeasuredOn is { Length: > 0 } testedOn) said += $" on a {testedOn}";
+            said += ".";
 
-                if (vram is { } ours)
-                {
-                    said += $". Yours has {ours / 1024.0 / 1024 / 1024:F0} GB, so compare that "
-                          + "against the memory each one holds below";
-                }
-            }
+            // A model can keep the game's markers in one language and lose them in another.
+            if (!sameLanguage) said += $" Results may differ in {mine}.";
 
-            var caveat = Note(said + ". \"Test this model\" runs the same checks on your machine.",
-                              sameLanguage ? "TextMuted" : "StatusWarning");
-
-            caveat.Opacity = 0.85;
-            content.Children.Add(caveat);
+            // Amber when the figures were not taken in the reader's language: then they are a hint,
+            // not a measure of what this model will do for them. Never faded — a warning is read.
+            content.Children.Add(Note(said + " \"Test this model\" checks it on your computer.",
+                                      sameLanguage ? Tone.Neutral : Tone.Warning));
         }
 
-        var progress = Note("", "TextMuted");
+        var progress = Note("");
 
         // 🔴 Where these names come from, said once, above the table — and only where it changes
         // what the reader can do. On Ollama the names ARE the download, so naming them would be
@@ -1417,10 +1358,8 @@ public sealed class SettingsWindow : Window
         if (!canDownload)
         {
             content.Children.Add(Note(
-                "These are Ollama model names, and fetching one is something only Ollama does. "
-                + "The figures hold on any server — install the model the way yours installs "
-                + "models, and it will show up in the list above.",
-                "TextMuted"));
+                "These are Ollama model names. Only Ollama can download them from here. On another "
+                + "server, install the model your usual way; it then appears in the Model list."));
         }
 
         content.Children.Add(ModelTable(candidates, vram, serverUrl, progress, canDownload));
@@ -1434,13 +1373,13 @@ public sealed class SettingsWindow : Window
                                  .DefaultIfEmpty(null)
                                  .Min();
 
-        var lightestText = smallest is { } gb ? $", from {gb:F1} GB of video memory" : "";
+        var lightestText = smallest is { } gb ? $" (from {gb:F1} GB of video memory)" : "";
 
         _ollamaPanel.Children.Add(new Expander
         {
             Header = new TextBlock
             {
-                Text = $"Models we have run ourselves — {candidates.Count}{lightestText}",
+                Text = $"Tested models: {candidates.Count}{lightestText}",
                 FontSize = 12,
                 Foreground = Brush("TextSecondary"),
             },
@@ -1583,11 +1522,11 @@ public sealed class SettingsWindow : Window
                     },
                 };
 
+                // Earned by refusing both a real foreign language and an invented one (the two
+                // experimental cases of the suite).
                 ToolTip.SetTip(strict,
-                    "This model refused both a real foreign language and an invented one, so the "
-                    + "experimental 'strict source' option can be switched on for it. It stays "
-                    + "experimental: when it goes wrong it drops text that was perfectly fine, and "
-                    + "says nothing.");
+                    "Works with the experimental 'strict source' option. When that option fails, it "
+                    + "silently skips text that was fine.");
 
                 name.Children.Add(strict);
             }
@@ -1644,13 +1583,13 @@ public sealed class SettingsWindow : Window
             grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
 
             var details = new StackPanel { Spacing = 2, Margin = new Thickness(0, 2, 0, 0) };
-            details.Children.Add(Note(candidate.Note, "TextMuted"));
+            details.Children.Add(Note(candidate.Note));
 
             // Kept apart from the sentence above on purpose: that one is what we measured, this
             // one is what the publisher says, and we have verified none of it.
             if (candidate.Languages?.Sentence() is { } coverage)
             {
-                var claim = Note($"On coverage, {coverage}.", "TextMuted");
+                var claim = Note($"On coverage, {coverage}.");
                 claim.Opacity = 0.75;
                 details.Children.Add(claim);
             }
@@ -1658,9 +1597,8 @@ public sealed class SettingsWindow : Window
             if (fits == false)
             {
                 details.Children.Add(Note(
-                    $"Larger than your card: it needs about {candidate.MinVramGb:F0} GB and will "
-                    + "run on the processor instead — minutes per line rather than seconds. It "
-                    + "still works.", "StatusWarning"));
+                    $"Too big for your graphics card (needs about {candidate.MinVramGb:F0} GB). It runs "
+                    + "on the processor instead: minutes per line instead of seconds.", Tone.Warning));
             }
 
             // 🔴 Absent rather than greyed on a server that cannot fetch. A disabled button says
@@ -1705,8 +1643,7 @@ public sealed class SettingsWindow : Window
                 ? $"{status} — {d / 1024.0 / 1024 / 1024:F1} of {t / 1024.0 / 1024 / 1024:F1} GB"
                 : status);
 
-        progress.Foreground = Brush("TextMuted");
-        progress.Text = "Starting...";
+        Ui.Say(progress, "Starting...");
 
         // Several gigabytes: the byte counter answers "how far", the gear answers "is it still
         // going" during the stretches where the counter does not move.
@@ -1718,15 +1655,14 @@ public sealed class SettingsWindow : Window
 
         if (failure is null)
         {
-            progress.Text = "Downloaded. Reading the server again.";
+            Ui.Say(progress, "Downloaded. Refreshing the model list...");
             _aiServers.Forget();
             await DiscoverAsync();
             Select(_aiModel, model);
             return;
         }
 
-        progress.Text = failure;
-        progress.Foreground = Brush("StatusError");
+        Ui.Say(progress, failure, Tone.Error);
 
         // Never a dead end: a download cut off by a firewall or a dropped line resumes where it
         // stopped, and the person has to be able to say so from here.
@@ -1738,14 +1674,6 @@ public sealed class SettingsWindow : Window
         };
         _ollamaPanel.Children.Add(retry);
     }
-
-    private TextBlock Note(string text, string colour) => new()
-    {
-        Text = text,
-        FontSize = 11,
-        TextWrapping = TextWrapping.Wrap,
-        Foreground = Brush(colour),
-    };
 
     /// <summary>
     /// Fills "From" with the sources we hold, minus the one being translated into.
@@ -1776,12 +1704,18 @@ public sealed class SettingsWindow : Window
         var cost = ModelTestSuite.Cost(language, sourceCode: Tag(_testFrom), rate: true);
 
         var retries = cost.MostRequests > cost.Requests
-            ? $", up to {cost.MostRequests} if answers have to be asked again"
+            ? $" (up to {cost.MostRequests} with retries)"
             : "";
 
-        _testCost.Text = $"{cost.Cases} tests: {cost.Requests} requests{retries}, "
-                       + $"about {cost.AboutTokens:N0} tokens sent. "
-                       + "A paid service charges for every one of them.";
+        // Amber only where it costs money: the same address test the AI card's caution uses. On a
+        // server this person runs, the figures are a wait, not a bill.
+        var url = _aiUrl.Text?.Trim() ?? "";
+        var paid = url.Length > 0 && !Endpoints.IsOnYourOwnNetwork(url);
+
+        Ui.Say(_testCost,
+            $"{cost.Cases} tests: {cost.Requests} requests{retries}, about {cost.AboutTokens:N0} tokens."
+            + (paid ? " An online service bills each one." : ""),
+            paid ? Tone.Warning : Tone.Neutral);
     }
 
     private void RefreshTestSources()
@@ -1908,8 +1842,7 @@ public sealed class SettingsWindow : Window
 
         // Measured first, and shown on its own line: what a model costs to run is a different
         // question from whether it obeys, and both decide whether someone keeps it.
-        _metrics.IsVisible = true;
-        _metrics.Text = "Measuring...";
+        Ui.Say(_metrics, "Measuring...");
 
         // Declared out here: the summary below the try reads them, and a cancellation must
         // still leave them in a state that can be reported.
@@ -1933,14 +1866,21 @@ public sealed class SettingsWindow : Window
             // being announced as running on the processor.
             var gpu = trial.GpuText;
 
-            _metrics.Text = trial.Succeeded
-                ? $"First line {trial.Elapsed.TotalSeconds:F1}s "
-                  + (trial.FirstRunWasCold ? "(the model had to be loaded)" : "(it was already loaded)")
-                  + $" - then {(trial.WarmElapsed ?? trial.Elapsed).TotalSeconds:F1}s per line"
-                  + $" - {trial.VramText} of video memory - GPU {gpu}."
-                  + Environment.NewLine
-                  + "Measured with no game running. In play the model shares the graphics card, so expect slower."
-                : $"Could not measure ({trial.Detail}).";
+            if (trial.Succeeded)
+            {
+                _metrics.Foreground = Brush("TextSecondary");
+                _metrics.Text =
+                    $"First line: {trial.Elapsed.TotalSeconds:F1}s "
+                    + (trial.FirstRunWasCold ? "(model loading)" : "(model already loaded)")
+                    + $" · then {(trial.WarmElapsed ?? trial.Elapsed).TotalSeconds:F1}s per line"
+                    + $" · {trial.VramText} of video memory · GPU {gpu}."
+                    + Environment.NewLine
+                    + "Measured with no game running. Expect slower while playing.";
+            }
+            else
+            {
+                Ui.Say(_metrics, $"Could not measure ({trial.Detail}).", Tone.Error);
+            }
 
             // The pair the reader chose on this screen, not the setting being edited: this test asks
             // "what would this model do", and that question is theirs to aim.
@@ -1955,11 +1895,11 @@ public sealed class SettingsWindow : Window
 
             var from = ModelTestSuite.SourceFor(language, sourceCode);
 
+            // The ceiling is the mod's own (Placeholders.MaxAttempts), never a number typed here.
             _testOutput.Children.Add(Note(
-                $"Translating from {from.Language} into {Languages.NameOf(language)}, the way the mod "
-                + "does it: up to three attempts on a line it refuses, and the line left alone if it "
-                + "still refuses. The times below are what you would wait in game.",
-                "TextMuted"));
+                $"From {from.Language} into {Languages.NameOf(language)}, like the mod: up to "
+                + $"{Placeholders.MaxAttempts} attempts per line, then the line is left untranslated. "
+                + "The times are what you would wait in the game."));
 
             await _probe.RunSuiteAsync(url, model, language, ct: _suiteStop.Token,
                                       sourceCode: sourceCode, rate: true,
@@ -1995,18 +1935,13 @@ public sealed class SettingsWindow : Window
                             Margin = new Thickness(0, 10, 0, 0),
                         });
 
-                        _testOutput.Children.Insert(_testOutput.Children.Count - 1, new TextBlock
-                        {
-                            Text = "These two decide one thing only: whether the mod's 'strict_source' "
-                                 + "option would work with this model. It is off by default, so a "
-                                 + "\"cannot\" here is not a defect — it means that option stays off. "
-                                 + "Both must pass: refusing invented words while still translating "
-                                 + "other real languages is not what the option promises.",
-                            FontSize = 11,
-                            TextWrapping = TextWrapping.Wrap,
-                            Foreground = Brush("TextMuted"),
-                            Margin = new Thickness(0, 0, 0, 4),
-                        });
+                        // Both must pass: refusing invented words while still translating other
+                        // real languages is not what the option promises.
+                        var aside = Note("These two only decide whether the mod's 'strict_source' "
+                                         + "option works with this model. It is off by default, so "
+                                         + "\"cannot\" is not a failure. Both must pass.");
+                        aside.Margin = new Thickness(0, 0, 0, 4);
+                        _testOutput.Children.Insert(_testOutput.Children.Count - 1, aside);
                     }
 
                     // Inserted above the gear so the gear stays last: results accumulate, and the
@@ -2022,8 +1957,8 @@ public sealed class SettingsWindow : Window
         }
         catch (OperationCanceledException)
         {
-            _testOutput.Children.Add(Note("Stopped. What is above is what was measured "
-                                          + "before you stopped it.", "StatusInfo"));
+            _testOutput.Children.Add(Note("Stopped. The results above are from before you stopped.",
+                                          Tone.Info));
             return;
         }
         finally
@@ -2044,7 +1979,7 @@ public sealed class SettingsWindow : Window
 
             _testOutput.Children.Add(new TextBlock
             {
-                Text = $"{passed}/{required} required instructions followed.",
+                Text = $"Passed {passed} of {required} required tests.",
                 FontWeight = FontWeight.SemiBold,
                 Margin = new Thickness(0, 8, 0, 0),
                 Foreground = Brush(passed == required ? "StatusSuccess" : "StatusWarning"),
@@ -2061,14 +1996,9 @@ public sealed class SettingsWindow : Window
 
             if (marks.Count > 0)
             {
-                _testOutput.Children.Add(new TextBlock
-                {
-                    Text = $"Self-assessment: {marks.Average():F1}/10 on average, over "
-                         + $"{marks.Count} answers. The model grading itself, not a verdict.",
-                    FontSize = 11,
-                    TextWrapping = TextWrapping.Wrap,
-                    Foreground = Brush("TextMuted"),
-                });
+                _testOutput.Children.Add(Note(
+                    $"Self-assessment: {marks.Average():F1}/10 on average ({marks.Count} answers). "
+                    + "The model's own opinion, not a test result."));
             }
 
             // Said next to the mark, never inside it: a line that passed after the mod corrected
@@ -2077,14 +2007,9 @@ public sealed class SettingsWindow : Window
             var helped = outcomes.Count(r => r.Test.UnlocksOption is null && r.PassedWithHelp);
             if (helped > 0)
             {
-                _testOutput.Children.Add(new TextBlock
-                {
-                    Text = helped == 1
-                        ? "1 of those was wrong at first and passed only after the mod corrected it."
-                        : $"{helped} of those were wrong at first and passed only after the mod corrected them.",
-                    TextWrapping = TextWrapping.Wrap,
-                    Foreground = Brush("TextMuted"),
-                });
+                _testOutput.Children.Add(Note(
+                    $"{Composition.Amount(helped, "test", "tests")} passed only after the mod fixed "
+                    + "the answer."));
             }
 
             // The figures a player actually needs, and only those — what a line costs them in
@@ -2105,26 +2030,19 @@ public sealed class SettingsWindow : Window
             // processor is not slow, it is too big for this card, and the answer is a smaller one.
             if (_probe.LastPlacement is { } placement)
             {
-                _testOutput.Children.Add(new TextBlock
-                {
-                    Text = $"This model holds {placement}",
-                    FontSize = 12,
-                    TextWrapping = TextWrapping.Wrap,
-                    Foreground = Brush(placement.Contains("processor") ? "StatusWarning" : "TextMuted"),
-                });
+                var where = Note($"This model holds {placement}",
+                                 placement.Contains("processor") ? Tone.Warning : Tone.Neutral);
+                where.FontSize = 12;
+                _testOutput.Children.Add(where);
             }
 
             if (echoed > 0)
             {
-                _testOutput.Children.Add(new TextBlock
-                {
-                    Text = $"{Composition.Amount(echoed, "answer", "answers")} repeated the instructions back. On its own, a reason "
-                         + "not to use this model: the mod prints what comes back into the game, "
-                         + "word for word.",
-                    FontSize = 11,
-                    TextWrapping = TextWrapping.Wrap,
-                    Foreground = Brush("StatusWarning"),
-                });
+                // Reason enough on its own: the mod puts what comes back into the game, word for word.
+                _testOutput.Children.Add(Note(
+                    $"{Composition.Amount(echoed, "answer", "answers")} repeated the instructions. "
+                    + "Avoid this model: the mod shows its answers in the game as they are.",
+                    Tone.Warning));
             }
 
             _testButton.IsEnabled = true;
@@ -2141,7 +2059,7 @@ public sealed class SettingsWindow : Window
             ? "read"
             : experimental
                 ? (result.Passed ? "can" : "cannot")
-                : (result.Passed ? "ok" : "KO");
+                : (result.Passed ? "pass" : "fail");
 
         // An experimental test never fails a model, so "cannot" must not be red — that would read
         // as a defect where there is none. But it was grey on both sides, and grey buried the one
@@ -2181,14 +2099,16 @@ public sealed class SettingsWindow : Window
         var cost = $"{result.Elapsed.TotalSeconds:F1}s · "
                  + (result.Test.CanBeAskedAgain
                     ? $"{result.Attempts} of {Placeholders.MaxAttempts} requests"
-                    : $"{result.Attempts} request — nothing to check, so no second one");
+                    // Nothing to check in the answer, so nothing to ask again.
+                    : $"{result.Attempts} request (no retry)");
 
-        if (!result.Accepted) cost += " · refused, left untranslated";
-        else if (result.Repaired) cost += " · repaired by the mod";
-            // Not a failure: the mod takes this off before a player sees it. Said
-            // because it is a habit rather than an accident — a model that wraps one
-            // answer wraps them all, and that separates two models that both pass.
-            if (result.NeededCleaning) cost += " · wrapped, cleaned by the mod";
+        if (!result.Accepted) cost += " · failed, left untranslated";
+        else if (result.Repaired) cost += " · fixed by the mod";
+
+        // Not a failure: the mod takes this off before a player sees it. Said because it is a
+        // habit rather than an accident — a model that wraps one answer wraps them all, and that
+        // separates two models that both pass.
+        if (result.NeededCleaning) cost += " · extra text removed by the mod";
 
         var costText = new TextBlock
         {
@@ -2235,7 +2155,7 @@ public sealed class SettingsWindow : Window
 
         body.Children.Add(new TextBlock
         {
-            Text = $"answer: {result.Answer?.ReplaceLineEndings(" / ") ?? "(nothing)"}",
+            Text = $"answer: {result.Answer?.ReplaceLineEndings(" / ") ?? "(empty)"}",
             FontSize = 11,
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("TextSecondary"),
@@ -2271,42 +2191,22 @@ public sealed class SettingsWindow : Window
 
         if (experimental)
         {
-            body.Children.Add(new TextBlock
-            {
-                Text = result.Passed
-                    ? $"This model can do it — the mod's '{result.Test.UnlocksOption}' option may be switched on."
-                    : $"Not followed — leave the mod's '{result.Test.UnlocksOption}' option off. "
-                      + "It is experimental, and models keep getting better at this.",
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = Brush("TextMuted"),
-            });
+            body.Children.Add(Note(result.Passed
+                ? $"Passed: the mod's '{result.Test.UnlocksOption}' option can be turned on for this model."
+                : $"Failed: keep the mod's '{result.Test.UnlocksOption}' option off."));
 
             // Shown on success too, and in amber so it is not read as small print under a green
             // mark. Passing means the model is capable, not that the option is safe: the mod
             // ships it disabled because its failure mode is silent, and a green line saying
             // "you may switch it on" with nothing beside it would quietly recommend it.
             if (result.Test.Caveat is not null)
-            {
-                body.Children.Add(new TextBlock
-                {
-                    Text = result.Test.Caveat,
-                    FontSize = 11,
-                    TextWrapping = TextWrapping.Wrap,
-                    Foreground = Brush("StatusWarning"),
-                });
-            }
+                body.Children.Add(Note(result.Test.Caveat, Tone.Warning));
         }
 
         if (result.EchoedInstructions)
         {
-            body.Children.Add(new TextBlock
-            {
-                Text = "The model repeated the instructions; the check was run on the last line.",
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = Brush("StatusWarning"),
-            });
+            body.Children.Add(Note("The model repeated the instructions. Only its last line was checked.",
+                                   Tone.Warning));
         }
 
         // Set apart by its frame, not only by its wording: these two answer a different question
@@ -2461,18 +2361,18 @@ public sealed class SettingsWindow : Window
             Compare("API key", _apiKey.Text, saved.AiApiKey);
         }
         Compare("hotkey", _hotkey.Value, saved.SettingsHotkey);
-        Compare("updates channel", Tag(_channel), saved.Channel);
+        Compare("update channel", Tag(_channel), saved.Channel);
 
         if ((_modOnline.IsChecked == true) != saved.ModOnlineMode)
-            changes.Add($"mod goes online: {saved.ModOnlineMode} -> {_modOnline.IsChecked == true}");
+            changes.Add($"mod online: {(saved.ModOnlineMode ? "on" : "off")} -> {(_modOnline.IsChecked == true ? "on" : "off")}");
 
         Compare("merge strategy", Tag(_mergeStrategy), saved.MergeStrategy);
-        Compare("notice position", Tag(_notificationPosition), saved.NotificationPosition);
+        Compare("notification position", Tag(_notificationPosition), saved.NotificationPosition);
 
         if ((_autoDownload.IsChecked == true) != saved.AutoDownload) changes.Add("auto-download");
-        if ((_notifyUpdates.IsChecked == true) != saved.NotifyUpdates) changes.Add("translation update notices");
-        if ((_checkModUpdates.IsChecked == true) != saved.CheckModUpdates) changes.Add("mod update notices");
-        if ((_notificationsEnabled.IsChecked == true) != saved.NotificationsEnabled) changes.Add("in-game notices");
+        if ((_notifyUpdates.IsChecked == true) != saved.NotifyUpdates) changes.Add("translation update notifications");
+        if ((_checkModUpdates.IsChecked == true) != saved.CheckModUpdates) changes.Add("mod update notifications");
+        if ((_notificationsEnabled.IsChecked == true) != saved.NotificationsEnabled) changes.Add("in-game notifications");
 
         Compare("Google key", _draft.GoogleApiKey, saved.GoogleApiKey);
         Compare("DeepL key", _draft.DeeplApiKey, saved.DeeplApiKey);
@@ -2545,9 +2445,6 @@ public sealed class SettingsWindow : Window
 
     // ---------------------------------------------------------------- helpers
 
-    /// <summary>Through Palette, which will not let an unknown key pass unnoticed.</summary>
-    private static IBrush? Brush(string key) => Palette.Of(key);
-
     /// <summary>
     /// What the selected entry stands for, and which row carries a value.
     ///
@@ -2581,53 +2478,4 @@ public sealed class SettingsWindow : Window
         return stack;
     }
 
-    private Control Row(string label, params Control[] controls)
-    {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-        row.Children.Add(new TextBlock
-        {
-            Text = label,
-            Width = 130,
-            FontSize = 12,
-            VerticalAlignment = VerticalAlignment.Center,
-            Foreground = Brush("TextMuted"),
-        });
-        foreach (var control in controls) row.Children.Add(control);
-        return row;
-    }
-
-    private Control Card(string title, string? intro, Control content)
-    {
-        var body = new StackPanel { Spacing = 10 };
-
-        body.Children.Add(new TextBlock
-        {
-            Text = title,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = Brush("TextPrimary"),
-        });
-
-        if (intro is not null)
-        {
-            body.Children.Add(new TextBlock
-            {
-                Text = intro,
-                FontSize = 12,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = Brush("TextSecondary"),
-            });
-        }
-
-        body.Children.Add(content);
-
-        return new Border
-        {
-            Background = Brush("SurfaceCard"),
-            BorderBrush = Brush("BorderSubtle"),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(18, 15),
-            Child = body,
-        };
-    }
 }

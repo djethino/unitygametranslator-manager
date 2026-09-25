@@ -8,6 +8,7 @@ using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
 using UnityGameTranslator.Manager.Core.Settings;
 using UnityGameTranslator.Common;
+using static UnityGameTranslator.Manager.Gui.Ui;
 
 namespace UnityGameTranslator.Manager.Gui;
 
@@ -325,30 +326,18 @@ public sealed class GameModSettingsForm
         _populating = true;
         _host.Children.Clear();
 
-        _host.Children.Add(new TextBlock
-        {
-            Text = "Settings for this game only. Each starts from what the game already holds, or "
-                 + "from Mod defaults when it holds nothing.",
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Palette.Of("TextSecondary"),
-        });
+        _host.Children.Add(Intro(
+            "Settings for this game only. Each shows what the game uses, or Mod defaults when the "
+            + "game has nothing set."));
 
         // 🔴 **The whole form is read-only on somebody else's game, and it SAYS so.** Greying the
         // Apply alone would let somebody pick a language, type a key and a model, and only then
         // meet a refusal — the dead end this program refuses everywhere. Said here rather than only
         // in the button's tooltip: this is a different card from the one that carries the account
         // message, and each card answers for what it offers.
-        if (_refusal is { } refusal)
-        {
-            _host.Children.Add(new TextBlock
-            {
-                Text = refusal,
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = Palette.Of("StatusWarning"),
-            });
-        }
+        //
+        // ⚠ A callout, not a line: it governs every field below, and it is read before them.
+        if (_refusal is { } refusal) _host.Children.Add(Callout(refusal, Tone.Warning));
 
         // Everything below shows what the game holds and, where it may not be changed, shows it
         // greyed. Reading somebody else's setup costs nothing; writing it is what is refused.
@@ -384,15 +373,13 @@ public sealed class GameModSettingsForm
         // "no greyed control without words", and only because the control would be pointing at a
         // file that does not exist. What replaces it is the line above, which says where these
         // answers go instead.
-        if (!_installed) _host.Children.Add(new TextBlock
+        if (!_installed)
         {
-            Text = "Written into the game when the mod is installed.",
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Avalonia.Thickness(0, 6, 0, 0),
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Foreground = Palette.Of("TextMuted"),
-        });
+            var later = Note("Written into the game when the mod is installed.");
+            later.Margin = new Avalonia.Thickness(0, 6, 0, 0);
+            later.HorizontalAlignment = HorizontalAlignment.Right;
+            _host.Children.Add(later);
+        }
 
         ShowBackendBlocks();
 
@@ -420,7 +407,7 @@ public sealed class GameModSettingsForm
             StoreBackend();
         };
 
-        return Row("Backend", _backend,
+        return Row("Translate with", _backend,
                    Origin(_draft.TranslationBackend, _inGame.TranslationBackend,
                           () => _draft.TranslationBackend = null));
     }
@@ -479,22 +466,14 @@ public sealed class GameModSettingsForm
         var typed = _aiUrl.Text?.Trim();
 
         if (!string.IsNullOrWhiteSpace(typed) && Endpoints.CautionFor(typed) is { } caution)
-        {
-            panel.Children.Add(new TextBlock
-            {
-                Text = caution,
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = Palette.Of("StatusWarning"),
-            });
-        }
+            panel.Children.Add(Note(caution, Tone.Warning));
 
         _aiKey = new TextBox
         {
             Width = 220,
             PasswordChar = '*',
             Text = EffectiveText(o => o.AiApiKey, _defaults.AiApiKey) ?? "",
-            Watermark = "leave empty for a server on your machine",
+            Watermark = "Not needed for a local server",
             FontSize = 12,
         };
 
@@ -536,14 +515,9 @@ public sealed class GameModSettingsForm
         panel.Children.Add(Row("Model", _aiModel, refresh,
                                Origin(_draft.AiModel, _inGame.AiModel, () => _draft.AiModel = null)));
 
-        _modelStatus = new TextBlock
-        {
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            IsVisible = false,
-            Foreground = Palette.Of("TextMuted"),
-            VerticalAlignment = VerticalAlignment.Center,
-        };
+        _modelStatus = Note("");
+        _modelStatus.IsVisible = false;
+        _modelStatus.VerticalAlignment = VerticalAlignment.Center;
 
         // ⚠ Left and tight against the line it belongs to. The gear centres itself and keeps its
         // own air, which is right in an empty panel and wrong beside a sentence.
@@ -560,8 +534,7 @@ public sealed class GameModSettingsForm
             Spacing = 8,
             Children = { _modelGear, _modelStatus },
         });
-        panel.Children.Add(DefaultsLink(
-            "Finding a local server and testing a model is done once, in Mod defaults."));
+        panel.Children.Add(DefaultsLink("To find a local server or test a model, use Mod defaults."));
 
         return panel;
     }
@@ -576,11 +549,11 @@ public sealed class GameModSettingsForm
 
         if (string.IsNullOrWhiteSpace(url))
         {
-            Say("Type a server address first.", "StatusWarning");
+            Say("Enter a server address first.", Tone.Warning);
             return;
         }
 
-        Say($"Asking {url}...", "TextMuted");
+        Say($"Connecting to {url}...", Tone.Neutral);
 
         // ⚠ Stopped in a finally: an indicator left spinning after a failure says the program is
         // still working when it has given up, which is worse than never having shown one.
@@ -600,8 +573,7 @@ public sealed class GameModSettingsForm
         {
             // Not dressed up as a failure: a laptop away from its server, or a server not started
             // yet, is an ordinary situation and nothing here is broken.
-            Say($"{url} did not answer just now — it may simply not be running. Nothing was changed.",
-                "StatusWarning");
+            Say($"{url} did not answer. It may not be running. Nothing was changed.", Tone.Warning);
             return;
         }
 
@@ -617,15 +589,10 @@ public sealed class GameModSettingsForm
         ModSettingControls.Select(_aiModel, chosen);
         _populating = false;
 
-        Say($"{url} answered — {Composition.Amount(models.Count, "model", "models")}.", "StatusSuccess");
+        Say($"Connected to {url}: {Composition.Amount(models.Count, "model", "models")}.", Tone.Success);
     }
 
-    private void Say(string text, string colour)
-    {
-        _modelStatus.Text = text;
-        _modelStatus.Foreground = Palette.Of(colour);
-        _modelStatus.IsVisible = true;
-    }
+    private void Say(string text, Tone tone) => Ui.Say(_modelStatus, text, tone);
 
     private Control ApiBlock()
     {
@@ -680,12 +647,8 @@ public sealed class GameModSettingsForm
         // screen saying why. The same probe as Mod defaults, so both screens answer alike.
         var test = new Button { Content = "Test key", FontSize = 11 };
 
-        var keyStatus = new TextBlock
-        {
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            IsVisible = false,
-        };
+        var keyStatus = Note("");
+        keyStatus.IsVisible = false;
 
         var keyGear = new SpinningGear(string.Empty, size: 16)
         {
@@ -701,9 +664,7 @@ public sealed class GameModSettingsForm
 
             test.IsEnabled = false;
             keyGear.IsVisible = true;
-            keyStatus.IsVisible = true;
-            keyStatus.Text = "Asking " + (deepl ? "DeepL" : "Google") + "...";
-            keyStatus.Foreground = Palette.Of("TextMuted");
+            Ui.Say(keyStatus, "Testing with " + (deepl ? "DeepL" : "Google") + "...");
 
             try
             {
@@ -712,8 +673,8 @@ public sealed class GameModSettingsForm
                     ? await probe.CheckDeeplAsync(key, _deeplFree.IsChecked == true)
                     : await probe.CheckGoogleAsync(key);
 
-                keyStatus.Text = result.Message;
-                keyStatus.Foreground = Palette.Of(result.Works ? "StatusSuccess" : "StatusWarning");
+                // Same colours as Mod defaults: a key that does not work translates nothing.
+                Ui.Say(keyStatus, result.Message, result.Works ? Tone.Success : Tone.Error);
             }
             finally
             {
@@ -739,15 +700,12 @@ public sealed class GameModSettingsForm
         // 🔴 A key of your own comes first, and the allowance second. "Both bill you on your own
         // account" said the bill and not the requirement — and beside a tickbox reading "Free
         // tier", it left the impression that anybody could use these without a key. Nobody can.
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Both need an account and a key of your own. Each account comes with a free "
-                 + "monthly allowance, and anything past it is billed to you. The key is stored "
-                 + "encrypted, tied to this machine.",
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Palette.Of("TextMuted"),
-        });
+        //
+        // ⚠ The same two lines as Mod defaults, word for word: one fact, one wording.
+        panel.Children.Add(Note(
+            "Needs your own account and API key. Free up to a monthly limit, then billed to you.",
+            Tone.Warning));
+        panel.Children.Add(Note("The key is stored encrypted on this machine."));
 
         return panel;
     }
@@ -763,23 +721,13 @@ public sealed class GameModSettingsForm
         //
         // ⚠ Said rather than simply left out. A form that mirrors the defaults screen and silently
         // drops one of its rows reads as an oversight, and somebody would put it back.
-        yield return new TextBlock
-        {
-            Text = "The in-game hotkey is not one of these: the same key is not detected the same "
-                 + "way in every game. "
-                 + (_inGameHotkey is null
-                    ? $"This game has none yet, so the one from Mod defaults "
-                      + $"({_defaults.SettingsHotkey}) is written."
-                    : "It is asked on its own, under \"Replace this game's key with the one in "
-                      + "Mod defaults\"."),
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Palette.Of("TextMuted"),
-        };
+        // The block is named by its own label ("Key for this game", MainWindow.HotkeyDecision),
+        // never by a position that moves with the layout.
+        yield return Note("The in-game hotkey has its own setting: \"Key for this game\".");
 
         _modOnline = new CheckBox
         {
-            Content = "Let the mod go online while you play",
+            Content = "Allow the mod to go online",
             IsChecked = EffectiveFlag(o => o.ModOnlineMode, _defaults.ModOnlineMode),
             FontSize = 12,
         };
@@ -801,22 +749,24 @@ public sealed class GameModSettingsForm
             v => _draft.Channel = v, ModSettingControls.Tag(_channel),
             _inGame.Channel ?? _defaults.Channel);
 
-        yield return Row("Plugin builds", _channel,
+        // ⚠ Every label below is Mod defaults' own, word for word: the same question asked on two
+        // screens reads the same on both (it said "Plugin builds" here and "Updates" there).
+        yield return Row("Update channel", _channel,
                          Origin(_draft.Channel, _inGame.Channel, () => _draft.Channel = null));
 
-        _checkModUpdates = Toggle("Tell me when a new version of the mod is out",
+        _checkModUpdates = Toggle("Notify me about mod updates",
             o => o.CheckModUpdates, _defaults.CheckModUpdates, v => _draft.CheckModUpdates = v);
 
         yield return WithOrigin(_checkModUpdates, _draft.CheckModUpdates, _inGame.CheckModUpdates,
                                 () => _draft.CheckModUpdates = null);
 
-        _notifyUpdates = Toggle("Tell me when a translation I use is updated",
+        _notifyUpdates = Toggle("Notify me about translation updates",
             o => o.NotifyUpdates, _defaults.NotifyUpdates, v => _draft.NotifyUpdates = v);
 
         yield return WithOrigin(_notifyUpdates, _draft.NotifyUpdates, _inGame.NotifyUpdates,
                                 () => _draft.NotifyUpdates = null);
 
-        _autoDownload = Toggle("Download translation updates without asking",
+        _autoDownload = Toggle("Download translation updates automatically",
             o => o.AutoDownload, _defaults.AutoDownload, v => _draft.AutoDownload = v);
         _autoDownload.Margin = new Avalonia.Thickness(20, 0, 0, 0);
 
@@ -834,7 +784,7 @@ public sealed class GameModSettingsForm
                          Origin(_draft.MergeStrategy, _inGame.MergeStrategy,
                                 () => _draft.MergeStrategy = null));
 
-        _notificationsEnabled = Toggle("Show notices while playing",
+        _notificationsEnabled = Toggle("Show notifications in the game",
             o => o.NotificationsEnabled, _defaults.NotificationsEnabled,
             v => _draft.NotificationsEnabled = v);
 
@@ -849,7 +799,7 @@ public sealed class GameModSettingsForm
             v => _draft.NotificationPosition = v, ModSettingControls.Tag(_noticePosition),
             _inGame.NotificationPosition ?? _defaults.NotificationPosition);
 
-        yield return Row("Notice position", _noticePosition,
+        yield return Row("Position", _noticePosition,
                          Origin(_draft.NotificationPosition, _inGame.NotificationPosition,
                                 () => _draft.NotificationPosition = null));
     }
@@ -946,13 +896,7 @@ public sealed class GameModSettingsForm
     {
         var panel = new StackPanel { Spacing = 2 };
 
-        panel.Children.Add(new TextBlock
-        {
-            Text = text,
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Palette.Of("TextMuted"),
-        });
+        panel.Children.Add(Note(text));
 
         var open = new Button
         {
@@ -973,23 +917,6 @@ public sealed class GameModSettingsForm
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
         row.Children.Add(box);
         row.Children.Add(Origin(own, inGame, clear));
-        return row;
-    }
-
-    private Control Row(string label, params Control[] controls)
-    {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-
-        row.Children.Add(new TextBlock
-        {
-            Text = label,
-            Width = 120,
-            FontSize = 12,
-            VerticalAlignment = VerticalAlignment.Center,
-            Foreground = Palette.Of("TextMuted"),
-        });
-
-        foreach (var control in controls) row.Children.Add(control);
         return row;
     }
 

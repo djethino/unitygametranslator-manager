@@ -966,6 +966,7 @@ public partial class MainWindow : Window
     private void RecomputeSituations()
     {
         _situations.Clear();
+        _playStates.Clear();
         _mine.Clear();
         _accounts.Clear();
 
@@ -975,8 +976,9 @@ public partial class MainWindow : Window
             // at launch this is the first place to see a Setup answered while the tool was closed.
             SettleSetupWay(game);
 
-            var (situation, mine, account) = ReadSituation(game);
+            var (situation, mine, account, play) = ReadSituation(game);
             _situations[game.Path] = situation;
+            _playStates[game.Path] = play;
             if (mine) _mine.Add(game.Path);
             if (account.User is not null) _accounts[game.Path] = account;
         }
@@ -996,7 +998,7 @@ public partial class MainWindow : Window
     /// down where doing so is safe. Reaching into that set from here was a race with a full
     /// recompute — rare, and the kind that corrupts a collection rather than failing cleanly.
     /// </summary>
-    private (GameSituationInfo Situation, bool Mine, (string? User, string? Server) Account)
+    private (GameSituationInfo Situation, bool Mine, (string? User, string? Server) Account, PlayState Play)
         ReadSituation(GameInstall game)
     {
         // 🔴 **The same report the card is built from — there is no longer a second builder.**
@@ -1024,8 +1026,8 @@ public partial class MainWindow : Window
         var situation = SituationReader.Read(report, _settings.ResolveTargetLanguage(),
                                              checkedOnline, waiting, _settings.Current.ApiUser);
 
-        // Both RETURNED rather than recorded, for the reason given above this method.
-        return (situation, report.MyPosition is not null, report.SiteAccount);
+        // All RETURNED rather than recorded, for the reason given above this method.
+        return (situation, report.MyPosition is not null, report.SiteAccount, PlayStateOf(report));
     }
 
     /// <summary>
@@ -1923,9 +1925,10 @@ public partial class MainWindow : Window
         // row says nothing new.
         if (SettleSetupWay(game)) redraw = true;
 
-        var (now, mine, account) = await Task.Run(() => ReadSituation(game));
+        var (now, mine, account, play) = await Task.Run(() => ReadSituation(game));
 
         _situations[game.Path] = now;
+        _playStates[game.Path] = play;
         if (mine) _mine.Add(game.Path); else _mine.Remove(game.Path);
 
         // Signing in happens INSIDE the game, so this is one of the few things that can change
@@ -2009,7 +2012,74 @@ public partial class MainWindow : Window
         GameSituationInfo? Situation,
         bool Running,
         (string? User, string? Server) Account,
-        ServerStandingKind Standing);
+        ServerStandingKind Standing,
+        PlayState? Play = null);
+
+    /// <summary>
+    /// What pressing Play promises for a game, and in which language — what its play mark draws.
+    /// Read with the situation (ReadSituation), so a row redraws when it changes.
+    /// </summary>
+    private sealed record PlayState(PlayPromise Promise, string? Language);
+
+    /// <summary>The play state of each game, by path — see <see cref="PlayState"/>.</summary>
+    private readonly Dictionary<string, PlayState> _playStates = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The play state from a report: its promise, and the language it translates into — the game's
+    /// configured target, else the target its translation file states.
+    /// </summary>
+    private PlayState PlayStateOf(GameReport report)
+    {
+        var descriptor = InstalledDescriptor(report);
+        var config = GameConfigWriter.Read(report.Game.Path, descriptor);
+
+        var language = config.Values.TargetLanguage;
+        if ((language is null || language.Equals("auto", StringComparison.OrdinalIgnoreCase)) && descriptor is not null)
+            language = LocalTranslationProbe.ReadLanguages(report.Game.Path, descriptor).Target;
+
+        return new PlayState(PlayPromises.For(report, config), language);
+    }
+
+    /// <summary>
+    /// The mark every Play button wears — the list's, the card's and the action bar's, so the same
+    /// game reads the same in all three (user, 2026-09-25).
+    ///
+    /// 🔴 **A mark, never a colour.** Play is green everywhere because it is one act, and grey means
+    /// "cannot be pressed" in this interface — a differently coloured Play would read as disabled.
+    /// So: the triangle alone for the original text (nothing set up, or translations switched off);
+    /// the triangle and the target language's flag for "shows the translation it holds"; and the
+    /// same with a spark on the flag's corner for "also translates new lines as they appear".
+    /// </summary>
+    private static Control PlayMark(PlayState? state)
+    {
+        var triangle = Glyphs.Play("StatusSuccess");
+
+        if (state is not { Promise: PlayPromise.Translated or PlayPromise.Translating }
+            || LanguageMark.For(state.Language) is not { } flag)
+        {
+            return triangle;
+        }
+
+        Control mark = flag;
+
+        if (state.Promise == PlayPromise.Translating)
+        {
+            var spark = Glyphs.Sized(Glyphs.Spark("QualityAi"), 9);
+            spark.HorizontalAlignment = HorizontalAlignment.Right;
+            spark.VerticalAlignment = VerticalAlignment.Top;
+            spark.Margin = new Avalonia.Thickness(0, -5, -6, 0);
+
+            mark = new Panel { Children = { flag, spark }, VerticalAlignment = VerticalAlignment.Center };
+        }
+
+        return new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 3,
+            VerticalAlignment = VerticalAlignment.Center,
+            Children = { triangle, mark },
+        };
+    }
 
     /// <summary>
     /// What this game's row would say right now.
@@ -2026,7 +2096,8 @@ public partial class MainWindow : Window
             _situations.TryGetValue(game.Path, out var situation) ? situation : null,
             _running.IsRunning(game),
             account,
-            ServerIdentity.For(_settings.Current, account, BuildInfo.ApiBaseUrl).Kind);
+            ServerIdentity.For(_settings.Current, account, BuildInfo.ApiBaseUrl).Kind,
+            _playStates.TryGetValue(game.Path, out var play) ? play : null);
     }
 
     /// <summary>
@@ -2251,7 +2322,7 @@ public partial class MainWindow : Window
     {
         var account = facts.Account;
 
-        var play = PlayButton(game, small: true, running: facts.Running);
+        var play = PlayButton(game, small: true, running: facts.Running, state: facts.Play);
         if (account.User is null && play is null) return content;
 
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
@@ -2391,34 +2462,39 @@ public partial class MainWindow : Window
     /// with the row it sits in. The card passes what it just read; there is nothing to compare
     /// there, it is rebuilt whole.
     /// </param>
-    private Button? PlayButton(GameInstall game, bool small, bool running, GameReport? report = null)
+    /// <param name="state">
+    /// What the list's row read about this game (RowFacts.Play) — the card and the bar read it from
+    /// their report instead. Either way the same PlayState, so the mark is the same in all three.
+    /// </param>
+    private Button? PlayButton(GameInstall game, bool small, bool running, GameReport? report = null,
+                               PlayState? state = null)
     {
         if (running) return null;
         if (GameLaunch.RouteFor(game) is not { } route) return null;
 
-        // ⚠ Only the full-size button says it. The mark in the list is a glyph with no room for
-        // words, and giving it a tooltip nobody hovers would be a promise made to nobody.
-        var promise = report is null
-            ? PlayPromise.Plain
-            : PlayPromises.For(report, GameConfig(report));
+        state = report is null ? state : PlayStateOf(report);
+        var promise = state?.Promise ?? PlayPromise.Plain;
 
+        // The mark says, in every size, what the words say on the full-size one — see PlayMark.
         var button = small
             ? new Button
             {
-                Content = Glyphs.Play("StatusSuccess"),
+                Content = PlayMark(state),
                 Padding = new Avalonia.Thickness(6, 2),
                 Background = Avalonia.Media.Brushes.Transparent,
                 BorderThickness = new Avalonia.Thickness(0),
                 Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
             }
-            : Glyphs.Button(Glyphs.Play("StatusSuccess"), PlayPromises.Label(promise));
+            : Glyphs.Button(PlayMark(state), PlayPromises.Label(promise));
 
         // Tonal green, and only on the full-size one: the small mark in the list has no fill at
         // all, so there is nothing there to tint. See the Button.play block in App.axaml for why
         // this is the single control in the application allowed a colour of its own.
         if (!small) button.Classes.Add("play");
 
-        ToolTip.SetTip(button, small || report is null
+        // The promise in words on every size now that the list's mark carries it too: a mark that
+        // says something needs its sentence one hover away.
+        ToolTip.SetTip(button, state is null
             ? $"Start {game.Name}. {route.Why}"
             : $"Start {game.Name}. {PlayPromises.Explain(promise)} {route.Why}");
 
@@ -3822,6 +3898,14 @@ public partial class MainWindow : Window
             foreach (var control in TranslationMakeup(report, local)) body.Children.Add(control);
             foreach (var control in LineageNotes(report)) body.Children.Add(control);
             foreach (var control in TranslationWorkbench(report, heading: false)) body.Children.Add(control);
+
+            // Translations switched off in the game: the card dims (user, 2026-09-25) — everything
+            // but its first line, which carries the switch that turns them back on. Dimmed, not
+            // disabled: what is below still works, it is simply not what the game will show.
+            if (!GameConfig(report).ShowsTranslation)
+            {
+                foreach (var child in body.Children.Skip(1)) child.Opacity = 0.45;
+            }
 
             yield return Card(body);
         }
@@ -5356,8 +5440,9 @@ public partial class MainWindow : Window
                     $"The translation switch could not be written ({result.Failure}).");
             }
 
-            // In place: the Play button's promise follows the game's switch.
-            await ShowSelectedAsync();
+            // The row AND the card, in place: every Play mark — the list's, the card's, the bar's —
+            // follows the game's switch, and the list's is drawn from the row.
+            await RepublishAsync();
         }
 
         if (quick)

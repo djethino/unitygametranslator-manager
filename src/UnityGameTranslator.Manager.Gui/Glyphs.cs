@@ -101,6 +101,14 @@ public static class Glyphs
     public static Control Play(string? colour = null) => Shape(colour,
         "M4.6,2.6 L13,8 L4.6,13.4 Z");
 
+    /// <summary>
+    /// A four-pointed spark, for "translated live, as it plays" — set on the corner of the play
+    /// button's flag (MainWindow.PlayMark). A spark rather than the word "AI": live translation may
+    /// equally be Google or DeepL.
+    /// </summary>
+    public static Control Spark(string? colour = null) => Shape(colour,
+        "M8,1 L9.6,6.4 L15,8 L9.6,9.6 L8,15 L6.4,9.6 L1,8 L6.4,6.4 Z");
+
     /// <summary>A bin, for taking something back out of a list.</summary>
     public static Control Trash(string? colour = null) => Shape(colour,
         "M3,3.6 L6,3.6 L6,2.2 L10,2.2 L10,3.6 L13,3.6 L13,5.2 L3,5.2 Z "

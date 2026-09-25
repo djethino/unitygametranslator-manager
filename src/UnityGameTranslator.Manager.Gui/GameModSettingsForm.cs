@@ -184,6 +184,9 @@ public sealed class GameModSettingsForm
     /// </summary>
     private readonly ModUiView? _modUi;
 
+    /// <summary>The line saying whether Apply places the interface file — null where it cannot.</summary>
+    private TextBlock? _modUiPlacement;
+
     /// <summary>
     /// Asked to replace this game's own interface file with the one kept in Mod defaults — an act on
     /// a file, confirmed and done at once by the window, like Import in Mod defaults.
@@ -865,7 +868,10 @@ public sealed class GameModSettingsForm
 
         if (view.InGame is null)
         {
-            yield return Note($"Ticked, Apply places the file from Mod defaults ({kept.Language}, {lines(kept)}).");
+            // Follows the box (RefreshApply): what Apply will do is said where the box is, the moment
+            // it changes — the count on the button alone does not name the file.
+            _modUiPlacement = Note("");
+            yield return _modUiPlacement;
             yield break;
         }
 
@@ -891,6 +897,21 @@ public sealed class GameModSettingsForm
     /// Mod defaults fits it, and the game is to translate the interface. The writer's own rule
     /// (GameConfigWriter.PlanModUi, fill) read from what the form shows.
     /// </summary>
+    private void ShowModUiPlacement()
+    {
+        if (_modUiPlacement is null || _modUi?.Kept is not { } kept) return;
+
+        var file = $"the UGT Mod interface file from Mod defaults ({kept.Language}, "
+                   + $"{Composition.Amount(kept.Lines, "line", "lines")})";
+
+        if (!PlacesModUiFile())
+            Ui.Say(_modUiPlacement, $"Tick the box to place {file} in this game.");
+        else if (_installed)
+            Ui.Say(_modUiPlacement, $"Apply also places {file}.", Tone.Info);
+        else
+            Ui.Say(_modUiPlacement, $"{char.ToUpperInvariant(file[0])}{file[1..]} is placed when UGT Mod is installed.", Tone.Info);
+    }
+
     private bool PlacesModUiFile() =>
         _modUi is { InGame: null, KeptFits: true }
         && EffectiveFlag(o => o.TranslateModUi, _defaults.TranslateModUi);
@@ -1032,7 +1053,11 @@ public sealed class GameModSettingsForm
     /// </summary>
     private void RefreshApply()
     {
-        if (_populating || !_installed || _apply is null) return;
+        if (_populating) return;
+
+        ShowModUiPlacement();
+
+        if (!_installed || _apply is null) return;
 
         // 🔴 **What is not in the file yet, not what this game answers.** The block header counts
         // the answers — that is what "3 set for this game" means, and it stays 3 after they are
@@ -1052,9 +1077,13 @@ public sealed class GameModSettingsForm
         ScopeMark.SetLabel(_apply, count > 0 ? $"Apply ({count})" : "Apply");
         _apply.IsEnabled = count > 0;
 
-        ToolTip.SetTip(_apply, count > 0
-            ? $"Writes {(count == 1 ? "this" : "these")} {Composition.Amount(count, "setting", "settings")} into the game."
-            : "This game already holds every setting answered here.");
+        var settings = PlacesModUiFile() ? count - 1 : count;
+        ToolTip.SetTip(_apply, count == 0
+            ? "This game already holds every setting answered here."
+            : settings == 0
+                ? "Places the UGT Mod interface file in the game."
+                : $"Writes {(settings == 1 ? "this" : "these")} {Composition.Amount(settings, "setting", "settings")} into the game"
+                  + (PlacesModUiFile() ? ", and places the UGT Mod interface file." : "."));
 
         // Last, and it overrules both: a count of pending answers says nothing about whether they
         // may be written here. Greyed with its reason, never hidden — see the note above.

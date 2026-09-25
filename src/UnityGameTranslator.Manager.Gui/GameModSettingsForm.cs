@@ -813,7 +813,7 @@ public sealed class GameModSettingsForm
             {
                 Text = set == 0 ? "Additional hotkeys" : $"Additional hotkeys ({set} set)",
                 FontSize = 12,
-                FontWeight = FontWeight.SemiBold,
+                Foreground = Palette.Of("TextSecondary"),
             },
             Content = body,
             IsExpanded = false,

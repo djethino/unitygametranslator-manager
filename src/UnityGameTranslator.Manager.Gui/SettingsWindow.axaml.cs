@@ -955,7 +955,10 @@ public sealed class SettingsWindow : Window
             body.Children.Add(ShortcutBlock(shortcut, editor.Row, editor.Problem));
         }
 
-        var header = new TextBlock { FontSize = 12, FontWeight = FontWeight.SemiBold };
+        // Its neighbours' header, exactly ("Tested models" in this window): with no colour of its own
+        // a header takes the theme's default, which is dark on this dark card — the fold was there
+        // and read as nothing.
+        var header = new TextBlock { FontSize = 12, Foreground = Brush("TextSecondary") };
 
         void Count()
         {

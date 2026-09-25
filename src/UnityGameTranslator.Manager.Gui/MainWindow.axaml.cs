@@ -6545,7 +6545,7 @@ public partial class MainWindow : Window
         // can be a store manifest or a repack's folder, which nobody else can reproduce.
         // The game as confirmed with the site on a first publication — its name and id, which are
         // what the server resolves on — and this machine's reading everywhere else.
-        var id = await publisher.PublishAsync(content, token,
+        var published = await publisher.PublishAsync(content, token,
                                               edited.GameSteamId ?? report.Game.SteamAppId,
                                               edited.GameName ?? report.Game.ProductName ?? report.Game.Name,
                                               source, target,
@@ -6560,12 +6560,19 @@ public partial class MainWindow : Window
         button.IsEnabled = true;
         ScopeMark.SetLabel(button, verb);
 
-        if (id is null)
+        if (published is null)
         {
             await ConfirmationWindow.TellAsync(this, "Nothing was published",
                 publisher.LastError ?? SiteSilent);
             return;
         }
+
+        // 🔴 **The file now says it is in step with what was sent** — the hash the site answered,
+        // the ancestor, nothing left to publish — as the mod writes it after its own upload. Left
+        // out, the card went on saying "Unpublished changes" with Update lit (2026-09-25).
+        var noted = new TranslationInstaller(_platform).NotePublished(
+            report.Game, descriptor, content, published.FileHash,
+            published.Id > 0 ? published.Id : null);
 
         // 🔴 **The source just declared goes into the game, exactly as taking a published
         // translation writes it.** It is the same fact from the same authority — the author
@@ -6575,14 +6582,27 @@ public partial class MainWindow : Window
         // source language would have nothing to enforce, until a launch signed in fetched it back.
         if (ask.SourceIsAsked) WriteSourceLanguage(report, descriptor, source);
 
-        await ConfirmationWindow.TellAsync(this, "Sent",
-            branchWork
-                ? "Your contribution is updated. It is waiting for the Main's owner to review it."
-                : "Your translation is published.");
+        var sent = branchWork
+            ? "Your contribution is updated. It is waiting for the Main's owner to review it."
+            : "Your translation is published.";
 
-        // ⚠ redraw: publishing changes what the SITE holds — the badges, the votes, the author's
-        // "finished" — while the file on this machine says exactly what it said a second ago.
-        await RereadAsync(report.Game, redraw: true);
+        // ⚠ Said when the file could not be marked: the work IS published, and only this game's
+        // reading of it lags — UGT Mod settles it at its next launch signed in.
+        if (!noted.Written)
+            sent += $"\n\nThis game's file could not be marked as published ({noted.Failure}). "
+                  + "UGT Mod will update it at the next game start.";
+
+        await ConfirmationWindow.TellAsync(this, "Sent", sent);
+
+        // 🔴 **The account's lineages are read again**: the sync verdict compares this file with
+        // the account's own published row, and that row's hash is the one that just changed. Kept
+        // from before, the card compared the new file with the old version and said "Update
+        // available" — or, with the file unmarked, "Unpublished changes".
+        _lineages.Forget();
+        await _lineages.EnsureAsync(ApiTokenForLookups);
+
+        // ⚠ The whole screen: the row and the card, from the fresh lineages.
+        await RepublishAsync();
     }
 
     /// <summary>
@@ -7326,10 +7346,15 @@ public partial class MainWindow : Window
         // translation and this machine carry the same thing. Server would mean "the published
         // version has the result and this machine does not", which cannot happen from a tool that
         // is sending the machine's own file.
+        // ⚠ Shut while the game runs: publishing now writes the game's file afterwards (NotePublished),
+        // and the mod rewrites that file whole from memory — it would also be sending whatever the
+        // mod had last saved, not what it holds.
+        var publishRunning = _running.IsRunning(report.Game);
         var publish = ScopeMark.Marked(EditScope.SideAfter(onThisMachine: true, yourPublishedCopy: true),
                                        Uploads.Verb(act) + "…",
                                        standing.CanAct && nothingYet is null && nothingToSend is null
-                                       && inTheGame is null);
+                                       && inTheGame is null && !publishRunning);
+        if (publishRunning) ToolTip.SetTip(publish, TranslationInstaller.GameRunningRefusal);
         publish.Click += async (_, _) => await PublishTranslationAsync(report, descriptor, publish);
         actions.Children.Add(publish);
 

@@ -349,6 +349,63 @@ public sealed class TranslationInstaller
     }
 
     /// <summary>
+    /// Records in the game's file that what it holds is now what the site holds — after a publish.
+    ///
+    /// 🔴 **The third half of publishing, and this tool did not do it.** The mod, after its own
+    /// upload, sets `_source.hash` to the hash the site answered, points the ancestor at what was
+    /// sent and writes the file with nothing left to publish (UploadPanel, SaveAncestorCache then
+    /// SaveCache). Publishing from here sent the file and left it saying it had unpublished lines:
+    /// the card went on offering Update, and the game would have met a published version whose
+    /// hash it had never seen — a conflict over two identical files.
+    ///
+    /// ⚠ **Only when the file on disk is still the one that was sent.** Stamping a file that
+    /// changed in between would declare published a line the site never received.
+    /// </summary>
+    /// <param name="sentJson">The content that was uploaded, exactly as read.</param>
+    /// <param name="serverHash">The hash the site answered for it.</param>
+    /// <param name="siteId">The row the site filed it under.</param>
+    public TranslationWriteResult NotePublished(GameInstall game, LoaderDescriptor descriptor,
+                                                string sentJson, string? serverHash, int? siteId)
+    {
+        if (string.IsNullOrWhiteSpace(serverHash))
+            return new TranslationWriteResult(false, false, "UGT Website did not say which version it holds.");
+
+        if (WhyNotNow(game) is { } refusal) return new TranslationWriteResult(false, false, refusal);
+
+        var folder = UserDataInventory.DataFolder(game.Path, descriptor);
+        if (folder is null)
+            return new TranslationWriteResult(false, false, UserDataInventory.OutsideGameRefusal);
+
+        var target = Path.Combine(folder, LocalTranslationProbe.TranslationFileName);
+
+        try
+        {
+            if (!string.Equals(File.ReadAllText(target), sentJson, StringComparison.Ordinal))
+                return new TranslationWriteResult(false, false, "The file changed while it was being sent.");
+
+            var prepared = StampSource(sentJson, serverHash, siteId);
+
+            // ⚠ The ancestor first, as the mod orders it: it is what makes "published" true, and a
+            // file saying "nothing to publish" beside an ancestor that disagrees would be counted
+            // back up at the mod's next launch.
+            var ancestor = Path.Combine(folder, LocalTranslationProbe.AncestorFileName);
+            var ancestorTemp = ancestor + ".tmp";
+            File.WriteAllText(ancestorTemp, sentJson, new UTF8Encoding(false));
+            File.Move(ancestorTemp, ancestor, overwrite: true);
+
+            var temp = target + ".tmp";
+            File.WriteAllText(temp, prepared, new UTF8Encoding(false));
+            File.Move(temp, target, overwrite: true);
+
+            return new TranslationWriteResult(true, false, null);
+        }
+        catch (Exception ex)
+        {
+            return new TranslationWriteResult(false, false, $"{ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// Raises _local_changes by what the editing session actually changed, leaving every other key
     /// — including _source.hash — exactly as it came back.
     /// </summary>
@@ -454,6 +511,10 @@ public sealed class TranslationInstaller
         // inherited from whoever uploaded it would make the mod believe the player had edits they
         // never made, and offer to merge them.
         root["_local_changes"] = 0;
+
+        // And no setting left to send either: the mod marks one changed since the last sync with
+        // this flag, and a file that has just been taken from, or sent to, the site has none.
+        root.Remove("_metadata_dirty");
 
         return root.ToJsonString(new JsonSerializerOptions
         {

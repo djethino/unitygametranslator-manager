@@ -9,7 +9,7 @@ namespace UnityGameTranslator.Manager.Core.Checks;
 
 /// <summary>
 /// The moments of the translation file the Manager takes part in — a download installed from
-/// here, a merge written from here — replayed on a game folder made for the occasion and held to
+/// here, a merge written from here, a publication sent from here — replayed on a game folder made for the occasion and held to
 /// <c>common/spec/translation-file/moments.json</c>, the same cases the mod's store is held to.
 ///
 /// 🔴 The Manager's stamps (<c>_source.hash</c>, <c>_source.site_id</c>, <c>_local_changes</c>)
@@ -122,6 +122,16 @@ internal static class MomentsContractChecks
 
                     var result = installer.WriteMerged(game, descriptor, mergedJson, remoteJson, a["hash"]?.GetValue<string>(), ahead);
                     if (!result.Written) throw new InvalidOperationException($"merge refused: {result.Failure}");
+                    break;
+                }
+                case "upload":
+                {
+                    // Publishing from here: the file as it stands is what is sent, and the site's
+                    // answer is stamped back into it (NotePublished).
+                    var sent = File.ReadAllText(file);
+                    var result = installer.NotePublished(game, descriptor, sent,
+                        a["hash"]?.GetValue<string>(), a["site_id"]?.GetValue<int?>());
+                    if (!result.Written) throw new InvalidOperationException($"upload refused: {result.Failure}");
                     break;
                 }
                 case "write":

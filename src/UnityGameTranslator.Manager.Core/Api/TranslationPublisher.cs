@@ -22,6 +22,11 @@ public enum PublishOutcome
     ContributeToTheirs,
 }
 
+/// <summary>What the site recorded for a file it just accepted.</summary>
+/// <param name="Id">The row, or 0 when the answer was accepted but could not be read.</param>
+/// <param name="FileHash">The hash the site now holds for it, when the answer carried one.</param>
+public sealed record PublishedTranslation(int Id, string? FileHash);
+
 /// <summary>
 /// Where a file stands in its lineage, as the server sees it, before anything is sent.
 /// </summary>
@@ -300,7 +305,10 @@ public sealed class TranslationPublisher
     /// `?? existing`. The asymmetry is the server's, and it is why the two are documented apart
     /// rather than together.
     /// </param>
-    /// <returns>The published translation's id, or null on failure.</returns>
+    /// <returns>
+    /// The published row and the hash the site now holds for it, or null on failure. The hash is
+    /// what the file must record as `_source.hash` — see TranslationInstaller.NotePublished.
+    /// </returns>
     /// <param name="company">
     /// The studio Unity records beside the product name, when the game states one.
     ///
@@ -309,7 +317,7 @@ public sealed class TranslationPublisher
     /// without anybody typing anything. The site keeps the pair as `unity_name`/`unity_company` and
     /// resolves with it — see the migration that added them, and what their absence used to cost.
     /// </param>
-    public async Task<int?> PublishAsync(string contentJson, string apiToken,
+    public async Task<PublishedTranslation?> PublishAsync(string contentJson, string apiToken,
                                          string? steamId, string? gameName,
                                          string sourceLanguage, string targetLanguage,
                                          string? notes = null, string? status = null,
@@ -409,12 +417,17 @@ public sealed class TranslationPublisher
                 && translation.ValueKind == JsonValueKind.Object
                 && translation.TryGetProperty("id", out var id) && id.TryGetInt32(out var value))
             {
-                return value;
+                var hash = translation.TryGetProperty("file_hash", out var fileHash)
+                           && fileHash.ValueKind == JsonValueKind.String
+                    ? fileHash.GetString()
+                    : null;
+
+                return new PublishedTranslation(value, hash);
             }
 
             // Accepted, and we could not read the id. The work is published either way, so this is
             // reported as a success with nothing to link to rather than as a failure.
-            return 0;
+            return new PublishedTranslation(0, null);
         }
         catch (Exception ex)
         {

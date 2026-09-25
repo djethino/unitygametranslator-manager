@@ -9810,17 +9810,18 @@ public partial class MainWindow : Window
         // model, not a label. Two short sentences, the words any program uses.
         var sourceCaution = Ui.Note("Choose the language the game is set to. It cannot be detected.",
                                     Tone.Warning);
-        sourceCaution.Margin = new Avalonia.Thickness(140, 2, 0, 0);
+        // Flush left, as the neighbouring bricks place their notes (the hotkey's, the language's):
+        // an indent of its own made this one brick read as laid out by somebody else.
+        sourceCaution.Margin = new Avalonia.Thickness(0, 4, 0, 0);
         sourceCaution.IsVisible = pinned is null;
 
-        // The mod's own words and help (options.json, StrictSourceToggle). Aligned under the picker
-        // it qualifies — the label column of Ui.Row is 130 wide, plus its spacing.
+        // The mod's own words and help (options.json, StrictSourceToggle).
         var strict = new CheckBox
         {
             Content = "Strict source language detection",
             IsChecked = draftStrict,
             FontSize = 12,
-            Margin = new Avalonia.Thickness(140, 2, 0, 0),
+            Margin = new Avalonia.Thickness(0, 6, 0, 0),
         };
 
         // The mod's own help for the switch (options.json, StrictSourceToggle): what it does.
@@ -9836,10 +9837,10 @@ public partial class MainWindow : Window
         var caution = Ui.Note(
             "Experimental: it depends on the AI model. Check it with \"Test this model\" in Mod defaults.",
             Tone.Warning);
-        caution.Margin = new Avalonia.Thickness(140, 0, 0, 0);
+        caution.Margin = new Avalonia.Thickness(0, 2, 0, 0);
 
         var skipped = Ui.Note("Lines in other languages are skipped for good.", Tone.Warning);
-        skipped.Margin = new Avalonia.Thickness(140, 0, 0, 0);
+        skipped.Margin = new Avalonia.Thickness(0, 2, 0, 0);
 
         TextBlock? pendingLine = null;
         Control? pending = null;

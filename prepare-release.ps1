@@ -55,6 +55,10 @@ function New-TarGz {
     $readable = [System.IO.UnixFileMode]::UserRead -bor [System.IO.UnixFileMode]::UserWrite `
         -bor [System.IO.UnixFileMode]::GroupRead -bor [System.IO.UnixFileMode]::OtherRead
 
+    # ⚠ .NET resolves a relative path against the PROCESS directory, not PowerShell's location:
+    # run from a shell that had been elsewhere, the archive was written into that other folder
+    # and the checksum below found nothing. Resolved the way PowerShell resolves it.
+    $Destination = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Destination)
     $file = [System.IO.File]::Create($Destination)
     try {
         $gzip = [System.IO.Compression.GZipStream]::new(

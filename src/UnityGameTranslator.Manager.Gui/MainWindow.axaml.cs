@@ -3736,8 +3736,8 @@ public partial class MainWindow : Window
 
             var detail = local.EntryCount < 0
                 ? "The file could not be read."
-                : $"{local.EntryCount} entries"
-                  + (unpublished > 0 ? $", {unpublished} never uploaded" : "");
+                : $"{local.EntryCount} lines"
+                  + (unpublished > 0 ? $", {unpublished} not published" : "");
 
             // 🔴 **The languages, on the line the eye lands on after the opening sentence.** This
             // card named the author, the size and the standing of the file and never said what it
@@ -3806,8 +3806,8 @@ public partial class MainWindow : Window
                         // line already use. "copy" was a second word for one thing, and the reader
                         // had to work out on their own that the two meant the same.
                         Text = kept.Count == 1
-                            ? "One backup is kept — you can restore it."
-                            : $"{kept.Count} backups are kept — you can restore one.",
+                            ? "1 backup available. You can restore it."
+                            : $"{kept.Count} backups available. You can restore one.",
                         FontSize = 12,
                         TextWrapping = TextWrapping.Wrap,
                         Foreground = Brush("TextSecondary"),
@@ -3926,7 +3926,7 @@ public partial class MainWindow : Window
             {
                 var anyLanguage = new Button
                 {
-                    Content = inMyLanguage.Count > 0 ? "See every language" : "See what exists",
+                    Content = inMyLanguage.Count > 0 ? "All languages" : "See all translations",
                     FontSize = 12,
 
                     // Second of the two, so it never leads: the wider net is the fallback, and
@@ -4018,9 +4018,9 @@ public partial class MainWindow : Window
                 // ⚠ Same order as the banner and the picker: what costs nothing first. An AI on
                 // the machine is the short road when the machine allows it; writing the lines
                 // yourself always works.
-                Text = "\"Mod defaults\" is set to \"Community translations only\", and this game "
-                     + "has none. Pick an AI on your own machine — free if it can run one — or "
-                     + "\"Captures only\" and write the lines yourself in the mod's editor.",
+                Text = "Mod defaults is set to \"Community translations only\", and this game has "
+                     + "none. Choose a local AI (free if your computer can run one), or \"Captures "
+                     + "only\" to write the translations yourself in UGT Mod.",
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("TextSecondary"),
@@ -4034,9 +4034,8 @@ public partial class MainWindow : Window
                 HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
             };
 
-            ToolTip.SetTip(open, "Where the translator is chosen — your own AI, Google or DeepL "
-                                 + "with your key. It applies to every game that follows the "
-                                 + "defaults.");
+            ToolTip.SetTip(open, "Choose how games are translated: local AI, or Google or DeepL "
+                                 + "with your key. Applies to every game that uses Mod defaults.");
 
             open.Click += async (_, _) => await OpenSettingsAsync();
             empty.Children.Add(open);
@@ -4099,8 +4098,8 @@ public partial class MainWindow : Window
                            && report.InstalledLoader is { InstalledByUs: false }
                            && report.LoaderStanding is { UpdateAvailable: true };
 
-        if (!installed) pending.Add("the mod");
-        else if (report.PluginStanding is { UpdateAvailable: true }) pending.Add("a newer mod");
+        if (!installed) pending.Add("UGT Mod");
+        else if (report.PluginStanding is { UpdateAvailable: true }) pending.Add("a newer UGT Mod");
 
         next.Children.Add(new TextBlock
         {
@@ -4109,8 +4108,8 @@ public partial class MainWindow : Window
             // lines of this card were then naming one thing two ways.
             Text = pending.Count == 0
                 ? (loaderTheirs
-                    ? "The mod is installed and up to date."
-                    : "The mod loader and the mod are installed and up to date.")
+                    ? "UGT Mod is installed and up to date."
+                    : "The mod loader and UGT Mod are installed and up to date.")
                 : $"Needs {string.Join(" and ", pending)}.",
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
@@ -4131,9 +4130,9 @@ public partial class MainWindow : Window
             // name the game list uses — see SituationReader, "not managed by UGT".
             next.Children.Add(new TextBlock
             {
-                Text = $"Mod loader — {report.InstalledLoader!.Display} {theirs.Installed} → {theirs.Available} "
-                     + "is out. UnityGameTranslator did not install it, so updating it has to be "
-                     + "allowed first — in Set up.",
+                Text = $"Mod loader update: {report.InstalledLoader!.Display} {theirs.Installed} → "
+                     + $"{theirs.Available}. It was not installed by UGT Manager, so allow the "
+                     + "update first, in the Set up tab.",
                 FontSize = 11,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("StatusInfo"),
@@ -4235,7 +4234,7 @@ public partial class MainWindow : Window
         {
             Text = installedUuid is null
                 ? "This game has no translation file yet."
-                : "The file in this game is a different one. Yours is still on the site, untouched.",
+                : "This game uses a different translation. Yours is still on UGT Website.",
             FontSize = 11,
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brush("TextMuted"),
@@ -4274,8 +4273,7 @@ public partial class MainWindow : Window
         if (mine.Count == 1 && !mayTake)
         {
             ToolTip.SetTip(take, _running.IsRunning(report.Game)
-                ? "This game is open. The mod rewrites its translation file from memory while it "
-                  + "runs, so anything written now would be replaced without warning."
+                ? TranslationInstaller.GameRunningRefusal
                 : standing.Reason);
         }
 
@@ -4394,13 +4392,12 @@ public partial class MainWindow : Window
 
         // No greyed control without words — the rule this program holds everywhere.
         ToolTip.SetTip(apply, report.InstalledPluginVersion is null
-            ? "The mod is not installed in this game yet, so there is nowhere to put a translation."
+            ? "Install UGT Mod in this game first."
             : _running.IsRunning(report.Game)
-                ? "This game is open. The mod rewrites its translation file from memory while it "
-                  + "runs, so anything written now would be replaced without warning."
+                ? TranslationInstaller.GameRunningRefusal
                 : standing.Reason
-                  ?? $"Puts {picked.SourceLanguage} → {picked.TargetLanguage} by "
-                     + $"{People.MentionOf(picked.Author, _settings.Current.ApiUser)} into this game.");
+                  ?? $"Installs {picked.SourceLanguage} → {picked.TargetLanguage} by "
+                     + $"{People.MentionOf(picked.Author, _settings.Current.ApiUser)} in this game.");
 
         var replacing = offer is TranslationOffer.ReplacesWork or TranslationOffer.ReplacesChoice;
 
@@ -4455,7 +4452,7 @@ public partial class MainWindow : Window
             Text = deliberate
                 ? $"Chosen: {picked.SourceLanguage} → {picked.TargetLanguage} by {author}{size}. "
                   + "Not in the game yet."
-                : $"Chosen for you: the best-ranked one in {picked.TargetLanguage ?? "your language"}, "
+                : $"Suggested: the best-ranked translation in {picked.TargetLanguage ?? "your language"}, "
                   + $"by {author}{size}. Open the list to pick another.",
             FontSize = 11,
             TextWrapping = TextWrapping.Wrap,
@@ -4490,14 +4487,14 @@ public partial class MainWindow : Window
             // published translation is at stake. It is not: this writes one file in one game, and
             // the site is untouched — which is exactly what makes switching safe once published.
             var count = unpublished > 0
-                ? $"{local.EntryCount} lines, {unpublished} never uploaded"
+                ? $"{local.EntryCount} lines, {unpublished} not published"
                 : $"{local.EntryCount} lines";
 
             var published = _lineages.For(local.Uuid) is not null
-                ? " Your published translation is untouched."
+                ? " Your published translation is not changed."
                 : "";
 
-            return $"Replaces this game's file only ({count}). A copy is kept aside.{published}";
+            return $"Replaces this game's file only ({count}). The current file is backed up.{published}";
         }
     }
 
@@ -4789,14 +4786,14 @@ public partial class MainWindow : Window
 
             var dataDir = UserDataInventory.DataFolder(game.Path, descriptor);
 
-            if (System.IO.Directory.Exists(pluginDir)) text.Children.Add(FolderRow(pluginDir, "the mod"));
+            if (System.IO.Directory.Exists(pluginDir)) text.Children.Add(FolderRow(pluginDir, "UGT Mod"));
 
             // Only when it is genuinely another place.
             if (dataDir is not null
                 && !string.Equals(pluginDir, dataDir, StringComparison.OrdinalIgnoreCase)
                 && System.IO.Directory.Exists(dataDir))
             {
-                text.Children.Add(FolderRow(dataDir, "its settings and translation"));
+                text.Children.Add(FolderRow(dataDir, "UGT Mod's settings and translation"));
             }
         }
 
@@ -4917,11 +4914,11 @@ public partial class MainWindow : Window
 
         var rows = new List<(string Label, string Value)>
         {
-            ("Type", game.Runtime switch
+            ("Runtime", game.Runtime switch
             {
                 UnityRuntime.Mono => "Mono",
                 UnityRuntime.Il2Cpp => "IL2CPP",
-                _ => "could not be determined",
+                _ => "unknown",
             }),
             ("Unity", game.UnityVersion ?? "unknown"),
             // ⚠ What is here AND what is published, on one line each. This block is the answer to
@@ -4932,15 +4929,15 @@ public partial class MainWindow : Window
                 ? "none installed"
                 : $"{report.InstalledLoader.Display} {report.InstalledLoader.Version ?? ""}".Trim(),
                 report.LoaderStanding)),
-            ("Plugin", Published(report.InstalledPluginVersion ?? "not installed",
-                                 report.PluginStanding)),
+            ("UGT Mod", Published(report.InstalledPluginVersion ?? "not installed",
+                                  report.PluginStanding)),
         };
 
         if (report.RecommendationReason is not null)
-            rows.Add(("What we would do", report.RecommendationReason));
+            rows.Add(("Recommended", report.RecommendationReason));
 
         if (game.RunsUnderProton)
-            rows.Add(("Proton", "yes — a Steam launch option is required"));
+            rows.Add(("Proton", "yes (needs a Steam launch option)"));
 
         for (var i = 0; i < rows.Count; i++)
         {
@@ -5098,10 +5095,11 @@ public partial class MainWindow : Window
                 // The way on depends on what that person decided — the same flag their card shows
                 // as "Accepts contributions" or "Solo work". Naming only the wall would leave
                 // somebody to discover the door by trying it.
+                // ⚠ "Solo work" is the site's own chip for a Main that takes no contributions.
                 var onward = theirs.AcceptsBranches == true
-                    ? " They take contributions: your changes can be sent to them for review."
+                    ? " It accepts contributions: you can send your changes for review."
                     : theirs.AcceptsBranches == false
-                        ? " They work alone: publish your own version to take it further."
+                        ? " Solo work: to go further, publish your own version."
                         : "";
 
                 yield return new TextBlock
@@ -5109,7 +5107,7 @@ public partial class MainWindow : Window
                     // Muted, not green and not amber: those two carry a POWER over the file —
                     // reviewing contributions, having yours reviewed. Using somebody's work
                     // carries none, and colouring it like the others would say it does.
-                    Text = $"{People.Mention(author)}'s translation, and you hold no part in it."
+                    Text = $"Translation by {People.Mention(author)}. You are not part of it."
                          + onward,
                     FontSize = 12,
                     TextWrapping = TextWrapping.Wrap,
@@ -5183,7 +5181,7 @@ public partial class MainWindow : Window
                 // The published translation carries the result; the file in this game does not
                 // move, which is also the answer to why this button stays live on a game nothing
                 // else here may touch.
-                var review = ScopeMark.Marked(EditSide.Server, "Review them on the site");
+                var review = ScopeMark.Marked(EditSide.Server, "Review on UGT Website");
                 review.Margin = new Avalonia.Thickness(0, 6, 0, 0);
                 review.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left;
                 review.Click += (_, _) =>
@@ -5221,7 +5219,7 @@ public partial class MainWindow : Window
             yield return new TextBlock
             {
                 Text = "The Main was updated by " + People.Mention(report.MatchingOnline!.Author!)
-                     + " since this branch last merged from it. Merge with Main is done in the game.",
+                     + " since this branch last merged from it. Merge with Main is done in UGT Mod.",
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("StatusWarning"),
@@ -5251,8 +5249,8 @@ public partial class MainWindow : Window
 
         if (report.LocalTranslation is { } local)
         {
-            var count = local.EntryCount < 0 ? "unreadable file" : $"{local.EntryCount} entries";
-            var unsynced = local.LocalChanges > 0 ? $", {local.LocalChanges} not uploaded yet" : "";
+            var count = local.EntryCount < 0 ? "unreadable file" : $"{local.EntryCount} lines";
+            var unsynced = local.LocalChanges > 0 ? $", {local.LocalChanges} not published" : "";
 
             // The pair comes first, as it does on every community entry below. Without it the two
             // lines invite a comparison they do not support: a local file and a published one can
@@ -5270,11 +5268,11 @@ public partial class MainWindow : Window
             panel.Children.Add(local.EntryCount < 0
                 ? new TextBlock
                 {
-                    Text = $"On this machine: {count}{unsynced}",
+                    Text = $"On this computer: {count}{unsynced}",
                     FontSize = 12,
                     Foreground = Brush("TextSecondary"),
                 }
-                : TranslationLanguages(report, before: "On this machine:",
+                : TranslationLanguages(report, before: "On this computer:",
                                                after: $"· {count}{unsynced}"));
 
             // What the file is actually made of, drawn by the same bar as every community entry.
@@ -5288,14 +5286,14 @@ public partial class MainWindow : Window
         }
         else
         {
-            panel.Children.Add(new TextBlock { Text = "On this machine: none", FontSize = 12, Foreground = Brush("TextSecondary") });
+            panel.Children.Add(new TextBlock { Text = "On this computer: none", FontSize = 12, Foreground = Brush("TextSecondary") });
         }
 
         if (report.MatchingOnline is { } mine)
         {
             panel.Children.Add(new TextBlock
             {
-                Text = $"You already have this one: {mine}",
+                Text = $"Published on UGT Website: {mine}",
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("StatusSuccess"),
@@ -5407,15 +5405,13 @@ public partial class MainWindow : Window
         // made the card announce "none in French" to the very person who wrote the only French one.
         if (report.OnlineTranslations.Count == 0 && report.OnlineSearchError is not null)
         {
-            panel.Children.Add(new TextBlock
-            {
-                Text = $"Could not reach the community site ({report.OnlineSearchError}). " +
-                       "A firewall, an antivirus or a company proxy blocking UnityGameTranslator " +
-                       "Installer looks exactly like this. Nothing was lost.",
-                FontSize = 12,
-                Opacity = 0.7,
-                TextWrapping = TextWrapping.Wrap,
-            });
+            // Red, not faded: the search failed, and a failure read as small print is the one that
+            // gets taken for "nothing exists". (It still named the product by its pre-rename name.)
+            var unreachable = Ui.Note(
+                $"Could not reach UGT Website ({report.OnlineSearchError}). A firewall, antivirus or "
+                + "proxy may be blocking UGT Manager.", Tone.Error);
+            unreachable.FontSize = 12;
+            panel.Children.Add(unreachable);
 
             // A dead end with no way out is the thing this tool must never be: someone who lets
             // the firewall prompt through, or fills in their proxy, has to be able to carry on
@@ -5435,8 +5431,10 @@ public partial class MainWindow : Window
                 await RetryOnlineAsync();
             };
 
+            // ⚠ UGT Manager settings, where the Network card is. It opened Mod defaults, which holds
+            // nothing about the network.
             var network = new Button { Content = "Network settings", FontSize = 12 };
-            network.Click += async (_, _) => await OpenSettingsAsync();
+            network.Click += async (_, _) => await OpenToolSettingsAsync();
 
             actions.Children.Add(retry);
             actions.Children.Add(network);
@@ -5444,14 +5442,10 @@ public partial class MainWindow : Window
         }
         else if (report.OnlineTranslations.Count == 0 && report.Game.SteamAppId is null)
         {
-            panel.Children.Add(new TextBlock
-            {
-                Text = "Nobody has published a translation for this game yet — the mod builds one as "
-                     + "you play, and you can be the first to share it.",
-                FontSize = 12,
-                Opacity = 0.6,
-                TextWrapping = TextWrapping.Wrap,
-            });
+            // The same sentence as the translations window, for the same fact.
+            panel.Children.Add(Ui.Note(
+                "No translation published for this game yet. UGT Mod builds one as you play, and "
+                + "you can be the first to share it."));
         }
 
         return panel;
@@ -5491,7 +5485,7 @@ public partial class MainWindow : Window
         {
             yield return new TextBlock
             {
-                Text = "Based on the translation of "
+                Text = "Based on the translation by "
                      + People.MentionOf(author, _settings.Current.ApiUser),
                 FontSize = 12,
                 Foreground = Palette.Of("TextMuted"),
@@ -5507,7 +5501,7 @@ public partial class MainWindow : Window
             yield return new TextBlock
             {
                 Text = counts.Completeness is { } done
-                    ? $"{stage} · {done * 100:F0}% of what it has met is settled"
+                    ? $"{stage} · {done * 100:F0}% of the lines found so far are translated"
                     : stage,
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
@@ -5522,8 +5516,8 @@ public partial class MainWindow : Window
             // back to them.
             yield return new TextBlock
             {
-                Text = "Nothing translated yet — the mod has met "
-                     + $"{Composition.Amount(counts.Captured, "line", "lines")} and is waiting on a translation for them.",
+                Text = "Nothing translated yet. UGT Mod has found "
+                     + $"{Composition.Amount(counts.Captured, "line", "lines")} to translate.",
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("TextSecondary"),
@@ -5594,8 +5588,8 @@ public partial class MainWindow : Window
             var agreed = await ConfirmationWindow.AskAsync(this,
                 blocking.Ours ? "A session of yours is still open" : "Already being edited",
                 blocking.Question,
-                blocking.Ours ? "Pick it back up"
-                              : blocking.ModKey is not null ? "End it and open mine"
+                blocking.Ours ? "Resume"
+                              : blocking.ModKey is not null ? "Close it and open mine"
                               : "Open mine anyway");
 
             if (!agreed)
@@ -5616,7 +5610,7 @@ public partial class MainWindow : Window
             }
             else if (blocking.ModKey is not null)
             {
-                ScopeMark.SetLabel(button, "Ending the other one…");
+                ScopeMark.SetLabel(button, "Closing the other session…");
                 await runner.TakeOverAsync(report.Game, descriptor, blocking.ModKey);
             }
         }
@@ -5635,7 +5629,7 @@ public partial class MainWindow : Window
             button.IsEnabled = true;
             ScopeMark.SetLabel(button, "Edit in browser");
             await ConfirmationWindow.TellAsync(this, "The editor could not be opened",
-                runner.LastError ?? "The site did not answer.");
+                runner.LastError ?? SiteSilent);
             return;
         }
 
@@ -5653,7 +5647,7 @@ public partial class MainWindow : Window
         // could not be marked", which costs the guarantee that the mod will not open a second
         // editor — silent success would be a lie about the one thing that protects the file.
         if (runner.LastError is { } warning)
-            await ConfirmationWindow.TellAsync(this, "The editor is open, with one reservation",
+            await ConfirmationWindow.TellAsync(this, "The editor is open, with a warning",
                                                warning);
 
         var progress = new Progress<EditSessionProgress>(state =>
@@ -5786,8 +5780,8 @@ public partial class MainWindow : Window
         button.IsEnabled = true;
         ScopeMark.SetLabel(button, "Edit in browser");
 
-        await ConfirmationWindow.TellAsync(this, "The browser session was dropped",
-            "It is no longer followed from here, so saves made in the browser will not reach the "
+        await ConfirmationWindow.TellAsync(this, "The browser session was lost",
+            "UGT Manager no longer follows it, so saves made in the browser will not reach the "
             + "game. If the page is still open, close it.");
     }
 
@@ -5818,8 +5812,8 @@ public partial class MainWindow : Window
 
             if (remote is null)
             {
-                await ConfirmationWindow.TellAsync(this, "Could not fetch the published version",
-                    api.LastError ?? "The site did not answer.");
+                await ConfirmationWindow.TellAsync(this, "Could not get the published version",
+                    api.LastError ?? SiteSilent);
                 return;
             }
 
@@ -5856,14 +5850,14 @@ public partial class MainWindow : Window
             if (merge is null)
             {
                 await ConfirmationWindow.TellAsync(this, "The files could not be compared",
-                    "One of them is not a translation file this tool can read. Nothing was changed.");
+                    "One of them is not a valid translation file. Nothing was changed.");
                 return;
             }
 
             if (merge.Summary.Empty)
             {
                 await ConfirmationWindow.TellAsync(this, "Nothing to merge",
-                    "This translation and the published one already agree, line for line.");
+                    "This translation and the published one are identical.");
                 return;
             }
 
@@ -5880,19 +5874,19 @@ public partial class MainWindow : Window
                 // the mod's own screens — rather than a dead end.
                 if (!standing.CanAct || string.IsNullOrWhiteSpace(_settings.Current.ApiToken))
                 {
-                    await ConfirmationWindow.TellAsync(this, "This one needs a decision, line by line",
-                        summary + "\n\nA conflict is two people having written the same line "
-                        + "differently, and nothing here can choose between them for you. "
+                    await ConfirmationWindow.TellAsync(this, "Conflicts need your decision",
+                        summary + "\n\nA conflict is a line written differently on each side. "
+                        + "Only you can choose which to keep. "
                         + (standing.Reason ?? "")
-                        + "\n\nThe mod's own merge screens settle these while the game runs.");
+                        + "\n\nResolve them in UGT Mod, while the game runs.");
                     return;
                 }
 
-                if (!await ConfirmationWindow.AskAsync(this, "Merge these in the browser?",
-                        summary + "\n\nA conflict is two people having written the same line "
-                        + "differently. The site shows both versions side by side, you choose, and "
-                        + "the result comes back here — nothing is published by doing this.",
-                        "Open the comparison"))
+                if (!await ConfirmationWindow.AskAsync(this, "Resolve the conflicts in the browser?",
+                        summary + "\n\nA conflict is a line written differently on each side. "
+                        + "UGT Website shows both side by side, you choose, and the result is written "
+                        + "into this game. Nothing is published.",
+                        "Compare in browser"))
                 {
                     return;
                 }
@@ -5914,7 +5908,7 @@ public partial class MainWindow : Window
 
             if (!await ConfirmationWindow.AskAsync(this,
                     takingTheirs ? "Update from the published version?" : "Merge with the published version?",
-                    summary + "\n\nYour current file is kept aside before anything is written.",
+                    summary + "\n\nThe current file is backed up first.",
                     takingTheirs ? "Update" : "Merge",
                     EditScope.SideAfter(onThisMachine: true, yourPublishedCopy: false)))
             {
@@ -5941,7 +5935,7 @@ public partial class MainWindow : Window
                 summary
                 // ⚠ Names the place somebody can act from, not a folder on disk: Backups is a
                 // button they have already seen, and it now holds the only copy taken.
-                + (result.KeptPrevious ? "\n\nWhat was here is kept under Backups." : ""));
+                + (result.KeptPrevious ? "\n\nThe previous file is in Backups." : ""));
 
             await RereadAsync(report.Game);
         }
@@ -5977,7 +5971,7 @@ public partial class MainWindow : Window
         if (preview is null)
         {
             await ConfirmationWindow.TellAsync(this, "The comparison could not be opened",
-                client.LastError ?? "The site did not answer.");
+                client.LastError ?? SiteSilent);
             return;
         }
 
@@ -5988,7 +5982,7 @@ public partial class MainWindow : Window
         var deadline = DateTimeOffset.UtcNow.AddMinutes(30);
         string? settled = null;
 
-        Status("Waiting for the comparison to be merged in the browser…");
+        Status("Waiting for your choices in the browser…");
 
         while (DateTimeOffset.UtcNow < deadline)
         {
@@ -6000,9 +5994,9 @@ public partial class MainWindow : Window
 
         if (settled is null)
         {
-            await ConfirmationWindow.TellAsync(this, "Nothing came back",
-                "The comparison was not settled, or the page was closed. This game was not changed, "
-                + "and you can start it again whenever you like.");
+            await ConfirmationWindow.TellAsync(this, "No result",
+                "The comparison was not finished, or the page was closed. This game was not "
+                + "changed. You can start again at any time.");
             return;
         }
 
@@ -6019,10 +6013,13 @@ public partial class MainWindow : Window
 
         await ConfirmationWindow.TellAsync(this, "Merged",
             "What you chose in the browser is now the translation in this game."
-            + (result.KeptPrevious ? "\n\nWhat was here is kept under Backups." : ""));
+            + (result.KeptPrevious ? "\n\nThe previous file is in Backups." : ""));
 
         await RereadAsync(report.Game);
     }
+
+    /// <summary>What every dialog says when the site gave no reason of its own — one wording.</summary>
+    private const string SiteSilent = "UGT Website did not answer.";
 
     /// <summary>Lines, counted so no language has to decode a stray s.</summary>
     private static string Lines(int count) =>
@@ -6066,8 +6063,8 @@ public partial class MainWindow : Window
         // a file that was never synced looks like one somebody fought over.
         if (blind && summary.Conflicts > 0)
         {
-            text += "\n\nThis translation has no record of a last sync, so there is no way to tell "
-                  + "which side changed what — every difference has to count as a conflict.";
+            text += "\n\nThis translation has no record of its last sync, so every difference counts "
+                  + "as a conflict.";
         }
 
         return text;
@@ -6136,7 +6133,7 @@ public partial class MainWindow : Window
         if (lineage is null)
         {
             await ConfirmationWindow.TellAsync(this, "Could not check this translation",
-                publisher.LastError ?? "The site did not answer.");
+                publisher.LastError ?? SiteSilent);
             return;
         }
 
@@ -6296,7 +6293,7 @@ public partial class MainWindow : Window
         if (id is null)
         {
             await ConfirmationWindow.TellAsync(this, "Nothing was published",
-                publisher.LastError ?? "The site did not answer.");
+                publisher.LastError ?? SiteSilent);
             return;
         }
 
@@ -6358,7 +6355,7 @@ public partial class MainWindow : Window
         if (lineage is null)
         {
             await ConfirmationWindow.TellAsync(this, "Could not check this translation",
-                publisher.LastError ?? "The site did not answer.");
+                publisher.LastError ?? SiteSilent);
             return;
         }
 
@@ -6419,7 +6416,7 @@ public partial class MainWindow : Window
         if (!saved)
         {
             await ConfirmationWindow.TellAsync(this, "Nothing was changed",
-                publisher.LastError ?? "The site did not answer.");
+                publisher.LastError ?? SiteSilent);
             return;
         }
 
@@ -6687,7 +6684,7 @@ public partial class MainWindow : Window
             {
                 button.IsEnabled = true;
                 await ConfirmationWindow.TellAsync(this, "The rating was not recorded",
-                    client.LastError ?? "The site did not answer.");
+                    client.LastError ?? SiteSilent);
                 return;
             }
 

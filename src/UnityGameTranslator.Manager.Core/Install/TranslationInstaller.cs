@@ -65,8 +65,8 @@ public sealed class TranslationInstaller
     /// machine where several accounts share one game folder.
     /// </summary>
     public const string GameRunningRefusal =
-        "This game is open. The mod rewrites its translation file from memory while it runs, so "
-        + "anything written now would be replaced without warning. Close the game and try again.";
+        "This game is running. Close it first: UGT Mod saves its translation file while it runs "
+        + "and would overwrite the change.";
 
     private readonly IPlatform? _platform;
 

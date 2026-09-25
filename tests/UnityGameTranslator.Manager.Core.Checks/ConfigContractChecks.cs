@@ -124,6 +124,49 @@ internal static class ConfigContractChecks
         }
     }
 
+    /// <summary>
+    /// The source language reaches a game only as a person declared it for THAT game — never from
+    /// Mod defaults, which cannot know it (analyse/manager-reglages-avances.md, part A).
+    /// </summary>
+    internal static void TheSourceLanguageIsDeclaredNeverGuessed()
+    {
+        Program.Section("config.json: the source language");
+
+        var descriptor = new LoaderDescriptor { Id = "bepinex5", UserDataDir = "BepInEx/plugins/UnityGameTranslator" };
+
+        JsonObject Written(GamePreference? perGame)
+        {
+            var gamePath = Path.Combine(Path.GetTempPath(), "ugt-config-source-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(Path.Combine(gamePath, "BepInEx", "plugins", "UnityGameTranslator"));
+                new GameConfigWriter().Apply(gamePath, descriptor,
+                    new InstallerSettings { TranslationBackend = "llm", EnableAi = true }, "French", perGame: perGame);
+                return JsonNode.Parse(File.ReadAllText(Path.Combine(
+                    gamePath, "BepInEx", "plugins", "UnityGameTranslator", LocalTranslationProbe.ConfigFileName)))!.AsObject();
+            }
+            finally
+            {
+                try { Directory.Delete(gamePath, recursive: true); } catch { /* a temp folder left behind proves nothing */ }
+            }
+        }
+
+        var undeclared = Written(null);
+        Program.Check(undeclared[GameConfigWriter.SourceLanguageKey] is null
+                      && undeclared[GameConfigWriter.StrictSourceKey] is null,
+            "Mod defaults alone write no source language and no strict switch",
+            "nothing can read the language a game is written in; a guess retires lines for good");
+
+        var declared = Written(new GamePreference
+        {
+            Mod = new GameModOverrides { SourceLanguage = "English", StrictSourceLanguage = true },
+        });
+        Program.Check(declared[GameConfigWriter.SourceLanguageKey]?.GetValue<string>() == "English"
+                      && declared[GameConfigWriter.StrictSourceKey]?.GetValue<bool>() == true,
+            "a source declared for the game is written with its strict switch, at install",
+            "so the one-click can start a game with strict source armed, before any line is translated");
+    }
+
     private static Dictionary<string, object?> Derive(GameConfigSnapshot s, GameAiSettings ai) => new()
     {
         // How the game asks a backend for a line — what the browser editor's Retranslate is

@@ -38,6 +38,7 @@ internal static class Program
         UserDataChecks.WhichFilesAreTheModsInterface();
         ConfigContractChecks.WhatAGamesConfigSays();
         ConfigContractChecks.WhatThisToolWritesStaysWhatWasAsked();
+        ConfigContractChecks.TheSourceLanguageIsDeclaredNeverGuessed();
         MomentsContractChecks.WhatTheFileSaysAfterEachMoment();
         InstallLedgerChecks.WhatTheToolRemembersDoing();
         ProbeMemoryChecks.WhatARememberedReadAnswers();

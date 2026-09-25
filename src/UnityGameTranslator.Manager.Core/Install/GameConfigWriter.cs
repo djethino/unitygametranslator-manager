@@ -121,6 +121,9 @@ public sealed class GameConfigWriter
     /// </summary>
     public const string TranslationsShownKey = "enable_translations";
 
+    /// <summary>The mod's key for skipping lines that are not in the source language.</summary>
+    public const string StrictSourceKey = "strict_source_language";
+
     /// <summary>
     /// Who the MOD is signed in as, in this game.
     ///
@@ -215,6 +218,13 @@ public sealed class GameConfigWriter
                 AiUrl = Endpoints.Canonical(Text(root, null, "ai_url")),
                 AiModel = Text(root, null, "ai_model"),
 
+                // "auto" is the mod's word for "nobody said": read as no answer, never as a language.
+                SourceLanguage = Text(root, null, SourceLanguageKey) is { } source
+                                 && !source.Equals("auto", StringComparison.OrdinalIgnoreCase)
+                    ? source
+                    : null,
+                StrictSourceLanguage = Flag(root, null, StrictSourceKey),
+
                 // Read into the CLEAR fields, then handed straight back to ProtectSecrets when
                 // something is stored. The stored halves stay empty on purpose: what a game holds
                 // is encrypted for this machine already, and copying one ciphertext into another
@@ -303,7 +313,7 @@ public sealed class GameConfigWriter
                 TemperatureRetranslate: LineTranslation.ClampTemperature(Number(root, "ai_temperature_retranslate") ?? fallback.TemperatureRetranslate),
                 SeedRetranslate: Whole(root, "ai_seed_retranslate"),
                 GameContext: Text(root, null, GameContextKey),
-                StrictSourceLanguage: Flag(root, null, "strict_source_language") ?? fallback.StrictSourceLanguage);
+                StrictSourceLanguage: Flag(root, null, StrictSourceKey) ?? fallback.StrictSourceLanguage);
         }
         catch
         {
@@ -451,16 +461,32 @@ public sealed class GameConfigWriter
             OnlyIfAbsent: true,
             AnsweredOnTheCard: true));
 
-        // ⚠ source_language is NOT here and must not be added — see GameLanguages. We cannot read
+        // ⚠ source_language is NEVER composed from settings — see GameLanguages. We cannot read
         // what language a game's own text is in, and writing a guess is an instruction to the
         // model, not a label: with strict_source_language it makes the model skip every line it
         // judges to be in another language, and a skipped line is cached "S", which the merge
         // treats as immutable. One wrong guess retires those lines for good.
         //
-        // ⚠ **This refusal is about THIS path, not about the key** (2026-09-05). Taking a published
-        // translation does write it, because there the pair is stated by its author and fixed by
-        // the server — see MainWindow.AlignGameLanguage. What has no business naming a source is a
-        // list of settings, which is what this method composes.
+        // ⚠ **This refusal is about GUESSES, not about the key** (2026-09-05, widened 2026-09-25).
+        // Two writers state it instead of guessing: taking a published translation (the pair its
+        // author stated, MainWindow.AlignGameLanguage), and a person DECLARING it for this one game
+        // on its own brick (GameModOverrides.SourceLanguage). The second is written here, from
+        // perGame only — never from `settings`, which is Mod defaults — so that a game set up by the
+        // one-click can start with strict source armed instead of learning it after the first
+        // lines in another language were translated. AnsweredOnTheCard: it is not a difference
+        // with Mod defaults, which has no such setting.
+        if (perGame?.Mod?.SourceLanguage is { Length: > 0 } declared)
+        {
+            intents.Add(new Intent(null, SourceLanguageKey, Languages.NameOf(declared) ?? declared,
+                "source language", AnsweredOnTheCard: true));
+        }
+
+        if (perGame?.Mod?.StrictSourceLanguage is { } strict)
+        {
+            intents.Add(new Intent(null, StrictSourceKey, strict,
+                strict ? "strict source language on" : "strict source language off",
+                AnsweredOnTheCard: true));
+        }
 
         // 🔴 **"capture" is OURS, and the mod must never see it.** The mod knows llm, google, deepl
         // and none; an unknown value falls through every branch it has, including the migration

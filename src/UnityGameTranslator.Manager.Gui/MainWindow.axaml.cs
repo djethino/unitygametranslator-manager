@@ -8677,6 +8677,10 @@ public partial class MainWindow : Window
             foreach (var control in LanguageDecision(report, preference, Refresh))
                 languageHost.Children.Add(control);
 
+            // Under the target, as its pair: the language the game is written in, declared here.
+            foreach (var control in SourceDecision(report, preference))
+                languageHost.Children.Add(control);
+
             hotkeyHost.Children.Clear();
             foreach (var control in HotkeyDecision(report, preference, Refresh))
                 hotkeyHost.Children.Add(control);
@@ -8999,7 +9003,19 @@ public partial class MainWindow : Window
         // program come back tomorrow with answers somebody typed and walked away from.
         form.Recorded += () =>
         {
-            _pendingMod[report.Game.Path] = form.Draft.Copy();
+            var draft = form.Draft.Copy();
+
+            // ⚠ The bricks beside this form hold answers in the same entry — the key for this game,
+            // the source language — and the form never edits them. Its draft was seeded before they
+            // changed, so copying it over whole would silently drop what they hold.
+            if (_pendingMod.TryGetValue(report.Game.Path, out var bricks))
+            {
+                draft.SettingsHotkey = bricks.SettingsHotkey;
+                draft.SourceLanguage = bricks.SourceLanguage;
+                draft.StrictSourceLanguage = bricks.StrictSourceLanguage;
+            }
+
+            _pendingMod[report.Game.Path] = draft;
 
             // ⚠ The BAR only, never refresh(). The bar lives in its own container and its steps are
             // computed from what is pending, so it can be redrawn while somebody is still typing;
@@ -9617,6 +9633,241 @@ public partial class MainWindow : Window
             yield return pending;
             yield return write;
         }
+    }
+
+    /// <summary>
+    /// The language this game's own text is in, and whether lines in any other are skipped — a brick
+    /// of its own, under "Language for this game", with the same shape and its own verb.
+    ///
+    /// 🔴 **Declared for THIS game, never taken from Mod defaults** (user's decision, 2026-09-25).
+    /// Nothing can read what language a game's text is in, and this is an instruction to the model:
+    /// with strict source on, a wrong answer retires lines for good. So it is asked here, of somebody
+    /// looking at this one game — and before the first launch, which is the whole point: a game set
+    /// up by the one-click used to translate lines in another language (Korean text in an English
+    /// game) before strict source could be switched on inside it.
+    ///
+    /// ⚠ **Not in the game's own settings form**, which only shows while "Use Mod defaults in this
+    /// game" is off — the very situation of a game set up by the one-click.
+    ///
+    /// ⚠ Pinned by a published translation, like the target: its pair is stated by its author and
+    /// kept by the server (AlignGameLanguage writes it when it is taken). The strict switch stays
+    /// free — it says what to do with the source, not what the source is.
+    /// </summary>
+    private IEnumerable<Control> SourceDecision(GameReport report, GamePreference preference)
+    {
+        var descriptor = InstalledDescriptor(report);
+        var snapshot = GameConfig(report);
+        var configured = descriptor is not null && snapshot.Exists;
+        var path = report.Game.Path;
+
+        var pinned = report.MatchingOnline?.SourceLanguage is { Length: > 0 } published ? published : null;
+
+        // What the game holds now — "auto" already read as no answer (GameConfigWriter.Read).
+        var inGameSource = Languages.Canonical(snapshot.Values.SourceLanguage);
+        var inGameStrict = snapshot.Values.StrictSourceLanguage ?? false;
+
+        // ⚠ Before there is a file, the answer is HELD for the session (like the key for this game)
+        // and the install lays it down; with a file, the file answers and this is compared to it.
+        _pendingMod.TryGetValue(path, out var held);
+
+        var draftSource = Languages.Canonical(pinned
+            ?? (configured ? snapshot.Values.SourceLanguage : held?.SourceLanguage ?? preference.Mod?.SourceLanguage));
+        var draftStrict = configured
+            ? inGameStrict
+            : held?.StrictSourceLanguage ?? preference.Mod?.StrictSourceLanguage ?? false;
+
+        var picker = ModSettingControls.SourceLanguagePicker(220);
+        ModSettingControls.Select(picker, draftSource ?? "auto");
+
+        var row = (StackPanel)Ui.Row("Source language", picker);
+        row.Margin = new Avalonia.Thickness(0, 8, 0, 0);
+
+        ToolTip.SetTip(picker, pinned is not null
+            ? "Set by the published translation this game holds."
+            : "The language this game's own text is in. UGT Manager cannot detect it: set it only if you are sure.");
+
+        picker.IsEnabled = pinned is null && MaySetUp(report, picker);
+
+        // The mod's own words and help (options.json, StrictSourceToggle). Aligned under the picker
+        // it qualifies — the label column of Ui.Row is 130 wide, plus its spacing.
+        var strict = new CheckBox
+        {
+            Content = "Strict source language detection",
+            IsChecked = draftStrict,
+            FontSize = 12,
+            Margin = new Avalonia.Thickness(140, 2, 0, 0),
+        };
+
+        ToolTip.SetTip(strict,
+            "Skip texts that are not in the source language, so foreign or already-translated text is "
+            + "left alone. AI translation only.");
+
+        strict.IsEnabled = MaySetUp(report, strict);
+
+        // Amber, because it is a consequence that cannot be taken back once lines are skipped.
+        var caution = Ui.Note(
+            "Lines in any other language are skipped for good. Make sure the source language is right.",
+            Tone.Warning);
+        caution.Margin = new Avalonia.Thickness(140, 0, 0, 0);
+
+        TextBlock? pendingLine = null;
+        Control? pending = null;
+        Button? write = null;
+
+        bool SourceDiffers() =>
+            !string.Equals(draftSource ?? "", inGameSource ?? "", StringComparison.OrdinalIgnoreCase);
+
+        // ⚠ Strict only counts while a source is named: with none, the mod has nothing to compare
+        // a line against, and the switch is hidden rather than shown ticked and greyed.
+        bool StrictDiffers() => draftSource is not null && draftStrict != inGameStrict;
+
+        void RefreshState()
+        {
+            // A switch whose verb cannot act does not appear — the rule this program keeps everywhere.
+            strict.IsVisible = draftSource is not null;
+            caution.IsVisible = strict.IsVisible && draftStrict;
+
+            var count = (SourceDiffers() ? 1 : 0) + (StrictDiffers() ? 1 : 0);
+
+            if (pending is not null) pending.IsVisible = count > 0;
+
+            if (pendingLine is not null)
+            {
+                var lines = new List<string>();
+                if (SourceDiffers())
+                    lines.Add($"• source language: {Languages.NameOf(inGameSource) ?? "not set"} → "
+                              + $"{Languages.NameOf(draftSource) ?? "not set"}");
+                if (StrictDiffers())
+                    lines.Add($"• strict source language: {(inGameStrict ? "on" : "off")} → {(draftStrict ? "on" : "off")}");
+                pendingLine.Text = string.Join(Environment.NewLine, lines);
+            }
+
+            if (write is not null)
+            {
+                write.IsVisible = count > 0;
+                ScopeMark.SetLabel(write, $"Apply ({count})");
+
+                var running = _running.IsRunning(report.Game);
+                write.IsEnabled = count > 0 && !running && MaySetUp(report, write);
+                if (running) ToolTip.SetTip(write, TranslationInstaller.GameRunningRefusal);
+            }
+        }
+
+        // Held for the session on a game with nothing to write into yet — see _pendingMod.
+        void Hold()
+        {
+            if (configured) return;
+
+            var entry = _pendingMod.TryGetValue(path, out var kept) ? kept : preference.Mod?.Copy() ?? new GameModOverrides();
+            entry.SourceLanguage = draftSource is null ? null : Languages.NameOf(draftSource);
+            entry.StrictSourceLanguage = draftSource is null ? null : draftStrict;
+            _pendingMod[path] = entry;
+
+            // The one-click reads what is held, so its bar has to follow.
+            ShowActionBar(report);
+        }
+
+        picker.SelectionChanged += (_, _) =>
+        {
+            var chosen = ModSettingControls.Tag(picker);
+            draftSource = string.Equals(chosen, "auto", StringComparison.OrdinalIgnoreCase)
+                ? null
+                : Languages.Canonical(chosen);
+
+            if (draftSource is null) draftStrict = false;
+
+            Hold();
+            RefreshState();
+        };
+
+        strict.IsCheckedChanged += (_, _) =>
+        {
+            draftStrict = strict.IsChecked == true;
+            Hold();
+            RefreshState();
+        };
+
+        yield return row;
+
+        if (pinned is not null)
+        {
+            var why = Ui.Note($"Stays on {Languages.NameOf(Languages.Canonical(pinned)) ?? pinned}: "
+                              + "the published translation this game holds is made from it.");
+            why.Margin = new Avalonia.Thickness(0, 4, 0, 0);
+            yield return why;
+        }
+
+        yield return strict;
+        yield return caution;
+
+        if (!configured)
+        {
+            // The same sentence as the neighbouring bricks, for the same fact.
+            var later = Ui.Note("Written into the game when UGT Mod is installed.");
+            later.Margin = new Avalonia.Thickness(0, 6, 0, 0);
+            RefreshState();
+            yield return later;
+            yield break;
+        }
+
+        var state = new StackPanel { Spacing = 4 };
+        pendingLine = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, Foreground = Brush("TextMuted") };
+        state.Children.Add(pendingLine);
+
+        pending = Callout(state, Tone.Warning);
+        pending.Margin = new Avalonia.Thickness(0, 6, 0, 0);
+
+        write = ScopeMark.Marked(EditSide.Local, "Apply (1)", enabled: false);
+        write.FontSize = 12;
+        write.HorizontalAlignment = HorizontalAlignment.Left;
+        write.Margin = new Avalonia.Thickness(0, 6, 0, 0);
+
+        write.Click += async (_, _) =>
+        {
+            Busy(true, "Applying the source language...");
+
+            var writer = new GameConfigWriter();
+            ConfigWriteResult? failed = null;
+
+            if (SourceDiffers())
+            {
+                // "auto" is how the mod spells "not set" — written back, never a guessed language.
+                var result = writer.ApplyOne(path, descriptor!, GameConfigWriter.SourceLanguageKey,
+                    draftSource is null ? "auto" : Languages.NameOf(draftSource) ?? draftSource, "source language");
+                if (!result.Written) failed = result;
+            }
+
+            if (failed is null && StrictDiffers())
+            {
+                var result = writer.ApplyOne(path, descriptor!, GameConfigWriter.StrictSourceKey,
+                    draftStrict, "strict source language");
+                if (!result.Written) failed = result;
+            }
+
+            Busy(false, "Ready.");
+
+            if (failed is not null)
+            {
+                await MessageAsync("Nothing was changed",
+                    $"The source language could not be written ({failed.Failure}).");
+                return;
+            }
+
+            // The config.json IS the storage from here — see LanguageDecision.
+            SaveAnswer(path, p =>
+            {
+                if (p.Mod is null) return;
+                p.Mod.SourceLanguage = null;
+                p.Mod.StrictSourceLanguage = null;
+            });
+
+            await ShowSelectedAsync();
+        };
+
+        RefreshState();
+
+        yield return pending;
+        yield return write;
     }
 
     /// <summary>
@@ -12796,11 +13047,11 @@ public partial class MainWindow : Window
     /// <summary>
     /// Writes the source language into the game's config.json when it does not already name it.
     ///
-    /// 🔴 **The only two callers are the only two legitimate writers of this key** — taking a
-    /// published translation, and publishing one for the first time. Both write a pair the author
-    /// stated and the server keeps. Nothing composed from settings or preferences may reach this:
-    /// the key is an instruction to the model, not a label, and a guess retires lines for good
-    /// (GameLanguages, GameConfigWriter.Compose).
+    /// 🔴 **Its two callers write a pair the author stated and the server keeps** — taking a
+    /// published translation, and publishing one for the first time. The only other writer of this
+    /// key is a person DECLARING it for one game (SourceDecision, and GameConfigWriter.Intended from
+    /// that declaration). Nothing composed from settings or preferences may reach it: the key is an
+    /// instruction to the model, not a label, and a guess retires lines for good (GameLanguages).
     /// </summary>
     private static void WriteSourceLanguage(GameReport report, LoaderDescriptor descriptor, string source)
     {

@@ -95,6 +95,29 @@ public sealed class GameModOverrides
     /// </summary>
     [JsonPropertyName("settings_hotkey")] public string? SettingsHotkey { get; set; }
 
+    /// <summary>
+    /// The language this game's own text is in, as a person DECLARED it for this game — a catalogue
+    /// name, or null when nobody said.
+    ///
+    /// 🔴 **Declared, never guessed, and never from Mod defaults** (user's decision, 2026-09-25).
+    /// Nothing can read what language a game's text is in, and this key is an instruction to the
+    /// model: with <see cref="StrictSourceLanguage"/> a wrong one retires lines for good. So it is
+    /// only ever the answer somebody gave about THIS game, on its own brick of the card
+    /// (MainWindow.SourceDecision) — the way to arm strict source before the first launch rather
+    /// than after lines in another language were already translated.
+    ///
+    /// ⚠ Like the hotkey: part of <see cref="IsEmpty"/> (it is something to keep and to write) but
+    /// not of <see cref="Count"/> or <see cref="PendingAgainst"/>, which speak for the settings form
+    /// this brick is not part of.
+    /// </summary>
+    [JsonPropertyName("source_language")] public string? SourceLanguage { get; set; }
+
+    /// <summary>
+    /// Whether this game skips lines the model judges to be in another language than
+    /// <see cref="SourceLanguage"/> — declared on the same brick, under the same rules.
+    /// </summary>
+    [JsonPropertyName("strict_source_language")] public bool? StrictSourceLanguage { get; set; }
+
     /// <summary>Whether the MOD may reach the internet from inside this game.</summary>
     [JsonPropertyName("mod_online_mode")] public bool? ModOnlineMode { get; set; }
 
@@ -124,7 +147,8 @@ public sealed class GameModOverrides
     public bool IsEmpty =>
         TargetLanguage is null && TranslationBackend is null && AiUrl is null && AiModel is null
         && AiApiKey is null && GoogleApiKey is null && DeeplApiKey is null && DeeplUseFree is null
-        && SettingsHotkey is null && ModOnlineMode is null && AutoDownload is null
+        && SettingsHotkey is null && SourceLanguage is null && StrictSourceLanguage is null
+        && ModOnlineMode is null && AutoDownload is null
         && NotifyUpdates is null && CheckModUpdates is null && MergeStrategy is null
         && NotificationsEnabled is null && NotificationPosition is null && Channel is null;
 

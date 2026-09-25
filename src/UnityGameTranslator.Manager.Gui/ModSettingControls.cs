@@ -56,6 +56,20 @@ public static class ModSettingControls
     }
 
     /// <summary>
+    /// The language a game's own text is in: every language, plus "Not set" first — which is what
+    /// the mod's "auto" means (it does not know, and does not guess).
+    ///
+    /// ⚠ No "follow the system" here, unlike <see cref="LanguagePicker"/>: this machine's language
+    /// says nothing about the language a game was written in.
+    /// </summary>
+    public static SearchPicker SourceLanguagePicker(double width)
+    {
+        var box = new SearchPicker { Width = width };
+        LanguageMark.Fill(box, Languages.All(), new LanguageChoice("auto", null, "Not set"));
+        return box;
+    }
+
+    /// <summary>
     /// The value behind the selected row.
     ///
     /// ⚠ Three shapes, and each is the smallest thing that says what it is. A language is a

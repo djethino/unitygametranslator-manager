@@ -9801,11 +9801,17 @@ public partial class MainWindow : Window
         var row = (StackPanel)Ui.Row("Source language", picker);
         row.Margin = new Avalonia.Thickness(0, 8, 0, 0);
 
-        ToolTip.SetTip(picker, pinned is not null
-            ? "Set by the published translation this game holds."
-            : "The language this game's own text is in. UGT Manager cannot detect it: set it only if you are sure.");
+        if (pinned is not null) ToolTip.SetTip(picker, "Set by the published translation this game holds.");
 
         picker.IsEnabled = pinned is null && MaySetUp(report, picker);
+
+        // 🔴 **On the screen, not in a tooltip** (user, 2026-09-25): a warning that needs a hover is
+        // one nobody reads before choosing. Amber, because a wrong source is an instruction to the
+        // model, not a label. Two short sentences, the words any program uses.
+        var sourceCaution = Ui.Note("Choose the language the game is set to. It cannot be detected.",
+                                    Tone.Warning);
+        sourceCaution.Margin = new Avalonia.Thickness(140, 2, 0, 0);
+        sourceCaution.IsVisible = pinned is null;
 
         // The mod's own words and help (options.json, StrictSourceToggle). Aligned under the picker
         // it qualifies — the label column of Ui.Row is 130 wide, plus its spacing.
@@ -9817,17 +9823,23 @@ public partial class MainWindow : Window
             Margin = new Avalonia.Thickness(140, 2, 0, 0),
         };
 
+        // The mod's own help for the switch (options.json, StrictSourceToggle): what it does.
         ToolTip.SetTip(strict,
             "Skip texts that are not in the source language, so foreign or already-translated text is "
             + "left alone. AI translation only.");
 
         strict.IsEnabled = MaySetUp(report, strict);
 
-        // Amber, because it is a consequence that cannot be taken back once lines are skipped.
+        // What it costs, on the screen: it works only as well as the model tells languages apart,
+        // and the model can be checked for exactly that ("Test this model" runs a strict-source
+        // case, ModelTestSuite). Amber, because a skipped line stays skipped.
         var caution = Ui.Note(
-            "Lines in any other language are skipped for good. Make sure the source language is right.",
+            "Experimental: it depends on the AI model. Check it with \"Test this model\" in Mod defaults.",
             Tone.Warning);
         caution.Margin = new Avalonia.Thickness(140, 0, 0, 0);
+
+        var skipped = Ui.Note("Lines in other languages are skipped for good.", Tone.Warning);
+        skipped.Margin = new Avalonia.Thickness(140, 0, 0, 0);
 
         TextBlock? pendingLine = null;
         Control? pending = null;
@@ -9844,7 +9856,10 @@ public partial class MainWindow : Window
         {
             // A switch whose verb cannot act does not appear — the rule this program keeps everywhere.
             strict.IsVisible = draftSource is not null;
-            caution.IsVisible = strict.IsVisible && draftStrict;
+
+            // Read before ticking, so shown with the switch; the permanent cost once it is ticked.
+            caution.IsVisible = strict.IsVisible;
+            skipped.IsVisible = strict.IsVisible && draftStrict;
 
             var count = (SourceDiffers() ? 1 : 0) + (StrictDiffers() ? 1 : 0);
 
@@ -9854,8 +9869,8 @@ public partial class MainWindow : Window
             {
                 var lines = new List<string>();
                 if (SourceDiffers())
-                    lines.Add($"• source language: {Languages.NameOf(inGameSource) ?? "not set"} → "
-                              + $"{Languages.NameOf(draftSource) ?? "not set"}");
+                    lines.Add($"• source language: {Languages.NameOf(inGameSource) ?? ModSettingControls.SourceAuto} → "
+                              + $"{Languages.NameOf(draftSource) ?? ModSettingControls.SourceAuto}");
                 if (StrictDiffers())
                     lines.Add($"• strict source language: {(inGameStrict ? "on" : "off")} → {(draftStrict ? "on" : "off")}");
                 pendingLine.Text = string.Join(Environment.NewLine, lines);
@@ -9907,6 +9922,7 @@ public partial class MainWindow : Window
         };
 
         yield return row;
+        yield return sourceCaution;
 
         if (pinned is not null)
         {
@@ -9918,6 +9934,7 @@ public partial class MainWindow : Window
 
         yield return strict;
         yield return caution;
+        yield return skipped;
 
         if (!configured)
         {

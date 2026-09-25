@@ -596,7 +596,7 @@ public sealed class TranslationInstaller
             return new TranslationWriteResult(false, false, UserDataInventory.OutsideGameRefusal);
 
         if (!File.Exists(backupPath))
-            return new TranslationWriteResult(false, false, "That copy is no longer on disk.");
+            return new TranslationWriteResult(false, false, "This backup is no longer on disk.");
 
         try
         {

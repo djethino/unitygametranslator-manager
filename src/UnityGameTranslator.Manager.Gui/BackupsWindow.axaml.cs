@@ -385,8 +385,7 @@ public sealed class BackupsWindow : Window
         var body = new Grid { RowDefinitions = new RowDefinitions("*,Auto") };
 
         var list = Rows(kept, wantSaved: true,
-            empty: "No backups yet. Take one before you try something, and you can walk back out "
-                 + "of whatever you try.",
+            empty: "No backups yet. Take one before you try something, so you can restore it later.",
             rowsPanel: out var rowsPanel);
 
         Grid.SetRow(list, 0);
@@ -431,7 +430,7 @@ public sealed class BackupsWindow : Window
         body.Children.Add(verb);
 
         var card = Card(Backups.SavedHeading,
-                        $"{saved} of {Backups.SavedKept} — these stay until you delete one.", body,
+                        $"{saved} of {Backups.SavedKept}. Kept until you delete them.", body,
                         out var chrome);
 
         return new Sized(card, kept.Count(e => e.IsSaved), rowsPanel, chrome, verb);
@@ -440,12 +439,13 @@ public sealed class BackupsWindow : Window
     private Sized AutomaticCard(IReadOnlyList<BackupEntry> kept)
     {
         var body = Rows(kept, wantSaved: false,
-            empty: "Nothing yet. One is taken whenever something replaces this game's translation.",
+            empty: "None yet. A backup is taken automatically whenever this game's translation is "
+                 + "replaced.",
             rowsPanel: out var rowsPanel);
 
         var card = Card(Backups.AutomaticHeading,
-                        $"The last {Backups.AutomaticKept} taken before something replaced this game's "
-                        + "translation — the oldest goes as a new one arrives. Keep holds on to one.",
+                        $"The last {Backups.AutomaticKept} taken before this game's translation was "
+                        + "replaced. The oldest is deleted when a new one arrives. Use Keep to save one.",
                         body, out var chrome);
 
         return new Sized(card, kept.Count(e => !e.IsSaved), rowsPanel, chrome, Verb: null);
@@ -479,13 +479,7 @@ public sealed class BackupsWindow : Window
 
         if (!any)
         {
-            rows.Children.Add(new TextBlock
-            {
-                Text = empty,
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = Brush("TextMuted"),
-            });
+            rows.Children.Add(Ui.Note(empty));
 
             return rows;
         }
@@ -638,8 +632,7 @@ public sealed class BackupsWindow : Window
         var restore = ScopeMark.Marked(EditSide.Local, "Restore", enabled: !_running);
         ToolTip.SetTip(restore, _running
             ? $"{_game.Name} is running, so its files are locked."
-            : "Puts this backup into the game. What is there now is backed up first, so this can "
-              + "be walked back.");
+            : "Restores this backup into the game. The current translation is backed up first.");
 
         // 🔴 **Asked, exactly as the mod asks it.** This window and the mod's panel look at the same
         // folder; one of them removed a copy on the click while the other asked first. Two screens
@@ -675,7 +668,7 @@ public sealed class BackupsWindow : Window
         if (entry.IsSaved)
         {
             var rename = new Button { Content = "Rename", FontSize = 12 };
-            ToolTip.SetTip(rename, "Ten dated rows are not a choice. A name makes one findable.");
+            ToolTip.SetTip(rename, "Give this backup a name, to find it easily.");
             rename.Click += async (_, _) =>
             {
                 if (await AskNameAsync(entry)) Touched = true;
@@ -684,7 +677,7 @@ public sealed class BackupsWindow : Window
             verbs.Children.Add(rename);
 
             var delete = new Button { Content = "Delete", FontSize = 12 };
-            ToolTip.SetTip(delete, "Deletes this backup and frees a slot. Nothing else is touched.");
+            ToolTip.SetTip(delete, "Deletes this backup and frees a slot.");
             // ⚠ The one act on this window nothing puts back — the others all leave a way out.
             delete.Click += async (_, _) =>
             {
@@ -725,8 +718,8 @@ public sealed class BackupsWindow : Window
             ToolTip.SetTip(keep, already
                                  ? Backups.AlreadyKeptHint
                                  : Backups.WhyNoRoom(all)
-                                   ?? $"Copies it into {Backups.SavedHeading}, so it stops ageing "
-                                      + "out. This one stays where it is.");
+                                   ?? $"Copies it to {Backups.SavedHeading}, where it is kept until "
+                                      + "you delete it.");
 
             Busy.OnClick(keep, () =>
                 ActAsync(() => TranslationBackupStore.Keep(_game.Path, _descriptor, entry.Id),
@@ -789,9 +782,8 @@ public sealed class BackupsWindow : Window
         if (!done)
         {
             await ConfirmationWindow.TellAsync(this, couldNot,
-                "Nothing was changed. The backup folder may have been moved or written to by "
-                + "something else while this window was open — close it and open it again to see "
-                + "what is actually there.");
+                "Nothing was changed. The backup folder may have been changed by another program. "
+                + "Close this window and open it again.");
         }
     }
 
@@ -820,7 +812,7 @@ public sealed class BackupsWindow : Window
         var field = new TextBox
         {
             Text = entry.Label ?? "",
-            Watermark = "What is this one?",
+            Watermark = "Backup name",
             MinWidth = 320,
         };
 
@@ -888,11 +880,11 @@ public sealed class BackupsWindow : Window
     }
 
     /// <summary>
-    /// The card Settings and Mod defaults use, to the pixel.
+    /// The card of the other windows (Ui.Card), with one difference: the list is a star row, and the
+    /// heading block is handed back so the two lists can be sized against it.
     ///
-    /// ⚠ Copied rather than shared because those two keep private copies of it as well — a third
-    /// is the point at which it should become one control, and that refactor belongs to all three
-    /// at once rather than to whichever window is being written today.
+    /// ⚠ Not Ui.Card itself: the measuring (RoomFor) needs the heading apart from the list, and the
+    /// padding written as a constant it can read back.
     /// </summary>
     /// <param name="chrome">
     /// The heading block, handed back so <see cref="RoomFor"/> can ask what it comes to instead of
@@ -910,16 +902,9 @@ public sealed class BackupsWindow : Window
             Foreground = Brush("TextPrimary"),
         });
 
-        if (intro is not null)
-        {
-            body.Children.Add(new TextBlock
-            {
-                Text = intro,
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = Brush("TextMuted"),
-            });
-        }
+        // The shared intro shape (Ui.Intro), like every other card's. The height is measured, so a
+        // different size cannot upset the division of the window between the two lists.
+        if (intro is not null) body.Children.Add(Ui.Intro(intro));
 
         // ⚠ The list is the child that grows: the title and the intro take what they need, the
         // rows take the rest. Without this the card stretches and the list keeps its own height,

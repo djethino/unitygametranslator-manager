@@ -65,7 +65,8 @@ public sealed class FoldersWindow : Window
         _folders = folders;
         _games = games;
 
-        Title = "Folders you added";
+        // The header button's own words, so the window opened is recognisably the one asked for.
+        Title = "My folders";
         Width = 720;
         Height = 560;
         MinWidth = 520;
@@ -95,16 +96,10 @@ public sealed class FoldersWindow : Window
     /// </summary>
     private Control Build()
     {
-        var intro = new TextBlock
-        {
-            Text = "Steam, Epic and GOG are found on their own — you never have to add those. This "
-                 + "is for everything else: a game installed by hand, a second drive, a library "
-                 + "kept somewhere of your own choosing.",
-            FontSize = 12,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Brush("TextSecondary"),
-            Margin = new Thickness(0, 0, 0, 16),
-        };
+        var intro = Ui.Intro(
+            "Steam, Epic and GOG games are found automatically. Add folders here for other games: "
+            + "installed by hand, on another drive, or anywhere else.");
+        intro.Margin = new Thickness(0, 0, 0, 16);
 
         _list = new StackPanel { Spacing = 8 };
 
@@ -126,13 +121,8 @@ public sealed class FoldersWindow : Window
 
         RefreshList();
 
-        _status = new TextBlock
-        {
-            FontSize = 11,
-            VerticalAlignment = VerticalAlignment.Center,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Brush("TextMuted"),
-        };
+        _status = Ui.Note("");
+        _status.VerticalAlignment = VerticalAlignment.Center;
 
         // One button, and it says what it does. There is nothing to cancel — see the note on the
         // class — so offering it would be offering a way back that does not exist.
@@ -181,18 +171,14 @@ public sealed class FoldersWindow : Window
         var heading = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
         heading.Children.Add(new TextBlock
         {
-            Text = "Extra places to look",
+            Text = "Added folders",
             FontSize = 14,
             FontWeight = FontWeight.SemiBold,
             Foreground = Brush("TextPrimary"),
         });
-        heading.Children.Add(new TextBlock
-        {
-            Text = "Each one is searched two levels deep, which is where repacked games usually sit.",
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Brush("TextMuted"),
-        });
+
+        // Two levels: where repacked games usually sit (UnityGameProbe.NestingDepth).
+        heading.Children.Add(Ui.Note("Each folder is searched two levels deep."));
 
         var top = new Grid
         {
@@ -274,7 +260,7 @@ public sealed class FoldersWindow : Window
                 },
                 new TextBlock
                 {
-                    Text = "Nothing added yet",
+                    Text = "No folders added",
                     FontSize = 13,
                     FontWeight = FontWeight.SemiBold,
                     TextAlignment = TextAlignment.Center,
@@ -282,8 +268,8 @@ public sealed class FoldersWindow : Window
                 },
                 new TextBlock
                 {
-                    Text = "Which is usually right: if all your games come from Steam, Epic or GOG, "
-                         + "they are already in the list. Add a folder only when one of them is not.",
+                    Text = "Games from Steam, Epic and GOG are already in the list. Add a folder only "
+                         + "for a game that is missing.",
                     FontSize = 11,
                     MaxWidth = 380,
                     TextWrapping = TextWrapping.Wrap,
@@ -372,18 +358,18 @@ public sealed class FoldersWindow : Window
             var open = Glyphs.Button(Glyphs.Folder(), "Open", 11);
             open.IsEnabled = !missing;
             ToolTip.SetTip(open, missing
-                ? "This folder is not on the machine right now."
+                ? "This folder is not available right now."
                 : "Open this folder");
             open.Click += (_, _) => Shell.OpenFolder(entry.Path);
 
             var remove = Glyphs.Button(Glyphs.Trash(), "Remove", 11);
-            ToolTip.SetTip(remove, "Stop looking in this folder. Nothing in it is touched.");
+            ToolTip.SetTip(remove, "Stop searching this folder. Its files are not changed.");
             remove.Click += (_, _) =>
             {
                 _folders.Remove(entry.Path);
                 entry.Removed = true;
                 Changed = true;
-                Say($"{name} will no longer be searched. Undo is beside it until you close.");
+                Say($"{name} will no longer be searched. Click Undo to keep it.");
                 RefreshList();
             };
 
@@ -413,29 +399,23 @@ public sealed class FoldersWindow : Window
     /// <summary>The one line that says what this folder is currently worth.</summary>
     private TextBlock State(Entry entry, bool missing)
     {
-        var (text, colour) = entry.Removed
-            ? ("Will be forgotten when you close this window.", "TextMuted")
+        var (text, tone) = entry.Removed
+            ? ("Removed when you close this window.", Tone.Neutral)
             : missing
                 // Never dropped on its own: an unplugged drive is not a decision to forget what
                 // somebody asked us to remember.
-                ? ("Not on this machine right now — an unplugged drive or a disconnected share "
-                   + "looks like this. It is kept, and searched again when it comes back.",
-                   "StatusWarning")
+                ? ("Not available (drive unplugged or network share offline). Kept, and searched "
+                   + "again when it is back.", Tone.Warning)
                 : entry.Games switch
                 {
-                    0 => ("No Unity game found in here.", "TextMuted"),
-                    1 => ("1 game in your list comes from here.", "StatusSuccess"),
-                    _ => ($"{entry.Games} games in your list come from here.", "StatusSuccess"),
+                    0 => ("No Unity game found in this folder.", Tone.Neutral),
+                    1 => ("1 game found in this folder.", Tone.Success),
+                    _ => ($"{entry.Games} games found in this folder.", Tone.Success),
                 };
 
-        return new TextBlock
-        {
-            Text = text,
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Brush(colour),
-            Margin = new Thickness(0, 2, 0, 0),
-        };
+        var line = Ui.Note(text, tone);
+        line.Margin = new Thickness(0, 2, 0, 0);
+        return line;
     }
 
     // ---------------------------------------------------------------- adding
@@ -444,7 +424,7 @@ public sealed class FoldersWindow : Window
     {
         var picked = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
-            Title = "Where are the games?",
+            Title = "Select a folder with games",
             AllowMultiple = false,
         });
 
@@ -461,7 +441,7 @@ public sealed class FoldersWindow : Window
         }
 
         trigger.IsEnabled = false;
-        Say("Looking through it...");
+        Say("Searching the folder...");
 
         // Off the UI thread: a folder on a slow or sleeping drive takes seconds, and a window that
         // stops repainting while it waits looks like one that has crashed.
@@ -491,11 +471,11 @@ public sealed class FoldersWindow : Window
 
         Say(found.Count switch
         {
-            0 => "No Unity game in there yet. The folder was added anyway, and will be searched "
-                 + "again every time this tool starts.",
+            0 => "No Unity game found yet. The folder was added and will be searched each time "
+                 + "UGT Manager starts.",
             1 => $"Found {found[0].Name}.",
             _ => $"Found {found.Count} games.",
-        });
+        }, found.Count > 0 ? Tone.Success : Tone.Neutral);
 
         trigger.IsEnabled = true;
         RefreshList();
@@ -503,7 +483,7 @@ public sealed class FoldersWindow : Window
 
     // ---------------------------------------------------------------- helpers
 
-    private void Say(string message) => _status.Text = message;
+    private void Say(string message, Tone tone = Tone.Neutral) => Ui.Say(_status, message, tone);
 
     /// <summary>
     /// Games from the main list that sit inside this folder.
@@ -527,16 +507,7 @@ public sealed class FoldersWindow : Window
     }
 
     /// <summary>The site's card, the same one the rest of the tool is built from.</summary>
-    private static Control Card(Control content) => new Border
-    {
-        Background = Brush("SurfaceCard"),
-        BorderBrush = Brush("BorderSubtle"),
-        BorderThickness = new Thickness(1),
-        CornerRadius = new CornerRadius(8),
-        Padding = new Thickness(16),
-        Child = content,
-    };
+    private static Control Card(Control content) => Ui.Card(content);
 
-    /// <summary>Through Palette, which will not let an unknown key pass unnoticed.</summary>
-    private static IBrush? Brush(string key) => Palette.Of(key);
+    private static IBrush? Brush(string key) => Ui.Brush(key);
 }

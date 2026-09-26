@@ -45,7 +45,7 @@ internal static class BenchChecks
         }
 
         var markup = ModelTestSuite.Build("fr", sourceCode: "en").First(t => t.Name == "markup markers kept");
-        Program.Check(markup.Rule.Contains("They come in pairs", StringComparison.Ordinal),
+        Program.Check(markup.Rule.Contains("keep each pair around the translation of the words it surrounds", StringComparison.Ordinal),
             "the bench's prompt is the game's, pairs of tags included",
             "its own builder never announced what the game had started to");
     }

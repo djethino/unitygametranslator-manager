@@ -468,7 +468,7 @@ public static class ModelTestSuite
             new("nothing but markers", "hard",
                 Fixtures.MarkersOnly,
                 rules,
-                (_, answer) => InOrder(answer.Trim(), "[!t*0]", "[!v*0]", "[!t*1]")
+                (_, answer) => InOrder(answer.Trim(), "<color1>", "[!v*0]", "</color1>")
                                && answer.Trim().Length <= 24)
             {
                 Expectation = "gives the markers back and adds nothing to them",
@@ -503,7 +503,7 @@ public static class ModelTestSuite
             new("markup markers kept", "hard",
                 from.MarkupSpan,
                 rules,
-                (_, answer) => InOrder(answer, "[!t*0]", "[!t*1]", "[!v*0]"))
+                (_, answer) => InOrder(answer, "<color1>", "</color1>", "[!v*0]"))
             {
                 // The mod lifts every <color>, <b> and <sprite> out of the text before sending it
                 // and puts them back afterwards, so what a model actually meets is a pair of
@@ -520,8 +520,8 @@ public static class ModelTestSuite
                 rules,
                 // Not the source handed back: the pair and the name pass that too, untranslated.
                 (source, answer) => !string.Equals(answer.Trim(), source.Trim(), StringComparison.Ordinal)
-                               && InOrder(answer, "[!t*0]", "[!t*1]")
-                               && Inside(answer, "[!t*0]", "[!t*1]") is { Length: > 0 } title
+                               && InOrder(answer, "<color1>", "</color1>")
+                               && Inside(answer, "<color1>", "</color1>") is { Length: > 0 } title
                                && !from.TitleName.Any(name => title.Contains(name, StringComparison.OrdinalIgnoreCase)))
             {
                 Expectation = "the colour stays on the title, wherever it goes, and the name stays out of it",
@@ -532,8 +532,8 @@ public static class ModelTestSuite
                 from.ColouredLabel,
                 rules,
                 (_, answer) => HasExactlyOnce(answer, "[!nl]")
-                               && InOrder(answer, "[!t*0]", "[!t*1]")
-                               && Placeholders.Labels(Inside(answer, "[!t*0]", "[!t*1]")).Count == 1)
+                               && InOrder(answer, "<color1>", "</color1>")
+                               && Placeholders.Labels(Inside(answer, "<color1>", "</color1>")).Count == 1)
             {
                 Expectation = "the label comes back translated inside its brackets, inside its colour",
             },
@@ -542,7 +542,7 @@ public static class ModelTestSuite
                 from.Paragraph,
                 rules,
                 (_, answer) => InOrder(answer,
-                    "[!t*0]", "[!t*1]", "[!nl]", "[!v*0]", "[!v*1]", "[!v*2]"))
+                    "<color1>", "</color1>", "[!nl]", "[!v*0]", "[!v*1]", "[!v*2]"))
             {
                 // Distance is the whole point. A marker is rarely lost on a short line; it is lost
                 // in the middle of a long one, where the model has stopped tracking it — and long
@@ -558,7 +558,7 @@ public static class ModelTestSuite
                 from.MarkersInRow,
                 rules,
                 (_, answer) => InOrder(answer,
-                    "[!t*0]", "[!t*1]", "[!v*0]", "[!v*1]", "[!v*2]", "[!v*3]", "[!v*4]", "[!v*5]"))
+                    "<color1>", "</color1>", "[!v*0]", "[!v*1]", "[!v*2]", "[!v*3]", "[!v*4]", "[!v*5]"))
             {
                 // Taken from the shape of a real line: a counter listing six values separated by
                 // slashes. Models renumber these, or helpfully collapse them into a range.
@@ -584,7 +584,7 @@ public static class ModelTestSuite
                 // time (found 2026-09-26 by BenchChecks, which runs a perfect answer through here).
                 (source, answer) => Occurrences(answer, "[!nl]") == 3
                                     && InOrder(answer, AsTheSourceOrdersThem(source,
-                                        "[!t*0]", "[!t*1]", "[!STR*0]",
+                                        "<color1>", "</color1>", "[!STR*0]",
                                         "[!v*0]", "[!v*1]", "[!v*2]", "[!v*3]")))
             {
                 // Kept beside "a paragraph, not a label" rather than replacing it: that one isolates

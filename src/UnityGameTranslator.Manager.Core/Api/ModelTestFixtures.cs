@@ -99,7 +99,7 @@ public sealed class Fixtures
     /// Nothing but markers, and the same in every language because there is nothing to write: a
     /// number inside its own colour tag, the shape behind every coloured counter in a HUD.
     /// </summary>
-    public const string MarkersOnly = "[!t*0][!v*0][!t*1]";
+    public const string MarkersOnly = "<color=#FFCC00>[!v*0]</color>";
 
     /// <summary>
     /// A constructed language, for the last case of all.
@@ -156,20 +156,20 @@ public sealed class Fixtures
             TechnicalTerms = "Your API key is stored in JSON",
             Shortcut = "Press Ctrl+F10 to open settings",
             OnePlaceholder = "Press [!v*0] to continue",
-            TwoPlaceholders = "Press [!v*0] to save[!nl]Your API key is required",
+            TwoPlaceholders = "Press [!v*0] to save\nYour API key is required",
             NameInjected = "[!STR*0] has joined the crew",
-            BlankLine = "Objective complete[!nl][!nl]Return to the ship",
-            TrailingBreak = "Settings saved[!nl]",
-            MarkupSpan = "[!t*0]Warning[!t*1]: shields at [!v*0] percent",
-            MarkersInRow = "[!t*0]Loaded[!t*1] [!v*0]/[!v*1]/[!v*2]/[!v*3]/[!v*4]/[!v*5]",
+            BlankLine = "Objective complete\n\nReturn to the ship",
+            TrailingBreak = "Settings saved\n",
+            MarkupSpan = "<color=#FFCC00>Warning</color>: shields at [!v*0] percent",
+            MarkersInRow = "<color=#FFCC00>Loaded</color> [!v*0]/[!v*1]/[!v*2]/[!v*3]/[!v*4]/[!v*5]",
             Paragraph =
-                "[!t*0]Warning[!t*1][!nl]The reactor is running at [!v*0] percent of its rated "
+                "<color=#FFCC00>Warning</color>\nThe reactor is running at [!v*0] percent of its rated "
                 + "output. Vent the coolant before the next jump, or the crew will not survive it. "
                 + "Repairs cost [!v*1] credits and take [!v*2] cycles, and nothing else can be "
                 + "built while they are under way.",
             ParagraphFull =
-                "[!t*0]Salvage report[!t*1][!nl][!STR*0] was recovered from the wreck in bay "
-                + "[!v*0].[!nl][!nl]Repairs cost [!v*1] credits and take [!v*2] cycles. The crew "
+                "<color=#FFCC00>Salvage report</color>\n[!STR*0] was recovered from the wreck in bay "
+                + "[!v*0].\n\nRepairs cost [!v*1] credits and take [!v*2] cycles. The crew "
                 + "cannot work while the reactor stays below [!v*3] percent.",
             ToneMarked = "Well, that went about as well as anyone expected.",
         },
@@ -188,20 +188,20 @@ public sealed class Fixtures
             TechnicalTerms = "Tu clave API se guarda en JSON",
             Shortcut = "Pulsa Ctrl+F10 para abrir los ajustes",
             OnePlaceholder = "Pulsa [!v*0] para continuar",
-            TwoPlaceholders = "Pulsa [!v*0] para guardar[!nl]Se requiere tu clave API",
+            TwoPlaceholders = "Pulsa [!v*0] para guardar\nSe requiere tu clave API",
             NameInjected = "[!STR*0] se ha unido a la tripulación",
-            BlankLine = "Objetivo completado[!nl][!nl]Vuelve a la nave",
-            TrailingBreak = "Ajustes guardados[!nl]",
-            MarkupSpan = "[!t*0]Aviso[!t*1]: escudos al [!v*0] por ciento",
-            MarkersInRow = "[!t*0]Cargado[!t*1] [!v*0]/[!v*1]/[!v*2]/[!v*3]/[!v*4]/[!v*5]",
+            BlankLine = "Objetivo completado\n\nVuelve a la nave",
+            TrailingBreak = "Ajustes guardados\n",
+            MarkupSpan = "<color=#FFCC00>Aviso</color>: escudos al [!v*0] por ciento",
+            MarkersInRow = "<color=#FFCC00>Cargado</color> [!v*0]/[!v*1]/[!v*2]/[!v*3]/[!v*4]/[!v*5]",
             Paragraph =
-                "[!t*0]Aviso[!t*1][!nl]El reactor funciona al [!v*0] por ciento de su potencia "
+                "<color=#FFCC00>Aviso</color>\nEl reactor funciona al [!v*0] por ciento de su potencia "
                 + "nominal. Purga el refrigerante antes del próximo salto o la tripulación no "
                 + "sobrevivirá. Las reparaciones cuestan [!v*1] créditos y tardan [!v*2] ciclos, y "
                 + "no se puede construir nada más mientras duran.",
             ParagraphFull =
-                "[!t*0]Informe de rescate[!t*1][!nl][!STR*0] se recuperó de los restos en la "
-                + "bahía [!v*0].[!nl][!nl]Las reparaciones cuestan [!v*1] créditos y tardan "
+                "<color=#FFCC00>Informe de rescate</color>\n[!STR*0] se recuperó de los restos en la "
+                + "bahía [!v*0].\n\nLas reparaciones cuestan [!v*1] créditos y tardan "
                 + "[!v*2] ciclos. La tripulación no puede trabajar mientras el reactor siga por "
                 + "debajo del [!v*3] por ciento.",
             ToneMarked = "Bueno, salió justo como todos esperaban.",
@@ -219,20 +219,20 @@ public sealed class Fixtures
             TechnicalTerms = "Ваш ключ API хранится в JSON",
             Shortcut = "Нажмите Ctrl+F10, чтобы открыть настройки",
             OnePlaceholder = "Нажмите [!v*0], чтобы продолжить",
-            TwoPlaceholders = "Нажмите [!v*0], чтобы сохранить[!nl]Требуется ключ API",
+            TwoPlaceholders = "Нажмите [!v*0], чтобы сохранить\nТребуется ключ API",
             NameInjected = "[!STR*0] присоединился к экипажу",
-            BlankLine = "Задание выполнено[!nl][!nl]Вернитесь на корабль",
-            TrailingBreak = "Настройки сохранены[!nl]",
-            MarkupSpan = "[!t*0]Внимание[!t*1]: щиты на [!v*0] процентов",
-            MarkersInRow = "[!t*0]Загружено[!t*1] [!v*0]/[!v*1]/[!v*2]/[!v*3]/[!v*4]/[!v*5]",
+            BlankLine = "Задание выполнено\n\nВернитесь на корабль",
+            TrailingBreak = "Настройки сохранены\n",
+            MarkupSpan = "<color=#FFCC00>Внимание</color>: щиты на [!v*0] процентов",
+            MarkersInRow = "<color=#FFCC00>Загружено</color> [!v*0]/[!v*1]/[!v*2]/[!v*3]/[!v*4]/[!v*5]",
             Paragraph =
-                "[!t*0]Внимание[!t*1][!nl]Реактор работает на [!v*0] процентов от номинальной "
+                "<color=#FFCC00>Внимание</color>\nРеактор работает на [!v*0] процентов от номинальной "
                 + "мощности. Стравите охладитель до следующего прыжка, иначе экипаж не выживет. "
                 + "Ремонт стоит [!v*1] кредитов и занимает [!v*2] циклов, и пока он идёт, ничего "
                 + "другого построить нельзя.",
             ParagraphFull =
-                "[!t*0]Отчёт о спасении[!t*1][!nl][!STR*0] извлечён из обломков в отсеке "
-                + "[!v*0].[!nl][!nl]Ремонт стоит [!v*1] кредитов и занимает [!v*2] циклов. "
+                "<color=#FFCC00>Отчёт о спасении</color>\n[!STR*0] извлечён из обломков в отсеке "
+                + "[!v*0].\n\nРемонт стоит [!v*1] кредитов и занимает [!v*2] циклов. "
                 + "Экипаж не может работать, пока реактор остаётся ниже [!v*3] процентов.",
             ToneMarked = "Что ж, всё прошло именно так, как все и ожидали.",
         },
@@ -249,17 +249,17 @@ public sealed class Fixtures
             TechnicalTerms = "你的 API 密钥保存在 JSON 中",
             Shortcut = "按 Ctrl+F10 打开设置",
             OnePlaceholder = "按 [!v*0] 继续",
-            TwoPlaceholders = "按 [!v*0] 保存[!nl]需要你的 API 密钥",
+            TwoPlaceholders = "按 [!v*0] 保存\n需要你的 API 密钥",
             NameInjected = "[!STR*0] 加入了队伍",
-            BlankLine = "目标完成[!nl][!nl]返回飞船",
-            TrailingBreak = "设置已保存[!nl]",
-            MarkupSpan = "[!t*0]警告[!t*1]：护盾剩余 [!v*0] %",
-            MarkersInRow = "[!t*0]已装载[!t*1] [!v*0]/[!v*1]/[!v*2]/[!v*3]/[!v*4]/[!v*5]",
+            BlankLine = "目标完成\n\n返回飞船",
+            TrailingBreak = "设置已保存\n",
+            MarkupSpan = "<color=#FFCC00>警告</color>：护盾剩余 [!v*0] %",
+            MarkersInRow = "<color=#FFCC00>已装载</color> [!v*0]/[!v*1]/[!v*2]/[!v*3]/[!v*4]/[!v*5]",
             Paragraph =
-                "[!t*0]警告[!t*1][!nl]反应堆正以额定功率的 [!v*0] % 运行。下一次跃迁前请排出冷却剂，"
+                "<color=#FFCC00>警告</color>\n反应堆正以额定功率的 [!v*0] % 运行。下一次跃迁前请排出冷却剂，"
                 + "否则船员无法生还。维修需要 [!v*1] 信用点和 [!v*2] 个周期，期间无法建造其他任何东西。",
             ParagraphFull =
-                "[!t*0]打捞报告[!t*1][!nl][!STR*0] 已从 [!v*0] 号舱的残骸中回收。[!nl][!nl]"
+                "<color=#FFCC00>打捞报告</color>\n[!STR*0] 已从 [!v*0] 号舱的残骸中回收。\n\n"
                 + "维修需要 [!v*1] 信用点和 [!v*2] 个周期。反应堆低于 [!v*3] % 时，船员无法工作。",
             ToneMarked = "好吧，结果和大家想的一样。",
         },
@@ -278,18 +278,18 @@ public sealed class Fixtures
             TechnicalTerms = "API キーは JSON に保存されます",
             Shortcut = "Ctrl+F10 を押して設定を開く",
             OnePlaceholder = "[!v*0] を押して続ける",
-            TwoPlaceholders = "[!v*0] を押して保存[!nl]API キーが必要です",
+            TwoPlaceholders = "[!v*0] を押して保存\nAPI キーが必要です",
             NameInjected = "[!STR*0] が乗組員に加わった",
-            BlankLine = "目標達成[!nl][!nl]船に戻れ",
-            TrailingBreak = "設定を保存しました[!nl]",
-            MarkupSpan = "[!t*0]警告[!t*1]：シールド残り [!v*0] パーセント",
-            MarkersInRow = "[!t*0]装填済み[!t*1] [!v*0]/[!v*1]/[!v*2]/[!v*3]/[!v*4]/[!v*5]",
+            BlankLine = "目標達成\n\n船に戻れ",
+            TrailingBreak = "設定を保存しました\n",
+            MarkupSpan = "<color=#FFCC00>警告</color>：シールド残り [!v*0] パーセント",
+            MarkersInRow = "<color=#FFCC00>装填済み</color> [!v*0]/[!v*1]/[!v*2]/[!v*3]/[!v*4]/[!v*5]",
             Paragraph =
-                "[!t*0]警告[!t*1][!nl]リアクターは定格出力の [!v*0] パーセントで稼働中です。"
+                "<color=#FFCC00>警告</color>\nリアクターは定格出力の [!v*0] パーセントで稼働中です。"
                 + "次のジャンプの前に冷却材を排出してください。さもなければ乗組員は助かりません。"
                 + "修理には [!v*1] クレジットと [!v*2] サイクルが必要で、その間は他に何も建造できません。",
             ParagraphFull =
-                "[!t*0]回収報告[!t*1][!nl][!STR*0] を [!v*0] 番ベイの残骸から回収しました。[!nl][!nl]"
+                "<color=#FFCC00>回収報告</color>\n[!STR*0] を [!v*0] 番ベイの残骸から回収しました。\n\n"
                 + "修理には [!v*1] クレジットと [!v*2] サイクルが必要です。"
                 + "リアクターが [!v*3] パーセントを下回っている間、乗組員は作業できません。",
             ToneMarked = "まあ、みんなの予想どおりの結果だ。",
@@ -307,20 +307,20 @@ public sealed class Fixtures
             TechnicalTerms = "API 키는 JSON에 저장됩니다",
             Shortcut = "Ctrl+F10을 눌러 설정을 엽니다",
             OnePlaceholder = "[!v*0]을 눌러 계속하기",
-            TwoPlaceholders = "[!v*0]을 눌러 저장[!nl]API 키가 필요합니다",
+            TwoPlaceholders = "[!v*0]을 눌러 저장\nAPI 키가 필요합니다",
             // The particle trap: 은/는 and 이/가 depend on the final sound of the word before them,
             // which a placeholder hides. No choice is right, and that is the test.
             NameInjected = "[!STR*0]이(가) 승무원으로 합류했습니다",
-            BlankLine = "목표 완료[!nl][!nl]함선으로 복귀하십시오",
-            TrailingBreak = "설정이 저장되었습니다[!nl]",
-            MarkupSpan = "[!t*0]경고[!t*1]: 방어막 [!v*0] 퍼센트",
-            MarkersInRow = "[!t*0]장전됨[!t*1] [!v*0]/[!v*1]/[!v*2]/[!v*3]/[!v*4]/[!v*5]",
+            BlankLine = "목표 완료\n\n함선으로 복귀하십시오",
+            TrailingBreak = "설정이 저장되었습니다\n",
+            MarkupSpan = "<color=#FFCC00>경고</color>: 방어막 [!v*0] 퍼센트",
+            MarkersInRow = "<color=#FFCC00>장전됨</color> [!v*0]/[!v*1]/[!v*2]/[!v*3]/[!v*4]/[!v*5]",
             Paragraph =
-                "[!t*0]경고[!t*1][!nl]원자로가 정격 출력의 [!v*0] 퍼센트로 작동 중입니다. "
+                "<color=#FFCC00>경고</color>\n원자로가 정격 출력의 [!v*0] 퍼센트로 작동 중입니다. "
                 + "다음 도약 전에 냉각수를 배출하십시오. 그렇지 않으면 승무원은 살아남지 못합니다. "
                 + "수리에는 [!v*1] 크레딧과 [!v*2] 주기가 필요하며, 그동안 다른 것은 건조할 수 없습니다.",
             ParagraphFull =
-                "[!t*0]인양 보고[!t*1][!nl][!v*0]번 격납고의 잔해에서 [!STR*0]을(를) 회수했습니다.[!nl][!nl]"
+                "<color=#FFCC00>인양 보고</color>\n[!v*0]번 격납고의 잔해에서 [!STR*0]을(를) 회수했습니다.\n\n"
                 + "수리에는 [!v*1] 크레딧과 [!v*2] 주기가 필요합니다. "
                 + "원자로가 [!v*3] 퍼센트 아래로 유지되는 동안 승무원은 작업할 수 없습니다.",
             ToneMarked = "뭐, 다들 예상한 대로였다.",
@@ -338,19 +338,19 @@ public sealed class Fixtures
             TechnicalTerms = "مفتاح API محفوظ في JSON",
             Shortcut = "اضغط Ctrl+F10 لفتح الإعدادات",
             OnePlaceholder = "اضغط [!v*0] للمتابعة",
-            TwoPlaceholders = "اضغط [!v*0] للحفظ[!nl]مفتاح API مطلوب",
+            TwoPlaceholders = "اضغط [!v*0] للحفظ\nمفتاح API مطلوب",
             NameInjected = "انضم [!STR*0] إلى الطاقم",
-            BlankLine = "اكتمل الهدف[!nl][!nl]عد إلى السفينة",
-            TrailingBreak = "تم حفظ الإعدادات[!nl]",
-            MarkupSpan = "[!t*0]تحذير[!t*1]: الدروع عند [!v*0] بالمئة",
-            MarkersInRow = "[!t*0]تم التحميل[!t*1] [!v*0]/[!v*1]/[!v*2]/[!v*3]/[!v*4]/[!v*5]",
+            BlankLine = "اكتمل الهدف\n\nعد إلى السفينة",
+            TrailingBreak = "تم حفظ الإعدادات\n",
+            MarkupSpan = "<color=#FFCC00>تحذير</color>: الدروع عند [!v*0] بالمئة",
+            MarkersInRow = "<color=#FFCC00>تم التحميل</color> [!v*0]/[!v*1]/[!v*2]/[!v*3]/[!v*4]/[!v*5]",
             Paragraph =
-                "[!t*0]تحذير[!t*1][!nl]يعمل المفاعل عند [!v*0] بالمئة من طاقته المقررة. "
+                "<color=#FFCC00>تحذير</color>\nيعمل المفاعل عند [!v*0] بالمئة من طاقته المقررة. "
                 + "أفرغ سائل التبريد قبل القفزة التالية وإلا فلن ينجو الطاقم. "
                 + "تكلف الإصلاحات [!v*1] رصيدًا وتستغرق [!v*2] دورات، ولا يمكن بناء أي شيء آخر خلالها.",
             ParagraphFull =
-                "[!t*0]تقرير الإنقاذ[!t*1][!nl]تم انتشال [!STR*0] من الحطام في الحوض "
-                + "[!v*0].[!nl][!nl]تكلف الإصلاحات [!v*1] رصيدًا وتستغرق [!v*2] دورات. "
+                "<color=#FFCC00>تقرير الإنقاذ</color>\nتم انتشال [!STR*0] من الحطام في الحوض "
+                + "[!v*0].\n\nتكلف الإصلاحات [!v*1] رصيدًا وتستغرق [!v*2] دورات. "
                 + "لا يستطيع الطاقم العمل ما دام المفاعل دون [!v*3] بالمئة.",
             ToneMarked = "حسنًا، جرى الأمر تمامًا كما توقع الجميع.",
         },

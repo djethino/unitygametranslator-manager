@@ -8,9 +8,15 @@ public sealed record ModelTest(
     string Name,
     string Difficulty,
     string Source,
-    string Rule,
+    Func<Prompts.Markers, TextType, string> Instructions,
     Func<string, string, bool>? Check)
 {
+    /// <summary>
+    /// The system prompt this line is sent with — built by the socle exactly as for a game
+    /// (<see cref="LineTranslation.InstructionsFor"/>), shown and counted, never written here.
+    /// </summary>
+    public string Rule => LineTranslation.InstructionsFor(Source, new ModelJob { Instructions = Instructions });
+
     /// <summary>
     /// This case has no verdict: it is shown so a human can judge it.
     ///
@@ -49,7 +55,7 @@ public sealed record ModelTest(
     /// carries markers — a line without any gets one request and stops. Reporting that as "1 of 3"
     /// promises a budget that never existed, and makes a model look thrifty where it had no choice.
     /// </summary>
-    public bool CanBeAskedAgain => Placeholders.FrozenSequences(Source).Count > 0;
+    public bool CanBeAskedAgain => LineTranslation.IsValidated(Source);
 
     /// <summary>What the model was asked to do, in one line, for the report.</summary>
     public string Expectation { get; init; } = "";
@@ -248,6 +254,18 @@ public static class ModelTestSuite
     }
 
     /// <summary>
+    /// A case's verdict on what a game would have made of the answer, or null for a case that
+    /// only asks to be read.
+    ///
+    /// 🔴 Read in the form the model read and wrote it, tokens and all, through the socle's own
+    /// conversion (<see cref="Backends.WireForm"/>). The loop hands back the RESTORED text, where a
+    /// [!nl] is a line break again: counted there, it was never found, and every case built on
+    /// line breaks failed perfect answers (2026-09-26).
+    /// </summary>
+    public static bool? Judge(ModelTest test, string translation) =>
+        test.Check?.Invoke(Backends.WireForm(test.Source, out _), Backends.WireForm(translation, out _));
+
+    /// <summary>
     /// Which language a given run translates FROM, so a report can name it.
     ///
     /// It is never the target: that was the whole reason for holding these sentences in several
@@ -361,13 +379,13 @@ public static class ModelTestSuite
         // ⚠ The source language IS sent. This report announces "Translating from: X" at the top,
         // and the mod names it in the prompt whenever it knows it — so leaving it out here scored
         // models on a harder question than a configured game ever asks them.
-        string Rules(string source) => Prompt(language, source, gameContext, from.Language, gameName: gameName);
+        var rules = Instructions(language, gameContext, from.Language, gameName: gameName);
 
         var tests = new List<ModelTest>
         {
             new("plain line", "easy",
                 from.PlainLine,
-                Rules(from.PlainLine),
+                rules,
                 (_, answer) => answer.Trim().Length > 0 && CountLines(answer) == 1)
             {
                 Expectation = "translates, one line, nothing else",
@@ -375,7 +393,7 @@ public static class ModelTestSuite
 
             new("no invented punctuation", "easy",
                 from.NoPunctuation,
-                Rules(from.NoPunctuation),
+                rules,
                 // Tested against what THIS language ends sentences with. A Japanese model that
                 // adds 。 has done the very thing the check exists for, and looking only for a
                 // full stop would have let it through.
@@ -387,7 +405,7 @@ public static class ModelTestSuite
 
             new("single word", "medium",
                 from.SingleWord,
-                Rules(from.SingleWord),
+                rules,
                 (_, answer) => CountLines(answer) == 1 && answer.Trim().Split(' ').Length <= 4)
             {
                 Expectation = "answers with a word, not a sentence about the word",
@@ -395,7 +413,7 @@ public static class ModelTestSuite
 
             new("technical terms kept", "medium",
                 from.TechnicalTerms,
-                Rules(from.TechnicalTerms),
+                rules,
                 (_, answer) => answer.Contains("API", StringComparison.Ordinal)
                                && answer.Contains("JSON", StringComparison.Ordinal))
             {
@@ -404,7 +422,7 @@ public static class ModelTestSuite
 
             new("keyboard shortcut kept", "medium",
                 from.Shortcut,
-                Rules(from.Shortcut),
+                rules,
                 (_, answer) => answer.Contains("Ctrl", StringComparison.Ordinal)
                                && answer.Contains("F10", StringComparison.Ordinal))
             {
@@ -413,7 +431,7 @@ public static class ModelTestSuite
 
             new("one placeholder", "hard",
                 from.OnePlaceholder,
-                Rules(from.OnePlaceholder),
+                rules,
                 (_, answer) => HasExactlyOnce(answer, "[!v*0]"))
             {
                 Expectation = "[!v*0] comes back exactly once",
@@ -421,7 +439,7 @@ public static class ModelTestSuite
 
             new("two placeholders in order", "hard",
                 from.TwoPlaceholders,
-                Rules(from.TwoPlaceholders),
+                rules,
                 (_, answer) => InOrder(answer, "[!v*0]", "[!nl]"))
             {
                 Expectation = "[!v*0] then [!nl], both once, in that order",
@@ -431,7 +449,7 @@ public static class ModelTestSuite
             // until now: a model that translates the marker leaves the player reading a token.
             new("a name kept out of it", "hard",
                 from.NameInjected,
-                Rules(from.NameInjected),
+                rules,
                 (_, answer) => HasExactlyOnce(answer, "[!STR*0]"))
             {
                 Expectation = "[!STR*0] comes back untouched, not translated",
@@ -442,7 +460,7 @@ public static class ModelTestSuite
             // answer such prompts with a sentence about the prompt.
             new("nothing but markers", "hard",
                 Fixtures.MarkersOnly,
-                Rules(Fixtures.MarkersOnly),
+                rules,
                 (_, answer) => InOrder(answer.Trim(), "[!t*0]", "[!v*0]", "[!t*1]")
                                && answer.Trim().Length <= 24)
             {
@@ -453,7 +471,7 @@ public static class ModelTestSuite
             // and a paragraph that loses its break arrives as a wall.
             new("a blank line survives", "hard",
                 from.BlankLine,
-                Rules(from.BlankLine),
+                rules,
                 (_, answer) => Occurrences(answer, "[!nl]") == 2)
             {
                 Expectation = "two consecutive [!nl] come back as two, not one",
@@ -461,7 +479,7 @@ public static class ModelTestSuite
 
             new("placeholder at the very end", "hard",
                 from.TrailingBreak,
-                Rules(from.TrailingBreak),
+                rules,
                 (_, answer) => HasExactlyOnce(answer, "[!nl]"))
             {
                 // The one failure the mod repairs by itself: it puts back trailing line breaks a
@@ -477,7 +495,7 @@ public static class ModelTestSuite
 
             new("markup markers kept", "hard",
                 from.MarkupSpan,
-                Rules(from.MarkupSpan),
+                rules,
                 (_, answer) => InOrder(answer, "[!t*0]", "[!t*1]", "[!v*0]"))
             {
                 // The mod lifts every <color>, <b> and <sprite> out of the text before sending it
@@ -489,7 +507,7 @@ public static class ModelTestSuite
 
             new("a paragraph, not a label", "stress",
                 from.Paragraph,
-                Rules(from.Paragraph),
+                rules,
                 (_, answer) => InOrder(answer,
                     "[!t*0]", "[!t*1]", "[!nl]", "[!v*0]", "[!v*1]", "[!v*2]"))
             {
@@ -505,7 +523,7 @@ public static class ModelTestSuite
 
             new("markers in a row", "stress",
                 from.MarkersInRow,
-                Rules(from.MarkersInRow),
+                rules,
                 (_, answer) => InOrder(answer,
                     "[!t*0]", "[!t*1]", "[!v*0]", "[!v*1]", "[!v*2]", "[!v*3]", "[!v*4]", "[!v*5]"))
             {
@@ -522,16 +540,19 @@ public static class ModelTestSuite
 
             new("a paragraph with everything in it", "stress",
                 from.ParagraphFull,
-                Rules(from.ParagraphFull),
+                rules,
                 // ⚠ InOrder alone cannot judge this one: it demands each token EXACTLY once, and
                 // this text carries [!nl] three times — one after the heading, two for the blank
                 // line. Written that way it marked a perfect translation KO, every time, for a
                 // fault that was the test's own. The line breaks are therefore counted, and the
                 // markers that really are unique are checked for order among themselves.
-                (_, answer) => Occurrences(answer, "[!nl]") == 3
-                               && InOrder(answer,
-                                   "[!t*0]", "[!t*1]", "[!STR*0]",
-                                   "[!v*0]", "[!v*1]", "[!v*2]", "[!v*3]"))
+                // ⚠ In the order the SOURCE has them, not a fixed one: the Korean sentence names
+                // the bay before the salvage, so a fixed list failed a perfect Korean answer every
+                // time (found 2026-09-26 by BenchChecks, which runs a perfect answer through here).
+                (source, answer) => Occurrences(answer, "[!nl]") == 3
+                                    && InOrder(answer, AsTheSourceOrdersThem(source,
+                                        "[!t*0]", "[!t*1]", "[!STR*0]",
+                                        "[!v*0]", "[!v*1]", "[!v*2]", "[!v*3]")))
             {
                 // Kept beside "a paragraph, not a label" rather than replacing it: that one isolates
                 // distance, this one measures the pile-up, and one case doing both would not say
@@ -541,7 +562,7 @@ public static class ModelTestSuite
 
             new("keeps the tone", "easy",
                 from.ToneMarked,
-                Rules(from.ToneMarked),
+                rules,
                 null)
             {
                 ReadThisFor = "Is it still wry and spoken, or has it become a flat statement of fact?",
@@ -549,7 +570,7 @@ public static class ModelTestSuite
 
             new("stays as short as the source", "easy",
                 from.PlainLine,
-                Rules(from.PlainLine),
+                rules,
                 null)
             {
                 ReadThisFor = "Would this still fit on a button, or has it grown into a sentence?",
@@ -559,8 +580,8 @@ public static class ModelTestSuite
             // neither in the source nor in a description is something the model made up.
             new($"named a game it cannot know: {Fixtures.InventedGame}", "stress",
                 from.Paragraph,
-                Prompt(language, from.Paragraph, gameContext: null, from.Language,
-                       gameName: Fixtures.InventedGame),
+                Instructions(language, gameContext: null, from.Language,
+                             gameName: Fixtures.InventedGame),
                 null)
             {
                 ReadThisFor = "Did naming a game nobody has heard of add anything that was not in the source?",
@@ -568,8 +589,8 @@ public static class ModelTestSuite
 
             new($"...and described it: {Fixtures.InventedGameContext}", "stress",
                 from.Paragraph,
-                Prompt(language, from.Paragraph, Fixtures.InventedGameContext, from.Language,
-                       gameName: Fixtures.InventedGame),
+                Instructions(language, Fixtures.InventedGameContext, from.Language,
+                             gameName: Fixtures.InventedGame),
                 null)
             {
                 ReadThisFor = "Compared with the line above: did the description steer the wording, and for the better?",
@@ -577,7 +598,7 @@ public static class ModelTestSuite
 
             new("refuses another real language", "experimental",
                 foreign.PlainLine,
-                Prompt(language, foreign.PlainLine, gameContext, from.Language, strictSource: true, gameName: gameName),
+                Instructions(language, gameContext, from.Language, strictSource: true, gameName: gameName),
                 (_, answer) => Answers.Read(answer) == AnswerKind.Skip)
             {
                 // The sentence is chosen so it is neither the source nor the target. A fixed one
@@ -606,7 +627,7 @@ public static class ModelTestSuite
             // in a real game. Refusing what it cannot know is the behaviour being measured.
             new("refuses what it cannot know", "experimental",
                 Fixtures.Klingon,
-                Prompt(language, Fixtures.Klingon, gameContext, from.Language, strictSource: true, gameName: gameName),
+                Instructions(language, gameContext, from.Language, strictSource: true, gameName: gameName),
                 (_, answer) => Answers.Read(answer) == AnswerKind.Skip)
             {
                 Expectation = $"declines with UGT Mod's skip marker ({SkipMarker}) instead of "
@@ -627,7 +648,7 @@ public static class ModelTestSuite
         {
             tests.Insert(3, new ModelTest("shouted label stays shouted", "medium",
                 shouted,
-                Rules(shouted),
+                rules,
                 (_, answer) =>
                 {
                     var letters = answer.Trim().Where(char.IsLetter).ToList();
@@ -648,35 +669,20 @@ public static class ModelTestSuite
     /// the usual rules: the model still has to translate normally when the language does match.
     /// </summary>
     /// <summary>
-    /// The system turn the mod builds for THIS text — the mod's own builder, not a copy of it.
+    /// The instructions a game gives for a line — the mod's own builder, handed to the socle's
+    /// loop, which works out for each text which markers it carries and what kind of text it is.
     ///
-    /// ⚠ The marker rules are conditional over there, and that is not tidiness: announcing a
-    /// placeholder the text does not contain invites a model to invent one, and small models were
-    /// measured answering with a marker they had merely been told about. A bench that always sent
-    /// the full block would be scoring a prompt no game sends, in the direction that flatters.
-    ///
-    /// ⚠ The fixtures already hold "[!nl]" where a game would still have a real line break, since
-    /// they stand in for text the mod has already processed. Classification happens on the raw
-    /// form over there, so the break is put back before asking — otherwise a paragraph with no
-    /// space in it would be taken for a single word and get a closing line the game never adds.
+    /// 🔴 **Nothing about the text is decided here any more** (2026-09-26). This used to read the
+    /// markers off the fixture by hand and classify it itself — a copy of the socle, and it had
+    /// drifted: it never announced a pair of tags or a bracketed label, so the bench scored a
+    /// prompt no game sends. The fixtures are now written as a game holds them, markup and line
+    /// breaks included, and go through the very preparation a game's text does.
     /// </summary>
-    private static string Prompt(string language, string source, string? gameContext = null,
-                                 string? sourceLanguage = null, bool strictSource = false,
-                                 string? gameName = null)
-    {
-        var markers = new Prompts.Markers
-        {
-            LineBreaks = source.Contains("[!nl]", StringComparison.Ordinal),
-            Tags = source.Contains("[!t*", StringComparison.Ordinal),
-            Numbers = source.Contains("[!v*", StringComparison.Ordinal),
-            Variables = source.Contains("[!STR*", StringComparison.Ordinal),
-        };
-
-        var asTheGameSawIt = source.Replace("[!nl]", "\n", StringComparison.Ordinal);
-
-        return Prompts.ForGameText(language, sourceLanguage, gameName, gameContext, strictSource,
-                                   Prompts.Classify(asTheGameSawIt), markers);
-    }
+    private static Func<Prompts.Markers, TextType, string> Instructions(
+        string language, string? gameContext = null, string? sourceLanguage = null,
+        bool strictSource = false, string? gameName = null) =>
+        (markers, textType) => Prompts.ForGameText(language, sourceLanguage, gameName, gameContext,
+                                                   strictSource, textType, markers);
 
     /// <summary>
     /// Whether the answer carries the instructions back. Recognised by shape, not by wording:
@@ -730,8 +736,14 @@ public static class ModelTestSuite
         return count;
     }
 
+    // ⚠ Checks read the wire form (Backends.WireForm, see AiServerProbe.RunSuiteAsync), where a
+    // line break is a token: a real newline counted here would never be found.
     private static int CountLines(string text) =>
-        text.Trim().Split('\n', StringSplitOptions.RemoveEmptyEntries).Length;
+        text.Trim().Split(Backends.LineBreak, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Length;
+
+    /// <summary>The tokens, sorted by where the source has them.</summary>
+    private static string[] AsTheSourceOrdersThem(string source, params string[] tokens) =>
+        tokens.OrderBy(token => source.IndexOf(token, StringComparison.Ordinal)).ToArray();
 
     private static bool HasExactlyOnce(string text, string token)
     {

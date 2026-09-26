@@ -338,7 +338,7 @@ public sealed class AiServerProbe
             // than it has to, and each case is several requests.
             ct.ThrowIfCancellationRequested();
 
-            var attempt = await TranslateLikeTheModAsync(baseUrl, model, test.Rule, test.Source, ct)
+            var attempt = await TranslateLikeTheModAsync(baseUrl, model, test.Instructions, test.Source, ct)
                 .ConfigureAwait(false);
 
             var answer = attempt.Answer;
@@ -367,7 +367,7 @@ public sealed class AiServerProbe
                                              answer,
                                              // No verdict for a case meant to be read: null is not
                                              // a pass and not a failure, and the report says so.
-                                             test.Check?.Invoke(test.Source, translation) ?? false,
+                                             ModelTestSuite.Judge(test, translation) ?? false,
                                              null)
                 {
                     EchoedInstructions = echoed,
@@ -390,7 +390,8 @@ public sealed class AiServerProbe
                     // answers far less reliably than "is this written in French?".
                     var mark = await RateAsync(baseUrl, judge ?? model, sourceLanguageName,
                                                Languages.NameOf(targetLanguage),
-                                               test.Source, translation, ct)
+                                               Backends.WireForm(test.Source, out _),
+                                               Backends.WireForm(translation, out _), ct)
                         .ConfigureAwait(false);
 
                     result = result with { SelfAssessment = mark };
@@ -458,17 +459,18 @@ public sealed class AiServerProbe
     /// skip marker AND a translation as a correct refusal where the game throws it away. One loop
     /// now, in the socle — so what is scored here is what a game does.
     ///
-    /// ⚠ The fixtures are already in the form the mod sends (placeholders as tokens, no markup, no
-    /// padding), so the loop's own preparation leaves them untouched, and the rules are the
-    /// precomputed ones each case carries.
+    /// ⚠ The fixtures are written as a game keys a line — markup and line breaks as they are,
+    /// numbers and inserted text already slots — and the instructions are the game's builder, fed
+    /// by the loop itself. Nothing about what is sent is decided here (2026-09-26: a precomputed
+    /// prompt and pre-tokenised fixtures had kept the bench on rules the game no longer applied).
     /// </summary>
     private async Task<ModAttempt> TranslateLikeTheModAsync(string baseUrl, string model,
-                                                            string systemPrompt, string source,
-                                                            CancellationToken ct)
+                                                            Func<Prompts.Markers, TextType, string> instructions,
+                                                            string source, CancellationToken ct)
     {
         var job = new ModelJob
         {
-            Instructions = (_, _) => systemPrompt,
+            Instructions = instructions,
             // The mod's defaults: deterministic, and a little warmth for the last-resort attempt
             // (ai_temperature / ai_temperature_repair). No seed — the bench has no config to read.
             Temperature = 0.0,
@@ -561,13 +563,8 @@ public sealed class AiServerProbe
                                       string sourceLanguage, string targetLanguage,
                                       string source, string translation, CancellationToken ct)
     {
-        var markers = new Prompts.Markers
-        {
-            LineBreaks = source.Contains("[!nl]", StringComparison.Ordinal),
-            Tags = source.Contains("[!t*", StringComparison.Ordinal),
-            Numbers = source.Contains("[!v*", StringComparison.Ordinal),
-            Variables = source.Contains("[!STR*", StringComparison.Ordinal),
-        };
+        // Read off the text by the socle, as for a translation — never by a copy of its rule.
+        var markers = LineTranslation.MarkersOf(source);
 
         // ⚠ Nothing to judge, so nothing is asked. A line made only of markers — the shape behind
         // every coloured counter in a HUD — leaves the judge two identical strings it has just

@@ -74,6 +74,7 @@ internal static class Program
         EngineModulesChecks.WhatUnitysIndexSays();
         EngineModulesChecks.HowUnitysPackageIsRead();
         UninstallChecks.WhereTheLoaderTreeIs();
+        BenchChecks.APerfectAnswerPassesEveryCase();
 
         Console.WriteLine();
         if (_failures == 0)

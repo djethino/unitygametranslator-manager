@@ -165,6 +165,13 @@ public sealed class GameConfigWriter
     public const string GameContextKey = "game_context";
 
     /// <summary>
+    /// The mod's key for translating new text while the game runs ("Translate while I play").
+    /// Written from <see cref="GamePreference.StartTranslation"/>, read back as an observation
+    /// (<see cref="GameConfigSnapshot.AutoTranslate"/>).
+    /// </summary>
+    public const string AutoTranslateKey = "enable_ai";
+
+    /// <summary>
     /// The mod's key for the language it works towards. ⚠ A language NAME, never an ISO code —
     /// see the intent below.
     /// </summary>
@@ -341,7 +348,7 @@ public sealed class GameConfigWriter
                 Flag(root, null, "first_run_completed") == true,
                 Text(root, null, HotkeyKey),
                 values,
-                Flag(root, null, "enable_ai"),
+                Flag(root, null, AutoTranslateKey),
                 Flag(root, null, TranslationsShownKey));
         }
         catch
@@ -654,7 +661,7 @@ public sealed class GameConfigWriter
         var startsTranslating = settings.TranslationBackend is "capture" or "none"
             ? false
             : perGame?.StartTranslation ?? settings.EnableAi;
-        intents.Add(new Intent(null, "enable_ai", startsTranslating,
+        intents.Add(new Intent(null, AutoTranslateKey, startsTranslating,
             startsTranslating ? "auto-translation on" : "auto-translation off",
             AnsweredOnTheCard: true));
 

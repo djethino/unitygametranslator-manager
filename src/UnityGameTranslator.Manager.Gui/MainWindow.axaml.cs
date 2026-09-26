@@ -11633,6 +11633,13 @@ public partial class MainWindow : Window
             // The answers are settled, so they stop being pending — when this act weighed them. On a
             // game set up by another account it did not (MaySetUp), and they stay as they were.
             // Same rule as RunInstallAsync; see InstallPlan.SettingsWeighed.
+            // ⚠ The plan block's answers are taken BEFORE validating, which moves them onto the
+            // preference: read afterwards, "Translate while I play" was no longer pending, and it
+            // was never written when the settings themselves had nothing to change. The choices are
+            // still compared AFTER the settings went in, so a brick's answer wins over them.
+            var planChoices = PendingChoices(report)
+                .Where(c => c.Key is GameConfigWriter.AutoTranslateKey or GameConfigWriter.GameContextKey)
+                .ToList();
             if (plan.SettingsWeighed) ValidatePending(report, _preferences.Read(report.Game.Path));
             RememberDefaultsWereWritten(report, plan, configBefore);
 
@@ -11646,7 +11653,12 @@ public partial class MainWindow : Window
                 Work.Begin(StepOf(OneClickAct.ApplyChoices));
 
                 var writer = new GameConfigWriter();
-                foreach (var choice in PendingChoices(report))
+                // Once each: validating may not have run (another account's game), and then the
+                // plan block's answers are still in `_pendingPlan` and in the list read now.
+                var all = PendingChoices(report);
+                all.AddRange(planChoices.Where(p => all.All(c => c.Key != p.Key)));
+
+                foreach (var choice in all)
                 {
                     var written = writer.ApplyOne(report.Game.Path, plan.Loader, choice.Key, choice.Value, choice.Label);
 
@@ -12120,10 +12132,43 @@ public partial class MainWindow : Window
     private List<ChoiceWrite> PendingChoices(GameReport report)
     {
         var writes = new List<ChoiceWrite>();
-        if (!_pendingChoices.TryGetValue(report.Game.Path, out var held)) return writes;
+        var hasHeld = _pendingChoices.TryGetValue(report.Game.Path, out var held);
+        var hasPlan = _pendingPlan.TryGetValue(report.Game.Path, out var plan);
+        if (!hasHeld && !hasPlan) return writes;
 
         var snapshot = GameConfig(report);
         if (!snapshot.Exists) return writes;
+
+        // 🔴 **The plan block's two answers are choices like the bricks' — and were left out.**
+        // "Translate while I play" and "What is this game about" are AnsweredOnTheCard in the
+        // writer, so the settings comparison never counts them (on purpose: they are not Mod
+        // defaults). With nothing else counting them either, a configured game with only these
+        // changed offered "Nothing to OneClick" while their own Apply lit up — the defect the
+        // bricks were fixed for on 2026-09-26, left standing in the block beside them.
+        // ⚠ The description is written when it is there and differs, never cleared: the writer
+        // never clears it by omission either (a sentence typed inside the mod must survive).
+        // ⚠ Listed after the bricks, in the order the card shows them.
+        var planWrites = new List<ChoiceWrite>();
+        if (hasPlan)
+        {
+            // ⚠ Against what the block SHOWED, the draft's own starting point (PlanDetail), not
+            // against the file alone: the box shows Mod defaults' answer where the game has none,
+            // and comparing with the file would have offered to switch translation on in a game
+            // whose box nobody touched — typing a description was enough to trigger it.
+            var stored = _preferences.Read(report.Game.Path);
+            var shownStart = stored.StartTranslation ?? snapshot.AutoTranslate
+                             ?? SettingsFor(report, stored).EnableAi;
+            var shownContext = stored.GameContext ?? InGameContext(report, InstalledDescriptor(report));
+
+            if (plan.Start != shownStart)
+                planWrites.Add(new(GameConfigWriter.AutoTranslateKey, plan.Start, "translate while playing",
+                                   plan.Start ? "translate while playing on" : "translate while playing off"));
+
+            if (plan.Context is { } context && !string.Equals(context, shownContext, StringComparison.Ordinal))
+                planWrites.Add(new(GameConfigWriter.GameContextKey, context, "game description", "game description"));
+        }
+
+        if (!hasHeld || held is null) return planWrites;
 
         var values = snapshot.Values;
 
@@ -12152,6 +12197,7 @@ public partial class MainWindow : Window
             writes.Add(new(GameConfigWriter.TranslationsShownKey, shown, "translations",
                            shown ? "translations on" : "translations off"));
 
+        writes.AddRange(planWrites);
         return writes;
     }
 
@@ -12203,6 +12249,20 @@ public partial class MainWindow : Window
 
             case GameConfigWriter.TranslationsShownKey:
                 if (held is not null) held.Shown = null;
+                break;
+
+            // The plan block's answers: stored as its own Apply stores them, both at once — they are
+            // one block and one decision, and the preference is what the next install reads.
+            case GameConfigWriter.AutoTranslateKey:
+            case GameConfigWriter.GameContextKey:
+                if (_pendingPlan.Remove(path, out var plan))
+                {
+                    SaveAnswer(path, p =>
+                    {
+                        p.StartTranslation = plan.Start;
+                        p.GameContext = plan.Context;
+                    });
+                }
                 break;
         }
 
@@ -13005,16 +13065,17 @@ public partial class MainWindow : Window
         // itself on LostFocus — no Apply, on a setting that lands in the game's config.json — and
         // then offered a "Save this into the game" button of its own beside it, so the same answer
         // had two ways of reaching the file and neither was the one the rest of the card uses.
+        // ⚠ Recorded on every keystroke, like the tick above it records on every click. It was
+        // recorded when focus left the box, on the belief that Record writes a file — it holds the
+        // answer in memory and redraws the bar, nothing more. Waiting for focus to leave kept the
+        // one-click disabled while somebody typed, and a disabled button takes no focus: the
+        // description could not reach the one-click at all.
         context.TextChanged += (_, _) =>
         {
             draft.Context = string.IsNullOrWhiteSpace(context.Text) ? null : context.Text.Trim();
             applyBar.Refresh();
+            applyBar.Record();
         };
-
-        // ⚠ On focus rather than on every keystroke: Record writes a file, and a game
-        // description is a paragraph. Pressing any button - the one-click included - takes focus
-        // away from here first, so what was typed is stored before the act that reads it runs.
-        context.LostFocus += (_, _) => applyBar.Record();
 
         yield return context;
 
@@ -13182,11 +13243,8 @@ public partial class MainWindow : Window
         public required Action Refresh { get; init; }
 
         /// <summary>
-        /// Stores the answers where no Apply will ever store them — before the mod is installed.
-        ///
-        /// ⚠ Separate from <see cref="Refresh"/> precisely because Refresh runs per keystroke and
-        /// this one writes a file. A text field calls it when focus leaves; a tick, immediately.
-        /// Does nothing once there is a config, where Apply is what stores them.
+        /// Holds the answers for the session (`_pendingPlan`), where the install and the one-click
+        /// read them, and redraws the bar that names them. Writes nothing to disk.
         /// </summary>
         public required Action Record { get; init; }
     }

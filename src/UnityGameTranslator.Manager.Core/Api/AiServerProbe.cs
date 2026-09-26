@@ -40,7 +40,7 @@ public sealed record AiTrial(
     /// <summary>
     /// Whether every placeholder came back untouched, in the same order.
     ///
-    /// The mod wraps line breaks, tags and variables as [!nl], &lt;color1&gt;, [!v*0], [!STR*0] and asks
+    /// The mod wraps line breaks, tags and variables as [!nl], [!t*0], [!v*0], [!STR*0] and asks
     /// the model to leave them alone.
     ///
     /// It does NOT ship what comes back blindly: it validates these markers, retries up to three
@@ -570,8 +570,8 @@ public sealed class AiServerProbe
         // every coloured counter in a HUD — leaves the judge two identical strings it has just
         // been told to ignore, and it answers 0 for want of anything to say. That zero would sit
         // in the column looking like a verdict on a translation that was in fact perfect.
-        var bare = Markup.Strip(System.Text.RegularExpressions.Regex.Replace(
-            source, @"\[!(nl|t\*\d+|v\*\d+|STR\*\d+)\]", ""));
+        var bare = System.Text.RegularExpressions.Regex.Replace(
+            source, @"\[!(nl|t\*\d+|v\*\d+|STR\*\d+)\]", "");
 
         if (!bare.Any(char.IsLetter)) return null;
 

@@ -57,6 +57,13 @@ public sealed record ModelTest(
     /// </summary>
     public bool CanBeAskedAgain => LineTranslation.IsValidated(Source);
 
+    /// <summary>
+    /// The source handed back untouched fails this case — true only where that is checked.
+    /// Said so a check that feeds the source back as a perfect answer (BenchChecks) knows this
+    /// is the one place where it is not.
+    /// </summary>
+    public bool CopyFails { get; init; }
+
     /// <summary>What the model was asked to do, in one line, for the report.</summary>
     public string Expectation { get; init; } = "";
 
@@ -505,6 +512,32 @@ public static class ModelTestSuite
                 Expectation = "the tag markers keep their place around the words they wrap",
             },
 
+            // Both below come from one real game (2026-09-26), where they stayed untranslated.
+            // The colour must follow its words when the translation reorders them: that is what
+            // a model does not do unless told what a tag pair IS.
+            new("a coloured title after a name", "hard",
+                from.ColouredTitle,
+                rules,
+                // Not the source handed back: the pair and the name pass that too, untranslated.
+                (source, answer) => !string.Equals(answer.Trim(), source.Trim(), StringComparison.Ordinal)
+                               && InOrder(answer, "[!t*0]", "[!t*1]")
+                               && Inside(answer, "[!t*0]", "[!t*1]") is { Length: > 0 } title
+                               && !from.TitleName.Any(name => title.Contains(name, StringComparison.OrdinalIgnoreCase)))
+            {
+                Expectation = "the colour stays on the title, wherever it goes, and the name stays out of it",
+                CopyFails = true,
+            },
+
+            new("a bracketed label in a colour", "hard",
+                from.ColouredLabel,
+                rules,
+                (_, answer) => HasExactlyOnce(answer, "[!nl]")
+                               && InOrder(answer, "[!t*0]", "[!t*1]")
+                               && Placeholders.Labels(Inside(answer, "[!t*0]", "[!t*1]")).Count == 1)
+            {
+                Expectation = "the label comes back translated inside its brackets, inside its colour",
+            },
+
             new("a paragraph, not a label", "stress",
                 from.Paragraph,
                 rules,
@@ -740,6 +773,16 @@ public static class ModelTestSuite
     // line break is a token: a real newline counted here would never be found.
     private static int CountLines(string text) =>
         text.Trim().Split(Backends.LineBreak, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Length;
+
+    /// <summary>What stands between two tokens, tokens and spacing left out; empty when either is missing.</summary>
+    private static string Inside(string text, string opening, string closing)
+    {
+        int at = text.IndexOf(opening, StringComparison.Ordinal);
+        if (at < 0) return "";
+        int from = at + opening.Length;
+        int end = text.IndexOf(closing, from, StringComparison.Ordinal);
+        return end < 0 ? "" : text.Substring(from, end - from).Trim();
+    }
 
     /// <summary>The tokens, sorted by where the source has them.</summary>
     private static string[] AsTheSourceOrdersThem(string source, params string[] tokens) =>

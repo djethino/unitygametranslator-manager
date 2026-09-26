@@ -72,6 +72,29 @@ public sealed class Fixtures
     public required string MarkersInRow { get; init; }
 
     /// <summary>
+    /// A name, then a title in its own colour — "Wudang Sect" and a coloured "Elder" — the shape of
+    /// every faction rank in a character sheet.
+    ///
+    /// 🔴 **Added 2026-09-26 from a real game**, where ranks like this stayed untranslated on every
+    /// screen: translating often moves the title in front of the name, and a model that is not
+    /// told what a tag pair IS keeps the pair where it stood, or drops it, or colours the name.
+    /// Checked on structure alone — a pair around words, the name outside it — never on wording.
+    /// </summary>
+    public required string ColouredTitle { get; init; }
+
+    /// <summary>The name in <see cref="ColouredTitle"/>, as the source and a Latin answer write it: what must stay out of the colour.</summary>
+    public required string[] TitleName { get; init; }
+
+    /// <summary>
+    /// A label of the game's own in square brackets, inside a colour, in a two-line tooltip — the
+    /// shape "Critical:" then a coloured "[Attack]" then its effect.
+    ///
+    /// 🔴 **Added 2026-09-26 from a real game**, where models turned the bracketed label into prose
+    /// ("[Attack]" became "d'attaque") and every such tooltip stayed untranslated.
+    /// </summary>
+    public required string ColouredLabel { get; init; }
+
+    /// <summary>
     /// Everything at once: tags, inserted text, four numbers, three line breaks and a blank one.
     ///
     /// ⚠ **In addition to <see cref="Paragraph"/>, never instead of it.** That one isolates
@@ -162,6 +185,9 @@ public sealed class Fixtures
             TrailingBreak = "Settings saved\n",
             MarkupSpan = "<color=#FFCC00>Warning</color>: shields at [!v*0] percent",
             MarkersInRow = "<color=#FFCC00>Loaded</color> [!v*0]/[!v*1]/[!v*2]/[!v*3]/[!v*4]/[!v*5]",
+            ColouredTitle = "Wudang Sect <color=#FFCC00>Elder</color>",
+            TitleName = new[] { "Wudang" },
+            ColouredLabel = "Critical:\n<color=#FFA500>[Attack]</color>Damage doubled",
             Paragraph =
                 "<color=#FFCC00>Warning</color>\nThe reactor is running at [!v*0] percent of its rated "
                 + "output. Vent the coolant before the next jump, or the crew will not survive it. "
@@ -194,6 +220,9 @@ public sealed class Fixtures
             TrailingBreak = "Ajustes guardados\n",
             MarkupSpan = "<color=#FFCC00>Aviso</color>: escudos al [!v*0] por ciento",
             MarkersInRow = "<color=#FFCC00>Cargado</color> [!v*0]/[!v*1]/[!v*2]/[!v*3]/[!v*4]/[!v*5]",
+            ColouredTitle = "Secta Wudang <color=#FFCC00>Anciano</color>",
+            TitleName = new[] { "Wudang" },
+            ColouredLabel = "Crítico:\n<color=#FFA500>[Ataque]</color>Daño doble",
             Paragraph =
                 "<color=#FFCC00>Aviso</color>\nEl reactor funciona al [!v*0] por ciento de su potencia "
                 + "nominal. Purga el refrigerante antes del próximo salto o la tripulación no "
@@ -225,6 +254,9 @@ public sealed class Fixtures
             TrailingBreak = "Настройки сохранены\n",
             MarkupSpan = "<color=#FFCC00>Внимание</color>: щиты на [!v*0] процентов",
             MarkersInRow = "<color=#FFCC00>Загружено</color> [!v*0]/[!v*1]/[!v*2]/[!v*3]/[!v*4]/[!v*5]",
+            ColouredTitle = "Секта Удан <color=#FFCC00>Старейшина</color>",
+            TitleName = new[] { "Удан", "Wudang" },
+            ColouredLabel = "Крит:\n<color=#FFA500>[Атака]</color>Двойной урон",
             Paragraph =
                 "<color=#FFCC00>Внимание</color>\nРеактор работает на [!v*0] процентов от номинальной "
                 + "мощности. Стравите охладитель до следующего прыжка, иначе экипаж не выживет. "
@@ -255,6 +287,9 @@ public sealed class Fixtures
             TrailingBreak = "设置已保存\n",
             MarkupSpan = "<color=#FFCC00>警告</color>：护盾剩余 [!v*0] %",
             MarkersInRow = "<color=#FFCC00>已装载</color> [!v*0]/[!v*1]/[!v*2]/[!v*3]/[!v*4]/[!v*5]",
+            ColouredTitle = "武当派<color=#FFCC00>掌门</color>",
+            TitleName = new[] { "武当", "Wudang" },
+            ColouredLabel = "暴击:\n<color=#FFA500>[攻]</color>伤害加倍",
             Paragraph =
                 "<color=#FFCC00>警告</color>\n反应堆正以额定功率的 [!v*0] % 运行。下一次跃迁前请排出冷却剂，"
                 + "否则船员无法生还。维修需要 [!v*1] 信用点和 [!v*2] 个周期，期间无法建造其他任何东西。",
@@ -284,6 +319,9 @@ public sealed class Fixtures
             TrailingBreak = "設定を保存しました\n",
             MarkupSpan = "<color=#FFCC00>警告</color>：シールド残り [!v*0] パーセント",
             MarkersInRow = "<color=#FFCC00>装填済み</color> [!v*0]/[!v*1]/[!v*2]/[!v*3]/[!v*4]/[!v*5]",
+            ColouredTitle = "武当派<color=#FFCC00>長老</color>",
+            TitleName = new[] { "武当", "Wudang" },
+            ColouredLabel = "会心:\n<color=#FFA500>[攻]</color>ダメージ倍増",
             Paragraph =
                 "<color=#FFCC00>警告</color>\nリアクターは定格出力の [!v*0] パーセントで稼働中です。"
                 + "次のジャンプの前に冷却材を排出してください。さもなければ乗組員は助かりません。"
@@ -315,6 +353,9 @@ public sealed class Fixtures
             TrailingBreak = "설정이 저장되었습니다\n",
             MarkupSpan = "<color=#FFCC00>경고</color>: 방어막 [!v*0] 퍼센트",
             MarkersInRow = "<color=#FFCC00>장전됨</color> [!v*0]/[!v*1]/[!v*2]/[!v*3]/[!v*4]/[!v*5]",
+            ColouredTitle = "무당파 <color=#FFCC00>장로</color>",
+            TitleName = new[] { "무당", "Wudang" },
+            ColouredLabel = "치명타:\n<color=#FFA500>[공격]</color>피해 두 배",
             Paragraph =
                 "<color=#FFCC00>경고</color>\n원자로가 정격 출력의 [!v*0] 퍼센트로 작동 중입니다. "
                 + "다음 도약 전에 냉각수를 배출하십시오. 그렇지 않으면 승무원은 살아남지 못합니다. "
@@ -344,6 +385,9 @@ public sealed class Fixtures
             TrailingBreak = "تم حفظ الإعدادات\n",
             MarkupSpan = "<color=#FFCC00>تحذير</color>: الدروع عند [!v*0] بالمئة",
             MarkersInRow = "<color=#FFCC00>تم التحميل</color> [!v*0]/[!v*1]/[!v*2]/[!v*3]/[!v*4]/[!v*5]",
+            ColouredTitle = "طائفة وودانغ <color=#FFCC00>الشيخ</color>",
+            TitleName = new[] { "وودانغ", "Wudang" },
+            ColouredLabel = "ضربة حرجة:\n<color=#FFA500>[هجوم]</color>ضرر مضاعف",
             Paragraph =
                 "<color=#FFCC00>تحذير</color>\nيعمل المفاعل عند [!v*0] بالمئة من طاقته المقررة. "
                 + "أفرغ سائل التبريد قبل القفزة التالية وإلا فلن ينجو الطاقم. "

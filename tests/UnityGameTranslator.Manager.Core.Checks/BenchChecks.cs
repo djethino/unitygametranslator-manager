@@ -33,7 +33,7 @@ internal static class BenchChecks
 
             foreach (var test in ModelTestSuite.Build(target, sourceCode: fixtures.Code))
             {
-                if (test.ForReading || test.ExpectsRefusal) continue;
+                if (test.ForReading || test.ExpectsRefusal || test.CopyFails) continue;
 
                 var answer = LineTranslation.AskModel(test.Source,
                     new ModelJob { Instructions = test.Instructions, Attempts = Placeholders.MaxAttempts }, Echo);
@@ -45,7 +45,7 @@ internal static class BenchChecks
         }
 
         var markup = ModelTestSuite.Build("fr", sourceCode: "en").First(t => t.Name == "markup markers kept");
-        Program.Check(markup.Rule.Contains("They come in pairs around words", StringComparison.Ordinal),
+        Program.Check(markup.Rule.Contains("They come in pairs", StringComparison.Ordinal),
             "the bench's prompt is the game's, pairs of tags included",
             "its own builder never announced what the game had started to");
     }

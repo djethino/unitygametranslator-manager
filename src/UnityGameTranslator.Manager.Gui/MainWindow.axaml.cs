@@ -9046,8 +9046,20 @@ public partial class MainWindow : Window
                 if (button.IsChecked != true) return;
 
                 pick();
-                _pendingWay[report.Game.Path] = (preference.ApplyModDefaults,
-                                                 preference.LetWizardAsk);
+
+                // Held only while it differs from what is decided: going back to the way already
+                // decided is not a change, and left an Undo with nothing to undo.
+                var decided = DecidedPreference(report.Game.Path);
+                if (decided.ApplyModDefaults == preference.ApplyModDefaults
+                    && decided.LetWizardAsk == preference.LetWizardAsk)
+                {
+                    _pendingWay.Remove(report.Game.Path);
+                }
+                else
+                {
+                    _pendingWay[report.Game.Path] = (preference.ApplyModDefaults, preference.LetWizardAsk);
+                }
+
                 Refresh();
             };
 
@@ -9307,10 +9319,7 @@ public partial class MainWindow : Window
                 draft.StrictSourceLanguage = bricks.StrictSourceLanguage;
             }
 
-            // Held only while it differs from what is decided for this game: a control that fills
-            // late reports a change that changes nothing (GameModOverrides.SameAs).
-            if (draft.SameAs(preference.Mod)) _pendingMod.Remove(report.Game.Path);
-            else _pendingMod[report.Game.Path] = draft;
+            HoldMod(report.Game.Path, draft);
 
             // ⚠ The BAR only, never refresh(). The bar lives in its own container and its steps are
             // computed from what is pending, so it can be redrawn while somebody is still typing;
@@ -10181,10 +10190,10 @@ public partial class MainWindow : Window
                 return;
             }
 
-            var entry = _pendingMod.TryGetValue(path, out var kept) ? kept : preference.Mod?.Copy() ?? new GameModOverrides();
+            var entry = _pendingMod.TryGetValue(path, out var kept) ? kept.Copy() : DecidedMod(path);
             entry.SourceLanguage = draftSource is null ? null : Languages.NameOf(draftSource);
             entry.StrictSourceLanguage = draftSource is null ? null : draftStrict;
-            _pendingMod[path] = entry;
+            HoldMod(path, entry);
 
             // The one-click reads what is held, so its bar has to follow.
             ShowActionBar(report);
@@ -10571,12 +10580,15 @@ public partial class MainWindow : Window
             {
                 if (editor.Value is not { } key) return;
 
+                // ⚠ From what is decided, never from an empty entry: a held entry REPLACES the
+                // game's answers when it is applied (PreferenceWithPending), so starting from
+                // nothing dropped every other answer this game had the moment a key was captured.
                 var held = _pendingMod.TryGetValue(report.Game.Path, out var kept)
-                    ? kept
-                    : new GameModOverrides();
+                    ? kept.Copy()
+                    : DecidedMod(report.Game.Path);
 
                 held.SettingsHotkey = key;
-                _pendingMod[report.Game.Path] = held;
+                HoldMod(report.Game.Path, held);
             };
 
             var later = Ui.Note("Written into the game when UGT Mod is installed.");
@@ -10659,6 +10671,25 @@ public partial class MainWindow : Window
         || _pendingWay.ContainsKey(report.Game.Path)
         || _pendingTranslation.ContainsKey(report.Game.Path)
         || _pendingChoices.ContainsKey(report.Game.Path);
+
+    /// <summary>A copy of this game's answers as they are decided — stored, nothing held laid over.</summary>
+    private GameModOverrides DecidedMod(string gamePath) =>
+        _preferences.Read(gamePath).Mod?.Copy() ?? new GameModOverrides();
+
+    /// <summary>
+    /// Holds a draft of this game's answers — only while it differs from what is decided.
+    ///
+    /// 🔴 **Against the STORED answers, never the card's copy** (2026-09-27). The card reasons on
+    /// PreferenceWithPending, which already carries what is held: compared with that, a control
+    /// that refills after a redraw matched the held draft and threw it away — a change somebody
+    /// made, gone without a word. Compared with what is stored, an unchanged draft is dropped
+    /// (no Undo with nothing to undo) and a real one is kept.
+    /// </summary>
+    private void HoldMod(string gamePath, GameModOverrides draft)
+    {
+        if (draft.SameAs(_preferences.Read(gamePath).Mod)) _pendingMod.Remove(gamePath);
+        else _pendingMod[gamePath] = draft;
+    }
 
     /// <summary>
     /// Drops them all, in one gesture.
@@ -12459,6 +12490,32 @@ public partial class MainWindow : Window
     /// </summary>
     private GamePreference PreferenceWithPending(string gamePath)
     {
+        var preference = DecidedPreference(gamePath);
+
+        if (_pendingWay.TryGetValue(gamePath, out var way))
+        {
+            preference.ApplyModDefaults = way.Defaults;
+            preference.LetWizardAsk = way.Wizard;
+        }
+
+        if (_pendingMod.TryGetValue(gamePath, out var mod))
+            preference.Mod = mod.IsEmpty ? null : mod.Copy();
+
+        if (_pendingPlan.TryGetValue(gamePath, out var plan))
+        {
+            preference.StartTranslation = plan.Start;
+            preference.GameContext = plan.Context;
+        }
+
+        return preference;
+    }
+
+    /// <summary>
+    /// A copy of what this game answers as DECIDED — nothing held laid over it. What a held answer
+    /// is measured against: held only while it differs from this.
+    /// </summary>
+    private GamePreference DecidedPreference(string gamePath)
+    {
         var preference = _preferences.Read(gamePath).Copy();
 
         // 🔴 **A way stored by a session that never acted does not survive it.** Holding the choice
@@ -12477,21 +12534,6 @@ public partial class MainWindow : Window
         {
             preference.ApplyModDefaults = null;
             preference.LetWizardAsk = false;
-        }
-
-        if (_pendingWay.TryGetValue(gamePath, out var way))
-        {
-            preference.ApplyModDefaults = way.Defaults;
-            preference.LetWizardAsk = way.Wizard;
-        }
-
-        if (_pendingMod.TryGetValue(gamePath, out var mod))
-            preference.Mod = mod.IsEmpty ? null : mod.Copy();
-
-        if (_pendingPlan.TryGetValue(gamePath, out var plan))
-        {
-            preference.StartTranslation = plan.Start;
-            preference.GameContext = plan.Context;
         }
 
         return preference;
@@ -13283,10 +13325,23 @@ public partial class MainWindow : Window
         var inGameTranslates = GameConfig(report).AutoTranslate;
         var translatesNow = preference.StartTranslation ?? inGameTranslates ?? settings.EnableAi;
 
+        // 🔴 **Held, not written.** This wrote straight to disk on every click — the only pair of
+        // mod settings in the tool that did, and a plain breach of the rule the rest of it keeps:
+        // nothing reaches a game until Apply is pressed. It also made the switch below it
+        // meaningless, since there was never a moment where an answer was pending.
+        // ⚠ Measured against what is DECIDED (the stored preference, then the game), shown with
+        // what is HELD laid over it — see PlanDraft. Both used to be the decided values, so after
+        // any redraw of the card the block showed the old answer while Undo and the one-click
+        // still counted the held one (2026-09-27).
+        var draft = new PlanDraft(
+            decidedStart: translatesNow,
+            decidedContext: preference.GameContext ?? InGameContext(report, descriptor),
+            held: _pendingPlan.TryGetValue(report.Game.Path, out var held) ? held : null);
+
         var start = new CheckBox
         {
             Content = "Translate while I play",
-            IsChecked = backend is not null && translatesNow,
+            IsChecked = backend is not null && draft.Start,
             FontSize = 12,
         };
 
@@ -13297,16 +13352,6 @@ public partial class MainWindow : Window
         // on showing what the game holds, which is what somebody came here to find out.
         var mayChange = MaySetUp(report, start);
         start.IsEnabled = backend is not null && mayChange;
-
-        // 🔴 **Held, not written.** This wrote straight to disk on every click — the only pair of
-        // mod settings in the tool that did, and a plain breach of the rule the rest of it keeps:
-        // nothing reaches a game until Apply is pressed. It also made the switch below it
-        // meaningless, since there was never a moment where an answer was pending.
-        // ⚠ From the same value as the box above: a draft starting elsewhere would report a change
-        // the moment the section is opened, or miss the one somebody makes.
-        var draft = new PlanDraft(
-            StartTranslation: translatesNow,
-            GameContext: preference.GameContext ?? InGameContext(report, descriptor));
 
         var applyBar = PlanApplyBar(report, preference, draft, refresh);
 
@@ -13509,15 +13554,18 @@ public partial class MainWindow : Window
         else _pendingPlan[report.Game.Path] = (draft.Start, draft.Context);
     }
 
-    /// <summary>The two answers this block holds while they wait for Apply.</summary>
+    /// <summary>
+    /// The two answers this block holds while they wait for Apply: what is decided, and what is
+    /// shown — the held answer when there is one, so it survives a redraw of the card.
+    /// </summary>
     private sealed class PlanDraft
     {
-        public PlanDraft(bool StartTranslation, string? GameContext)
+        public PlanDraft(bool decidedStart, string? decidedContext, (bool Start, string? Context)? held)
         {
-            Start = StartTranslation;
-            Context = GameContext;
-            _start = StartTranslation;
-            _context = GameContext;
+            _start = decidedStart;
+            _context = decidedContext;
+            Start = held?.Start ?? decidedStart;
+            Context = held is { } h ? h.Context : decidedContext;
         }
 
         private readonly bool _start;

@@ -28,6 +28,10 @@ public partial class MainWindow
     /// <summary>Files handed to one game and not written yet, with the replacements somebody accepted.</summary>
     private sealed class HeldAssets
     {
+        /// <summary>
+        /// The files handed over, in the order the plan was made from — the plan's offers point back
+        /// into this list, so it is only ever replanned whole, never reordered behind the plan's back.
+        /// </summary>
         public List<string> Paths { get; } = new();
         public AssetPlan Plan { get; set; } = AssetPlan.Empty;
 
@@ -418,7 +422,8 @@ public partial class MainWindow
         Working("Adding fonts and images...");
         try
         {
-            result = await Task.Run(() => GameAssets.Apply(_platform, report.Game, descriptor, accepted));
+            var sources = held.Paths.ToList();
+            result = await Task.Run(() => GameAssets.Apply(_platform, report.Game, descriptor, sources, accepted));
         }
         finally
         {

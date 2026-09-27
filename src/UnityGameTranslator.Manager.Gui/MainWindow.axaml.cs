@@ -11888,7 +11888,8 @@ public partial class MainWindow : Window
                 Work.Begin(StepOf(OneClickAct.AddAssets));
 
                 var accepted = heldAssets.Accepted;
-                var added = await Task.Run(() => GameAssets.Apply(_platform, report.Game, plan.Loader, accepted));
+                var sources = heldAssets.Paths.ToList();
+                var added = await Task.Run(() => GameAssets.Apply(_platform, report.Game, plan.Loader, sources, accepted));
 
                 if (added.Done)
                 {

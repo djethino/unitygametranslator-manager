@@ -114,7 +114,7 @@ internal static class GameAssetsChecks
 
             // Keep the picture retouched by hand: its row is declined, file and setting together.
             var kept = plan.Offers.Where(o => o.Name != "Title").ToList();
-            var result = GameAssets.Apply(null, game, descriptor, kept);
+            var result = GameAssets.Apply(null, game, descriptor, [pack, loosePng, looseZip], kept);
 
             Program.Check(result.Done && Holds(Path.Combine(folder, "images", "title.png"), "retouched by hand")
                           && Holds(Path.Combine(folder, "fonts", "b.otf"), "font b")
@@ -213,7 +213,7 @@ internal static class GameAssetsChecks
             }
 
             var loadedPlan = GameAssets.Plan(game, descriptor, [loaded]);
-            GameAssets.Apply(null, game, descriptor, loadedPlan.Offers);
+            GameAssets.Apply(null, game, descriptor, [loaded], loadedPlan.Offers);
             var hero = JsonNode.Parse(File.ReadAllText(translation))![TranslationFiles.ImagesSection]!.AsArray()
                 .OfType<JsonObject>().Single(d => d["sprite_name"]!.GetValue<string>() == "Hero");
             Program.Check(hero["payload"] is null && hero["path"] is null && hero["pixels_per_unit"] is null
@@ -298,7 +298,7 @@ internal static class GameAssetsChecks
                 "a sprite spelled differently is the same sprite, as the mod reads it",
                 "added beside it as new, the mod would read one sprite and keep whichever came last");
 
-            GameAssets.Apply(null, game, descriptor, plan.Offers);
+            GameAssets.Apply(null, game, descriptor, [pack], plan.Offers);
 
             var section = JsonNode.Parse(File.ReadAllText(translation))![TranslationFiles.ImagesSection]!.AsArray();
             var titles = section.OfType<JsonObject>()
@@ -310,7 +310,7 @@ internal static class GameAssetsChecks
 
             var again = GameAssets.Plan(game, descriptor, [pack]);
             var before = File.ReadAllBytes(translation);
-            GameAssets.Apply(null, game, descriptor, again.Offers);
+            GameAssets.Apply(null, game, descriptor, [pack], again.Offers);
             Program.Check(again.Changes == 0 && File.ReadAllBytes(translation).AsSpan().SequenceEqual(before),
                 "the same pack a second time changes nothing, not a byte of the file",
                 "adding what is already there must not grow the file or rewrite it");
@@ -355,9 +355,10 @@ internal static class GameAssetsChecks
             {
                 File.WriteAllText(translation, damaged);
                 var damagedPlan = GameAssets.Plan(game, descriptor, [pack]);
-                var forced = GameAssets.Apply(null, game, descriptor,
+                var forced = GameAssets.Apply(null, game, descriptor, [],
                     [new AssetOffer(AssetKind.Image, "title", AssetChange.Add, "checks", [],
-                        [new PlannedDefinition("title", "title.png", new JsonObject { ["sprite_name"] = "title" }, AssetChange.Add, "checks")])]);
+                        [new PlannedDefinition(ImageDefinition.Read(f => f == "sprite_name" ? "title" : f == "file" ? "title.png" : null)!,
+                                               AssetChange.Add, "checks")])]);
 
                 Program.Check(damagedPlan.Definitions.Count == 0 && damagedPlan.Refused.Any(r => r.Reason.Contains("cannot be read"))
                               && !forced.Done && File.ReadAllText(translation) == damaged

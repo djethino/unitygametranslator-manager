@@ -84,8 +84,14 @@ public static class GameLaunch
     /// started from elsewhere can fail to find its own data folder.
     /// </summary>
     /// <returns>Null when it started, or a sentence fit to show when it did not.</returns>
-    public static string? Start(LaunchRoute route)
+    /// <param name="started">
+    /// The process started, for a direct launch — whose end, before the game is seen, is what gives
+    /// the hand back at once (<see cref="LaunchWatch"/>). Null through a store: the process there is
+    /// the store's, and its end says nothing about the game.
+    /// </param>
+    public static string? Start(LaunchRoute route, out Process? started)
     {
+        started = null;
         try
         {
             var info = new ProcessStartInfo
@@ -97,7 +103,9 @@ public static class GameLaunch
             if (!route.ThroughStore)
                 info.WorkingDirectory = Path.GetDirectoryName(route.Target) ?? "";
 
-            Process.Start(info);
+            var process = Process.Start(info);
+            if (route.ThroughStore) process?.Dispose();
+            else started = process;
             return null;
         }
         catch (Exception ex)

@@ -103,6 +103,12 @@ public partial class MainWindow : Window
     /// <summary>Which games are open right now. Never null: an unswept machine is an empty answer.</summary>
     private RunningGames _running = RunningGames.None;
 
+    /// <summary>
+    /// Games Play was pressed for, not seen running yet — counted as running from the click, so
+    /// nothing writes into a game that is loading (see LaunchWatch).
+    /// </summary>
+    private readonly LaunchWatch _launches = new();
+
     private DispatcherTimer? _runningClock;
 
     /// <summary>
@@ -1771,7 +1777,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task LookForRunningGamesAsync()
+    private async Task LookForRunningGamesAsync(bool launchChanged = false)
     {
         if (_games.Count == 0) return;
 
@@ -1788,7 +1794,22 @@ public partial class MainWindow : Window
         var games = _games.ToList();
         var sweep = await Task.Run(() => RunningGames.Sweep(games));
 
-        if (!sweep.Differs(_running)) return;
+        // Launches that have ended — the game appeared, its direct process closed first, or the
+        // store's silence outlasted LaunchWatch.Patience — then the ones still starting count as
+        // running.
+        var settled = _launches.Settle(sweep.IsRunning, DateTime.UtcNow);
+        foreach (var end in settled)
+        {
+            var name = _games.FirstOrDefault(g => string.Equals(g.Path, end.GamePath, StringComparison.OrdinalIgnoreCase))?.Name
+                       ?? Path.GetFileName(end.GamePath);
+            if (end.How == LaunchEnd.Appeared) Status("Ready.");
+            else if (end.How == LaunchEnd.ClosedFirst) Status($"{name} closed before it started.");
+            else if (end.How == LaunchEnd.GaveUp) Status($"{name} did not start. UGT Manager stopped waiting.");
+        }
+        launchChanged |= settled.Count > 0;
+        sweep = sweep.With(_launches.Paths);
+
+        if (!sweep.Differs(_running) && !launchChanged) return;
 
         var was = _running;
         _running = sweep;
@@ -1806,7 +1827,10 @@ public partial class MainWindow : Window
         // The card carries buttons whose enabled state is exactly this question, so it is redrawn
         // when the game it is about has started or stopped — and left alone otherwise, since
         // rebuilding it would throw away a loader picked in a dropdown.
-        if (_selected is not null && sweep.IsRunning(_selected) != was.IsRunning(_selected))
+        // ⚠ Also when a launch ended: "starting" and "running" both count as running, so the
+        // difference alone would leave the card saying "starting" with Stop waiting after the game
+        // had appeared.
+        if (_selected is not null && (sweep.IsRunning(_selected) != was.IsRunning(_selected) || launchChanged))
             await ShowSelectedAsync();
 
         // A window open over the card greys its own write verbs the same way (see BackupsWindow).
@@ -2477,6 +2501,8 @@ public partial class MainWindow : Window
     private Button? PlayButton(GameInstall game, bool small, bool running, GameReport? report = null,
                                PlayState? state = null)
     {
+        // Starting: the card offers the way to stop waiting, the list shows the running mark.
+        if (_launches.IsStarting(game.Path)) return small ? null : StopWaitingButton(game);
         if (running) return null;
         if (GameLaunch.RouteFor(game) is not { } route) return null;
 
@@ -2514,18 +2540,55 @@ public partial class MainWindow : Window
             // and a button that appears to do nothing gets pressed again.
             Status($"Starting {game.Name}...");
 
-            if (GameLaunch.Start(route) is { } failure)
+            if (GameLaunch.Start(route, out var started) is { } failure)
             {
                 Status("Ready.");
                 await MessageAsync($"{game.Name} did not start", failure);
                 return;
             }
 
-            // The sweep notices it on its own within a few seconds — this only spares those
-            // seconds, so the row a person just pressed stops offering to start it again.
+            // 🔴 Starting from the click, not from the process: the store may take seconds to
+            // wake, the sweep passes every four, and until then this card offered Play again and
+            // every button that writes into a game that is loading. A direct launch ends the wait
+            // itself if its process closes before the game is seen.
+            Func<bool>? ended = null;
+            if (started is not null)
+            {
+                started.EnableRaisingEvents = true;
+                started.Exited += (_, _) => Dispatcher.UIThread.Post(async () => await LookForRunningGamesAsync());
+                ended = () => started.HasExited;
+            }
+
+            _launches.Begin(game.Path, DateTime.UtcNow, ended);
+            _running = _running.With(new[] { game.Path });
+            RefreshRowContents();
+            if (_selected is not null && SamePath(_selected, game)) await ShowSelectedAsync();
+
             await LookForRunningGamesAsync();
         };
 
+        return button;
+    }
+
+    private static bool SamePath(GameInstall a, GameInstall b) =>
+        string.Equals(a.Path, b.Path, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// In place of Play while a game is starting: gives the hand back at once, for a store that
+    /// will never start it (an update required, a dialogue cancelled). Past LaunchWatch.Patience
+    /// it comes back by itself.
+    /// </summary>
+    private Button StopWaitingButton(GameInstall game)
+    {
+        var button = new Button { Content = "Stop waiting" };
+        ToolTip.SetTip(button, $"{game.Name} is starting. If it does not open, stop waiting to use "
+                               + "this card again.");
+        button.Click += async (_, _) =>
+        {
+            if (!_launches.Stop(game.Path)) return;
+            Status("Ready.");
+            await LookForRunningGamesAsync(launchChanged: true);
+        };
         return button;
     }
 
@@ -4910,7 +4973,7 @@ public partial class MainWindow : Window
 
         if (_running.IsRunning(game))
         {
-            title.Inlines?.Add(new Avalonia.Controls.Documents.Run("  (running)")
+            title.Inlines?.Add(new Avalonia.Controls.Documents.Run(_launches.IsStarting(game.Path) ? "  (starting)" : "  (running)")
             {
                 Foreground = Brush("StatusWarning"),
             });

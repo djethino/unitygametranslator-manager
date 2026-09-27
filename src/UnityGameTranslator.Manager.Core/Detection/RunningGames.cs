@@ -40,6 +40,19 @@ public sealed class RunningGames
 
     public bool IsRunning(GameInstall game) => _running.Contains(game.Path);
 
+    public bool IsRunning(string gamePath) => _running.Contains(gamePath);
+
+    /// <summary>
+    /// This sweep, with games being started counted as running (<see cref="LaunchWatch"/>): every
+    /// guard on "is it running" then holds from the click, not from the process appearing.
+    /// </summary>
+    public RunningGames With(IEnumerable<string> gamePaths)
+    {
+        var running = new HashSet<string>(_running, StringComparer.OrdinalIgnoreCase);
+        foreach (var path in gamePaths) running.Add(path);
+        return new RunningGames(running);
+    }
+
     /// <summary>True when this sweep says something different from that one.</summary>
     public bool Differs(RunningGames other) => !_running.SetEquals(other._running);
 

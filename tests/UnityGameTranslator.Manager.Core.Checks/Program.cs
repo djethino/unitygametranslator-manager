@@ -58,6 +58,7 @@ internal static class Program
         DetectionChecks.HowFarBelowAFolderWeLook();
         DetectionChecks.WhatAStoreManifestNames();
         RuntimeLibrariesChecks.WhatAGameLacks();
+        LaunchWatchChecks.WhenAStartingGameIsGivenBack();
         RuntimeLibrariesChecks.WhatGoesBesideAGame();
         RuntimeLibrariesChecks.WhichCopiesMayBeUsed();
         DropdownChecks.OnlyTheProgramsOwnDropdown();

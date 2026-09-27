@@ -538,6 +538,20 @@ public static class ModelTestSuite
                 Expectation = "the label comes back translated inside its brackets, inside its colour",
             },
 
+            // From a real game (2026-09-27): a word in brackets beside a name, between two tag
+            // markers, came back untranslated on every line — it has the shape of the markers.
+            new("a bracketed word beside a name, in a colour", "hard",
+                from.SpeakerLabel,
+                rules,
+                (_, answer) => InOrder(answer, "[!t*0]", "[!t*1]")
+                               && Inside(answer, "[!t*0]", "[!t*1]") is { } speaker
+                               && Placeholders.Labels(speaker).Count == 1
+                               && !speaker.Contains(from.SpeakerLabelWord, StringComparison.Ordinal))
+            {
+                Expectation = "the bracketed word is translated and keeps its brackets, inside its colour",
+                CopyFails = true,
+            },
+
             new("a paragraph, not a label", "stress",
                 from.Paragraph,
                 rules,

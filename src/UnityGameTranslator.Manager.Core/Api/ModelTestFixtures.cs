@@ -95,6 +95,19 @@ public sealed class Fixtures
     public required string ColouredLabel { get; init; }
 
     /// <summary>
+    /// A speaker's name and a bracketed word of the game's own, together inside one colour, then
+    /// the line — "Thomas[Thought]: " in a dialogue history.
+    ///
+    /// 🔴 **Added 2026-09-27 from a real game**, where every such line came back with the bracketed
+    /// word untranslated: sent between two tag markers, "[Thought]" has the shape of the markers a
+    /// model is told to keep as they are.
+    /// </summary>
+    public required string SpeakerLabel { get; init; }
+
+    /// <summary>The bracketed word of <see cref="SpeakerLabel"/> as the source writes it: what must not come back.</summary>
+    public required string SpeakerLabelWord { get; init; }
+
+    /// <summary>
     /// Everything at once: tags, inserted text, four numbers, three line breaks and a blank one.
     ///
     /// ⚠ **In addition to <see cref="Paragraph"/>, never instead of it.** That one isolates
@@ -188,6 +201,8 @@ public sealed class Fixtures
             ColouredTitle = "Wudang Sect <color=#FFCC00>Elder</color>",
             TitleName = new[] { "Wudang" },
             ColouredLabel = "Critical:\n<color=#FFA500>[Attack]</color>Damage doubled",
+            SpeakerLabel = "<color=#f3e584>Thomas[Thought]: </color>The chemicals are so strong. I'm choking here.",
+            SpeakerLabelWord = "[Thought]",
             Paragraph =
                 "<color=#FFCC00>Warning</color>\nThe reactor is running at [!v*0] percent of its rated "
                 + "output. Vent the coolant before the next jump, or the crew will not survive it. "
@@ -223,6 +238,8 @@ public sealed class Fixtures
             ColouredTitle = "Secta Wudang <color=#FFCC00>Anciano</color>",
             TitleName = new[] { "Wudang" },
             ColouredLabel = "Crítico:\n<color=#FFA500>[Ataque]</color>Daño doble",
+            SpeakerLabel = "<color=#f3e584>Tomás[Pensamiento]: </color>Los productos químicos son muy fuertes. Me estoy ahogando aquí.",
+            SpeakerLabelWord = "[Pensamiento]",
             Paragraph =
                 "<color=#FFCC00>Aviso</color>\nEl reactor funciona al [!v*0] por ciento de su potencia "
                 + "nominal. Purga el refrigerante antes del próximo salto o la tripulación no "
@@ -257,6 +274,8 @@ public sealed class Fixtures
             ColouredTitle = "Секта Удан <color=#FFCC00>Старейшина</color>",
             TitleName = new[] { "Удан", "Wudang" },
             ColouredLabel = "Крит:\n<color=#FFA500>[Атака]</color>Двойной урон",
+            SpeakerLabel = "<color=#f3e584>Томас[Мысли]: </color>Химикаты такие едкие. Я здесь задыхаюсь.",
+            SpeakerLabelWord = "[Мысли]",
             Paragraph =
                 "<color=#FFCC00>Внимание</color>\nРеактор работает на [!v*0] процентов от номинальной "
                 + "мощности. Стравите охладитель до следующего прыжка, иначе экипаж не выживет. "
@@ -290,6 +309,8 @@ public sealed class Fixtures
             ColouredTitle = "武当派<color=#FFCC00>掌门</color>",
             TitleName = new[] { "武当", "Wudang" },
             ColouredLabel = "暴击:\n<color=#FFA500>[攻]</color>伤害加倍",
+            SpeakerLabel = "<color=#f3e584>托马斯[内心]: </color>化学品的气味太冲了，我快要窒息了。",
+            SpeakerLabelWord = "[内心]",
             Paragraph =
                 "<color=#FFCC00>警告</color>\n反应堆正以额定功率的 [!v*0] % 运行。下一次跃迁前请排出冷却剂，"
                 + "否则船员无法生还。维修需要 [!v*1] 信用点和 [!v*2] 个周期，期间无法建造其他任何东西。",
@@ -322,6 +343,8 @@ public sealed class Fixtures
             ColouredTitle = "武当派<color=#FFCC00>長老</color>",
             TitleName = new[] { "武当", "Wudang" },
             ColouredLabel = "会心:\n<color=#FFA500>[攻]</color>ダメージ倍増",
+            SpeakerLabel = "<color=#f3e584>トーマス[心の声]: </color>薬品の臭いがきつすぎる。息が詰まりそうだ。",
+            SpeakerLabelWord = "[心の声]",
             Paragraph =
                 "<color=#FFCC00>警告</color>\nリアクターは定格出力の [!v*0] パーセントで稼働中です。"
                 + "次のジャンプの前に冷却材を排出してください。さもなければ乗組員は助かりません。"
@@ -356,6 +379,8 @@ public sealed class Fixtures
             ColouredTitle = "무당파 <color=#FFCC00>장로</color>",
             TitleName = new[] { "무당", "Wudang" },
             ColouredLabel = "치명타:\n<color=#FFA500>[공격]</color>피해 두 배",
+            SpeakerLabel = "<color=#f3e584>토마스[생각]: </color>약품 냄새가 너무 독해. 숨이 막힐 것 같아.",
+            SpeakerLabelWord = "[생각]",
             Paragraph =
                 "<color=#FFCC00>경고</color>\n원자로가 정격 출력의 [!v*0] 퍼센트로 작동 중입니다. "
                 + "다음 도약 전에 냉각수를 배출하십시오. 그렇지 않으면 승무원은 살아남지 못합니다. "
@@ -388,6 +413,8 @@ public sealed class Fixtures
             ColouredTitle = "طائفة وودانغ <color=#FFCC00>الشيخ</color>",
             TitleName = new[] { "وودانغ", "Wudang" },
             ColouredLabel = "ضربة حرجة:\n<color=#FFA500>[هجوم]</color>ضرر مضاعف",
+            SpeakerLabel = "<color=#f3e584>توماس[تفكير]: </color>المواد الكيميائية قوية جدًا. أكاد أختنق هنا.",
+            SpeakerLabelWord = "[تفكير]",
             Paragraph =
                 "<color=#FFCC00>تحذير</color>\nيعمل المفاعل عند [!v*0] بالمئة من طاقته المقررة. "
                 + "أفرغ سائل التبريد قبل القفزة التالية وإلا فلن ينجو الطاقم. "

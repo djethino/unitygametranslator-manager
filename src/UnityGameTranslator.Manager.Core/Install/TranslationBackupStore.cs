@@ -438,17 +438,13 @@ public static class TranslationBackupStore
 
         try
         {
-            var fonts = Path.Combine(dataFolder, "fonts");
+            var fonts = Path.Combine(dataFolder, AssetPacks.FontsFolder);
             if (!Directory.Exists(fonts)) return names;
 
+            // Which files are font sources is the socle's answer, shared with the mod's loader.
             foreach (var file in Directory.EnumerateFiles(fonts))
             {
-                var extension = Path.GetExtension(file);
-                if (extension is ".ttf" or ".otf" or ".ttc"
-                    || extension.Equals(".TTF", StringComparison.OrdinalIgnoreCase))
-                {
-                    names.Add(Path.GetFileName(file));
-                }
+                if (AssetPacks.IsFontFile(file)) names.Add(Path.GetFileName(file));
             }
         }
         catch

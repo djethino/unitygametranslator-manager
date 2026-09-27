@@ -44,7 +44,7 @@ internal static class GameAssetsChecks
                 + "\"_fonts\":{\"LiberationSans SDF\":{\"enabled\":true,\"fallback\":\"[Custom] a\",\"type\":\"TMP\"}},"
                 + "\"_image_replacements\":[" + DefinitionTitle + "]}");
 
-            var state = GameAssets.Read(gamePath, descriptor);
+            var state = GameAssets.Read(gamePath, descriptor, _ => false);
             Program.Check(state is { Fonts.Count: 1, Images.Count: 1, HasTranslation: true } && state.Images[0].Present
                           && state.Fonts[0].Use == FontUse.Used,
                 "the game is read: one font, one image defined and present",
@@ -158,7 +158,7 @@ internal static class GameAssetsChecks
                 "the format written and the format read are the same format");
 
             Program.Check(again.Files.Any(f => f.Asset.Name == "a.ttf") && again.Files.All(f => f.Asset.Name != "b.otf")
-                          && GameAssets.Read(gamePath, descriptor).Fonts.Single(f => f.Name == "b.otf").Use == FontUse.NotUsed,
+                          && GameAssets.Read(gamePath, descriptor, _ => false).Fonts.Single(f => f.Name == "b.otf").Use == FontUse.NotUsed,
                 "only the fonts the translation uses are exported, and the tab says which",
                 "a font tried once and left in fonts/ is noise to whoever receives the pack (user, 2026-09-27)");
 
@@ -362,7 +362,7 @@ internal static class GameAssetsChecks
 
                 Program.Check(damagedPlan.Definitions.Count == 0 && damagedPlan.Refused.Any(r => r.Reason.Contains("cannot be read"))
                               && !forced.Done && File.ReadAllText(translation) == damaged
-                              && GameAssets.Read(gamePath, descriptor).TranslationDamaged,
+                              && GameAssets.Read(gamePath, descriptor, _ => false).TranslationDamaged,
                     "a translation that cannot be read safely is said so, and never written over: " + damaged[..Math.Min(40, damaged.Length)],
                     "read as \"no translation\", it would be given a fresh image section — and lose everything else");
             }
@@ -458,19 +458,24 @@ internal static class GameAssetsChecks
             File.WriteAllBytes(Path.Combine(folder, "fonts", "Candara.ttf"), Asset("Candara.ttf", "candara"));
             File.WriteAllBytes(Path.Combine(folder, "fonts", "Legacy.ttf"), Asset("Legacy.ttf", "legacy"));
             File.WriteAllBytes(Path.Combine(folder, "fonts", "unused.ttf"), Asset("unused.ttf", "unused"));
+            File.WriteAllBytes(Path.Combine(folder, "fonts", "comicbd.ttf"), Asset("comicbd.ttf", "comic"));
+            // A retouched copy of the game's own font, under its name — "[Game] LiberationSans SDF" above.
+            File.WriteAllBytes(Path.Combine(folder, "fonts", "LiberationSans SDF.ttf"), Asset("LiberationSans SDF.ttf", "retouched"));
 
-            var held = GameAssets.Read(gamePath, descriptor).Fonts.ToDictionary(f => f.Name, f => f.Use);
-            Program.Check(held["mine.ttf"] == FontUse.Used && held["Candara.ttf"] == FontUse.UsedWhereNotInstalled
-                          && held["Legacy.ttf"] == FontUse.LegacyTextOnly && held["unused.ttf"] == FontUse.NotUsed,
-                "the tab says what each file does: shown, shown where the font is not installed, named by legacy text only, unused",
-                "a copy named only by UI.Text is shown nowhere — calling it used was untrue");
+            var held = GameAssets.Read(gamePath, descriptor, name => name is "Candara" or "Legacy")
+                .Fonts.ToDictionary(f => f.Name, f => f.Use);
+            Program.Check(held["mine.ttf"] == FontUse.Used && held["comicbd.ttf"] == FontUse.Used
+                          && held["Candara.ttf"] == FontUse.InstalledInstead && held["Legacy.ttf"] == FontUse.InstalledInstead
+                          && held["LiberationSans SDF.ttf"] == FontUse.GameInstead && held["unused.ttf"] == FontUse.NotUsed,
+                "the tab says which font is shown where the translation names a file's name: this file, the installed one, the game's",
+                "a file carrying the name of an installed or game font is not the one shown — whoever retouched it must be told (user, 2026-09-28)");
 
             var copies = Path.Combine(root, "copies.ugtpack");
             GameAssets.Export(game, descriptor, copies, "checks");
             using (var zip = ZipFile.OpenRead(copies))
             {
                 var fonts = zip.Entries.Select(e => e.FullName).Where(n => n.StartsWith("fonts/")).OrderBy(n => n, StringComparer.Ordinal).ToList();
-                Program.Check(fonts.SequenceEqual(["fonts/Candara.ttf", "fonts/mine.ttf"])
+                Program.Check(fonts.SequenceEqual(["fonts/Candara.ttf", "fonts/comicbd.ttf", "fonts/mine.ttf"])
                               && GameAssets.SystemFontsUsed(game, descriptor, [system], () => table).Any(u => u.Reference == "Legacy" && !u.Includable),
                     "a copy only legacy text names is not exported, and the export still says why",
                     "it would arrive in another game and be used there no more than here");

@@ -10,28 +10,32 @@ using UnityGameTranslator.Manager.Core.Platform;
 
 namespace UnityGameTranslator.Manager.Core.Install;
 
-/// <summary>What a font file in fonts/ does for the translation, read by <see cref="FontReferences"/>.</summary>
+/// <summary>
+/// Which font the translation shows where it names this file's name, on THIS computer
+/// (<see cref="FontReferences"/>).
+///
+/// 🔴 The point is the warning (user, 2026-09-28): a file in fonts/ carrying the name of an installed
+/// font or of a game font — a retouched copy of the game's own font, say — is NOT the one shown
+/// unless the translation picks it as a custom font. Whoever thinks they use it must be told.
+/// </summary>
 public enum FontUse
 {
-    /// <summary>A "[Custom] X" reference serving TextMeshPro text: this file is the font shown.</summary>
+    /// <summary>This file is the font shown.</summary>
     Used,
 
-    /// <summary>A bare "X" serving TextMeshPro text: the installed X answers first, this copy where it is not installed.</summary>
-    UsedWhereNotInstalled,
+    /// <summary>The translation names this font, and the one installed on this computer is shown instead.</summary>
+    InstalledInstead,
 
-    /// <summary>Named only by legacy text (UI.Text), which never reads a font file.</summary>
-    LegacyTextOnly,
+    /// <summary>The translation names this font, and the game's own font of that name is shown instead.</summary>
+    GameInstead,
 
     /// <summary>Named by nothing the translation applies.</summary>
     NotUsed,
 }
 
-/// <summary>A font this game holds, and what its translation does with it.</summary>
-public sealed record GameFont(string Name, long Length, FontUse Use)
-{
-    /// <summary>Whether an export carries it: only a file some text can be drawn from.</summary>
-    public bool Exported => Use is FontUse.Used or FontUse.UsedWhereNotInstalled;
-}
+/// <summary>A font this game holds, what its translation shows in its name, and whether an export carries it.</summary>
+/// <param name="Exported">A file some text can be drawn from, on some computer: a custom font, or a copy of an installed one for players without it.</param>
+public sealed record GameFont(string Name, long Length, FontUse Use, bool Exported);
 
 /// <summary>An image this game's translation defines, and whether its file is there.</summary>
 public sealed record GameImage(string SpriteName, string? File, bool Present);
@@ -76,7 +80,11 @@ public static class GameAssets
 {
     // ── What the game holds ──────────────────────────────────────────────────────────────────
 
-    public static GameAssetsState Read(string gamePath, LoaderDescriptor descriptor)
+    public static GameAssetsState Read(IPlatform platform, string gamePath, LoaderDescriptor descriptor) =>
+        Read(gamePath, descriptor, name => IsInstalled(name, platform.FontFolders(), platform.RegisteredFonts));
+
+    /// <param name="installed">Whether a font of that name is installed on this computer, found as the mod finds it.</param>
+    public static GameAssetsState Read(string gamePath, LoaderDescriptor descriptor, Func<string, bool> installed)
     {
         var folder = UserDataInventory.DataFolder(gamePath, descriptor);
         if (folder is null) return new GameAssetsState([], [], false);
@@ -92,7 +100,7 @@ public static class GameAssets
             {
                 var name = Path.GetFileName(file);
                 if (AssetPacks.IsFontFile(name))
-                    fonts.Add(new GameFont(name, new FileInfo(file).Length, UseOf(name, references)));
+                    fonts.Add(new GameFont(name, new FileInfo(file).Length, UseOf(name, references, installed), IsExported(name, references)));
             }
         }
 
@@ -499,7 +507,7 @@ public static class GameAssets
                     {
                         var name = Path.GetFileName(file);
                         if (!AssetPacks.IsFontFile(name) || !AssetPacks.IsSafeFileName(name)) continue;
-                        if (UseOf(name, references) is not (FontUse.Used or FontUse.UsedWhereNotInstalled)) continue;
+                        if (!IsExported(name, references)) continue;
 
                         zip.CreateEntryFromFile(file, AssetPacks.FontsFolder + "/" + name, CompressionLevel.Optimal);
                         packed.Add(name);
@@ -609,28 +617,63 @@ public static class GameAssets
     }
 
     /// <summary>
-    /// What a file of fonts/ does for the translation — the rule the mod serves fonts by
-    /// (<see cref="FontReferences"/>), so the tab and the export never call a file used that no
-    /// text is drawn from.
+    /// Which font is shown on this computer where the translation names this file's name — the rule
+    /// the mod serves fonts by (<see cref="FontReferences"/>).
     ///
-    /// 🔴 Named is not used: legacy text (UI.Text) never reads a font file, so a file named only by
-    /// it is shown nowhere — the case of a pack of installed fonts laid into an all-UI.Text game.
+    /// 🔴 Named is not used. "[Game] X" is the game's X even with fonts/X.ttf beside it; a bare "X"
+    /// is the installed X first; and legacy text (UI.Text) never reads a font file at all, so a
+    /// file named only by it is shown nowhere.
     /// </summary>
-    private static FontUse UseOf(string fileName, List<(string Reference, bool ReadsFiles)> references)
+    private static FontUse UseOf(string fileName, List<(string Reference, bool ReadsFiles)> references, Func<string, bool> installed)
     {
         var naming = references
-            .Where(r => AssetPacks.FontFileStem(r.Reference) is { } stem && AssetPacks.IsFontFileFor(fileName, stem))
+            .Where(r => AssetPacks.IsFontFileFor(fileName, FontReferences.Name(r.Reference)))
             .ToList();
 
         if (naming.Count == 0) return FontUse.NotUsed;
 
-        var serving = naming.Where(r => r.ReadsFiles).ToList();
-        if (serving.Count == 0) return FontUse.LegacyTextOnly;
+        var name = FontReferences.Name(naming[0].Reference);
+        var isInstalled = naming.Any(r => FontReferences.Order(r.Reference)[0] == FontSource.System) && installed(name);
 
-        return serving.Any(r => FontReferences.Order(r.Reference)[0] == FontSource.Custom)
-            ? FontUse.Used
-            : FontUse.UsedWhereNotInstalled;
+        foreach (var r in naming)
+        {
+            if (!r.ReadsFiles) continue;
+            var first = FontReferences.Order(r.Reference)[0];
+            if (first == FontSource.Custom || (first == FontSource.System && !isInstalled)) return FontUse.Used;
+        }
+
+        if (isInstalled) return FontUse.InstalledInstead;
+
+        // Game-marked, or a bare name the computer lacks served to legacy text: the game's font.
+        // A "[Custom]" reference only on legacy text shows nothing — that text cannot read a file.
+        return naming.Any(r => FontReferences.Order(r.Reference)[0] != FontSource.Custom) ? FontUse.GameInstead : FontUse.NotUsed;
     }
+
+    /// <summary>
+    /// Whether an export carries this file: a custom font, or a copy of an installed font, for text
+    /// that can be drawn from a file — shown on a computer without that font. Never one named only
+    /// by legacy text (UI.Text) or marked as the game's.
+    /// </summary>
+    private static bool IsExported(string fileName, List<(string Reference, bool ReadsFiles)> references) =>
+        references.Any(r => r.ReadsFiles
+                            && FontReferences.Order(r.Reference)[0] is FontSource.Custom or FontSource.System
+                            && AssetPacks.IsFontFileFor(fileName, FontReferences.Name(r.Reference)));
+
+    /// <summary>Whether a font of this name is installed, found as the mod finds it — remembered while the font folders stay as they are.</summary>
+    private static bool IsInstalled(string name, IEnumerable<string> fontFolders, Func<IEnumerable<(string Name, string Path)>> registered)
+    {
+        var folders = fontFolders.ToList();
+        var stamp = string.Join("|", folders.Select(p => Directory.Exists(p) ? Directory.GetLastWriteTimeUtc(p).Ticks.ToString() : "-"));
+
+        if (InstalledMemory.TryGetValue(name, out var kept) && kept.Stamp == stamp) return kept.Installed;
+
+        var found = FindInstalledFont(name, registered().ToList(), folders) is not null;
+        InstalledMemory[name] = (stamp, found);
+        return found;
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Stamp, bool Installed)>
+        InstalledMemory = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Every font reference the translation applies, as written (origin mark included), and

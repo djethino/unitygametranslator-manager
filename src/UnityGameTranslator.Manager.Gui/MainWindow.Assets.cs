@@ -65,7 +65,7 @@ public partial class MainWindow
         var descriptor = InstalledDescriptor(report);
         if (descriptor is null) yield break;
 
-        var state = GameAssets.Read(report.Game.Path, descriptor);
+        var state = GameAssets.Read(_platform, report.Game.Path, descriptor);
 
         // What somebody comes here to do first, first. What is already there follows, then sharing.
         yield return Card(AddAssetsBlock(report));
@@ -444,23 +444,27 @@ public partial class MainWindow
             return panel;
         }
 
-        // Used ones first: they are the translation's, and the ones an export carries. "Used" means
-        // some text is drawn from the file (GameAssets.UseOf) — being named is not enough.
+        // "Used" means this file is the font shown (GameAssets.UseOf) — being named is not enough.
+        // 🔴 The two "instead" rows are the warning (user, 2026-09-28): a retouched copy of a game
+        // font keeps that font's name, and whoever made it must learn it is not the one shown.
         var list = new StackPanel { Spacing = 4 };
         foreach (var font in state.Fonts.OrderBy(f => f.Use))
         {
-            var use = font.Use switch
+            var (use, tone) = font.Use switch
             {
-                FontUse.Used => "Used by the translation",
-                FontUse.UsedWhereNotInstalled => "Used where this font is not installed",
-                FontUse.LegacyTextOnly => "Not used: legacy text (UI.Text) only uses installed fonts",
-                _ => "Not used",
+                FontUse.Used => ("Used", Tone.Neutral),
+                FontUse.InstalledInstead => ("Not used: the installed font with this name is used", Tone.Warning),
+                FontUse.GameInstead => ("Not used: the game's font with this name is used", Tone.Warning),
+                _ => ("Not used", Tone.Neutral),
             };
-            list.Children.Add(NameAndDetail(font.Name, use + " · " + SizeOf(font.Length), Tone.Neutral));
+            list.Children.Add(NameAndDetail(font.Name, use + " · " + SizeOf(font.Length), tone));
         }
 
         panel.Children.Add(Bounded(list));
         panel.Children.Add(Note("Choose which game font each one replaces in UGT Mod: Translation Tools, Fonts tab."));
+
+        if (state.Fonts.Any(f => f.Use is FontUse.InstalledInstead or FontUse.GameInstead))
+            panel.Children.Add(Note("To use one of these files, pick it as a Custom font in UGT Mod: Translation Tools, Fonts tab.", Tone.Warning));
         return panel;
     }
 

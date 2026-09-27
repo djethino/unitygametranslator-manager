@@ -263,6 +263,7 @@ public partial class MainWindow : Window
         FitToScreen();
 
         _platform = PlatformFactory.Create();
+        UiStalls.Start(_platform.UserDataDirectory);
 
         SearchBox.TextChanged += (_, _) => RefreshList();
         RescanButton.Click += async (_, _) => await ScanAsync();
@@ -937,6 +938,7 @@ public partial class MainWindow : Window
 
     private void RepublishRows()
     {
+        using var stall = UiStalls.Doing("RepublishRows");
         RecomputeSituations();
 
         // Contents rather than a rebuild wherever membership cannot move — which is everywhere
@@ -1631,6 +1633,7 @@ public partial class MainWindow : Window
 
     private void RefreshList()
     {
+        using var stall = UiStalls.Doing("RefreshList");
         var filter = SearchBox.Text ?? "";
         var previous = _selected?.Path;
 
@@ -2121,6 +2124,7 @@ public partial class MainWindow : Window
     /// </summary>
     private void RefreshRowContents()
     {
+        using var stall = UiStalls.Doing("RefreshRowContents");
         foreach (var (path, entry) in _rows.ToList())
         {
             if (entry.Item.Tag is not GameInstall game) continue;
@@ -2701,6 +2705,7 @@ public partial class MainWindow : Window
     /// </summary>
     private void ShowOverview()
     {
+        using var stall = UiStalls.Doing("ShowOverview");
         if (_selected is not null) return;
 
         ClearDetail();
@@ -3724,6 +3729,7 @@ public partial class MainWindow : Window
     /// </param>
     private void RenderReport(GameReport report, bool inPlace = false)
     {
+        using var stall = UiStalls.Doing("RenderReport");
         var game = report.Game;
         ClearDetail();
 
@@ -8610,17 +8616,23 @@ public partial class MainWindow : Window
     /// The same answer as <see cref="MaySetUp"/>, for the one caller that cannot be handed a
     /// control: the settings form owns its own Apply and is told why rather than shown a button.
     /// </summary>
-    private string? SetupRefusal(GameReport report)
-    {
-        // The running game first: it refuses every write whoever is signed in, and it ends by
-        // itself — the reader only has to close the game.
-        if (_running.IsRunning(report.Game)) return GameWrites.RunningRefusal;
-
-        return ServerIdentity.For(_settings.Current, report.SiteAccount, BuildInfo.ApiBaseUrl) is
+    private string? SetupRefusal(GameReport report) =>
+        ServerIdentity.For(_settings.Current, report.SiteAccount, BuildInfo.ApiBaseUrl) is
             { CanWriteLocally: false } standing
             ? standing.SetupRefusal
             : null;
-    }
+
+    /// <summary>
+    /// Why nothing may be WRITTEN into this game now: the account's refusal, or the game running.
+    ///
+    /// ⚠ **Not <see cref="MaySetUp"/>, and the difference is the point** (2026-09-27). That one says
+    /// whether this account may set the game up, and the one-click reads it to DESCRIBE what it
+    /// would do — its steps, the translation it offers. Folding the running game into it changed
+    /// that description for as long as the game ran: the bar swapped "fully set up" for a greyed
+    /// one-click with nothing to do. A running game stops the acts, never what they are.
+    /// </summary>
+    private string? WriteRefusal(GameReport report) =>
+        _running.IsRunning(report.Game) ? GameWrites.RunningRefusal : SetupRefusal(report);
 
     /// <summary>
     /// Whether this tool may write into this game now: the account allows it (<see cref="ServerIdentity"/>)
@@ -9226,7 +9238,7 @@ public partial class MainWindow : Window
         // the hotkey's, so this form neither shows it nor needs to know what settles it.
         var form = new GameModSettingsForm(_platform, _settings.Current, snapshot, stored,
                                            installed: snapshot.IsConfigured,
-                                           refusal: SetupRefusal(report),
+                                           refusal: WriteRefusal(report),
                                            modUi: ModUiViewOf(report, preference));
 
         form.ReplaceModUi += async () =>
@@ -9260,7 +9272,10 @@ public partial class MainWindow : Window
                 draft.StrictSourceLanguage = bricks.StrictSourceLanguage;
             }
 
-            _pendingMod[report.Game.Path] = draft;
+            // Held only while it differs from what is decided for this game: a control that fills
+            // late reports a change that changes nothing (GameModOverrides.SameAs).
+            if (draft.SameAs(preference.Mod)) _pendingMod.Remove(report.Game.Path);
+            else _pendingMod[report.Game.Path] = draft;
 
             // ⚠ The BAR only, never refresh(). The bar lives in its own container and its steps are
             // computed from what is pending, so it can be redrawn while somebody is still typing;
@@ -11039,7 +11054,10 @@ public partial class MainWindow : Window
                       && TranslationOffers.For(report, TranslationWaiting(report))
                          is not (TranslationOffer.None or TranslationOffer.AlreadyInPlace);
 
-        if (steps.Count == 0 && blocked is null && !offered)
+        // ⚠ Whatever blocks the button: with nothing to do, what blocks it does not matter, and the
+        // running game in particular used to turn "fully set up" into a greyed one-click that had
+        // nothing to offer.
+        if (steps.Count == 0 && !offered)
         {
             // Everything this button could do is already done. Said rather than left blank:
             // an empty bar where a button used to be reads as something having gone wrong.

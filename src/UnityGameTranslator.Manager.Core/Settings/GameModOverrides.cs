@@ -305,6 +305,19 @@ public sealed class GameModOverrides
         copy.Shortcuts = ModShortcuts.CopyOf(Shortcuts);
         return copy;
     }
+
+    /// <summary>
+    /// Whether this holds exactly the answers <paramref name="other"/> holds — null reading as
+    /// "nothing answered". Compared as they are stored (their JSON), so a field added to the class
+    /// is compared without anybody having to list it here.
+    ///
+    /// 🔴 Why it exists: a form control that fills late (the model list, when the AI server
+    /// answers) reports a "change" that changes nothing. Held as a pending answer anyway, it kept
+    /// the card's Undo on screen — and brought it straight back after Undo, at the next fill.
+    /// </summary>
+    public bool SameAs(GameModOverrides? other) =>
+        System.Text.Json.JsonSerializer.Serialize(this)
+        == System.Text.Json.JsonSerializer.Serialize(other ?? new GameModOverrides());
 }
 
 /// <summary>

@@ -400,7 +400,10 @@ internal static class GameAssetsChecks
                 "{\"_uuid\":\"u\",\"_fonts\":{"
                 + "\"A\":{\"fallback\":\"[Custom] mine\"},\"B\":{\"fallback\":\"Candara\"},"
                 + "\"C\":{\"fallback\":\"comicbd\"},\"D\":{\"fallback\":\"Cambria\"},"
-                + "\"E\":{\"fallback\":\"Missing\"},\"F\":{\"fallback\":\"[Game] LiberationSans SDF\"}}}");
+                + "\"E\":{\"fallback\":\"Missing\"},\"F\":{\"fallback\":\"[Game] LiberationSans SDF\"},"
+                + "\"G\":{\"enabled\":false,\"fallback\":\"SwitchedOff\"}},"
+                + "\"_font_overrides\":[{\"match\":\"\",\"replacement\":\"NoMatch\"},"
+                + "{\"match\":\"Title\",\"enabled\":false,\"replacement\":\"RuleOff\"}]}");
 
             (string, string)[] table = [("Cambria", Path.Combine(system, "cambria.ttc"))];
             var uses = GameAssets.SystemFontsUsed(game, descriptor, [system], () => table);
@@ -411,6 +414,10 @@ internal static class GameAssetsChecks
                           && !Use("Missing").Includable && Use("Missing").Why!.Contains("not installed"),
                 "installed fonts are found as the mod finds them, and each one that cannot go says why",
                 "a name, a file name in a subfolder, the system's table; a collection and a missing font are named, not skipped");
+
+            Program.Check(uses.All(u => u.Reference is not ("SwitchedOff" or "NoMatch" or "RuleOff")),
+                "a font whose setting is switched off, or a rule with nothing to match, is not used",
+                "read as the mod reads them: exporting them would carry fonts the game never shows");
 
             Program.Check(uses.All(u => u.Reference is not ("mine" or "LiberationSans SDF")),
                 "a font fonts/ already provides, or one of the game's own, is not an installed font",

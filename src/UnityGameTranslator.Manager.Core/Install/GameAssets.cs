@@ -1115,15 +1115,28 @@ public static class GameAssets
             }
         }
 
+        // ⚠ Read as the mod reads them (TranslatorCore.ParseFontsSection / ParseFontOverridesSection):
+        // a setting switched off is not used — absent means on — and a rule with nothing to match
+        // is dropped. Counting them would carry fonts the game never shows.
+        static bool On(JsonObject setting) =>
+            setting["enabled"] is not JsonValue value || !value.TryGetValue<bool>(out var on) || on;
+
         if (root?[SettingsSections.FontsKey] is JsonObject fonts)
         {
             foreach (var (_, settings) in fonts)
-                if (settings is JsonObject font) Take(font["fallback"]);
+                if (settings is JsonObject font && On(font)) Take(font["fallback"]);
         }
 
         if (root?[SettingsSections.FontRulesKey] is JsonArray rules)
         {
-            foreach (var rule in rules.OfType<JsonObject>()) Take(rule["replacement"]);
+            foreach (var rule in rules.OfType<JsonObject>())
+            {
+                if (On(rule) && rule["match"] is JsonValue match && match.TryGetValue<string>(out var text)
+                    && !string.IsNullOrEmpty(text))
+                {
+                    Take(rule["replacement"]);
+                }
+            }
         }
 
         return stems;

@@ -483,6 +483,21 @@ public sealed class InstallEngine
                            skipWizard: !plan.LetWizardAsk, perGame: plan.Preference, modUi: plan.ModUi);
             }
 
+            // Where fonts, pictures and packs go, made now — the same folders the mod makes when it
+            // starts (AssetPacks.PreparedFolders), so they are there before the game ever runs.
+            // ⚠ Never a reason to undo a good install: a folder that cannot be made is said and left.
+            if (UserDataInventory.DataFolder(plan.Game.Path, plan.Loader) is { } dataFolder)
+            {
+                foreach (var prepared in UnityGameTranslator.Common.AssetPacks.PreparedFolders)
+                {
+                    try { Directory.CreateDirectory(Path.Combine(dataFolder, prepared)); }
+                    catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                    {
+                        Status?.Invoke($"Could not create the {prepared} folder: {e.Message}");
+                    }
+                }
+            }
+
             // 🔴 **The copies were for the rollback, and the rollback is over.** They existed so a
             // half-failed install could put back every file it had overwritten — which is
             // indisputable, and needs them only until this line. Kept afterwards they were a

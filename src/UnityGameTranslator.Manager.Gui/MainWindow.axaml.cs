@@ -3822,7 +3822,7 @@ public partial class MainWindow : Window
         // hang from, so nothing of the frame may come between it and the page it introduces.
         // Placed after the technical card once, the tabs sat below a screenful of paths and engine
         // versions — somebody had to scroll to discover the card even had two halves.
-        CardHead.Children.Add(TabStrip());
+        CardHead.Children.Add(TabStrip(report));
 
         // ⚠ Settled BEFORE the tabs split, and it used to live in the Setup branch alone. The bar
         // reads it, and the bar now exists on Home too: left where it was, a game opened on Home
@@ -3878,7 +3878,7 @@ public partial class MainWindow : Window
     {
         DetailPanel.Children.Clear();
 
-        foreach (var control in PageFor(_gameTab).Body(report))
+        foreach (var control in PageFor(_gameTab, report).Body(report))
             DetailPanel.Children.Add(control);
 
         // The same page after an act on it: where the reader is stays, and nothing arrives.
@@ -4843,7 +4843,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Which page of a game's card is showing. Home first, always — see TabStrip.</summary>
-    private enum GameTab { Home, Setup }
+    private enum GameTab { Home, Setup, Assets }
 
     private GameTab _gameTab = GameTab.Home;
 
@@ -4854,8 +4854,13 @@ public partial class MainWindow : Window
     /// Yields the controls, and adds none itself — so a page cannot quietly touch the panel around
     /// it, and the frame (header, tabs, blockers, the action bar) stays the same on every one.
     /// </param>
+    /// <param name="Offered">
+    /// Whether this game has the page at all — null for always. The Assets page exists once UGT Mod
+    /// is in the game: before that there is no folder its fonts and images would belong to.
+    /// </param>
     private sealed record GameTabPage(GameTab Tab, string Label,
-                                      Func<GameReport, IEnumerable<Control>> Body);
+                                      Func<GameReport, IEnumerable<Control>> Body,
+                                      Func<GameReport, bool>? Offered = null);
 
     /// <summary>
     /// The pages, in the order they are offered. **Adding one is adding a line here.**
@@ -4872,14 +4877,21 @@ public partial class MainWindow : Window
     {
         new GameTabPage(GameTab.Home, "This game", GameHome),
         new GameTabPage(GameTab.Setup, "Set up", GameSetup),
+        new GameTabPage(GameTab.Assets, "Assets", GameAssetsPage, AssetsOffered),
     };
+
+    /// <summary>The pages this game has — the list above, less those it is not offered.</summary>
+    private IEnumerable<GameTabPage> TabsOf(GameReport report) =>
+        GameTabs.Where(page => page.Offered?.Invoke(report) ?? true);
 
     /// <summary>
     /// The page for a tab — the first one when the tab is not among them, which is what makes an
     /// enum value with no page a wrong-looking screen rather than an empty one.
     /// </summary>
-    private GameTabPage PageFor(GameTab tab) =>
-        GameTabs.FirstOrDefault(page => page.Tab == tab) ?? GameTabs[0];
+    /// <remarks>⚠ A tab this game is no longer offered — the mod was just uninstalled while Assets
+    /// was open — falls back to the first page too, rather than drawing a page with nothing under it.</remarks>
+    private GameTabPage PageFor(GameTab tab, GameReport report) =>
+        TabsOf(report).FirstOrDefault(page => page.Tab == tab) ?? GameTabs[0];
 
     /// <summary>
     /// Which folded blocks of the current card are open.
@@ -4920,13 +4932,16 @@ public partial class MainWindow : Window
     /// ⚠ Walks <see cref="GameTabs"/> and names nothing itself. A strip that spelled its own tabs
     /// out could offer one that draws nothing, or leave out one that draws.
     /// </summary>
-    private Control TabStrip()
+    private Control TabStrip(GameReport report)
     {
         // ⚠ Tabs sit side by side, where buttons are spaced apart. The gap is half the argument:
         // things that touch read as one set of places, things kept apart read as separate acts.
         var strip = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
 
-        foreach (var page in GameTabs)
+        // The open tab, as drawn: one this game no longer has reads as the first.
+        var open = PageFor(_gameTab, report).Tab;
+
+        foreach (var page in TabsOf(report))
         {
             var button = new Button
             {
@@ -4938,7 +4953,7 @@ public partial class MainWindow : Window
                 Classes = { "tab" },
             };
 
-            button.Classes.Set("selected", page.Tab == _gameTab);
+            button.Classes.Set("selected", page.Tab == open);
 
             var chosen = page.Tab;
             button.Click += (_, _) =>
@@ -10670,7 +10685,8 @@ public partial class MainWindow : Window
         || _pendingPlan.ContainsKey(report.Game.Path)
         || _pendingWay.ContainsKey(report.Game.Path)
         || _pendingTranslation.ContainsKey(report.Game.Path)
-        || _pendingChoices.ContainsKey(report.Game.Path);
+        || _pendingChoices.ContainsKey(report.Game.Path)
+        || _pendingAssets.ContainsKey(report.Game.Path);
 
     /// <summary>A copy of this game's answers as they are decided — stored, nothing held laid over.</summary>
     private GameModOverrides DecidedMod(string gamePath) =>
@@ -10705,6 +10721,7 @@ public partial class MainWindow : Window
         _pendingWay.Remove(report.Game.Path);
         _pendingTranslation.Remove(report.Game.Path);
         _pendingChoices.Remove(report.Game.Path);
+        _pendingAssets.Remove(report.Game.Path);
     }
 
     /// <summary>
@@ -11370,7 +11387,7 @@ public partial class MainWindow : Window
     private enum OneClickAct
     {
         InstallLoader, UpdateLoader, InstallMod, UpdateMod, AddRuntimeLibraries,
-        ApplySettings, ApplyChoices, TakeTranslation, UpdateTranslation, ReplaceTranslation,
+        ApplySettings, ApplyChoices, AddAssets, TakeTranslation, UpdateTranslation, ReplaceTranslation,
     }
 
     /// <summary>One act, and the sentence shown for it.</summary>
@@ -11460,6 +11477,14 @@ public partial class MainWindow : Window
         {
             yield return new(OneClickAct.ApplyChoices,
                 "set this game's " + string.Join(", ", choices.Select(c => c.Said)));
+        }
+
+        // What was dropped on the Assets tab and accepted there — its own Apply (N), carried out by
+        // the one-click as well, like the bricks above. Only where this account may write.
+        if (mayChangeThisGame && PendingAssetCount(report.Game.Path) is > 0 and var assets)
+        {
+            yield return new(OneClickAct.AddAssets,
+                "add " + Composition.Amount(assets, "font or image", "fonts and images"));
         }
 
         // 🔴 **The one-click writes the translation file too, so it obeys the account rule.**
@@ -11851,6 +11876,29 @@ public partial class MainWindow : Window
                     complete = false;
                     message += Environment.NewLine + Environment.NewLine
                                + $"The {choice.Label} could not be written ({written.Failure}).";
+                }
+            }
+
+            // After the settings and before the translation: the pictures and their settings are
+            // merged into the file the translation step may then replace — so it goes first, and a
+            // replacement taken afterwards is the person's own choice, backed up like any other.
+            if (steps.Any(s => s.Act is OneClickAct.AddAssets)
+                && _pendingAssets.TryGetValue(report.Game.Path, out var heldAssets))
+            {
+                Work.Begin(StepOf(OneClickAct.AddAssets));
+
+                var accepted = heldAssets.Accepted;
+                var added = await Task.Run(() => GameAssets.Apply(_platform, report.Game, plan.Loader, accepted));
+
+                if (added.Done)
+                {
+                    _pendingAssets.Remove(report.Game.Path);
+                }
+                else
+                {
+                    complete = false;
+                    message += Environment.NewLine + Environment.NewLine
+                               + $"The fonts and images could not be added ({added.Failure}).";
                 }
             }
 

@@ -37,8 +37,8 @@ internal static class GameAssetsChecks
         {
             Directory.CreateDirectory(Path.Combine(folder, "fonts"));
             Directory.CreateDirectory(Path.Combine(folder, "images"));
-            File.WriteAllBytes(Path.Combine(folder, "fonts", "a.ttf"), Bytes("font a"));
-            File.WriteAllBytes(Path.Combine(folder, "images", "title.png"), Bytes("retouched by hand"));
+            File.WriteAllBytes(Path.Combine(folder, "fonts", "a.ttf"), Asset("a.ttf", "font a"));
+            File.WriteAllBytes(Path.Combine(folder, "images", "title.png"), Asset("title.png", "retouched by hand"));
             File.WriteAllText(translation,
                 "{\"_uuid\":\"u\",\"hello\":{\"v\":\"Bonjour\",\"t\":\"A\"},"
                 + "\"_fonts\":{\"LiberationSans SDF\":{\"enabled\":true,\"fallback\":\"[Custom] a\",\"type\":\"TMP\"}},"
@@ -73,7 +73,7 @@ internal static class GameAssetsChecks
             }
 
             var loosePng = Path.Combine(root, "stray.png");
-            File.WriteAllBytes(loosePng, Bytes("stray"));
+            File.WriteAllBytes(loosePng, Asset("stray.png", "stray"));
             var looseZip = Path.Combine(root, "fonts.zip");
             File.WriteAllBytes(looseZip, Bytes("zip"));
 
@@ -116,8 +116,8 @@ internal static class GameAssetsChecks
             var kept = plan.Offers.Where(o => o.Name != "Title").ToList();
             var result = GameAssets.Apply(null, game, descriptor, kept);
 
-            Program.Check(result.Done && File.ReadAllText(Path.Combine(folder, "images", "title.png")) == "retouched by hand"
-                          && File.ReadAllText(Path.Combine(folder, "fonts", "b.otf")) == "font b"
+            Program.Check(result.Done && Holds(Path.Combine(folder, "images", "title.png"), "retouched by hand")
+                          && Holds(Path.Combine(folder, "fonts", "b.otf"), "font b")
                           && File.Exists(Path.Combine(folder, "images", "logo.png")),
                 "what was kept is written, and a declined replacement leaves the file alone",
                 "declining must mean declining — the retouched picture exists nowhere else");
@@ -144,7 +144,7 @@ internal static class GameAssetsChecks
             var backups = Path.Combine(folder, Backups.FolderName);
             var backup = Directory.Exists(backups) ? Directory.GetDirectories(backups).FirstOrDefault() : null;
             Program.Check(backup is not null && File.Exists(Path.Combine(backup, "images", "title.png"))
-                          && File.ReadAllText(Path.Combine(backup, "images", "title.png")) == "retouched by hand",
+                          && Holds(Path.Combine(backup, "images", "title.png"), "retouched by hand"),
                 "a backup WITH the pictures is taken before",
                 "replacing a picture or a setting must never be the last copy of what was there");
 
@@ -182,6 +182,68 @@ internal static class GameAssetsChecks
                 "a pack from a newer tool, or with no manifest, is refused whole",
                 "half-understanding a newer layout writes files in the wrong place");
 
+            // ── Somebody else's pack, made to do harm ──────────────────────────────────────────
+
+            // A program renamed to a font and to a picture, in a pack and on its own.
+            var disguisedPack = Path.Combine(root, "disguised.ugtpack");
+            using (var zip = ZipFile.Open(disguisedPack, ZipArchiveMode.Create))
+            {
+                Entry(zip, "manifest.json", "{\"format\":1}");
+                Raw(zip, "fonts/tool.ttf", Program_);
+            }
+
+            var disguisedLoose = Path.Combine(root, "setup.otf");
+            File.WriteAllBytes(disguisedLoose, Program_);
+
+            var disguised = GameAssets.Plan(game, descriptor, [disguisedPack, disguisedLoose]);
+            Program.Check(disguised.Files.Count == 0
+                          && disguised.Refused.Any(r => r.Name == "tool.ttf" && r.Reason.Contains("not a font"))
+                          && disguised.Refused.Any(r => r.Name == "setup.otf" && r.Reason.Contains("not a font")),
+                "a program renamed to a font is refused on its bytes, in a pack or on its own",
+                "the name is a claim: it would be handed to the mod's font reader");
+
+            // A setting carrying fields nobody reads, and a field of the wrong kind.
+            var loaded = Path.Combine(root, "loaded.ugtpack");
+            using (var zip = ZipFile.Open(loaded, ZipArchiveMode.Create))
+            {
+                Entry(zip, "manifest.json", "{\"format\":1,\"images\":[{\"sprite_name\":\"Hero\",\"file\":\"hero.png\","
+                                            + "\"pivot_x\":0.5,\"path\":{\"not\":\"text\"},\"payload\":{\"run\":\"anything\"},"
+                                            + "\"pixels_per_unit\":\"100\"}]}");
+                Entry(zip, "images/hero.png", "hero");
+            }
+
+            var loadedPlan = GameAssets.Plan(game, descriptor, [loaded]);
+            GameAssets.Apply(null, game, descriptor, loadedPlan.Offers);
+            var hero = JsonNode.Parse(File.ReadAllText(translation))![TranslationFiles.ImagesSection]!.AsArray()
+                .OfType<JsonObject>().Single(d => d["sprite_name"]!.GetValue<string>() == "Hero");
+            Program.Check(hero["payload"] is null && hero["path"] is null && hero["pixels_per_unit"] is null
+                          && hero["pivot_x"]!.GetValue<double>() == 0.5 && hero["file"]!.GetValue<string>() == "hero.png",
+                "a setting from a pack keeps the fields the mod reads, of the right kind, and nothing else",
+                "what is written into the translation travels to the site and to every player who downloads it");
+
+            // More than the drive can take: refused on what the pack declares, nothing unpacked.
+            var tooBig = GameAssets.Plan(game, descriptor, [pack], room: 10);
+            Program.Check(tooBig.Files.Count == 0 && tooBig.Refused.Any(r => r.Reason.StartsWith("Too large")),
+                "a pack larger than the drive's free space is refused before anything is unpacked",
+                "nothing larger could ever be written, so there is no reason to read it");
+
+            // A zip that lies about a size: declared small, holding more. The reader stops at the
+            // declared size, so it cannot expand; what it yields is cut short, and its checksum says so.
+            var lying = Path.Combine(root, "lying.ugtpack");
+            using (var zip = ZipFile.Open(lying, ZipArchiveMode.Create))
+            {
+                Entry(zip, "manifest.json", "{\"format\":1}");
+                Entry(zip, "fonts/honest.ttf", "honest");
+                Raw(zip, "fonts/bomb.ttf", Asset("bomb.ttf", new string('0', 50_000)));
+            }
+
+            DeclareSize(lying, "fonts/bomb.ttf", 16);
+
+            var bomb = GameAssets.Plan(game, descriptor, [lying]);
+            Program.Check(bomb.Files.Count == 0 && bomb.Refused.Count > 0,
+                "a pack that holds more than it declares is refused whole, the honest file with it",
+                "it cannot expand past its declared size, and the file it yields is cut short — its checksum says so");
+
             // No translation yet: the fonts come in, the image settings wait.
             File.Delete(translation);
             var noTranslation = GameAssets.Plan(game, descriptor, [pack]);
@@ -199,9 +261,57 @@ internal static class GameAssetsChecks
 
     private static byte[] Bytes(string text) => Encoding.UTF8.GetBytes(text);
 
-    private static void Entry(ZipArchive zip, string name, string content)
+    /// <summary>What a program starts with — the bytes every Windows executable opens on.</summary>
+    private static readonly byte[] Program_ = [(byte)'M', (byte)'Z', 0x90, 0x00, 0x03, 0x00, 0x00, 0x00, 0x04, 0x00];
+
+    private static readonly byte[] PngSignature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+    private static readonly byte[] FontSignature = [0x00, 0x01, 0x00, 0x00, 0x00, 0x10, 0x01, 0x00];
+
+    /// <summary>A file's bytes as a real one of its kind begins — the signature its extension promises, then the text.</summary>
+    private static byte[] Asset(string name, string text)
     {
-        using var writer = new StreamWriter(zip.CreateEntry(name).Open(), new UTF8Encoding(false));
-        writer.Write(content);
+        var signature = AssetPacks.IsImageFile(name) ? PngSignature : AssetPacks.IsFontFile(name) ? FontSignature : [];
+        return [.. signature, .. Bytes(text)];
+    }
+
+    private static bool Holds(string path, string text) =>
+        File.ReadAllBytes(path).AsSpan().SequenceEqual(Asset(Path.GetFileName(path), text));
+
+    private static void Entry(ZipArchive zip, string name, string content) => Raw(zip, name, Asset(name, content));
+
+    private static void Raw(ZipArchive zip, string name, byte[] content)
+    {
+        using var stream = zip.CreateEntry(name).Open();
+        stream.Write(content);
+    }
+
+    /// <summary>
+    /// Rewrites the uncompressed size an archive DECLARES for one entry — in its local header and in
+    /// the central directory — leaving what it actually holds untouched. How a zip bomb is built.
+    /// </summary>
+    private static void DeclareSize(string archive, string entryName, uint size)
+    {
+        var bytes = File.ReadAllBytes(archive);
+        var name = Encoding.UTF8.GetBytes(entryName);
+
+        for (var i = 0; i + 46 < bytes.Length; i++)
+        {
+            if (bytes[i] != 0x50 || bytes[i + 1] != 0x4B) continue;
+
+            if (bytes[i + 2] == 0x03 && bytes[i + 3] == 0x04
+                && BitConverter.ToUInt16(bytes, i + 26) == name.Length
+                && bytes.AsSpan(i + 30, name.Length).SequenceEqual(name))
+            {
+                BitConverter.GetBytes(size).CopyTo(bytes, i + 22);
+            }
+            else if (bytes[i + 2] == 0x01 && bytes[i + 3] == 0x02
+                     && BitConverter.ToUInt16(bytes, i + 28) == name.Length
+                     && bytes.AsSpan(i + 46, name.Length).SequenceEqual(name))
+            {
+                BitConverter.GetBytes(size).CopyTo(bytes, i + 24);
+            }
+        }
+
+        File.WriteAllBytes(archive, bytes);
     }
 }

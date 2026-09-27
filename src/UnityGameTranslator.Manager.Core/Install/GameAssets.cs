@@ -186,7 +186,14 @@ public static class GameAssets
     /// means. Refusals are said per file, never silently dropped — a file that vanished from the
     /// list without a word is the thing somebody would search for.
     /// </summary>
-    public static AssetPlan Plan(GameInstall game, LoaderDescriptor descriptor, IEnumerable<string> paths)
+    public static AssetPlan Plan(GameInstall game, LoaderDescriptor descriptor, IEnumerable<string> paths) =>
+        Plan(game, descriptor, paths, room: null);
+
+    /// <param name="room">
+    /// How many bytes the drop may read in all — the drive's free space when null, which is what
+    /// every caller but the checks passes (they need a drive that is "full" on demand).
+    /// </param>
+    public static AssetPlan Plan(GameInstall game, LoaderDescriptor descriptor, IEnumerable<string> paths, long? room)
     {
         var folder = UserDataInventory.DataFolder(game.Path, descriptor);
         if (folder is null) return AssetPlan.Empty with { Refused = [new("", UserDataInventory.OutsideGameRefusal)] };
@@ -206,6 +213,12 @@ public static class GameAssets
         var refused = new List<RefusedAsset>();
         var madeFor = new List<string>();
 
+        // 🔴 **Never read more than could be written.** Everything handed over is read to be
+        // measured, and a zip entry can unpack to terabytes from a few kilobytes. The bound is the
+        // room left on the drive this game sits on — nothing larger could ever be written there —
+        // shared by every file of the drop, and asked of the system, not decided here.
+        var budget = new ReadBudget(room ?? FreeSpace(folder) ?? long.MaxValue);
+
         foreach (var path in paths)
         {
             var name = Path.GetFileName(path);
@@ -220,18 +233,18 @@ public static class GameAssets
 
                 if (AssetPacks.IsPack(name))
                 {
-                    ReadPack(game, path, name, files, definitions, named, refused, madeFor, hasTranslation: root is not null);
+                    ReadPack(game, path, name, files, definitions, named, refused, madeFor, hasTranslation: root is not null, budget);
                     continue;
                 }
 
                 switch (AssetPacks.KindOfFile(name))
                 {
                     case AssetKind.Font:
-                        files[(AssetKind.Font, name)] = Loose(AssetKind.Font, path, name);
+                        if (Loose(AssetKind.Font, path, name, refused, budget) is { } font) files[(AssetKind.Font, name)] = font;
                         break;
 
                     case AssetKind.Image when named.Contains(name):
-                        files[(AssetKind.Image, name)] = Loose(AssetKind.Image, path, name);
+                        if (Loose(AssetKind.Image, path, name, refused, budget) is { } image) files[(AssetKind.Image, name)] = image;
                         break;
 
                     case AssetKind.Image:
@@ -267,19 +280,75 @@ public static class GameAssets
         return new AssetPlan(plannedFiles, plannedDefinitions, refused, madeFor.Distinct().ToList());
     }
 
-    private static IncomingAsset Loose(AssetKind kind, string path, string name)
+    private static IncomingAsset? Loose(AssetKind kind, string path, string name, List<RefusedAsset> refused,
+                                        ReadBudget budget)
     {
+        // A file on disk states its real size: too large for the drive, it is not even opened.
+        var size = new FileInfo(path).Length;
+        if (size > budget.Left)
+        {
+            refused.Add(new(name, TooLarge(size, budget)));
+            return null;
+        }
+
         using var stream = File.OpenRead(path);
-        return new IncomingAsset(kind, name, name, path, null, stream.Length, Sha256Of(stream));
+        var measured = Measure(stream, size);
+        budget.Spend(measured.Length);
+
+        if (!AssetPacks.ContentMatches(name, measured.Head, measured.HeadCount))
+        {
+            refused.Add(new(name, NotWhatItsNameSays(kind)));
+            return null;
+        }
+
+        return new IncomingAsset(kind, name, name, path, null, measured.Length, measured.Sha256);
     }
 
+    /// <summary>What a screen says about a file larger than the drive can take.</summary>
+    private static string TooLarge(long size, ReadBudget budget) =>
+        $"Too large: {Megabytes(size)}, and the drive holding this game has {Megabytes(Math.Max(0, budget.Left))} free.";
+
+    /// <summary>What may still be read for one drop — the drive's free room, less what was read.</summary>
+    private sealed class ReadBudget(long left)
+    {
+        public long Left { get; private set; } = left;
+
+        public void Spend(long bytes) => Left -= bytes;
+    }
+
+    /// <summary>What a screen says about a file whose bytes are not what its extension claims.</summary>
+    private static string NotWhatItsNameSays(AssetKind kind) =>
+        kind == AssetKind.Font
+            ? "Its content is not a font, whatever its name says."
+            : "Its content is not a PNG image, whatever its name says.";
+
+    /// <summary>
+    /// Reads one pack into the plan — or nothing of it at all.
+    ///
+    /// 🔴 **A pack that lies is refused whole.** Every size is checked against what the zip DECLARES
+    /// before a byte is unpacked: an entry declaring terabytes is refused on its declaration. One
+    /// declaring kilobytes cannot unpack to more — .NET's reader stops at the declared size (measured
+    /// on a forged archive, 2026-09-27), and the read here stops one byte past it as well, should that
+    /// ever change. What such an entry then yields is a truncated file, which its CRC-32 — declared
+    /// by the zip beside the size — exposes. Either way nothing from that pack is kept: a file built
+    /// to mislead is not sorted into its honest and dishonest halves.
+    /// </summary>
     private static void ReadPack(GameInstall game, string path, string packName,
                                  Dictionary<(AssetKind, string), IncomingAsset> files,
                                  Dictionary<string, (JsonObject, string, string)> definitions,
                                  HashSet<string> named, List<RefusedAsset> refused, List<string> madeFor,
-                                 bool hasTranslation)
+                                 bool hasTranslation, ReadBudget budget)
     {
         using var zip = ZipFile.OpenRead(path);
+
+        // What the pack declares, from its directory alone — nothing is unpacked yet.
+        var assetEntries = zip.Entries.Where(e => AssetPacks.TryEntry(e.FullName, out _, out _)).ToList();
+        var declared = assetEntries.Sum(e => e.Length);
+        if (declared > budget.Left)
+        {
+            refused.Add(new(packName, TooLarge(declared, budget)));
+            return;
+        }
 
         var manifestEntry = zip.GetEntry(AssetPacks.ManifestName);
         if (manifestEntry is null)
@@ -288,16 +357,40 @@ public static class GameAssets
             return;
         }
 
-        JsonObject manifest;
-        using (var reader = new StreamReader(manifestEntry.Open()))
+        // ⚠ The manifest is parsed in memory, so it is bounded by what it can legitimately hold:
+        // a few hundred bytes of settings per picture the pack carries.
+        var manifestRoom = ManifestBytesPerImage * (assetEntries.Count + 1);
+        if (manifestEntry.Length > manifestRoom)
         {
-            if (JsonNode.Parse(reader.ReadToEnd(), documentOptions: Lenient) is not JsonObject parsed)
+            refused.Add(new(packName, Misleading));
+            return;
+        }
+
+        JsonObject manifest;
+        using (var stream = manifestEntry.Open())
+        {
+            var bytes = ReadAtMost(stream, manifestEntry.Length);
+            if (bytes is null)
+            {
+                refused.Add(new(packName, Misleading));
+                return;
+            }
+
+            try
+            {
+                if (JsonNode.Parse(Encoding.UTF8.GetString(bytes), documentOptions: Lenient) is not JsonObject parsed)
+                {
+                    refused.Add(new(packName, "Not a UGT asset pack: its manifest cannot be read."));
+                    return;
+                }
+
+                manifest = parsed;
+            }
+            catch (JsonException)
             {
                 refused.Add(new(packName, "Not a UGT asset pack: its manifest cannot be read."));
                 return;
             }
-
-            manifest = parsed;
         }
 
         if (IntOf(manifest["format"]) is not { } format || format < 1)
@@ -312,37 +405,49 @@ public static class GameAssets
             return;
         }
 
-        if (OtherGame(game, manifest["game"] as JsonObject) is { } other) madeFor.Add(other);
-
+        // Read into the pack's own lists first: they reach the plan only if the whole pack is honest.
+        var fonts = new List<IncomingAsset>();
         var carried = new Dictionary<string, IncomingAsset>(StringComparer.OrdinalIgnoreCase);
-        var ignored = 0;
+        var packRefused = new List<RefusedAsset>();
+        var ignored = zip.Entries.Count(e => e.FullName != AssetPacks.ManifestName && !e.FullName.EndsWith('/')
+                                             && !AssetPacks.TryEntry(e.FullName, out _, out _));
 
-        foreach (var entry in zip.Entries)
+        foreach (var entry in assetEntries)
         {
-            if (entry.FullName == AssetPacks.ManifestName || entry.FullName.EndsWith('/')) continue;
+            AssetPacks.TryEntry(entry.FullName, out var kind, out var bare);
 
-            if (!AssetPacks.TryEntry(entry.FullName, out var kind, out var bare))
+            using var stream = entry.Open();
+            var measured = Measure(stream, entry.Length);
+            budget.Spend(measured.Length);
+
+            if (measured.Over || measured.Crc32 != entry.Crc32)
             {
-                ignored++;
+                refused.Add(new(packName, Misleading));
+                return;
+            }
+
+            if (!AssetPacks.ContentMatches(bare, measured.Head, measured.HeadCount))
+            {
+                packRefused.Add(new(bare, NotWhatItsNameSays(kind)));
                 continue;
             }
 
-            using var stream = entry.Open();
-            var asset = new IncomingAsset(kind, bare, packName, path, entry.FullName, entry.Length, Sha256Of(stream));
+            var asset = new IncomingAsset(kind, bare, packName, path, entry.FullName, measured.Length, measured.Sha256);
 
-            if (kind == AssetKind.Font) files[(AssetKind.Font, bare)] = asset;
+            if (kind == AssetKind.Font) fonts.Add(asset);
             else carried[bare] = asset;
         }
 
         if (ignored > 0)
         {
-            refused.Add(new(packName, ignored == 1
+            packRefused.Add(new(packName, ignored == 1
                 ? "1 file in it is not a font or an image, and was left out."
                 : $"{ignored} files in it are not fonts or images, and were left out."));
         }
 
         // The definitions, each tied to a picture the pack carries — an image is only ever written
         // together with what makes the mod use it.
+        var packDefinitions = new Dictionary<string, (JsonObject, string, string)>(StringComparer.Ordinal);
         var defined = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         if (manifest["images"] is JsonArray images)
@@ -354,34 +459,92 @@ public static class GameAssets
                 var file = FileOf(definition);
                 if (file is null || !carried.ContainsKey(file))
                 {
-                    refused.Add(new(sprite, $"Its image is missing from {packName}."));
+                    packRefused.Add(new(sprite, $"Its image is missing from {packName}."));
                     continue;
                 }
 
                 if (!hasTranslation)
                 {
-                    refused.Add(new(sprite, "This game has no translation file yet. Play it once with "
-                                            + "UGT Mod, then add the pack again."));
+                    packRefused.Add(new(sprite, "This game has no translation file yet. Play it once with "
+                                                + "UGT Mod, then add the pack again."));
                     continue;
                 }
 
-                // Written as the mod writes it: the current field name, whatever the pack used.
-                var copy = (JsonObject)definition.DeepClone();
-                foreach (var legacy in TranslationFiles.ImageFileLegacyFields) copy.Remove(legacy);
-                copy[TranslationFiles.ImageFileField] = file;
-
-                definitions[sprite] = (copy, file, packName);
+                packDefinitions[sprite] = (KnownFieldsOf(definition, sprite, file), file, packName);
                 defined.Add(file);
             }
         }
+
+        // Honest throughout: now, and only now, what it carries joins the plan.
+        if (OtherGame(game, manifest["game"] as JsonObject) is { } other) madeFor.Add(other);
+
+        foreach (var font in fonts) files[(AssetKind.Font, font.Name)] = font;
+        foreach (var (sprite, definition) in packDefinitions) definitions[sprite] = definition;
 
         foreach (var (bare, asset) in carried)
         {
             if (defined.Contains(bare) || named.Contains(bare))
                 files[(AssetKind.Image, bare)] = asset;
             else
-                refused.Add(new(bare, $"No image setting in {packName} or in this game's translation uses it."));
+                packRefused.Add(new(bare, $"No image setting in {packName} or in this game's translation uses it."));
         }
+
+        refused.AddRange(packRefused);
+    }
+
+    /// <summary>What a screen says about a pack whose sizes do not match what it declares.</summary>
+    private const string Misleading =
+        "Damaged, or built to mislead: a file in it is not what the pack says. Nothing from it was used.";
+
+    /// <summary>
+    /// Room for one picture's settings in a manifest — a ratio to what the pack carries, not a size
+    /// picked for manifests. A setting is a dozen short fields, a few hundred bytes written out; this
+    /// leaves ten times that, and a manifest past it describes pictures the pack does not hold.
+    /// </summary>
+    private const int ManifestBytesPerImage = 4096;
+
+    /// <summary>Reads a stream that must hold exactly <paramref name="declared"/> bytes — null when it holds more.</summary>
+    private static byte[]? ReadAtMost(Stream stream, long declared)
+    {
+        using var memory = new MemoryStream();
+        var buffer = new byte[8192];
+        int read;
+
+        while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            memory.Write(buffer, 0, read);
+            if (memory.Length > declared) return null;
+        }
+
+        return memory.ToArray();
+    }
+
+    /// <summary>
+    /// A definition from a pack, rebuilt from the fields the mod reads and nothing more — text where
+    /// text is expected, numbers where numbers are. Written as the mod writes it: the current file
+    /// field, whatever spelling the pack used.
+    ///
+    /// 🔴 **Never copied whole.** What goes into the translation file travels with it to the site and
+    /// to everybody who downloads it; a field nobody reads is a place to carry anything.
+    /// </summary>
+    private static JsonObject KnownFieldsOf(JsonObject definition, string sprite, string file)
+    {
+        var known = new JsonObject { [TranslationFiles.ImageSpriteField] = sprite };
+
+        if (definition[TranslationFiles.ImagePathField] is JsonValue path && path.TryGetValue<string>(out var text))
+            known[TranslationFiles.ImagePathField] = text;
+
+        foreach (var field in TranslationFiles.ImageNumberFields)
+        {
+            if (definition[field] is JsonValue value && value.TryGetValue<double>(out var number)
+                && double.IsFinite(number))
+            {
+                known[field] = number;
+            }
+        }
+
+        known[TranslationFiles.ImageFileField] = file;
+        return known;
     }
 
     /// <summary>The game a pack names, when it is visibly another one — null when it matches or says nothing.</summary>
@@ -439,6 +602,15 @@ public static class GameAssets
         var toDefine = definitions.Where(d => d.Change != AssetChange.Same).ToList();
         if (toWrite.Count == 0 && toDefine.Count == 0) return new(true, 0, null);
 
+        // ⚠ Room on the drive, measured now — the bound is the disk this game sits on, not a size
+        // decided here. A pack that would fill it is refused before a byte is written.
+        var needed = toWrite.Sum(f => f.Asset.Length);
+        if (FreeSpace(folder) is { } free && needed > free)
+        {
+            return new(false, 0, $"Not enough free space on this drive: {Megabytes(needed)} needed, "
+                                 + $"{Megabytes(free)} free.");
+        }
+
         try
         {
             if (toDefine.Count > 0 || toWrite.Any(f => f.Change == AssetChange.Replace))
@@ -457,13 +629,24 @@ public static class GameAssets
                 var target = Path.Combine(directory, asset.Name);
                 var temp = target + ".tmp";
 
-                using (var source = OpenSource(asset))
-                using (var output = File.Create(temp))
+                // 🔴 **What is written is what was read and agreed to.** The pack or the file can change
+                // between the list on screen and Apply; copied through a hash and a counter, a single
+                // byte more or different aborts before the file takes its place.
+                try
                 {
-                    source.CopyTo(output);
+                    using (var source = OpenSource(asset))
+                    using (var output = File.Create(temp))
+                    {
+                        CopyExactly(source, output, asset);
+                    }
+
+                    File.Move(temp, target, overwrite: true);
+                }
+                finally
+                {
+                    if (File.Exists(temp)) File.Delete(temp);
                 }
 
-                File.Move(temp, target, overwrite: true);
                 written++;
             }
 
@@ -727,5 +910,98 @@ public static class GameAssets
     private static int? IntOf(JsonNode? node) =>
         node is JsonValue value && value.TryGetValue<int>(out var number) ? number : null;
 
-    private static string Sha256Of(Stream stream) => Convert.ToHexString(SHA256.HashData(stream));
+    private static string Sha256Of(Stream stream) => Measure(stream, long.MaxValue).Sha256;
+
+    /// <summary>
+    /// The zip checksum (CRC-32, IEEE), which every entry declares beside its size — so a truncated
+    /// or altered entry is told from the one its pack describes. Written here rather than taken from
+    /// a package: twenty lines, against a new dependency in a tool that ships as one signed file.
+    /// </summary>
+    private static readonly uint[] Crc32Table = Enumerable.Range(0, 256).Select(n =>
+    {
+        var c = (uint)n;
+        for (var k = 0; k < 8; k++) c = (c & 1) != 0 ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+        return c;
+    }).ToArray();
+
+    private static uint Crc32Step(uint crc, byte[] buffer, int count)
+    {
+        for (var i = 0; i < count; i++) crc = Crc32Table[(crc ^ buffer[i]) & 0xFF] ^ (crc >> 8);
+        return crc;
+    }
+
+    /// <summary>
+    /// What a stream actually holds — its length, its hash and its first bytes, in one read — and
+    /// never more than <paramref name="limit"/> bytes: past it, the read stops and says so (Over).
+    /// </summary>
+    private static (long Length, string Sha256, byte[] Head, int HeadCount, bool Over, uint Crc32) Measure(Stream stream, long limit)
+    {
+        var crc = 0xFFFFFFFFu;
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var head = new byte[AssetPacks.HeaderLength];
+        var headCount = 0;
+        long length = 0;
+        var buffer = new byte[81920];
+
+        int read;
+        while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            if (headCount < head.Length)
+            {
+                var take = Math.Min(head.Length - headCount, read);
+                Array.Copy(buffer, 0, head, headCount, take);
+                headCount += take;
+            }
+
+            hash.AppendData(buffer, 0, read);
+            crc = Crc32Step(crc, buffer, read);
+            length += read;
+
+            if (length > limit) return (length, "", head, headCount, true, 0);
+        }
+
+        return (length, Convert.ToHexString(hash.GetHashAndReset()), head, headCount, false, ~crc);
+    }
+
+    /// <summary>Copies a source that must still be exactly what was planned — its length and its hash.</summary>
+    private static void CopyExactly(Stream source, Stream output, IncomingAsset asset)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var buffer = new byte[81920];
+        long copied = 0;
+
+        int read;
+        while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            copied += read;
+            if (copied > asset.Length)
+                throw new InvalidDataException($"{asset.Name} changed since it was read. Add it again.");
+
+            hash.AppendData(buffer, 0, read);
+            output.Write(buffer, 0, read);
+        }
+
+        if (copied != asset.Length
+            || !string.Equals(Convert.ToHexString(hash.GetHashAndReset()), asset.Sha256, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException($"{asset.Name} changed since it was read. Add it again.");
+        }
+    }
+
+    /// <summary>Free bytes on the drive holding this folder — null when the system cannot say.</summary>
+    private static long? FreeSpace(string folder)
+    {
+        try
+        {
+            var root = Path.GetPathRoot(Path.GetFullPath(folder));
+            return string.IsNullOrEmpty(root) ? null : new DriveInfo(root).AvailableFreeSpace;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            // A drive that cannot be measured is not refused: the write itself will say if it fails.
+            return null;
+        }
+    }
+
+    private static string Megabytes(long bytes) => $"{bytes / 1024d / 1024d:0.#} MB";
 }

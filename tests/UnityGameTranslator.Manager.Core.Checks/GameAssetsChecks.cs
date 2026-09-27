@@ -315,6 +315,35 @@ internal static class GameAssetsChecks
                 "the same pack a second time changes nothing, not a byte of the file",
                 "adding what is already there must not grow the file or rewrite it");
 
+            // ── The language of the pictures, and names in any script ──────────────────────────
+            File.WriteAllBytes(Path.Combine(folder, "images", "标题.png"), Asset("标题.png", "LOYAU"));
+            File.WriteAllText(translation,
+                "{\"_uuid\":\"u\",\"_target_language\":\"French\",\"_image_replacements\":["
+                + "{\"sprite_name\":\"标题\",\"original_width\":926,\"original_height\":262,\"file\":\"标题.png\"}]}");
+
+            var french = Path.Combine(root, "french.ugtpack");
+            var exported = GameAssets.Export(game, descriptor, french, "checks");
+            var roundTrip = GameAssets.Plan(game, descriptor, [french]);
+            Program.Check(exported.Done && roundTrip.Changes == 0 && roundTrip.Files.Single().Asset.Name == "标题.png"
+                          && roundTrip.OtherLanguages.Count == 0,
+                "a picture named in Chinese leaves in a pack and comes back unchanged",
+                "sprite and file names are the game's own, in whatever script the game is written");
+
+            File.WriteAllText(translation,
+                "{\"_uuid\":\"u\",\"_target_language\":\"German\",\"_image_replacements\":[]}");
+            var german = GameAssets.Plan(game, descriptor, [french]);
+            Program.Check(german.OtherLanguages.Count == 1
+                          && german.OtherLanguages[0] is { PackLanguage: "French", GameLanguage: "German" }
+                          && german.Definitions.Count == 1 && german.Refused.Count == 0,
+                "pictures made for French, offered to a game translated into German: said, and still offered",
+                "they show French text — and name exactly which pictures to remake, settings included");
+
+            File.WriteAllText(translation,
+                "{\"_uuid\":\"u\",\"_target_language\":\"fr\",\"_image_replacements\":[]}");
+            Program.Check(GameAssets.Plan(game, descriptor, [french]).OtherLanguages.Count == 0,
+                "the same language spelled as a code is the same language",
+                "\"fr\" against \"French\" is not a warning somebody should read");
+
             // A file that cannot be read safely: a key written twice, and a section of the wrong shape.
             foreach (var damaged in new[]
             {

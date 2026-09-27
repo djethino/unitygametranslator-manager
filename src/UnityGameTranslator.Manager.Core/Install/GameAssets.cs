@@ -42,12 +42,14 @@ public sealed record RefusedAsset(string Name, string Reason);
 /// Everything a set of dropped files would do, before anything is written.
 /// </summary>
 /// <param name="MadeFor">Games a pack names that are not this one — said, never refused.</param>
+/// <param name="OtherLanguages">Packs whose pictures were made for another target language — said, never refused.</param>
 public sealed record AssetPlan(IReadOnlyList<PlannedAsset> Files,
                                IReadOnlyList<PlannedDefinition> Definitions,
                                IReadOnlyList<RefusedAsset> Refused,
-                               IReadOnlyList<string> MadeFor)
+                               IReadOnlyList<string> MadeFor,
+                               IReadOnlyList<LanguageMismatch> OtherLanguages)
 {
-    public static readonly AssetPlan Empty = new([], [], [], []);
+    public static readonly AssetPlan Empty = new([], [], [], [], []);
 
     /// <summary>How many offers would change something.</summary>
     public int Changes => Offers.Count(o => o.Change != AssetChange.Same);
@@ -98,6 +100,16 @@ public sealed record AssetPlan(IReadOnlyList<PlannedAsset> Files,
         : a == AssetChange.Add || b == AssetChange.Add ? AssetChange.Add
         : AssetChange.Same;
 }
+
+/// <summary>
+/// A pack whose pictures carry text in another language than this game's translation.
+///
+/// ⚠ Said, never refused (user, 2026-09-27): a picture holds translated text, so a French pack on a
+/// game translated into German shows French — AND it tells that player exactly which pictures to
+/// redo, at which size, since the settings come with them. Remaking a picture from the original is
+/// now within anybody's reach with an image model.
+/// </summary>
+public sealed record LanguageMismatch(string Pack, string PackLanguage, string GameLanguage);
 
 /// <summary>One row of a plan: a font, or an image with its setting — accepted or declined as a whole.</summary>
 /// <param name="Name">The font's file name, or the image's sprite name (what the mod's inspector shows).</param>
@@ -216,6 +228,8 @@ public static class GameAssets
         var definitions = new Dictionary<string, (JsonObject Definition, string File, string From)>(TranslationFiles.SpriteNames);
         var refused = new List<RefusedAsset>();
         var madeFor = new List<string>();
+        var otherLanguages = new List<LanguageMismatch>();
+        var gameLanguage = TargetLanguageOf(root);
 
         // 🔴 **Never read more than could be written.** Everything handed over is read to be
         // measured, and a zip entry can unpack to terabytes from a few kilobytes. The bound is the
@@ -237,7 +251,8 @@ public static class GameAssets
 
                 if (AssetPacks.IsPack(name))
                 {
-                    ReadPack(game, path, name, files, definitions, named, refused, madeFor, ImageSettingsRefusal(translation), budget);
+                    ReadPack(game, path, name, files, definitions, named, refused, madeFor, ImageSettingsRefusal(translation), budget,
+                             gameLanguage, otherLanguages);
                     continue;
                 }
 
@@ -281,7 +296,7 @@ public static class GameAssets
             .OrderBy(d => d.SpriteName, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        return new AssetPlan(plannedFiles, plannedDefinitions, refused, madeFor.Distinct().ToList());
+        return new AssetPlan(plannedFiles, plannedDefinitions, refused, madeFor.Distinct().ToList(), otherLanguages);
     }
 
     private static IncomingAsset? Loose(AssetKind kind, string path, string name, List<RefusedAsset> refused,
@@ -309,6 +324,15 @@ public static class GameAssets
     }
 
     private static string FileKey(AssetKind kind, string name) => $"{kind}/{name}";
+
+    /// <summary>The manifest field naming the language of the pictures' text.</summary>
+    private const string TargetLanguageField = "target_language";
+
+    /// <summary>The language a translation translates INTO, as its file states it — null when it does not.</summary>
+    private static string? TargetLanguageOf(JsonObject? root) => TextOf(root?["_target_language"]);
+
+    private static string? TextOf(JsonNode? node) =>
+        node is JsonValue value && value.TryGetValue<string>(out var text) && !string.IsNullOrWhiteSpace(text) ? text : null;
 
     /// <summary>Why image settings cannot go into this game's translation file — null when they can.</summary>
     private static string? ImageSettingsRefusal(TranslationRead translation) =>
@@ -355,7 +379,8 @@ public static class GameAssets
                                  Dictionary<string, IncomingAsset> files,
                                  Dictionary<string, (JsonObject, string, string)> definitions,
                                  HashSet<string> named, List<RefusedAsset> refused, List<string> madeFor,
-                                 string? imageSettingsRefusal, ReadBudget budget)
+                                 string? imageSettingsRefusal, ReadBudget budget,
+                                 string? gameLanguage, List<LanguageMismatch> otherLanguages)
     {
         using var zip = ZipFile.OpenRead(path);
 
@@ -494,6 +519,14 @@ public static class GameAssets
 
         // Honest throughout: now, and only now, what it carries joins the plan.
         if (OtherGame(game, manifest["game"] as JsonObject) is { } other) madeFor.Add(other);
+
+        // Only a pack bringing pictures: fonts carry no language.
+        if (packDefinitions.Count > 0 && TextOf(manifest[TargetLanguageField]) is { } packLanguage
+            && Languages.IsSettled(packLanguage) && Languages.IsSettled(gameLanguage)
+            && !Languages.Matches(packLanguage, Languages.CodeOf(gameLanguage) ?? gameLanguage))
+        {
+            otherLanguages.Add(new LanguageMismatch(packName, packLanguage, gameLanguage!));
+        }
 
         foreach (var font in fonts) files[FileKey(AssetKind.Font, font.Name)] = font;
         foreach (var (sprite, definition) in packDefinitions) definitions[sprite] = definition;
@@ -845,6 +878,10 @@ public static class GameAssets
                     ["made_by"] = madeBy,
                     ["images"] = images,
                 };
+
+                // The language the pictures' text is in — the translation's target. A player of
+                // another language is told, and knows which pictures to remake.
+                if (Languages.IsSettled(TargetLanguageOf(root))) manifest[TargetLanguageField] = TargetLanguageOf(root);
 
                 var entry = zip.CreateEntry(AssetPacks.ManifestName, CompressionLevel.Optimal);
                 using var writer = new StreamWriter(entry.Open(), new UTF8Encoding(false));

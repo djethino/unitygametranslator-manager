@@ -289,6 +289,16 @@ public partial class MainWindow
         foreach (var other in plan.MadeFor)
             yield return Callout($"Made for {other}. Check that it is meant for this game.", Tone.Warning);
 
+        // Pictures made for another language: still worth having — the rows name each picture to
+        // remake, and its settings come with it (user, 2026-09-27).
+        foreach (var language in plan.OtherLanguages)
+        {
+            var made = Languages.NameOf(language.PackLanguage) ?? language.PackLanguage;
+            var here = Languages.NameOf(language.GameLanguage) ?? language.GameLanguage;
+            yield return Callout($"Images made for {made}. This game's translation is {here}: "
+                                 + $"the pictures in {language.Pack} still show {made} text.", Tone.Warning);
+        }
+
         // Declining is the default for a replacement; one box for all of them when there are several.
         var rowBoxes = new List<(CheckBox Box, string Key)>();
         if (replaces.Count > 1)

@@ -444,13 +444,19 @@ public partial class MainWindow
             return panel;
         }
 
-        // Used ones first: they are the translation's, and the ones an export carries.
+        // Used ones first: they are the translation's, and the ones an export carries. "Used" means
+        // some text is drawn from the file (GameAssets.UseOf) — being named is not enough.
         var list = new StackPanel { Spacing = 4 };
-        foreach (var font in state.Fonts.OrderBy(f => !f.Used))
+        foreach (var font in state.Fonts.OrderBy(f => f.Use))
         {
-            list.Children.Add(NameAndDetail(font.Name,
-                (font.Used ? "Used by the translation" : "Not used") + " · " + SizeOf(font.Length),
-                Tone.Neutral));
+            var use = font.Use switch
+            {
+                FontUse.Used => "Used by the translation",
+                FontUse.UsedWhereNotInstalled => "Used where this font is not installed",
+                FontUse.LegacyTextOnly => "Not used: legacy text (UI.Text) only uses installed fonts",
+                _ => "Not used",
+            };
+            list.Children.Add(NameAndDetail(font.Name, use + " · " + SizeOf(font.Length), Tone.Neutral));
         }
 
         panel.Children.Add(Bounded(list));

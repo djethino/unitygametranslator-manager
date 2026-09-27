@@ -10,9 +10,28 @@ using UnityGameTranslator.Manager.Core.Platform;
 
 namespace UnityGameTranslator.Manager.Core.Install;
 
-/// <summary>A font this game holds, and whether its translation uses it.</summary>
-/// <param name="Used">Named by an active `_fonts[…].fallback` or `_font_overrides[].replacement` — what an export carries.</param>
-public sealed record GameFont(string Name, long Length, bool Used);
+/// <summary>What a font file in fonts/ does for the translation, read by <see cref="FontReferences"/>.</summary>
+public enum FontUse
+{
+    /// <summary>A "[Custom] X" reference serving TextMeshPro text: this file is the font shown.</summary>
+    Used,
+
+    /// <summary>A bare "X" serving TextMeshPro text: the installed X answers first, this copy where it is not installed.</summary>
+    UsedWhereNotInstalled,
+
+    /// <summary>Named only by legacy text (UI.Text), which never reads a font file.</summary>
+    LegacyTextOnly,
+
+    /// <summary>Named by nothing the translation applies.</summary>
+    NotUsed,
+}
+
+/// <summary>A font this game holds, and what its translation does with it.</summary>
+public sealed record GameFont(string Name, long Length, FontUse Use)
+{
+    /// <summary>Whether an export carries it: only a file some text can be drawn from.</summary>
+    public bool Exported => Use is FontUse.Used or FontUse.UsedWhereNotInstalled;
+}
 
 /// <summary>An image this game's translation defines, and whether its file is there.</summary>
 public sealed record GameImage(string SpriteName, string? File, bool Present);
@@ -63,7 +82,7 @@ public static class GameAssets
         if (folder is null) return new GameAssetsState([], [], false);
 
         var translation = ReadTranslation(TranslationPath(folder));
-        var named = FontStemsNamed(translation.Root);
+        var references = FontReferencesNamed(translation.Root);
 
         var fonts = new List<GameFont>();
         var fontsFolder = Path.Combine(folder, AssetPacks.FontsFolder);
@@ -73,7 +92,7 @@ public static class GameAssets
             {
                 var name = Path.GetFileName(file);
                 if (AssetPacks.IsFontFile(name))
-                    fonts.Add(new GameFont(name, new FileInfo(file).Length, named.Any(stem => AssetPacks.IsFontFileFor(name, stem))));
+                    fonts.Add(new GameFont(name, new FileInfo(file).Length, UseOf(name, references)));
             }
         }
 
@@ -341,15 +360,17 @@ public static class GameAssets
         foreach (var group in installed)
         {
             var stem = group.Key;
-            if (local.Any(file => AssetPacks.IsFontFileFor(file, stem))) continue;   // fonts/ provides it
 
             // 🔴 A copy only helps TextMeshPro text (FontReferences.ReadsFontFiles): legacy text is
             // drawn from INSTALLED fonts, so a copy carried for it would arrive and never be used.
+            // Said even when fonts/ holds a copy: that copy is not exported either (UseOf).
             if (!group.Any(r => r.ReadsFiles))
             {
                 uses.Add(new SystemFontUse(stem, null, "used by legacy text (UI.Text), which only uses fonts installed on the computer"));
                 continue;
             }
+
+            if (local.Any(file => AssetPacks.IsFontFileFor(file, stem))) continue;   // fonts/ provides it
 
             var found = FindInstalledFont(stem, table, folders);
             uses.Add(found switch
@@ -417,7 +438,7 @@ public static class GameAssets
 
     /// <summary>What an export would carry: the fonts the translation uses, and every defined image whose file is there.</summary>
     public static (int Fonts, int Images) Exportable(GameAssetsState state) =>
-        (state.Fonts.Count(f => f.Used), state.ImagesPresent);
+        (state.Fonts.Count(f => f.Exported), state.ImagesPresent);
 
     /// <summary>
     /// Writes this game's fonts and replacement images into a `.ugtpack` at <paramref name="destination"/>.
@@ -469,7 +490,7 @@ public static class GameAssets
                     written++;
                 }
 
-                var named = FontStemsNamed(root);
+                var references = FontReferencesNamed(root);
                 var packed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var fontsFolder = Path.Combine(folder, AssetPacks.FontsFolder);
                 if (Directory.Exists(fontsFolder))
@@ -478,7 +499,7 @@ public static class GameAssets
                     {
                         var name = Path.GetFileName(file);
                         if (!AssetPacks.IsFontFile(name) || !AssetPacks.IsSafeFileName(name)) continue;
-                        if (!named.Any(stem => AssetPacks.IsFontFileFor(name, stem))) continue;
+                        if (UseOf(name, references) is not (FontUse.Used or FontUse.UsedWhereNotInstalled)) continue;
 
                         zip.CreateEntryFromFile(file, AssetPacks.FontsFolder + "/" + name, CompressionLevel.Optimal);
                         packed.Add(name);
@@ -588,11 +609,28 @@ public static class GameAssets
     }
 
     /// <summary>
-    /// The font files the translation names — `_fonts[…].fallback` and `_font_overrides[].replacement`,
-    /// as file names without extension (<see cref="AssetPacks.FontFileStem"/>).
+    /// What a file of fonts/ does for the translation — the rule the mod serves fonts by
+    /// (<see cref="FontReferences"/>), so the tab and the export never call a file used that no
+    /// text is drawn from.
+    ///
+    /// 🔴 Named is not used: legacy text (UI.Text) never reads a font file, so a file named only by
+    /// it is shown nowhere — the case of a pack of installed fonts laid into an all-UI.Text game.
     /// </summary>
-    private static HashSet<string> FontStemsNamed(JsonObject? root) =>
-        new(FontReferencesNamed(root).Select(r => AssetPacks.FontFileStem(r.Reference)).OfType<string>(), StringComparer.Ordinal);
+    private static FontUse UseOf(string fileName, List<(string Reference, bool ReadsFiles)> references)
+    {
+        var naming = references
+            .Where(r => AssetPacks.FontFileStem(r.Reference) is { } stem && AssetPacks.IsFontFileFor(fileName, stem))
+            .ToList();
+
+        if (naming.Count == 0) return FontUse.NotUsed;
+
+        var serving = naming.Where(r => r.ReadsFiles).ToList();
+        if (serving.Count == 0) return FontUse.LegacyTextOnly;
+
+        return serving.Any(r => FontReferences.Order(r.Reference)[0] == FontSource.Custom)
+            ? FontUse.Used
+            : FontUse.UsedWhereNotInstalled;
+    }
 
     /// <summary>
     /// Every font reference the translation applies, as written (origin mark included), and

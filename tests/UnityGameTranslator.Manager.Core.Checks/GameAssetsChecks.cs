@@ -46,7 +46,7 @@ internal static class GameAssetsChecks
 
             var state = GameAssets.Read(gamePath, descriptor);
             Program.Check(state is { Fonts.Count: 1, Images.Count: 1, HasTranslation: true } && state.Images[0].Present
-                          && state.Fonts[0].Used,
+                          && state.Fonts[0].Use == FontUse.Used,
                 "the game is read: one font, one image defined and present",
                 "the tab says what is there before anything is added");
 
@@ -158,7 +158,7 @@ internal static class GameAssetsChecks
                 "the format written and the format read are the same format");
 
             Program.Check(again.Files.Any(f => f.Asset.Name == "a.ttf") && again.Files.All(f => f.Asset.Name != "b.otf")
-                          && !GameAssets.Read(gamePath, descriptor).Fonts.Single(f => f.Name == "b.otf").Used,
+                          && GameAssets.Read(gamePath, descriptor).Fonts.Single(f => f.Name == "b.otf").Use == FontUse.NotUsed,
                 "only the fonts the translation uses are exported, and the tab says which",
                 "a font tried once and left in fonts/ is noise to whoever receives the pack (user, 2026-09-27)");
 
@@ -452,6 +452,28 @@ internal static class GameAssetsChecks
                 Program.Check(fonts.SequenceEqual(["fonts/Candara.ttf", "fonts/comicbd.ttf", "fonts/mine.ttf"]),
                     "asked, it carries them under the name the translation uses — \"Candara.ttf\" from candara.ttf",
                     "the mod receiving the pack looks the name up exactly, among its own fonts first");
+            }
+
+            // That pack laid into the game itself — copies of installed fonts now in fonts/.
+            File.WriteAllBytes(Path.Combine(folder, "fonts", "Candara.ttf"), Asset("Candara.ttf", "candara"));
+            File.WriteAllBytes(Path.Combine(folder, "fonts", "Legacy.ttf"), Asset("Legacy.ttf", "legacy"));
+            File.WriteAllBytes(Path.Combine(folder, "fonts", "unused.ttf"), Asset("unused.ttf", "unused"));
+
+            var held = GameAssets.Read(gamePath, descriptor).Fonts.ToDictionary(f => f.Name, f => f.Use);
+            Program.Check(held["mine.ttf"] == FontUse.Used && held["Candara.ttf"] == FontUse.UsedWhereNotInstalled
+                          && held["Legacy.ttf"] == FontUse.LegacyTextOnly && held["unused.ttf"] == FontUse.NotUsed,
+                "the tab says what each file does: shown, shown where the font is not installed, named by legacy text only, unused",
+                "a copy named only by UI.Text is shown nowhere — calling it used was untrue");
+
+            var copies = Path.Combine(root, "copies.ugtpack");
+            GameAssets.Export(game, descriptor, copies, "checks");
+            using (var zip = ZipFile.OpenRead(copies))
+            {
+                var fonts = zip.Entries.Select(e => e.FullName).Where(n => n.StartsWith("fonts/")).OrderBy(n => n, StringComparer.Ordinal).ToList();
+                Program.Check(fonts.SequenceEqual(["fonts/Candara.ttf", "fonts/mine.ttf"])
+                              && GameAssets.SystemFontsUsed(game, descriptor, [system], () => table).Any(u => u.Reference == "Legacy" && !u.Includable),
+                    "a copy only legacy text names is not exported, and the export still says why",
+                    "it would arrive in another game and be used there no more than here");
             }
         }
         finally

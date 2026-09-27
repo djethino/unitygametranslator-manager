@@ -509,7 +509,10 @@ public partial class MainWindow
         panel.Children.Add(SectionTitle("Export"));
         // ⚠ Says what is carried: only what the translation uses, so a font listed above as
         // "Not used" is not missing from the pack by mistake.
-        panel.Children.Add(Intro("Puts the fonts and images this game's translation uses in one .ugtpack file, to share or keep."));
+        // ⚠ "(you host it yourself)" at the word "share" (user, 2026-09-27): UGT Website stores
+        // translations, never packs — whoever shares one puts it online themselves.
+        panel.Children.Add(Intro("Puts the fonts and images this game's translation uses in one .ugtpack file, "
+                                 + "to share (you host it yourself) or keep."));
 
         var (fonts, images) = GameAssets.Exportable(state);
 

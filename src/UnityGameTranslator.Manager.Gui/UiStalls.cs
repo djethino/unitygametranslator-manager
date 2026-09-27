@@ -63,6 +63,12 @@ public static class UiStalls
         timer.Start();
     }
 
+    /// <summary>A measured breakdown a section wants on record — written only when it ran long.</summary>
+    public static void Note(long totalMs, string line)
+    {
+        if (totalMs >= SlowSectionMs) Write($"{DateTime.Now:HH:mm:ss.fff} {line}");
+    }
+
     /// <summary>Names what runs until the returned object is disposed; says so when it ran long.</summary>
     public static IDisposable Doing(string what) => new Section(what);
 

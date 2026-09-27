@@ -978,19 +978,43 @@ public partial class MainWindow : Window
         _mine.Clear();
         _accounts.Clear();
 
-        foreach (var game in _games)
-        {
-            // Before the row is read, so it is drawn from the settled answer. See SettleSetupWay:
-            // at launch this is the first place to see a Setup answered while the tool was closed.
-            SettleSetupWay(game);
+        // Where the time goes, per step — see UiStalls. A freeze here was measured once and fixed
+        // (2026-09-19), then came back unnoticed (2026-09-27): the breakdown stays.
+        var clock = System.Diagnostics.Stopwatch.StartNew();
 
-            var (situation, mine, account, play) = ReadSituation(game);
-            _situations[game.Path] = situation;
-            _playStates[game.Path] = play;
-            if (mine) _mine.Add(game.Path);
-            if (account.User is not null) _accounts[game.Path] = account;
+        // Before any row is read, so each is drawn from the settled answer. See SettleSetupWay:
+        // at launch this is the first place to see a Setup answered while the tool was closed.
+        // ⚠ On this thread and in order: it writes the preferences and the held drafts.
+        foreach (var game in _games) SettleSetupWay(game);
+        var settle = clock.ElapsedMilliseconds;
+
+        // 🔴 **Read in parallel, recorded in order** (2026-09-27). ReadSituation touches no control
+        // and no shared state — it already runs off this thread for a game being played — so the
+        // sixty-odd reports, each a handful of small files, are read side by side; only the
+        // recording below touches the window's collections. A pass went from ~400 ms to what the
+        // slowest few games cost, and the start of the tool runs five of them.
+        var games = _games.ToArray();
+        var read = new (GameSituationInfo Situation, bool Mine, (string? User, string? Server) Account, PlayState Play)[games.Length];
+        Parallel.For(0, games.Length, i => read[i] = ReadSituation(games[i]));
+
+        for (var i = 0; i < games.Length; i++)
+        {
+            var (situation, mine, account, play) = read[i];
+            var path = games[i].Path;
+            _situations[path] = situation;
+            _playStates[path] = play;
+            if (mine) _mine.Add(path);
+            if (account.User is not null) _accounts[path] = account;
         }
+
+        UiStalls.Note(clock.ElapsedMilliseconds,
+            $"RecomputeSituations {clock.ElapsedMilliseconds} ms over {games.Length} games: SettleSetupWay {settle} ms; "
+            + $"summed over threads: report {_readReport} ms, situation {_readSituation} ms, play {_readPlay} ms; "
+            + $"report steps: {ReportTimings.TakeSummary()}");
+        _readReport = _readSituation = _readPlay = 0;
     }
+
+    private long _readReport, _readSituation, _readPlay;
 
     /// <summary>
     /// One game's situation, read from the disk and from what the community lookup already said.
@@ -1018,7 +1042,9 @@ public partial class MainWindow : Window
         //
         // ⚠ Asks nobody: BuildReport reads the disk and the community cache and makes no request.
         // That is what allows this to run for every game on every answer the sweep brings back.
+        var t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         var report = _inventory.BuildReport(game);
+        var t1 = System.Diagnostics.Stopwatch.GetTimestamp();
 
         // "We asked and nobody has published anything" is only true if we asked. A tool that may
         // ask nobody has legitimately finished asking, which is the second half of this.
@@ -1033,9 +1059,18 @@ public partial class MainWindow : Window
 
         var situation = SituationReader.Read(report, _settings.ResolveTargetLanguage(),
                                              checkedOnline, waiting, _settings.Current.ApiUser);
+        var t2 = System.Diagnostics.Stopwatch.GetTimestamp();
+        var play = PlayStateOf(report);
+        var t3 = System.Diagnostics.Stopwatch.GetTimestamp();
+
+        // Atomic: this also runs off the UI thread, for a game being played.
+        double ms = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+        System.Threading.Interlocked.Add(ref _readReport, (long)((t1 - t0) * ms));
+        System.Threading.Interlocked.Add(ref _readSituation, (long)((t2 - t1) * ms));
+        System.Threading.Interlocked.Add(ref _readPlay, (long)((t3 - t2) * ms));
 
         // All RETURNED rather than recorded, for the reason given above this method.
-        return (situation, report.MyPosition is not null, report.SiteAccount, PlayStateOf(report));
+        return (situation, report.MyPosition is not null, report.SiteAccount, play);
     }
 
     /// <summary>

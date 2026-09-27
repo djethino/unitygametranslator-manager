@@ -289,7 +289,9 @@ public sealed class GameInventory
     {
         var report = new GameReport { Game = game };
 
+        var t = ReportTimings.Mark();
         report.InstalledLoader = LoaderProbe.Detect(game.Path, _catalog);
+        t = ReportTimings.Add(0, t);
 
         // ⚠ Read HERE rather than by each caller. Four places build a report, and a per-game
         // permission that one of them forgot to attach would be a game where the loader silently
@@ -297,6 +299,7 @@ public sealed class GameInventory
         // is the one that stays.
         var preference = new Settings.GamePreferences(_platform).Read(game.Path);
         report.LoaderAdopted = preference.AdoptLoader;
+        t = ReportTimings.Add(1, t);
 
         // ⚠ The probe looks at files; only the receipt knows who put them there. Nothing was
         // filling this in, so DetectedLoader.InstalledByUs was false for EVERY game — including
@@ -314,6 +317,7 @@ public sealed class GameInventory
             detected.InstalledByUs = receipt?.Loader is { InstalledByUs: true } ours
                                      && string.Equals(ours.Id, detected.Id, StringComparison.OrdinalIgnoreCase);
         }
+        t = ReportTimings.Add(2, t);
 
         // ⚠ Reconciled from the files every time — see RuntimeLibrariesState for the three ways an
         // install of them is undone without a word.
@@ -327,23 +331,28 @@ public sealed class GameInventory
             Install.SourcePicks.LibrariesFor(game.Path) ?? preference.ClassLibrarySource,
             online: !Offline && Install.LocalCopies.NetworkAvailable(),
             cache: Install.ArchiveCache.For(_platform.UserDataDirectory));
+        t = ReportTimings.Add(3, t);
 
         var descriptor = ResolveDescriptor(report, game);
         if (descriptor is not null)
         {
             report.LocalTranslation = LocalTranslationProbe.Read(game.Path, descriptor);
+            t = ReportTimings.Add(4, t);
             report.InstalledPluginVersion = LocalTranslationProbe.ReadInstalledPluginVersion(game.Path, descriptor);
             report.PluginDirectory = descriptor.PluginDir;
             report.PluginInPlace = LocalTranslationProbe.IsPluginInPlace(game.Path, descriptor);
             report.StrayPluginDirectories = LocalTranslationProbe.FindStrayPlugins(game.Path, descriptor);
             report.PluginBuildId = ResolvePluginBuild(descriptor, game.Runtime);
+            t = ReportTimings.Add(5, t);
             CollectRequirements(report, descriptor, game);
+            t = ReportTimings.Add(6, t);
 
             report.TextsSeen = TextSystemsProbe.ReadSeen(game.Path, descriptor);
             report.SiteAccount = LocalTranslationProbe.ReadSiteAccount(game.Path, descriptor);
             report.DismissedNotices = LocalTranslationProbe.ReadDismissedNotices(game.Path, descriptor);
             report.LoaderStanding = ReadLoaderStanding(report);
             report.PluginStanding = HeldPluginStanding(report);
+            t = ReportTimings.Add(7, t);
         }
 
         if (!game.IsModdable)
@@ -384,8 +393,10 @@ public sealed class GameInventory
         // catalog search failed or the game is not published anywhere.
         // ⚠ And BEFORE the sync verdict: on a branch, the verdict is read against this row.
         report.MyPosition = Lineages?.For(report.LocalTranslation?.Uuid);
+        t = ReportTimings.Add(8, t);
 
         ApplySync(report, game, descriptor);
+        ReportTimings.Add(9, t);
 
         return report;
     }

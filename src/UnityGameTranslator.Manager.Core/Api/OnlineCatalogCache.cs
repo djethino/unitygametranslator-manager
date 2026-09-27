@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
 
@@ -42,7 +42,12 @@ public sealed class OnlineCatalogCache
     }
 
     private readonly string _path;
-    private readonly Dictionary<string, Entry> _entries;
+    /// <summary>
+    /// ⚠ Concurrent: the sweep writes answers from a background thread while the rows read them —
+    /// on the interface thread, and in parallel when the list is recomputed (2026-09-27). A plain
+    /// dictionary read during a write can throw or loop, rarely, and never in a test.
+    /// </summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Entry> _entries;
     private readonly CatalogApiClient _api;
     private readonly TimeSpan _lifetime;
 
@@ -237,7 +242,7 @@ public sealed class OnlineCatalogCache
         return changed;
     }
 
-    private Dictionary<string, Entry> Load()
+    private System.Collections.Concurrent.ConcurrentDictionary<string, Entry> Load()
     {
         try
         {
@@ -245,14 +250,14 @@ public sealed class OnlineCatalogCache
             {
                 var loaded = JsonSerializer.Deserialize<Dictionary<string, Entry>>(
                     File.ReadAllText(_path), JsonOptions);
-                if (loaded is not null) return loaded;
+                if (loaded is not null) return new(loaded);
             }
         }
         catch
         {
             // A damaged cache costs one refresh, nothing more.
         }
-        return new Dictionary<string, Entry>();
+        return new();
     }
 
     private void Save()

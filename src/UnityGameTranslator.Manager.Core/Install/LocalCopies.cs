@@ -24,8 +24,30 @@ public static class LocalCopies
     /// <summary>
     /// Whether this computer can go online at all — a local reading, no traffic. What decides whether
     /// Unity's server is offered as a source; a download that then fails says so on its own.
+    ///
+    /// 🔴 **Read once, then kept by Windows' own signal — never asked per game** (2026-09-27). The
+    /// reading walks every network adapter, ~15 ms each time, and the report of every game asked
+    /// it on every redraw of the list: 65 games × five passes at start was most of a 12 s freeze.
+    /// <see cref="System.Net.NetworkInformation.NetworkChange.NetworkAvailabilityChanged"/> says
+    /// when the answer changes, so nothing has to ask again in between.
     /// </summary>
-    public static bool NetworkAvailable()
+    public static bool NetworkAvailable() => _network.Value.Available;
+
+    /// <summary>Subscribed before the first reading, so a change between the two is not lost.</summary>
+    private static readonly Lazy<NetworkWatch> _network = new(() =>
+    {
+        var watch = new NetworkWatch();
+        System.Net.NetworkInformation.NetworkChange.NetworkAvailabilityChanged += (_, e) => watch.Available = e.IsAvailable;
+        watch.Available = ReadNetwork();
+        return watch;
+    });
+
+    private sealed class NetworkWatch
+    {
+        public volatile bool Available;
+    }
+
+    private static bool ReadNetwork()
     {
         try { return System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable(); }
         catch (System.Net.NetworkInformation.NetworkInformationException) { return true; }

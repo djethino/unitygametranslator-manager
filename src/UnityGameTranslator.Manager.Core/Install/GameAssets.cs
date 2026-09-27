@@ -117,8 +117,9 @@ public sealed record GameImage(string SpriteName, string? File, bool Present);
 
 /// <summary>What a game holds today — the fonts in its folder, the images its translation defines.</summary>
 /// <param name="HasTranslation">Whether a translation file exists to hold image definitions.</param>
+/// <param name="TranslationDamaged">It exists and cannot be read safely — never written over.</param>
 public sealed record GameAssetsState(IReadOnlyList<GameFont> Fonts, IReadOnlyList<GameImage> Images,
-                                     bool HasTranslation)
+                                     bool HasTranslation, bool TranslationDamaged = false)
 {
     public int ImagesPresent => Images.Count(i => i.Present);
 }
@@ -147,8 +148,8 @@ public static class GameAssets
         var folder = UserDataInventory.DataFolder(gamePath, descriptor);
         if (folder is null) return new GameAssetsState([], [], false);
 
-        var translation = TranslationPath(folder);
-        var root = ReadTranslation(translation);
+        var translation = ReadTranslation(TranslationPath(folder));
+        var root = translation.Root;
         var named = FontStemsNamed(root);
 
         var fonts = new List<GameFont>();
@@ -174,7 +175,7 @@ public static class GameAssets
             images.Add(new GameImage(SpriteOf(definition) ?? "", file, present));
         }
 
-        return new GameAssetsState(fonts, images, root is not null);
+        return new GameAssetsState(fonts, images, translation.Exists, translation.Damaged);
     }
 
     // ── What dropped files would do ──────────────────────────────────────────────────────────
@@ -198,8 +199,9 @@ public static class GameAssets
         var folder = UserDataInventory.DataFolder(game.Path, descriptor);
         if (folder is null) return AssetPlan.Empty with { Refused = [new("", UserDataInventory.OutsideGameRefusal)] };
 
-        var root = ReadTranslation(TranslationPath(folder));
-        var existing = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
+        var translation = ReadTranslation(TranslationPath(folder));
+        var root = translation.Root;
+        var existing = new Dictionary<string, JsonObject>(TranslationFiles.SpriteNames);
         foreach (var definition in Definitions(root))
         {
             if (SpriteOf(definition) is { Length: > 0 } sprite) existing[sprite] = definition;
@@ -208,8 +210,10 @@ public static class GameAssets
         // Files the translation already names — what a picture given on its own may fill in.
         var named = new HashSet<string>(existing.Values.Select(FileOf).OfType<string>(), StringComparer.OrdinalIgnoreCase);
 
-        var files = new Dictionary<(AssetKind, string), IncomingAsset>();
-        var definitions = new Dictionary<string, (JsonObject Definition, string File, string From)>(StringComparer.Ordinal);
+        // ⚠ Case ignored on both keys: a file name as Windows compares it, a sprite as the mod does
+        // (TranslationFiles.SpriteNames) — "A.ttf" and "a.ttf" are one file, "Logo" and "logo" one sprite.
+        var files = new Dictionary<string, IncomingAsset>(StringComparer.OrdinalIgnoreCase);
+        var definitions = new Dictionary<string, (JsonObject Definition, string File, string From)>(TranslationFiles.SpriteNames);
         var refused = new List<RefusedAsset>();
         var madeFor = new List<string>();
 
@@ -233,18 +237,18 @@ public static class GameAssets
 
                 if (AssetPacks.IsPack(name))
                 {
-                    ReadPack(game, path, name, files, definitions, named, refused, madeFor, hasTranslation: root is not null, budget);
+                    ReadPack(game, path, name, files, definitions, named, refused, madeFor, ImageSettingsRefusal(translation), budget);
                     continue;
                 }
 
                 switch (AssetPacks.KindOfFile(name))
                 {
                     case AssetKind.Font:
-                        if (Loose(AssetKind.Font, path, name, refused, budget) is { } font) files[(AssetKind.Font, name)] = font;
+                        if (Loose(AssetKind.Font, path, name, refused, budget) is { } font) files[FileKey(AssetKind.Font, name)] = font;
                         break;
 
                     case AssetKind.Image when named.Contains(name):
-                        if (Loose(AssetKind.Image, path, name, refused, budget) is { } image) files[(AssetKind.Image, name)] = image;
+                        if (Loose(AssetKind.Image, path, name, refused, budget) is { } image) files[FileKey(AssetKind.Image, name)] = image;
                         break;
 
                     case AssetKind.Image:
@@ -304,6 +308,20 @@ public static class GameAssets
         return new IncomingAsset(kind, name, name, path, null, measured.Length, measured.Sha256);
     }
 
+    private static string FileKey(AssetKind kind, string name) => $"{kind}/{name}";
+
+    /// <summary>Why image settings cannot go into this game's translation file — null when they can.</summary>
+    private static string? ImageSettingsRefusal(TranslationRead translation) =>
+        !translation.Exists
+            ? "This game has no translation file yet. Play it once with UGT Mod, then add the pack again."
+            : translation.Damaged
+                ? DamagedTranslation
+                : null;
+
+    /// <summary>What every screen says about a translation file that cannot be read safely.</summary>
+    private const string DamagedTranslation =
+        "This game's translation file cannot be read safely, so it is left as it is. Its image settings cannot be changed here.";
+
     /// <summary>What a screen says about a file larger than the drive can take.</summary>
     private static string TooLarge(long size, ReadBudget budget) =>
         $"Too large: {Megabytes(size)}, and the drive holding this game has {Megabytes(Math.Max(0, budget.Left))} free.";
@@ -334,10 +352,10 @@ public static class GameAssets
     /// to mislead is not sorted into its honest and dishonest halves.
     /// </summary>
     private static void ReadPack(GameInstall game, string path, string packName,
-                                 Dictionary<(AssetKind, string), IncomingAsset> files,
+                                 Dictionary<string, IncomingAsset> files,
                                  Dictionary<string, (JsonObject, string, string)> definitions,
                                  HashSet<string> named, List<RefusedAsset> refused, List<string> madeFor,
-                                 bool hasTranslation, ReadBudget budget)
+                                 string? imageSettingsRefusal, ReadBudget budget)
     {
         using var zip = ZipFile.OpenRead(path);
 
@@ -447,7 +465,7 @@ public static class GameAssets
 
         // The definitions, each tied to a picture the pack carries — an image is only ever written
         // together with what makes the mod use it.
-        var packDefinitions = new Dictionary<string, (JsonObject, string, string)>(StringComparer.Ordinal);
+        var packDefinitions = new Dictionary<string, (JsonObject, string, string)>(TranslationFiles.SpriteNames);
         var defined = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         if (manifest["images"] is JsonArray images)
@@ -463,10 +481,9 @@ public static class GameAssets
                     continue;
                 }
 
-                if (!hasTranslation)
+                if (imageSettingsRefusal is not null)
                 {
-                    packRefused.Add(new(sprite, "This game has no translation file yet. Play it once with "
-                                                + "UGT Mod, then add the pack again."));
+                    packRefused.Add(new(sprite, imageSettingsRefusal));
                     continue;
                 }
 
@@ -478,13 +495,13 @@ public static class GameAssets
         // Honest throughout: now, and only now, what it carries joins the plan.
         if (OtherGame(game, manifest["game"] as JsonObject) is { } other) madeFor.Add(other);
 
-        foreach (var font in fonts) files[(AssetKind.Font, font.Name)] = font;
+        foreach (var font in fonts) files[FileKey(AssetKind.Font, font.Name)] = font;
         foreach (var (sprite, definition) in packDefinitions) definitions[sprite] = definition;
 
         foreach (var (bare, asset) in carried)
         {
             if (defined.Contains(bare) || named.Contains(bare))
-                files[(AssetKind.Image, bare)] = asset;
+                files[FileKey(AssetKind.Image, bare)] = asset;
             else
                 packRefused.Add(new(bare, $"No image setting in {packName} or in this game's translation uses it."));
         }
@@ -652,10 +669,15 @@ public static class GameAssets
 
             if (toDefine.Count > 0)
             {
+                // Read again NOW: the file on disk is what gets merged into, not the one planned from.
                 var translation = TranslationPath(folder);
-                if (ReadTranslation(translation) is not { } root)
-                    return new(false, written, "This game has no translation file to hold the image settings.");
+                var read = ReadTranslation(translation);
+                if (ImageSettingsRefusal(read) is { } cannot) return new(false, written, cannot);
 
+                var root = read.Root!;
+
+                // ⚠ Created only where it is ABSENT. A section that is there in another shape is a
+                // damaged file (ReadTranslation says so), and replacing it would erase what it held.
                 if (root[TranslationFiles.ImagesSection] is not JsonArray section)
                 {
                     section = new JsonArray();
@@ -664,15 +686,30 @@ public static class GameAssets
 
                 foreach (var planned in toDefine)
                 {
-                    var index = -1;
+                    // 🔴 **One entry per sprite, as the mod reads them** — case ignored, the last one
+                    // winning. The first match takes the new setting; any other entry for the same
+                    // sprite goes, or it would come after ours and override it in the game.
+                    var matches = new List<int>();
                     for (var i = 0; i < section.Count; i++)
                     {
-                        if (section[i] is JsonObject entry && SpriteOf(entry) == planned.SpriteName) { index = i; break; }
+                        if (section[i] is JsonObject entry && SpriteOf(entry) is { } sprite
+                            && TranslationFiles.SpriteNames.Equals(sprite, planned.SpriteName))
+                        {
+                            matches.Add(i);
+                        }
                     }
 
                     var definition = planned.Definition.DeepClone();
-                    if (index >= 0) section[index] = definition;
-                    else section.Add(definition);
+                    if (matches.Count == 0)
+                    {
+                        section.Add(definition);
+                    }
+                    else
+                    {
+                        section[matches[0]] = definition;
+                        for (var k = matches.Count - 1; k >= 1; k--) section.RemoveAt(matches[k]);
+                    }
+
                     written++;
                 }
 
@@ -760,7 +797,9 @@ public static class GameAssets
         try
         {
             var written = 0;
-            var root = ReadTranslation(TranslationPath(folder));
+            var read = ReadTranslation(TranslationPath(folder));
+            if (read.Damaged) return new(false, 0, DamagedTranslation);
+            var root = read.Root;
 
             using (var zip = ZipFile.Open(temp, ZipArchiveMode.Create))
             {
@@ -841,18 +880,43 @@ public static class GameAssets
 
     private static string TranslationPath(string folder) => Path.Combine(folder, LocalTranslationProbe.TranslationFileName);
 
-    private static JsonObject? ReadTranslation(string path)
+    /// <summary>A translation file as read: absent, present and readable (Root), or present and damaged.</summary>
+    private sealed record TranslationRead(bool Exists, bool Damaged, JsonObject? Root);
+
+    /// <summary>
+    /// Reads the translation file, and says so when it cannot be read SAFELY — then it is never
+    /// written over.
+    ///
+    /// 🔴 **Damaged is not absent.** Read as "no translation", a file that failed to parse would be
+    /// offered a fresh image section, and the next write would replace every line it held.
+    ///
+    /// ⚠ Two things System.Text.Json only finds when an object is first touched (measured,
+    /// 2026-09-27): a key written twice at the top level, or inside an image entry, throws there
+    /// rather than at parse. Both are touched here, so the answer is known before anything is
+    /// planned. A key written twice inside a LINE is left alone: it is not touched and it is written
+    /// back exactly as it was read.
+    /// </summary>
+    private static TranslationRead ReadTranslation(string path)
     {
-        if (!File.Exists(path)) return null;
+        if (!File.Exists(path)) return new(false, false, null);
 
         try
         {
-            return JsonNode.Parse(File.ReadAllText(path), documentOptions: Lenient) as JsonObject;
+            if (JsonNode.Parse(File.ReadAllText(path), documentOptions: Lenient) is not JsonObject root)
+                return new(true, true, null);
+
+            _ = root.Count;
+
+            var section = root[TranslationFiles.ImagesSection];
+            if (section is not null and not JsonArray) return new(true, true, null);
+
+            foreach (var entry in (section as JsonArray ?? []).OfType<JsonObject>()) _ = entry.Count;
+
+            return new(true, false, root);
         }
-        catch (JsonException)
+        catch (Exception e) when (e is JsonException or ArgumentException)
         {
-            // A damaged translation defines nothing we can read; the screen says it holds none.
-            return null;
+            return new(true, true, null);
         }
     }
 

@@ -47,6 +47,7 @@ internal static class Program
         InstallLedgerChecks.WhatTheToolRemembersDoing();
         ProbeMemoryChecks.WhatARememberedReadAnswers();
         GameAssetsChecks.WhatAPackPutsIntoAGame();
+        GameAssetsChecks.WhatTheTranslationFileKeeps();
         SetupWayChecks.WhenTheSetupHasBeenAnswered();
         PreferenceFieldsChecks.WhatAGamesAnswersAreFor();
         ForkOriginChecks.WhereTheFileCameFrom();

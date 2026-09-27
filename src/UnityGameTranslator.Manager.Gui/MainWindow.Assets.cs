@@ -458,6 +458,14 @@ public partial class MainWindow
         var panel = new StackPanel { Spacing = 8 };
         panel.Children.Add(SectionTitle($"Replacement images ({state.Images.Count})"));
 
+        // Damaged is not absent: the file is there, and it is left exactly as it is.
+        if (state.TranslationDamaged)
+        {
+            panel.Children.Add(Note("This game's translation file cannot be read safely, so it is left as it is. "
+                                    + "Its image settings cannot be changed here.", Tone.Warning));
+            return panel;
+        }
+
         if (!state.HasTranslation)
         {
             panel.Children.Add(Note("This game has no translation file yet. Play it once with UGT Mod."));

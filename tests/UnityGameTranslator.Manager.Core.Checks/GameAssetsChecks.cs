@@ -259,6 +259,90 @@ internal static class GameAssetsChecks
         }
     }
 
+    /// <summary>
+    /// What a pack does to the translation file itself: one entry per sprite as the mod reads them,
+    /// nothing written over a file that cannot be read, and the same pack twice changing nothing.
+    /// </summary>
+    internal static void WhatTheTranslationFileKeeps()
+    {
+        Program.Section("The translation file a pack writes into");
+
+        var descriptor = new LoaderDescriptor { Id = "bepinex5", UserDataDir = "BepInEx/plugins/UnityGameTranslator" };
+        var root = Path.Combine(Path.GetTempPath(), "ugt-assets-file-" + Guid.NewGuid().ToString("N"));
+        var gamePath = Path.Combine(root, "game");
+        var game = new GameInstall { Name = "File game", Path = gamePath };
+        var folder = Path.Combine(gamePath, "BepInEx", "plugins", "UnityGameTranslator");
+        var translation = Path.Combine(folder, LocalTranslationProbe.TranslationFileName);
+
+        try
+        {
+            Directory.CreateDirectory(folder);
+
+            // "Title" twice already — the second, stale, is the one the mod reads (last wins).
+            File.WriteAllText(translation,
+                "{\"_uuid\":\"u\",\"hello\":{\"v\":\"Bonjour\",\"t\":\"A\"},\"_image_replacements\":["
+                + "{\"sprite_name\":\"Title\",\"pivot_x\":0.5,\"file\":\"title.png\"},"
+                + "{\"sprite_name\":\"Other\",\"file\":\"other.png\"},"
+                + "{\"sprite_name\":\"TITLE\",\"pivot_x\":0.1,\"file\":\"title.png\"}]}");
+
+            // The pack names the sprite in a third spelling.
+            var pack = Path.Combine(root, "title.ugtpack");
+            using (var zip = ZipFile.Open(pack, ZipArchiveMode.Create))
+            {
+                Entry(zip, "manifest.json", "{\"format\":1,\"images\":[{\"sprite_name\":\"title\",\"pivot_x\":0.9,\"file\":\"title.png\"}]}");
+                Entry(zip, "images/title.png", "new title");
+            }
+
+            var plan = GameAssets.Plan(game, descriptor, [pack]);
+            Program.Check(plan.Definitions.Count == 1 && plan.Definitions[0].Change == AssetChange.Replace,
+                "a sprite spelled differently is the same sprite, as the mod reads it",
+                "added beside it as new, the mod would read one sprite and keep whichever came last");
+
+            GameAssets.Apply(null, game, descriptor, plan.Offers);
+
+            var section = JsonNode.Parse(File.ReadAllText(translation))![TranslationFiles.ImagesSection]!.AsArray();
+            var titles = section.OfType<JsonObject>()
+                .Where(d => TranslationFiles.SpriteNames.Equals(d["sprite_name"]!.GetValue<string>(), "title")).ToList();
+            Program.Check(titles.Count == 1 && titles[0]["pivot_x"]!.GetValue<double>() == 0.9
+                          && section.OfType<JsonObject>().Any(d => d["sprite_name"]!.GetValue<string>() == "Other"),
+                "after the write, one entry per sprite, holding the new setting; the others untouched",
+                "a stale duplicate left after ours would override it in the game, without a word");
+
+            var again = GameAssets.Plan(game, descriptor, [pack]);
+            var before = File.ReadAllBytes(translation);
+            GameAssets.Apply(null, game, descriptor, again.Offers);
+            Program.Check(again.Changes == 0 && File.ReadAllBytes(translation).AsSpan().SequenceEqual(before),
+                "the same pack a second time changes nothing, not a byte of the file",
+                "adding what is already there must not grow the file or rewrite it");
+
+            // A file that cannot be read safely: a key written twice, and a section of the wrong shape.
+            foreach (var damaged in new[]
+            {
+                "{\"_uuid\":\"u\",\"_uuid\":\"v\",\"_image_replacements\":[]}",
+                "{\"_uuid\":\"u\",\"_image_replacements\":{\"sprite_name\":\"Kept\"}}",
+                "{\"_uuid\":\"u\",\"_image_replacements\":[{\"sprite_name\":\"A\",\"sprite_name\":\"B\"}]}",
+                "{\"_uuid\":\"u\",\"hello\":",
+            })
+            {
+                File.WriteAllText(translation, damaged);
+                var damagedPlan = GameAssets.Plan(game, descriptor, [pack]);
+                var forced = GameAssets.Apply(null, game, descriptor,
+                    [new AssetOffer(AssetKind.Image, "title", AssetChange.Add, "checks", [],
+                        [new PlannedDefinition("title", "title.png", new JsonObject { ["sprite_name"] = "title" }, AssetChange.Add, "checks")])]);
+
+                Program.Check(damagedPlan.Definitions.Count == 0 && damagedPlan.Refused.Any(r => r.Reason.Contains("cannot be read"))
+                              && !forced.Done && File.ReadAllText(translation) == damaged
+                              && GameAssets.Read(gamePath, descriptor).TranslationDamaged,
+                    "a translation that cannot be read safely is said so, and never written over: " + damaged[..Math.Min(40, damaged.Length)],
+                    "read as \"no translation\", it would be given a fresh image section — and lose everything else");
+            }
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { /* a temp folder left behind proves nothing */ }
+        }
+    }
+
     private static byte[] Bytes(string text) => Encoding.UTF8.GetBytes(text);
 
     /// <summary>What a program starts with — the bytes every Windows executable opens on.</summary>

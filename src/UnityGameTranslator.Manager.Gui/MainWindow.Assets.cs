@@ -439,9 +439,14 @@ public partial class MainWindow
             return panel;
         }
 
+        // Used ones first: they are the translation's, and the ones an export carries.
         var list = new StackPanel { Spacing = 4 };
-        foreach (var font in state.Fonts)
-            list.Children.Add(NameAndDetail(font.Name, SizeOf(font.Length), Tone.Neutral));
+        foreach (var font in state.Fonts.OrderBy(f => !f.Used))
+        {
+            list.Children.Add(NameAndDetail(font.Name,
+                (font.Used ? "Used by the translation" : "Not used") + " · " + SizeOf(font.Length),
+                Tone.Neutral));
+        }
 
         panel.Children.Add(Bounded(list));
         panel.Children.Add(Note("Choose which game font each one replaces in UGT Mod: Translation Tools, Fonts tab."));
@@ -484,7 +489,9 @@ public partial class MainWindow
     {
         var panel = new StackPanel { Spacing = 8 };
         panel.Children.Add(SectionTitle("Export"));
-        panel.Children.Add(Intro("Puts this game's fonts and replacement images in one .ugtpack file, to share or keep."));
+        // ⚠ Says what is carried: only what the translation uses, so a font listed above as
+        // "Not used" is not missing from the pack by mistake.
+        panel.Children.Add(Intro("Puts the fonts and images this game's translation uses in one .ugtpack file, to share or keep."));
 
         var (fonts, images) = GameAssets.Exportable(state);
         var any = fonts + images > 0;
@@ -492,7 +499,7 @@ public partial class MainWindow
         var export = new Button { Content = "Export...", IsEnabled = any, HorizontalAlignment = HorizontalAlignment.Left };
         ToolTip.SetTip(export, any
             ? $"{Composition.Amount(fonts, "font", "fonts")}, {Composition.Amount(images, "image", "images")}."
-            : "This game has no fonts or images to export.");
+            : "This game's translation uses no added font or image.");
 
         export.Click += async (_, _) => await ExportAssetsAsync(report, descriptor);
 

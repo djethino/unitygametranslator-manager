@@ -108,8 +108,9 @@ public sealed record AssetOffer(AssetKind Kind, string Name, AssetChange Change,
     public string Key => $"{Kind}:{Name}";
 }
 
-/// <summary>A font this game holds.</summary>
-public sealed record GameFont(string Name, long Length);
+/// <summary>A font this game holds, and whether its translation uses it.</summary>
+/// <param name="Used">Named by `_fonts[…].fallback` or `_font_overrides[].replacement` — what an export carries.</param>
+public sealed record GameFont(string Name, long Length, bool Used);
 
 /// <summary>An image this game's translation defines, and whether its file is there.</summary>
 public sealed record GameImage(string SpriteName, string? File, bool Present);
@@ -146,21 +147,23 @@ public static class GameAssets
         var folder = UserDataInventory.DataFolder(gamePath, descriptor);
         if (folder is null) return new GameAssetsState([], [], false);
 
+        var translation = TranslationPath(folder);
+        var root = ReadTranslation(translation);
+        var named = FontStemsNamed(root);
+
         var fonts = new List<GameFont>();
         var fontsFolder = Path.Combine(folder, AssetPacks.FontsFolder);
         if (Directory.Exists(fontsFolder))
         {
             foreach (var file in Directory.EnumerateFiles(fontsFolder))
             {
-                if (AssetPacks.IsFontFile(file))
-                    fonts.Add(new GameFont(Path.GetFileName(file), new FileInfo(file).Length));
+                var name = Path.GetFileName(file);
+                if (AssetPacks.IsFontFile(name))
+                    fonts.Add(new GameFont(name, new FileInfo(file).Length, named.Any(stem => AssetPacks.IsFontFileFor(name, stem))));
             }
         }
 
         fonts.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
-
-        var translation = TranslationPath(folder);
-        var root = ReadTranslation(translation);
         var images = new List<GameImage>();
 
         foreach (var definition in Definitions(root))
@@ -550,15 +553,18 @@ public static class GameAssets
 
     // ── Exporting ────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>What an export would carry: every font source, and every defined image whose file is there.</summary>
+    /// <summary>What an export would carry: the fonts the translation uses, and every defined image whose file is there.</summary>
     public static (int Fonts, int Images) Exportable(GameAssetsState state) =>
-        (state.Fonts.Count, state.ImagesPresent);
+        (state.Fonts.Count(f => f.Used), state.ImagesPresent);
 
     /// <summary>
     /// Writes this game's fonts and replacement images into a `.ugtpack` at <paramref name="destination"/>.
     ///
-    /// ⚠ Generated atlases are never carried (<see cref="AssetPacks.IsFontFile"/> refuses them),
-    /// and an image is carried only with its definition — the pair the mod needs.
+    /// 🔴 **Only what the translation USES** (user, 2026-09-27: « ça évite le bruit, et l'exporteur est
+    /// celui qui bosse sur la trad »). An image goes with its definition; a font goes when a font
+    /// setting or rule of the translation names it. A font sitting in fonts/ that nothing picks —
+    /// tried once, left behind — is noise to whoever receives the pack.
+    /// ⚠ Generated atlases are never carried (<see cref="AssetPacks.IsFontFile"/> refuses them).
     /// </summary>
     public static AssetWriteResult Export(GameInstall game, LoaderDescriptor descriptor, string destination,
                                           string madeBy)
@@ -590,6 +596,7 @@ public static class GameAssets
                     written++;
                 }
 
+                var named = FontStemsNamed(root);
                 var fontsFolder = Path.Combine(folder, AssetPacks.FontsFolder);
                 if (Directory.Exists(fontsFolder))
                 {
@@ -597,13 +604,14 @@ public static class GameAssets
                     {
                         var name = Path.GetFileName(file);
                         if (!AssetPacks.IsFontFile(name) || !AssetPacks.IsSafeFileName(name)) continue;
+                        if (!named.Any(stem => AssetPacks.IsFontFileFor(name, stem))) continue;
 
                         zip.CreateEntryFromFile(file, AssetPacks.FontsFolder + "/" + name, CompressionLevel.Optimal);
                         written++;
                     }
                 }
 
-                if (written == 0) return new(false, 0, "This game has no fonts or images to export.");
+                if (written == 0) return new(false, 0, "This game's translation uses no added font or image.");
 
                 var gameNode = new JsonObject { ["name"] = game.ProductName ?? game.Name };
                 if (!string.IsNullOrWhiteSpace(game.SteamAppId)) gameNode["steam_id"] = game.SteamAppId;
@@ -663,6 +671,37 @@ public static class GameAssets
             // A damaged translation defines nothing we can read; the screen says it holds none.
             return null;
         }
+    }
+
+    /// <summary>
+    /// The font files the translation names — `_fonts[…].fallback` and `_font_overrides[].replacement`,
+    /// as file names without extension (<see cref="AssetPacks.FontFileStem"/>).
+    /// </summary>
+    private static HashSet<string> FontStemsNamed(JsonObject? root)
+    {
+        var stems = new HashSet<string>(StringComparer.Ordinal);
+
+        void Take(JsonNode? reference)
+        {
+            if (reference is JsonValue value && value.TryGetValue<string>(out var text)
+                && AssetPacks.FontFileStem(text) is { } stem)
+            {
+                stems.Add(stem);
+            }
+        }
+
+        if (root?[SettingsSections.FontsKey] is JsonObject fonts)
+        {
+            foreach (var (_, settings) in fonts)
+                if (settings is JsonObject font) Take(font["fallback"]);
+        }
+
+        if (root?[SettingsSections.FontRulesKey] is JsonArray rules)
+        {
+            foreach (var rule in rules.OfType<JsonObject>()) Take(rule["replacement"]);
+        }
+
+        return stems;
     }
 
     private static IEnumerable<JsonObject> Definitions(JsonObject? root) =>

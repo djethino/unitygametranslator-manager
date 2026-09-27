@@ -40,10 +40,13 @@ internal static class GameAssetsChecks
             File.WriteAllBytes(Path.Combine(folder, "fonts", "a.ttf"), Bytes("font a"));
             File.WriteAllBytes(Path.Combine(folder, "images", "title.png"), Bytes("retouched by hand"));
             File.WriteAllText(translation,
-                "{\"_uuid\":\"u\",\"hello\":{\"v\":\"Bonjour\",\"t\":\"A\"},\"_image_replacements\":[" + DefinitionTitle + "]}");
+                "{\"_uuid\":\"u\",\"hello\":{\"v\":\"Bonjour\",\"t\":\"A\"},"
+                + "\"_fonts\":{\"LiberationSans SDF\":{\"enabled\":true,\"fallback\":\"[Custom] a\",\"type\":\"TMP\"}},"
+                + "\"_image_replacements\":[" + DefinitionTitle + "]}");
 
             var state = GameAssets.Read(gamePath, descriptor);
-            Program.Check(state is { Fonts.Count: 1, Images.Count: 1, HasTranslation: true } && state.Images[0].Present,
+            Program.Check(state is { Fonts.Count: 1, Images.Count: 1, HasTranslation: true } && state.Images[0].Present
+                          && state.Fonts[0].Used,
                 "the game is read: one font, one image defined and present",
                 "the tab says what is there before anything is added");
 
@@ -150,9 +153,14 @@ internal static class GameAssetsChecks
             var export = GameAssets.Export(game, descriptor, exported, "checks");
             var again = GameAssets.Plan(game, descriptor, [exported]);
             Program.Check(export.Done && again.Changes == 0 && again.Refused.Count == 0
-                          && again.Files.Count == 4 && again.Definitions.Count == 2 && again.Offers.Count == 4,
+                          && again.Files.Count == 3 && again.Definitions.Count == 2 && again.Offers.Count == 3,
                 "an exported pack read back into its own game changes nothing",
                 "the format written and the format read are the same format");
+
+            Program.Check(again.Files.Any(f => f.Asset.Name == "a.ttf") && again.Files.All(f => f.Asset.Name != "b.otf")
+                          && !GameAssets.Read(gamePath, descriptor).Fonts.Single(f => f.Name == "b.otf").Used,
+                "only the fonts the translation uses are exported, and the tab says which",
+                "a font tried once and left in fonts/ is noise to whoever receives the pack (user, 2026-09-27)");
 
             Program.Check(!Directory.GetFiles(root).Any(f => f.EndsWith(".tmp")) && !Directory.GetFiles(Path.Combine(folder, "fonts")).Any(f => f.EndsWith(".tmp")),
                 "no temporary file is left behind",

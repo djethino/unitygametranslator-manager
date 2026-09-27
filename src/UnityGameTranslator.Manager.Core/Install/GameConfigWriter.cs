@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using UnityGameTranslator.Manager.Core.Ai;
 using UnityGameTranslator.Manager.Core.Detection;
 using UnityGameTranslator.Manager.Core.Model;
+using UnityGameTranslator.Manager.Core.Platform;
 using UnityGameTranslator.Manager.Core.Settings;
 using UnityGameTranslator.Common;
 
@@ -104,7 +105,18 @@ public sealed class GameConfigWriter
     /// </summary>
     private readonly ModUiLibrary? _modUi;
 
-    public GameConfigWriter(ModUiLibrary? modUi = null) => _modUi = modUi;
+    /// <summary>
+    /// What makes a write refuse while the game runs (<see cref="GameWrites"/>). Asked for rather
+    /// than optional, as <see cref="TranslationInstaller"/> does: a caller that forgets it gets a
+    /// compile error, not a silently unguarded writer. Null only for a caller that writes nothing.
+    /// </summary>
+    private readonly IPlatform? _platform;
+
+    public GameConfigWriter(IPlatform? platform, ModUiLibrary? modUi = null)
+    {
+        _platform = platform;
+        _modUi = modUi;
+    }
 
     /// <summary>The mod's key for translating its own interface (three states; null = let the file decide).</summary>
     public const string TranslateModUiKey = "translate_mod_ui";
@@ -858,6 +870,9 @@ public sealed class GameConfigWriter
                                    bool skipWizard = true, GamePreference? perGame = null,
                                    ModUiWrite modUi = ModUiWrite.Fill)
     {
+        if (GameWrites.WhyNotNow(_platform, gamePath) is { } running)
+            return new ConfigWriteResult(false, Array.Empty<string>(), false, running);
+
         var folder = UserDataInventory.DataFolder(gamePath, descriptor);
         if (folder is null)
             return new ConfigWriteResult(false, Array.Empty<string>(), false,
@@ -964,6 +979,9 @@ public sealed class GameConfigWriter
     public ConfigWriteResult ApplyOne(string gamePath, LoaderDescriptor descriptor,
                                       string key, object? value, string label)
     {
+        if (GameWrites.WhyNotNow(_platform, gamePath) is { } running)
+            return new ConfigWriteResult(false, Array.Empty<string>(), false, running);
+
         var folder = UserDataInventory.DataFolder(gamePath, descriptor);
         if (folder is null)
             return new ConfigWriteResult(false, Array.Empty<string>(), false,

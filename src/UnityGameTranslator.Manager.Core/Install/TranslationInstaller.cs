@@ -50,24 +50,6 @@ public sealed class TranslationInstaller
     /// <summary>Where replaced files go. Same folder the uninstaller already uses.</summary>
     public const string BackupFolderName = "removed";
 
-    /// <summary>
-    /// What a write refuses to do while the game is open.
-    ///
-    /// ⚠ **Not a locked file — a lost one.** The mod holds the whole translation in memory and
-    /// rewrites it WHOLE on its own timer. A file written here while a game runs is not in
-    /// conflict with anything: it is overwritten at the mod's next save, silently, and the person
-    /// who took a translation sees it vanish minutes later with nothing said. That is worse than a
-    /// refusal, which is why this is a refusal.
-    ///
-    /// ⚠ The check is <see cref="IPlatform.IsGameRunning"/> — the precise one, which opens each
-    /// candidate process — and not the cheap sweep the game list uses. That one answers "not
-    /// running" for a game belonging to another operating-system account, and this is exactly the
-    /// machine where several accounts share one game folder.
-    /// </summary>
-    public const string GameRunningRefusal =
-        "This game is running. Close it first: UGT Mod saves its translation file while it runs "
-        + "and would overwrite the change.";
-
     private readonly IPlatform? _platform;
 
     /// <summary>
@@ -81,26 +63,8 @@ public sealed class TranslationInstaller
         _platform = platform;
     }
 
-    /// <summary>
-    /// Whether writing to this game is allowed right now. Null when it is.
-    ///
-    /// ⚠ Fails towards refusing: an answer we cannot get is not permission.
-    /// </summary>
-    public string? WhyNotNow(GameInstall game)
-    {
-        if (_platform is null) return null;
-
-        try
-        {
-            return _platform.IsGameRunning(game) ? GameRunningRefusal : null;
-        }
-        catch
-        {
-            // Could not tell. The install engine treats this the same way — the cost of a needless
-            // refusal is a second attempt; the cost of a wrong permission is somebody's work.
-            return GameRunningRefusal;
-        }
-    }
+    /// <summary>Whether writing to this game is allowed right now. Null when it is — see <see cref="GameWrites"/>.</summary>
+    public string? WhyNotNow(GameInstall game) => GameWrites.WhyNotNow(_platform, game);
 
     /// <summary>
     /// Writes the file, after moving any existing one aside.

@@ -1809,6 +1809,9 @@ public partial class MainWindow : Window
         if (_selected is not null && sweep.IsRunning(_selected) != was.IsRunning(_selected))
             await ShowSelectedAsync();
 
+        // A window open over the card greys its own write verbs the same way (see BackupsWindow).
+        if (_openBackups is { } open) open.Window.SetRunning(sweep.IsRunning(open.Game));
+
         // A game that has just been closed gets one last look, whatever its file's date says: the
         // mod writes on the way out, and this is the moment somebody turns back to this window
         // expecting to see what their session produced. Then it is left alone — see the two
@@ -4427,7 +4430,7 @@ public partial class MainWindow : Window
         if (mine.Count == 1 && !mayTake)
         {
             ToolTip.SetTip(take, _running.IsRunning(report.Game)
-                ? TranslationInstaller.GameRunningRefusal
+                ? GameWrites.RunningRefusal
                 : standing.Reason);
         }
 
@@ -4549,7 +4552,7 @@ public partial class MainWindow : Window
         ToolTip.SetTip(apply, report.InstalledPluginVersion is null
             ? "Install UGT Mod in this game first."
             : _running.IsRunning(report.Game)
-                ? TranslationInstaller.GameRunningRefusal
+                ? GameWrites.RunningRefusal
                 : standing.Reason
                   ?? $"Installs {picked.SourceLanguage} → {picked.TargetLanguage} by "
                      + $"{People.MentionOf(picked.Author, _settings.Current.ApiUser)} in this game.");
@@ -5445,11 +5448,11 @@ public partial class MainWindow : Window
         // undone at the next save — refused, and said, like every other write into a game.
         var running = _running.IsRunning(report.Game);
         box.IsEnabled = !running && MaySetUp(report, box);
-        if (running) ToolTip.SetTip(box, TranslationInstaller.GameRunningRefusal);
+        if (running) ToolTip.SetTip(box, GameWrites.RunningRefusal);
 
         async Task WriteAsync(bool wanted)
         {
-            var result = new GameConfigWriter().ApplyOne(
+            var result = new GameConfigWriter(_platform).ApplyOne(
                 report.Game.Path, descriptor, GameConfigWriter.TranslationsShownKey, wanted, "translations");
 
             if (!result.Written)
@@ -7226,7 +7229,8 @@ public partial class MainWindow : Window
             : null;
 
         var edit = ScopeMark.Marked(EditSide.Local, "Edit in browser",
-                                    standing.CanWriteLocally && nothingYet is null);
+                                    MayWriteNow(report, standing) && nothingYet is null);
+        ExplainIfRunning(report, edit);
         edit.Click += async (_, _) => await OpenLocalEditorAsync(report, descriptor, edit);
         actions.Children.Add(edit);
 
@@ -7290,7 +7294,8 @@ public partial class MainWindow : Window
             var merge = ScopeMark.Marked(
                 EditScope.SideAfter(onThisMachine: true, yourPublishedCopy: oursOnline),
                 merging ? MergeLabel : DownloadUpdateLabel,
-                standing.CanWriteLocally);
+                MayWriteNow(report, standing));
+            ExplainIfRunning(report, merge);
             merge.Click += async (_, _) => await MergeWithPublishedAsync(report, descriptor, merge);
             actions.Children.Add(merge);
         }
@@ -7319,7 +7324,7 @@ public partial class MainWindow : Window
             var takeTheirs = ScopeMark.Marked(
                 EditScope.SideAfter(onThisMachine: true, yourPublishedCopy: oursPublished),
                 "Take the published version…",
-                standing.CanWriteLocally);
+                MayWriteNow(report, standing));
 
             ToolTip.SetTip(takeTheirs, Unpublished(report) is { } dropped
                 ? $"Replaces this game's file with the published version. The "
@@ -7327,6 +7332,7 @@ public partial class MainWindow : Window
                   + "backed up, not merged."
                 : "Replaces this game's file with the published version.");
 
+            ExplainIfRunning(report, takeTheirs);
             takeTheirs.Click += async (_, _) =>
                 await TakeSelectedTranslationAsync(report, onServer, replacing: true);
 
@@ -7383,7 +7389,7 @@ public partial class MainWindow : Window
                                        Uploads.Verb(act) + "…",
                                        standing.CanAct && nothingYet is null && nothingToSend is null
                                        && inTheGame is null && !publishRunning);
-        if (publishRunning) ToolTip.SetTip(publish, TranslationInstaller.GameRunningRefusal);
+        if (publishRunning) ToolTip.SetTip(publish, GameWrites.RunningRefusal);
         publish.Click += async (_, _) => await PublishTranslationAsync(report, descriptor, publish);
         actions.Children.Add(publish);
 
@@ -7425,7 +7431,8 @@ public partial class MainWindow : Window
             // learnt this interface; the word tells everyone else, and on the one button that
             // takes a translation out of a game, being clear twice costs nothing.
             var clear = ScopeMark.Marked(EditSide.Local, "Remove local translation…",
-                                         standing.CanWriteLocally);
+                                         MayWriteNow(report, standing));
+            ExplainIfRunning(report, clear);
             clear.Click += async (_, _) => await RemoveTranslationAsync(report, descriptor);
             actions.Children.Add(clear);
         }
@@ -8530,10 +8537,9 @@ public partial class MainWindow : Window
     /// </summary>
     private bool MaySetUp(GameReport report, Control? explain = null)
     {
-        var standing = ServerIdentity.For(_settings.Current, report.SiteAccount, BuildInfo.ApiBaseUrl);
-        if (standing.CanWriteLocally) return true;
+        if (SetupRefusal(report) is not { } why) return true;
 
-        if (explain is not null && standing.SetupRefusal is { } why) ToolTip.SetTip(explain, why);
+        if (explain is not null) ToolTip.SetTip(explain, why);
         return false;
     }
 
@@ -8541,11 +8547,34 @@ public partial class MainWindow : Window
     /// The same answer as <see cref="MaySetUp"/>, for the one caller that cannot be handed a
     /// control: the settings form owns its own Apply and is told why rather than shown a button.
     /// </summary>
-    private string? SetupRefusal(GameReport report) =>
-        ServerIdentity.For(_settings.Current, report.SiteAccount, BuildInfo.ApiBaseUrl) is
+    private string? SetupRefusal(GameReport report)
+    {
+        // The running game first: it refuses every write whoever is signed in, and it ends by
+        // itself — the reader only has to close the game.
+        if (_running.IsRunning(report.Game)) return GameWrites.RunningRefusal;
+
+        return ServerIdentity.For(_settings.Current, report.SiteAccount, BuildInfo.ApiBaseUrl) is
             { CanWriteLocally: false } standing
             ? standing.SetupRefusal
             : null;
+    }
+
+    /// <summary>
+    /// Whether this tool may write into this game now: the account allows it (<see cref="ServerIdentity"/>)
+    /// AND the game is not running (<see cref="GameWrites"/> — the mod would overwrite the change).
+    ///
+    /// 🔴 **One answer for every local write on the translation card.** Four of its buttons asked
+    /// the account alone and stayed live while the game ran: pressed, they refused after the
+    /// confirmation (the writer checks) — or, for the settings form, did nothing at all.
+    /// </summary>
+    private bool MayWriteNow(GameReport report, ServerStanding standing) =>
+        standing.CanWriteLocally && !_running.IsRunning(report.Game);
+
+    /// <summary>Puts the running game's reason on a button it greys (the account's reason is said on the card).</summary>
+    private void ExplainIfRunning(GameReport report, Control button)
+    {
+        if (_running.IsRunning(report.Game)) ToolTip.SetTip(button, GameWrites.RunningRefusal);
+    }
 
     /// <summary>
     /// The mod itself: its version, what to do about it, and the settings this game carries.
@@ -9290,7 +9319,11 @@ public partial class MainWindow : Window
     private async Task ApplyOwnSettingsAsync(GameReport report, GamePreference preference)
     {
         if (InstalledDescriptor(report) is not { } descriptor) return;
-        if (_running.IsRunning(report.Game)) return;
+        if (_running.IsRunning(report.Game))
+        {
+            await MessageAsync("Nothing was changed", GameWrites.RunningRefusal);
+            return;
+        }
 
         Busy(true, "Applying this game's settings...");
 
@@ -9298,7 +9331,7 @@ public partial class MainWindow : Window
         // already holds next, Mod defaults last.
         var settings = SettingsFor(report, preference);
 
-        var result = new GameConfigWriter(new ModUiLibrary(_platform)).Apply(
+        var result = new GameConfigWriter(_platform, new ModUiLibrary(_platform)).Apply(
             report.Game.Path, descriptor, settings,
             TargetFor(report, descriptor, settings),
             skipWizard: !LetsWizardAsk(report, preference), perGame: preference,
@@ -9838,7 +9871,7 @@ public partial class MainWindow : Window
 
                 Busy(true, "Applying the language...");
 
-                var result = new GameConfigWriter().ApplyOne(
+                var result = new GameConfigWriter(_platform).ApplyOne(
                     report.Game.Path, descriptor, GameConfigWriter.TargetLanguageKey,
                     Languages.NameOf(chosen), "language");
 
@@ -10015,7 +10048,7 @@ public partial class MainWindow : Window
 
                 var running = _running.IsRunning(report.Game);
                 write.IsEnabled = count > 0 && !running && MaySetUp(report, write);
-                if (running) ToolTip.SetTip(write, TranslationInstaller.GameRunningRefusal);
+                if (running) ToolTip.SetTip(write, GameWrites.RunningRefusal);
             }
         }
 
@@ -10105,7 +10138,7 @@ public partial class MainWindow : Window
         {
             Busy(true, "Applying the source language...");
 
-            var writer = new GameConfigWriter();
+            var writer = new GameConfigWriter(_platform);
             ConfigWriteResult? failed = null;
 
             if (SourceDiffers())
@@ -10388,7 +10421,7 @@ public partial class MainWindow : Window
 
             Busy(true, "Applying the key...");
 
-            var result = new GameConfigWriter().ApplyOne(
+            var result = new GameConfigWriter(_platform).ApplyOne(
                 report.Game.Path, descriptor!, GameConfigWriter.HotkeyKey, chosen, "in-game hotkey");
 
             Busy(false, "Ready.");
@@ -10495,7 +10528,7 @@ public partial class MainWindow : Window
         // writes them.
         var settings = _settings.Current;
 
-        return new GameConfigWriter(new ModUiLibrary(_platform)).Compare(
+        return new GameConfigWriter(_platform, new ModUiLibrary(_platform)).Compare(
             report.Game.Path, descriptor, settings,
             TargetFor(report, descriptor, settings), preference, ModUiWrite.Replace);
     }
@@ -10582,7 +10615,7 @@ public partial class MainWindow : Window
 
         var settings = SettingsFor(report, preference);
 
-        return new GameConfigWriter(new ModUiLibrary(_platform)).Compare(
+        return new GameConfigWriter(_platform, new ModUiLibrary(_platform)).Compare(
             report.Game.Path, descriptor, settings,
             TargetFor(report, descriptor, settings), preference, ModUiWriteFor(report, preference));
     }
@@ -11652,7 +11685,7 @@ public partial class MainWindow : Window
             {
                 Work.Begin(StepOf(OneClickAct.ApplyChoices));
 
-                var writer = new GameConfigWriter();
+                var writer = new GameConfigWriter(_platform);
                 // Once each: validating may not have run (another account's game), and then the
                 // plan block's answers are still in `_pendingPlan` and in the list read now.
                 var all = PendingChoices(report);
@@ -13560,7 +13593,7 @@ public partial class MainWindow : Window
     private void AlignGameLanguage(GameReport report, LoaderDescriptor descriptor,
                                    OnlineTranslation translation)
     {
-        var writer = new GameConfigWriter();
+        var writer = new GameConfigWriter(_platform);
 
         if (LanguageSwitchOnTaking(report, translation, descriptor) is { } switching)
         {
@@ -13585,12 +13618,12 @@ public partial class MainWindow : Window
     /// that declaration). Nothing composed from settings or preferences may reach it: the key is an
     /// instruction to the model, not a label, and a guess retires lines for good (GameLanguages).
     /// </summary>
-    private static void WriteSourceLanguage(GameReport report, LoaderDescriptor descriptor, string source)
+    private void WriteSourceLanguage(GameReport report, LoaderDescriptor descriptor, string source)
     {
         var configured = LocalTranslationProbe.ReadLanguages(report.Game.Path, descriptor).Source;
         if (string.Equals(configured, source, StringComparison.OrdinalIgnoreCase)) return;
 
-        new GameConfigWriter().ApplyOne(report.Game.Path, descriptor,
+        new GameConfigWriter(_platform).ApplyOne(report.Game.Path, descriptor,
             GameConfigWriter.SourceLanguageKey, source, "source language");
     }
 
@@ -13679,7 +13712,7 @@ public partial class MainWindow : Window
         var settings = _settings.Current;
         var target = TargetFor(report, descriptor, settings);
 
-        var result = new GameConfigWriter(new ModUiLibrary(_platform))
+        var result = new GameConfigWriter(_platform, new ModUiLibrary(_platform))
             .Apply(report.Game.Path, descriptor, settings, target,
                    skipWizard: !LetsWizardAsk(report, preference), perGame: preference,
                    modUi: ModUiWrite.Replace);
@@ -13984,10 +14017,15 @@ public partial class MainWindow : Window
     /// It lived here as a hand-made dialog for a while and read as a different program: same
     /// product, another designer.
     /// </summary>
+    /// <summary>The Backups window while it is open, told when its game starts or stops (the sweep).</summary>
+    private (GameInstall Game, BackupsWindow Window)? _openBackups;
+
     private async Task ShowBackupsAsync(GameReport report, LoaderDescriptor descriptor)
     {
-        var window = new BackupsWindow(report.Game, descriptor, _running.IsRunning(report.Game));
-        await window.ShowDialog(this);
+        var window = new BackupsWindow(report.Game, descriptor, _platform, _running.IsRunning(report.Game));
+        _openBackups = (report.Game, window);
+        try { await window.ShowDialog(this); }
+        finally { _openBackups = null; }
 
         // Only when something was written. The card behind shows the line count and the sync
         // verdict, and a restore moves both — but redrawing it for a window somebody merely

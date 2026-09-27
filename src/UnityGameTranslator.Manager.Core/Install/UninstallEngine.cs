@@ -755,6 +755,10 @@ public sealed class UninstallEngine
     /// </summary>
     public RestoreOutcome PutBackWhatWasHere(GameInstall game)
     {
+        // A running game holds its loader's files open: put back now, they would half-land.
+        if (GameWrites.WhyNotNow(_platform, game) is { } running)
+            return new RestoreOutcome(false, running, Array.Empty<string>());
+
         var files = new FileOperations(game.Path);
         var restored = RestoreBackups(game, files);
 

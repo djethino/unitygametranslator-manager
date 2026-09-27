@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using UnityGameTranslator.Common;
 using UnityGameTranslator.Manager.Core.Detection;
 using UnityGameTranslator.Manager.Core.Model;
+using UnityGameTranslator.Manager.Core.Platform;
 
 namespace UnityGameTranslator.Manager.Core.Install;
 
@@ -293,8 +294,12 @@ public static class TranslationBackupStore
     /// ⚠ A translation too damaged to count reads as <see cref="Backups.UnknownLineCount"/> and is
     /// allowed through, deliberately: it is the one here most worth keeping.
     /// </summary>
-    public static string? SaveCopy(string gamePath, LoaderDescriptor descriptor)
+    /// <param name="platform">What refuses the write while the game runs — see <see cref="GameWrites"/>.
+    /// Every write here asks: the mod's own Backups screen works on this same folder while it runs.</param>
+    public static string? SaveCopy(IPlatform? platform, string gamePath, LoaderDescriptor descriptor)
     {
+        if (GameWrites.WhyNotNow(platform, gamePath) is not null) return null;
+
         var lines = LocalTranslationProbe.Read(gamePath, descriptor)?.EntryCount ?? 0;
 
         if (Backups.WhyCannotSave(List(gamePath, descriptor), lines) is not null) return null;
@@ -515,8 +520,9 @@ public static class TranslationBackupStore
             // So a file from July sat below five newer copies for ever, listed and never dropped.
             // They are what an automatic copy was before copies had folders; they go the same way,
             // and Keep is still there to take one out of the cycle.
+            // No platform: pruning only follows a copy just taken, by a write already allowed.
             foreach (var id in Backups.AutomaticToDrop(List(gamePath, descriptor)))
-                Delete(gamePath, descriptor, id);
+                Delete(null, gamePath, descriptor, id);
         }
         catch
         {
@@ -532,8 +538,10 @@ public static class TranslationBackupStore
     /// 🔴 The current state is kept FIRST. Restoring is the one act here that replaces work, and
     /// somebody who picks the wrong row has to be able to walk back out of it.
     /// </summary>
-    public static bool Restore(string gamePath, LoaderDescriptor descriptor, string id)
+    public static bool Restore(IPlatform? platform, string gamePath, LoaderDescriptor descriptor, string id)
     {
+        if (GameWrites.WhyNotNow(platform, gamePath) is not null) return false;
+
         try
         {
             var data = UserDataInventory.FolderFor(gamePath, descriptor);
@@ -630,8 +638,10 @@ public static class TranslationBackupStore
             CopyFolder(folder, Path.Combine(destination, Path.GetFileName(folder)));
     }
 
-    public static bool Delete(string gamePath, LoaderDescriptor descriptor, string id)
+    public static bool Delete(IPlatform? platform, string gamePath, LoaderDescriptor descriptor, string id)
     {
+        if (GameWrites.WhyNotNow(platform, gamePath) is not null) return false;
+
         try
         {
             var data = UserDataInventory.FolderFor(gamePath, descriptor);
@@ -665,8 +675,10 @@ public static class TranslationBackupStore
     /// ⚠ A legacy file is promoted by being copied into a proper folder: it has no `about` of its
     /// own, and leaving it loose would keep it at the mercy of the next tidy-up.
     /// </summary>
-    public static bool Keep(string gamePath, LoaderDescriptor descriptor, string id)
+    public static bool Keep(IPlatform? platform, string gamePath, LoaderDescriptor descriptor, string id)
     {
+        if (GameWrites.WhyNotNow(platform, gamePath) is not null) return false;
+
         try
         {
             var data = UserDataInventory.FolderFor(gamePath, descriptor);
@@ -713,8 +725,10 @@ public static class TranslationBackupStore
         }
     }
 
-    public static bool Rename(string gamePath, LoaderDescriptor descriptor, string id, string? label)
+    public static bool Rename(IPlatform? platform, string gamePath, LoaderDescriptor descriptor, string id, string? label)
     {
+        if (GameWrites.WhyNotNow(platform, gamePath) is not null) return false;
+
         try
         {
             var data = UserDataInventory.FolderFor(gamePath, descriptor);

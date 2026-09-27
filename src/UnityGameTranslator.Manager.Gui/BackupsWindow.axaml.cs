@@ -6,6 +6,7 @@ using UnityGameTranslator.Common;
 using UnityGameTranslator.Manager.Core.Detection;
 using UnityGameTranslator.Manager.Core.Install;
 using UnityGameTranslator.Manager.Core.Model;
+using UnityGameTranslator.Manager.Core.Platform;
 
 namespace UnityGameTranslator.Manager.Gui;
 
@@ -33,7 +34,14 @@ public sealed class BackupsWindow : Window
 {
     private readonly GameInstall _game;
     private readonly LoaderDescriptor _descriptor;
-    private readonly bool _running;
+    private readonly IPlatform _platform;
+
+    /// <summary>
+    /// Whether the game is running, as the main window's sweep last saw it — kept current while this
+    /// window is open (<see cref="SetRunning"/>). Taken once at opening, it let a game started with
+    /// the window open go on showing live buttons whose writes the mod would overwrite.
+    /// </summary>
+    private bool _running;
 
     /// <summary>
     /// The two cards. Their rows are rewritten on every redraw from what each list holds — see
@@ -52,10 +60,22 @@ public sealed class BackupsWindow : Window
     /// <summary>Whether anything was written, so the caller knows to refresh the card behind.</summary>
     public bool Touched { get; private set; }
 
-    public BackupsWindow(GameInstall game, LoaderDescriptor descriptor, bool running)
+    /// <summary>The game started or stopped while this window is open: every write verb follows.</summary>
+    public void SetRunning(bool running)
+    {
+        if (running == _running) return;
+        _running = running;
+        Redraw();
+    }
+
+    /// <summary>The one reason every write verb gives while the game runs.</summary>
+    private string RunningTip => $"{_game.Name} is running, so its files are locked.";
+
+    public BackupsWindow(GameInstall game, LoaderDescriptor descriptor, IPlatform platform, bool running)
     {
         _game = game;
         _descriptor = descriptor;
+        _platform = platform;
         _running = running;
 
         Title = $"{Backups.ScreenTitle} — {game.Name}";
@@ -404,7 +424,7 @@ public sealed class BackupsWindow : Window
         // running game comes first: it is the one refusal this window owns, and it outranks the
         // others because nothing can be written at all while the files are locked.
         ToolTip.SetTip(save, _running
-            ? $"{_game.Name} is running, so its files are locked."
+            ? RunningTip
             : why ?? "Backs up the translation as it stands, with the fonts and images it uses.");
 
         // ⚠ Off the UI thread and behind a busy button, like the three verbs on each row. Copying a
@@ -413,7 +433,8 @@ public sealed class BackupsWindow : Window
         // had one.
         Busy.OnClick(save, async () =>
         {
-            var made = await Task.Run(() => TranslationBackupStore.SaveCopy(_game.Path, _descriptor));
+            if (await RefusedBecauseRunningAsync()) return;
+            var made = await Task.Run(() => TranslationBackupStore.SaveCopy(_platform, _game.Path, _descriptor));
             if (made is not null) Touched = true;
             Redraw();
         });
@@ -631,7 +652,7 @@ public sealed class BackupsWindow : Window
 
         var restore = ScopeMark.Marked(EditSide.Local, "Restore", enabled: !_running);
         ToolTip.SetTip(restore, _running
-            ? $"{_game.Name} is running, so its files are locked."
+            ? RunningTip
             : "Restores this backup into the game. The current translation is backed up first.");
 
         // 🔴 **Asked, exactly as the mod asks it.** This window and the mod's panel look at the same
@@ -661,11 +682,11 @@ public sealed class BackupsWindow : Window
             await Busy.While(restore, () =>
                 ActAsync(() =>
                 {
-                    if (!TranslationBackupStore.Restore(_game.Path, _descriptor, entry.Id)) return false;
+                    if (!TranslationBackupStore.Restore(_platform, _game.Path, _descriptor, entry.Id)) return false;
 
                     // The restored file may be in another language than the one the game was
                     // pointed at: the setting follows the file, as the mod settles it at load.
-                    new GameConfigWriter().FollowTheTranslation(_game.Path, _descriptor);
+                    new GameConfigWriter(_platform).FollowTheTranslation(_game.Path, _descriptor);
                     return true;
                 }, "Restore failed"));
         };
@@ -674,8 +695,8 @@ public sealed class BackupsWindow : Window
 
         if (entry.IsSaved)
         {
-            var rename = new Button { Content = "Rename", FontSize = 12 };
-            ToolTip.SetTip(rename, "Give this backup a name, to find it easily.");
+            var rename = new Button { Content = "Rename", FontSize = 12, IsEnabled = !_running };
+            ToolTip.SetTip(rename, _running ? RunningTip : "Give this backup a name, to find it easily.");
             rename.Click += async (_, _) =>
             {
                 if (await AskNameAsync(entry)) Touched = true;
@@ -683,8 +704,8 @@ public sealed class BackupsWindow : Window
             };
             verbs.Children.Add(rename);
 
-            var delete = new Button { Content = "Delete", FontSize = 12 };
-            ToolTip.SetTip(delete, "Deletes this backup and frees a slot.");
+            var delete = new Button { Content = "Delete", FontSize = 12, IsEnabled = !_running };
+            ToolTip.SetTip(delete, _running ? RunningTip : "Deletes this backup and frees a slot.");
             // ⚠ The one act on this window nothing puts back — the others all leave a way out.
             delete.Click += async (_, _) =>
             {
@@ -697,7 +718,7 @@ public sealed class BackupsWindow : Window
                 }
 
                 await Busy.While(delete, () =>
-                    ActAsync(() => TranslationBackupStore.Delete(_game.Path, _descriptor, entry.Id),
+                    ActAsync(() => TranslationBackupStore.Delete(_platform, _game.Path, _descriptor, entry.Id),
                              "This backup could not be deleted"));
             };
             verbs.Children.Add(delete);
@@ -716,20 +737,22 @@ public sealed class BackupsWindow : Window
             {
                 Content = "Keep",
                 FontSize = 12,
-                IsEnabled = !already && Backups.CanSaveAnother(all),
+                IsEnabled = !_running && !already && Backups.CanSaveAnother(all),
             };
 
             // ⚠ The slot ceiling alone: this duplicates a backup that already holds lines, so how
             // many the game holds today has no say in it — which is why WhyNoRoom is a question of
             // its own and not part of WhyCannotSave.
-            ToolTip.SetTip(keep, already
+            ToolTip.SetTip(keep, _running
+                                 ? RunningTip
+                                 : already
                                  ? Backups.AlreadyKeptHint
                                  : Backups.WhyNoRoom(all)
                                    ?? $"Copies it to {Backups.SavedHeading}, where it is kept until "
                                       + "you delete it.");
 
             Busy.OnClick(keep, () =>
-                ActAsync(() => TranslationBackupStore.Keep(_game.Path, _descriptor, entry.Id),
+                ActAsync(() => TranslationBackupStore.Keep(_platform, _game.Path, _descriptor, entry.Id),
                          "Backup failed"));
 
             verbs.Children.Add(keep);
@@ -781,6 +804,8 @@ public sealed class BackupsWindow : Window
     /// </summary>
     private async Task ActAsync(Func<bool> write, string couldNot)
     {
+        if (await RefusedBecauseRunningAsync()) return;
+
         var done = await Task.Run(write);
         if (done) Touched = true;
 
@@ -792,6 +817,20 @@ public sealed class BackupsWindow : Window
                 "Nothing was changed. The backup folder may have been changed by another program. "
                 + "Close this window and open it again.");
         }
+    }
+
+    /// <summary>
+    /// The precise check, just before a write: the sweep behind <see cref="_running"/> is up to four
+    /// seconds old and cannot see a game run by another Windows account. True when the game runs —
+    /// the window then greys its verbs and says so, rather than reporting a failed write.
+    /// </summary>
+    private async Task<bool> RefusedBecauseRunningAsync()
+    {
+        if (await Task.Run(() => GameWrites.WhyNotNow(_platform, _game)) is not { } refusal) return false;
+
+        SetRunning(true);
+        await ConfirmationWindow.TellAsync(this, "Nothing was changed", refusal);
+        return true;
     }
 
     private string? LocalUuid() => LocalTranslationProbe.Read(_game.Path, _descriptor)?.Uuid;
@@ -875,8 +914,7 @@ public sealed class BackupsWindow : Window
 
         save.Click += (_, _) =>
         {
-            TranslationBackupStore.Rename(_game.Path, _descriptor, entry.Id, field.Text);
-            written = true;
+            written = TranslationBackupStore.Rename(_platform, _game.Path, _descriptor, entry.Id, field.Text);
             dialog.Close();
         };
 

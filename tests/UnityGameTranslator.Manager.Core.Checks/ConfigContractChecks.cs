@@ -103,7 +103,7 @@ internal static class ConfigContractChecks
 
                 // Mod defaults with translation on — the very situation of the defect.
                 var settings = new InstallerSettings { TranslationBackend = backend, EnableAi = true };
-                var result = new GameConfigWriter().Apply(gamePath, descriptor, settings, "French");
+                var result = new GameConfigWriter(null).Apply(gamePath, descriptor, settings, "French");
 
                 var written = JsonNode.Parse(File.ReadAllText(Path.Combine(
                     gamePath, "BepInEx", "plugins", "UnityGameTranslator", LocalTranslationProbe.ConfigFileName)))!.AsObject();
@@ -141,7 +141,7 @@ internal static class ConfigContractChecks
             try
             {
                 Directory.CreateDirectory(Path.Combine(gamePath, "BepInEx", "plugins", "UnityGameTranslator"));
-                new GameConfigWriter().Apply(gamePath, descriptor,
+                new GameConfigWriter(null).Apply(gamePath, descriptor,
                     new InstallerSettings { TranslationBackend = "llm", EnableAi = true }, "French", perGame: perGame);
                 return JsonNode.Parse(File.ReadAllText(Path.Combine(
                     gamePath, "BepInEx", "plugins", "UnityGameTranslator", LocalTranslationProbe.ConfigFileName)))!.AsObject();
@@ -198,7 +198,7 @@ internal static class ConfigContractChecks
                     },
                 };
 
-                new GameConfigWriter().Apply(gamePath, descriptor, defaults, "French", perGame: perGame);
+                new GameConfigWriter(null).Apply(gamePath, descriptor, defaults, "French", perGame: perGame);
                 return JsonNode.Parse(File.ReadAllText(file))!.AsObject();
             }
             finally
@@ -283,7 +283,7 @@ internal static class ConfigContractChecks
                 return File.Exists(file) ? File.ReadAllText(file) : null;
             }
 
-            var writer = new GameConfigWriter(library);
+            var writer = new GameConfigWriter(null, library);
             Program.Check(!new InstallerSettings().TranslateModUi,
                 "translating UGT Mod's interface is off until somebody ticks it",
                 "an option is never chosen on the person's behalf");
@@ -319,7 +319,7 @@ internal static class ConfigContractChecks
                 "Mod defaults applied to a game replace its own file, listed with a note first",
                 "the differences are what the act is confirmed from");
 
-            var twice = new GameConfigWriter(library)
+            var twice = new GameConfigWriter(null, library)
                 .Compare(defaulted, descriptor, settings, "French", modUi: ModUiWrite.Replace);
             Program.Check(!twice.Any(d => d.Key == ModUi.FileName),
                 "the same file is not offered again", "nothing would change");

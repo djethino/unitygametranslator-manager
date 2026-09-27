@@ -512,22 +512,78 @@ public partial class MainWindow
         panel.Children.Add(Intro("Puts the fonts and images this game's translation uses in one .ugtpack file, to share or keep."));
 
         var (fonts, images) = GameAssets.Exportable(state);
-        var any = fonts + images > 0;
 
-        var export = new Button { Content = "Export...", IsEnabled = any, HorizontalAlignment = HorizontalAlignment.Left };
-        ToolTip.SetTip(export, any
-            ? $"{Composition.Amount(fonts, "font", "fonts")}, {Composition.Amount(images, "image", "images")}."
-            : "This game's translation uses no added font or image.");
+        // Fonts installed on this computer that the translation uses by name — offered, never taken
+        // by default: their licences are the sharer's to check (user, 2026-09-27).
+        var systemFonts = GameAssets.SystemFontsUsed(_platform, report.Game, descriptor);
+        var includable = systemFonts.Where(f => f.Includable).ToList();
+        var path = report.Game.Path;
 
-        export.Click += async (_, _) => await ExportAssetsAsync(report, descriptor);
+        var export = new Button { Content = "Export...", HorizontalAlignment = HorizontalAlignment.Left };
+        var summary = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Foreground = Brush("TextSecondary") };
 
-        panel.Children.Add(Row(any
-            ? $"{Composition.Amount(fonts, "font", "fonts")}, {Composition.Amount(images, "image", "images")}"
-            : "Nothing to export", export));
+        void Refresh()
+        {
+            var system = _exportSystemFonts.Contains(path) ? includable.Count : 0;
+            var any = fonts + images + system > 0;
+
+            summary.Text = any
+                ? $"{Composition.Amount(fonts + system, "font", "fonts")}, {Composition.Amount(images, "image", "images")}"
+                : "Nothing to export";
+            export.IsEnabled = any;
+            ToolTip.SetTip(export, any ? null : "This game's translation uses no added font or image.");
+        }
+
+        // The option first, then what it is about, then the act — the order the rest of the card reads in.
+        if (includable.Count > 0)
+        {
+            var include = new CheckBox
+            {
+                Content = $"Include system fonts ({includable.Count})",
+                FontSize = 12,
+                IsChecked = _exportSystemFonts.Contains(path),
+            };
+
+            ToolTip.SetTip(include, "Installed on this computer and used by the translation: "
+                                    + string.Join(", ", includable.Select(f => f.Reference)) + ".");
+
+            include.IsCheckedChanged += (_, _) =>
+            {
+                if (include.IsChecked == true) _exportSystemFonts.Add(path);
+                else _exportSystemFonts.Remove(path);
+                Refresh();
+            };
+
+            panel.Children.Add(include);
+        }
+
+        if (systemFonts.Where(f => !f.Includable).ToList() is { Count: > 0 } left)
+            panel.Children.Add(Note("Not included: " + string.Join(", ", left.Select(f => $"{f.Reference} ({f.Why})")) + "."));
+
+        // Read before the button, where the decision to share is taken — and true of every file in a pack.
+        panel.Children.Add(Note(AssetPacks.ShareNotice, Tone.Warning));
+
+        export.Click += async (_, _) => await ExportAssetsAsync(report, descriptor,
+            _exportSystemFonts.Contains(path) ? includable : []);
+
+        Refresh();
+        panel.Children.Add(new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 10,
+            Children = { export, summary },
+        });
         return panel;
     }
 
-    private async Task ExportAssetsAsync(GameReport report, LoaderDescriptor descriptor)
+    /// <summary>
+    /// Games whose export carries their system fonts — ticked on the Export card, for this session.
+    /// ⚠ Never remembered: a choice to share fonts under somebody else's licence is made each time.
+    /// </summary>
+    private readonly HashSet<string> _exportSystemFonts = new(StringComparer.OrdinalIgnoreCase);
+
+    private async Task ExportAssetsAsync(GameReport report, LoaderDescriptor descriptor,
+                                         IReadOnlyList<SystemFontUse> systemFonts)
     {
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
@@ -544,7 +600,8 @@ public partial class MainWindow
         try
         {
             result = await Task.Run(() => GameAssets.Export(report.Game, descriptor, destination,
-                                                             $"UnityGameTranslator Manager {BuildInfo.Version}"));
+                                                             $"UnityGameTranslator Manager {BuildInfo.Version}",
+                                                             systemFonts));
         }
         finally
         {

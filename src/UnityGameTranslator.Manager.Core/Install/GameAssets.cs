@@ -136,6 +136,18 @@ public sealed record GameAssetsState(IReadOnlyList<GameFont> Fonts, IReadOnlyLis
     public int ImagesPresent => Images.Count(i => i.Present);
 }
 
+/// <summary>
+/// A font installed on this computer that the translation uses by name — what an export may carry
+/// when somebody ticks it.
+/// </summary>
+/// <param name="Reference">The name the translation uses, and the name the file takes in the pack.</param>
+/// <param name="Path">The file found, when it can go in a pack; null otherwise.</param>
+/// <param name="Why">Why it cannot, when it cannot.</param>
+public sealed record SystemFontUse(string Reference, string? Path, string? Why)
+{
+    public bool Includable => Path is not null;
+}
+
 /// <summary>The outcome of writing or exporting.</summary>
 public sealed record AssetWriteResult(bool Done, int Written, string? Failure);
 
@@ -806,6 +818,115 @@ public static class GameAssets
 
     // ── Exporting ────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// The installed fonts this game's translation uses by name — those its fonts/ folder does not
+    /// already provide — each with the file an export would carry, or why it cannot.
+    ///
+    /// 🔴 **Found the way the mod finds them**: the system's font table first, then the file names
+    /// the socle derives from the name (<see cref="SystemFontNames.Candidates"/>), then the loose
+    /// match (<see cref="SystemFontNames.Normalize"/>), in the folders the mod searches
+    /// (<see cref="IPlatform.FontFolders"/>). Another rule would export a font the game never showed.
+    ///
+    /// ⚠ Remembered per game until the translation or a font folder changes: the tab draws this on
+    /// every redraw, and the system's font folder holds a thousand files.
+    /// </summary>
+    public static IReadOnlyList<SystemFontUse> SystemFontsUsed(IPlatform platform, GameInstall game, LoaderDescriptor descriptor) =>
+        SystemFontsUsed(game, descriptor, platform.FontFolders(), platform.RegisteredFonts);
+
+    /// <param name="fontFolders">Where installed fonts are — the platform's, or a folder a check made.</param>
+    /// <param name="registered">The system's font table, asked only when the answer is not remembered.</param>
+    public static IReadOnlyList<SystemFontUse> SystemFontsUsed(GameInstall game, LoaderDescriptor descriptor,
+                                                               IEnumerable<string> fontFolders,
+                                                               Func<IEnumerable<(string Name, string Path)>> registered)
+    {
+        var folder = UserDataInventory.DataFolder(game.Path, descriptor);
+        if (folder is null) return [];
+
+        var translationPath = TranslationPath(folder);
+        var folders = fontFolders.ToList();
+        var stamp = string.Join("|", new[] { translationPath, Path.Combine(folder, AssetPacks.FontsFolder) }
+            .Concat(folders)
+            .Select(p => File.Exists(p) ? File.GetLastWriteTimeUtc(p).Ticks.ToString()
+                       : Directory.Exists(p) ? Directory.GetLastWriteTimeUtc(p).Ticks.ToString() : "-"));
+
+        if (SystemFontMemory.TryGetValue(translationPath, out var kept) && kept.Stamp == stamp) return kept.Uses;
+
+        var read = ReadTranslation(translationPath);
+        var local = new List<string>();
+        var fontsFolder = Path.Combine(folder, AssetPacks.FontsFolder);
+        if (Directory.Exists(fontsFolder)) local.AddRange(Directory.EnumerateFiles(fontsFolder).Select(Path.GetFileName).OfType<string>());
+
+        var table = registered().ToList();
+        var uses = new List<SystemFontUse>();
+
+        foreach (var stem in FontStemsNamed(read.Root).OrderBy(s => s, StringComparer.OrdinalIgnoreCase))
+        {
+            if (local.Any(file => AssetPacks.IsFontFileFor(file, stem))) continue;   // fonts/ provides it
+
+            var found = FindInstalledFont(stem, table, folders);
+            uses.Add(found switch
+            {
+                null => new SystemFontUse(stem, null, "not installed on this computer"),
+                _ when AssetPacks.IsFontFile(found) => new SystemFontUse(stem, found, null),
+                _ => new SystemFontUse(stem, null, "a font collection (.ttc), which UGT Mod cannot load from a pack"),
+            });
+        }
+
+        SystemFontMemory[translationPath] = (stamp, uses);
+        return uses;
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Stamp, IReadOnlyList<SystemFontUse> Uses)>
+        SystemFontMemory = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The installed file for a font name, found as the mod finds it — or null.</summary>
+    private static string? FindInstalledFont(string name, List<(string Name, string Path)> registered, List<string> folders)
+    {
+        // 1. The system's own table: the name it files the font under.
+        foreach (var (registeredName, path) in registered)
+        {
+            if (string.Equals(registeredName, name, StringComparison.OrdinalIgnoreCase) && File.Exists(path)) return path;
+        }
+
+        // A name is never a location: the translation comes from somebody else.
+        if (!AssetPacks.IsSafeFileName(name)) return null;
+
+        var candidates = SystemFontNames.Candidates(name);
+
+        foreach (var dir in folders)
+        {
+            // 2. The file names the name suggests, as the mod tries them.
+            foreach (var candidate in candidates)
+            {
+                foreach (var extension in AssetPacks.FontExtensions)
+                {
+                    var path = Path.Combine(dir, candidate + extension);
+                    if (File.Exists(path)) return path;
+                }
+            }
+
+            // 3. The loose match, over every font file below the folder.
+            var wanted = SystemFontNames.Normalize(name);
+            try
+            {
+                foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+                {
+                    if (AssetPacks.IsFontFile(file)
+                        && string.Equals(SystemFontNames.Normalize(Path.GetFileNameWithoutExtension(file)), wanted, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return file;
+                    }
+                }
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // A folder we may not walk holds nothing we can carry.
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>What an export would carry: the fonts the translation uses, and every defined image whose file is there.</summary>
     public static (int Fonts, int Images) Exportable(GameAssetsState state) =>
         (state.Fonts.Count(f => f.Used), state.ImagesPresent);
@@ -820,7 +941,16 @@ public static class GameAssets
     /// ⚠ Generated atlases are never carried (<see cref="AssetPacks.IsFontFile"/> refuses them).
     /// </summary>
     public static AssetWriteResult Export(GameInstall game, LoaderDescriptor descriptor, string destination,
-                                          string madeBy)
+                                          string madeBy) =>
+        Export(game, descriptor, destination, madeBy, systemFonts: []);
+
+    /// <param name="systemFonts">
+    /// Installed fonts to carry as well — only when somebody ticked it (off by default, user
+    /// 2026-09-27), and each written under the name the translation uses, so the mod receiving
+    /// the pack finds it among its own fonts before looking at the system.
+    /// </param>
+    public static AssetWriteResult Export(GameInstall game, LoaderDescriptor descriptor, string destination,
+                                          string madeBy, IReadOnlyList<SystemFontUse> systemFonts)
     {
         var folder = UserDataInventory.DataFolder(game.Path, descriptor);
         if (folder is null) return new(false, 0, UserDataInventory.OutsideGameRefusal);
@@ -852,6 +982,7 @@ public static class GameAssets
                 }
 
                 var named = FontStemsNamed(root);
+                var packed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var fontsFolder = Path.Combine(folder, AssetPacks.FontsFolder);
                 if (Directory.Exists(fontsFolder))
                 {
@@ -862,8 +993,18 @@ public static class GameAssets
                         if (!named.Any(stem => AssetPacks.IsFontFileFor(name, stem))) continue;
 
                         zip.CreateEntryFromFile(file, AssetPacks.FontsFolder + "/" + name, CompressionLevel.Optimal);
+                        packed.Add(name);
                         written++;
                     }
+                }
+
+                foreach (var system in systemFonts.Where(f => f.Includable))
+                {
+                    var name = system.Reference + Path.GetExtension(system.Path!).ToLowerInvariant();
+                    if (!AssetPacks.IsSafeFileName(name) || !AssetPacks.IsFontFile(name) || !packed.Add(name)) continue;
+
+                    zip.CreateEntryFromFile(system.Path!, AssetPacks.FontsFolder + "/" + name, CompressionLevel.Optimal);
+                    written++;
                 }
 
                 if (written == 0) return new(false, 0, "This game's translation uses no added font or image.");

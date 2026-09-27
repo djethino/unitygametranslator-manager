@@ -129,6 +129,21 @@ public interface IPlatform
     /// it failed to read a number is worse than one that asks.
     /// </summary>
     long? VideoMemoryBytes();
+
+    /// <summary>
+    /// The folders fonts are installed in on this computer, those that exist.
+    ///
+    /// ⚠ The same folders the mod searches (CustomFontLoader.FindSystemTtfPath): an export that
+    /// looked elsewhere would carry a font the game never found, or miss one it uses.
+    /// </summary>
+    IEnumerable<string> FontFolders();
+
+    /// <summary>
+    /// The system's own table of installed fonts — the name it files each under, and the file —
+    /// empty where the system keeps none. Windows keeps one in the registry; it is what the mod's
+    /// engine reads before falling back on file names.
+    /// </summary>
+    IEnumerable<(string Name, string Path)> RegisteredFonts();
 }
 
 /// <summary>A folder to scan, with what we already know about where it came from.</summary>

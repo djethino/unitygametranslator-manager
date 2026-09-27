@@ -372,6 +372,75 @@ internal static class GameAssetsChecks
         }
     }
 
+    /// <summary>
+    /// The installed fonts a translation uses, found as the mod finds them, and carried by an export
+    /// only when asked — under the name the translation uses.
+    /// </summary>
+    internal static void WhatASystemFontExportCarries()
+    {
+        Program.Section("Installed fonts a translation uses, in an export");
+
+        var descriptor = new LoaderDescriptor { Id = "bepinex5", UserDataDir = "BepInEx/plugins/UnityGameTranslator" };
+        var root = Path.Combine(Path.GetTempPath(), "ugt-assets-sysfonts-" + Guid.NewGuid().ToString("N"));
+        var gamePath = Path.Combine(root, "game");
+        var game = new GameInstall { Name = "Fonts game", Path = gamePath };
+        var folder = Path.Combine(gamePath, "BepInEx", "plugins", "UnityGameTranslator");
+        var system = Path.Combine(root, "system-fonts");
+
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(folder, "fonts"));
+            Directory.CreateDirectory(Path.Combine(system, "nested"));
+            File.WriteAllBytes(Path.Combine(folder, "fonts", "mine.ttf"), Asset("mine.ttf", "mine"));
+            File.WriteAllBytes(Path.Combine(system, "candara.ttf"), Asset("candara.ttf", "candara"));
+            File.WriteAllBytes(Path.Combine(system, "nested", "comicbd.ttf"), Asset("comicbd.ttf", "comic"));
+            File.WriteAllBytes(Path.Combine(system, "cambria.ttc"), Bytes("collection"));
+
+            File.WriteAllText(Path.Combine(folder, LocalTranslationProbe.TranslationFileName),
+                "{\"_uuid\":\"u\",\"_fonts\":{"
+                + "\"A\":{\"fallback\":\"[Custom] mine\"},\"B\":{\"fallback\":\"Candara\"},"
+                + "\"C\":{\"fallback\":\"comicbd\"},\"D\":{\"fallback\":\"Cambria\"},"
+                + "\"E\":{\"fallback\":\"Missing\"},\"F\":{\"fallback\":\"[Game] LiberationSans SDF\"}}}");
+
+            (string, string)[] table = [("Cambria", Path.Combine(system, "cambria.ttc"))];
+            var uses = GameAssets.SystemFontsUsed(game, descriptor, [system], () => table);
+            SystemFontUse Use(string name) => uses.Single(u => u.Reference == name);
+
+            Program.Check(uses.Count == 4 && Use("Candara").Includable && Use("comicbd").Includable
+                          && !Use("Cambria").Includable && Use("Cambria").Why!.Contains(".ttc")
+                          && !Use("Missing").Includable && Use("Missing").Why!.Contains("not installed"),
+                "installed fonts are found as the mod finds them, and each one that cannot go says why",
+                "a name, a file name in a subfolder, the system's table; a collection and a missing font are named, not skipped");
+
+            Program.Check(uses.All(u => u.Reference is not ("mine" or "LiberationSans SDF")),
+                "a font fonts/ already provides, or one of the game's own, is not an installed font",
+                "the first is exported anyway; the second is inside the game");
+
+            var without = Path.Combine(root, "without.ugtpack");
+            GameAssets.Export(game, descriptor, without, "checks");
+            using (var zip = ZipFile.OpenRead(without))
+            {
+                Program.Check(zip.Entries.Select(e => e.FullName).Where(n => n.StartsWith("fonts/")).SequenceEqual(["fonts/mine.ttf"]),
+                    "an export carries no installed font unless asked",
+                    "off by default: their licences are the sharer's to check (user, 2026-09-27)");
+            }
+
+            var with = Path.Combine(root, "with.ugtpack");
+            GameAssets.Export(game, descriptor, with, "checks", uses);
+            using (var zip = ZipFile.OpenRead(with))
+            {
+                var fonts = zip.Entries.Select(e => e.FullName).Where(n => n.StartsWith("fonts/")).OrderBy(n => n, StringComparer.Ordinal).ToList();
+                Program.Check(fonts.SequenceEqual(["fonts/Candara.ttf", "fonts/comicbd.ttf", "fonts/mine.ttf"]),
+                    "asked, it carries them under the name the translation uses — \"Candara.ttf\" from candara.ttf",
+                    "the mod receiving the pack looks the name up exactly, among its own fonts first");
+            }
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { /* a temp folder left behind proves nothing */ }
+        }
+    }
+
     private static byte[] Bytes(string text) => Encoding.UTF8.GetBytes(text);
 
     /// <summary>What a program starts with — the bytes every Windows executable opens on.</summary>

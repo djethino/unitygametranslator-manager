@@ -218,6 +218,17 @@ public sealed class LinuxPlatform : IPlatform
     /// spawning a process may not even be possible. nvidia-smi is the fallback because NVIDIA
     /// does not expose the total through sysfs.
     /// </summary>
+    /// <summary>
+    /// Exactly the folder the mod searches on Linux. ⚠ Not fontconfig's other places (~/.fonts,
+    /// ~/.local/share/fonts): a font found there is one the game never used, and exporting it would
+    /// carry a font nobody saw in the game. Widen both together, or neither.
+    /// </summary>
+    public IEnumerable<string> FontFolders() =>
+        new[] { "/usr/share/fonts" }.Where(Directory.Exists);
+
+    /// <summary>Linux keeps no table the mod reads: fonts are found by file name alone.</summary>
+    public IEnumerable<(string Name, string Path)> RegisteredFonts() => [];
+
     public long? VideoMemoryBytes()
     {
         long largest = 0;

@@ -48,6 +48,7 @@ internal static class Program
         ProbeMemoryChecks.WhatARememberedReadAnswers();
         GameAssetsChecks.WhatAPackPutsIntoAGame();
         GameAssetsChecks.WhatTheTranslationFileKeeps();
+        GameAssetsChecks.WhatASystemFontExportCarries();
         SetupWayChecks.WhenTheSetupHasBeenAnswered();
         PreferenceFieldsChecks.WhatAGamesAnswersAreFor();
         ForkOriginChecks.WhereTheFileCameFrom();

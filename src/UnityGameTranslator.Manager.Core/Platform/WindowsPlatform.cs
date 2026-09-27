@@ -385,6 +385,50 @@ public sealed class WindowsPlatform : IPlatform
     /// memory and a discrete card; the integrated one comes first in the enumeration and is not
     /// the one that will run the model.
     /// </summary>
+    public IEnumerable<string> FontFolders()
+    {
+        var folders = new[]
+        {
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Fonts"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "Windows", "Fonts"),
+        };
+
+        return folders.Where(Directory.Exists);
+    }
+
+    /// <summary>
+    /// The machine's fonts, then this user's — the two places Windows records them. A value holds
+    /// a bare file name when the font sits in the Windows folder, a full path otherwise.
+    /// </summary>
+    public IEnumerable<(string Name, string Path)> RegisteredFonts()
+    {
+        var found = new List<(string, string)>();
+        var windowsFonts = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Fonts");
+
+        foreach (var hive in new[] { Registry.LocalMachine, Registry.CurrentUser })
+        {
+            try
+            {
+                using var fonts = hive.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts");
+                if (fonts is null) continue;
+
+                foreach (var name in fonts.GetValueNames())
+                {
+                    if (fonts.GetValue(name) is not string file || file.Length == 0) continue;
+
+                    var path = Path.IsPathRooted(file) ? file : Path.Combine(windowsFonts, file);
+                    found.Add((UnityGameTranslator.Common.SystemFontNames.RegisteredName(name), path));
+                }
+            }
+            catch (Exception e) when (e is System.Security.SecurityException or UnauthorizedAccessException or IOException)
+            {
+                // A table we may not read is a table we do not have: the file names are searched next.
+            }
+        }
+
+        return found;
+    }
+
     public long? VideoMemoryBytes()
     {
         try

@@ -396,13 +396,16 @@ internal static class GameAssetsChecks
             File.WriteAllBytes(Path.Combine(system, "candara.ttf"), Asset("candara.ttf", "candara"));
             File.WriteAllBytes(Path.Combine(system, "nested", "comicbd.ttf"), Asset("comicbd.ttf", "comic"));
             File.WriteAllBytes(Path.Combine(system, "cambria.ttc"), Bytes("collection"));
+            File.WriteAllBytes(Path.Combine(system, "arial.ttf"), Asset("arial.ttf", "arial"));
+            File.WriteAllBytes(Path.Combine(system, "Legacy.ttf"), Asset("Legacy.ttf", "legacy"));
 
             File.WriteAllText(Path.Combine(folder, LocalTranslationProbe.TranslationFileName),
                 "{\"_uuid\":\"u\",\"_fonts\":{"
-                + "\"A\":{\"fallback\":\"[Custom] mine\"},\"B\":{\"fallback\":\"Candara\"},"
-                + "\"C\":{\"fallback\":\"comicbd\"},\"D\":{\"fallback\":\"Cambria\"},"
-                + "\"E\":{\"fallback\":\"Missing\"},\"F\":{\"fallback\":\"[Game] LiberationSans SDF\"},"
-                + "\"G\":{\"enabled\":false,\"fallback\":\"SwitchedOff\"}},"
+                + "\"A\":{\"fallback\":\"[Custom] mine\",\"type\":\"TMP\"},\"B\":{\"fallback\":\"Candara\",\"type\":\"TMP\"},"
+                + "\"C\":{\"fallback\":\"comicbd\",\"type\":\"TMP\"},\"D\":{\"fallback\":\"Cambria\",\"type\":\"TMP\"},"
+                + "\"E\":{\"fallback\":\"Missing\",\"type\":\"TMP\"},\"F\":{\"fallback\":\"[Game] LiberationSans SDF\",\"type\":\"TMP\"},"
+                + "\"G\":{\"enabled\":false,\"fallback\":\"SwitchedOff\",\"type\":\"TMP\"},"
+                + "\"H\":{\"fallback\":\"Legacy\",\"type\":\"Unity\"},\"I\":{\"fallback\":\"[Custom] arial\",\"type\":\"TMP\"}},"
                 + "\"_font_overrides\":[{\"match\":\"\",\"replacement\":\"NoMatch\"},"
                 + "{\"match\":\"Title\",\"enabled\":false,\"replacement\":\"RuleOff\"}]}");
 
@@ -410,11 +413,19 @@ internal static class GameAssetsChecks
             var uses = GameAssets.SystemFontsUsed(game, descriptor, [system], () => table);
             SystemFontUse Use(string name) => uses.Single(u => u.Reference == name);
 
-            Program.Check(uses.Count == 4 && Use("Candara").Includable && Use("comicbd").Includable
+            Program.Check(uses.Count == 5 && Use("Candara").Includable && Use("comicbd").Includable
                           && !Use("Cambria").Includable && Use("Cambria").Why!.Contains(".ttc")
                           && !Use("Missing").Includable && Use("Missing").Why!.Contains("not installed"),
                 "installed fonts are found as the mod finds them, and each one that cannot go says why",
                 "a name, a file name in a subfolder, the system's table; a collection and a missing font are named, not skipped");
+
+            Program.Check(!Use("Legacy").Includable && Use("Legacy").Why!.Contains("legacy text"),
+                "an installed font used only by legacy text is not offered, and says why",
+                "legacy text is drawn from installed fonts: a copy carried for it would arrive and never be used");
+
+            Program.Check(uses.All(u => u.Reference is not ("arial" or "[Custom] arial")),
+                "a reference to fonts/ is never carried from the system, even when that font is installed",
+                "\"[Custom] arial\" means the copy in fonts/; taking the system's would change the font it names");
 
             Program.Check(uses.All(u => u.Reference is not ("SwitchedOff" or "NoMatch" or "RuleOff")),
                 "a font whose setting is switched off, or a rule with nothing to match, is not used",

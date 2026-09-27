@@ -331,9 +331,25 @@ public static class GameAssets
         var table = registered().ToList();
         var uses = new List<SystemFontUse>();
 
-        foreach (var stem in FontStemsNamed(read.Root).OrderBy(s => s, StringComparer.OrdinalIgnoreCase))
+        // ⚠ Only BARE references name an installed font (FontReferences): "[Custom] X" is fonts/'s and
+        // "[Game] X" the game's — neither may be carried from the system, whatever is installed.
+        var installed = FontReferencesNamed(read.Root)
+            .Where(r => FontReferences.Order(r.Reference)[0] == FontSource.System)
+            .GroupBy(r => r.Reference, StringComparer.Ordinal)
+            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var group in installed)
         {
+            var stem = group.Key;
             if (local.Any(file => AssetPacks.IsFontFileFor(file, stem))) continue;   // fonts/ provides it
+
+            // 🔴 A copy only helps TextMeshPro text (FontReferences.ReadsFontFiles): legacy text is
+            // drawn from INSTALLED fonts, so a copy carried for it would arrive and never be used.
+            if (!group.Any(r => r.ReadsFiles))
+            {
+                uses.Add(new SystemFontUse(stem, null, "used by legacy text (UI.Text), which only uses fonts installed on the computer"));
+                continue;
+            }
 
             var found = FindInstalledFont(stem, table, folders);
             uses.Add(found switch
@@ -575,13 +591,21 @@ public static class GameAssets
     /// The font files the translation names — `_fonts[…].fallback` and `_font_overrides[].replacement`,
     /// as file names without extension (<see cref="AssetPacks.FontFileStem"/>).
     /// </summary>
-    private static HashSet<string> FontStemsNamed(JsonObject? root)
-    {
-        var stems = new HashSet<string>(StringComparer.Ordinal);
+    private static HashSet<string> FontStemsNamed(JsonObject? root) =>
+        new(FontReferencesNamed(root).Select(r => AssetPacks.FontFileStem(r.Reference)).OfType<string>(), StringComparer.Ordinal);
 
-        void Take(JsonNode? reference)
+    /// <summary>
+    /// Every font reference the translation applies, as written (origin mark included), and
+    /// whether the text it serves can be drawn from a font file (<see cref="FontReferences.ReadsFontFiles"/>).
+    /// A rule carries no text kind: it is counted as able to, since it may reach TextMeshPro text.
+    /// </summary>
+    private static List<(string Reference, bool ReadsFiles)> FontReferencesNamed(JsonObject? root)
+    {
+        var references = new List<(string, bool)>();
+
+        void Take(JsonNode? reference, bool readsFiles)
         {
-            if (TextOf(reference) is { } text && AssetPacks.FontFileStem(text) is { } stem) stems.Add(stem);
+            if (TextOf(reference) is { } text) references.Add((text, readsFiles));
         }
 
         // ⚠ Read as the mod reads them (TranslatorCore.ParseFontsSection / ParseFontOverridesSection):
@@ -593,18 +617,19 @@ public static class GameAssets
         if (root?[SettingsSections.FontsKey] is JsonObject fonts)
         {
             foreach (var (_, settings) in fonts)
-                if (settings is JsonObject font && On(font)) Take(font["fallback"]);
+                if (settings is JsonObject font && On(font))
+                    Take(font["fallback"], FontReferences.ReadsFontFiles(TextOf(font["type"])));
         }
 
         if (root?[SettingsSections.FontRulesKey] is JsonArray rules)
         {
             foreach (var rule in rules.OfType<JsonObject>())
             {
-                if (On(rule) && TextOf(rule["match"]) is not null) Take(rule["replacement"]);
+                if (On(rule) && TextOf(rule["match"]) is not null) Take(rule["replacement"], readsFiles: true);
             }
         }
 
-        return stems;
+        return references;
     }
 
     /// <summary>The translation's image settings, in file order, read into the socle's model.</summary>

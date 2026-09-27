@@ -553,7 +553,7 @@ public partial class MainWindow
                 IsChecked = _exportSystemFonts.Contains(path),
             };
 
-            ToolTip.SetTip(include, "Installed on this computer and used by the translation: "
+            ToolTip.SetTip(include, "System fonts used by the translation: "
                                     + string.Join(", ", includable.Select(f => f.Reference)) + ".");
 
             include.IsCheckedChanged += (_, _) =>
@@ -566,8 +566,9 @@ public partial class MainWindow
             panel.Children.Add(include);
         }
 
-        if (systemFonts.Where(f => !f.Includable).ToList() is { Count: > 0 } left)
-            panel.Children.Add(Note("Not included: " + string.Join(", ", left.Select(f => $"{f.Reference} ({f.Why})")) + "."));
+        // One line per reason, the reason said once — seven fonts used to repeat the same sentence.
+        foreach (var reason in systemFonts.Where(f => !f.Includable).GroupBy(f => f.Why))
+            panel.Children.Add(Note($"System fonts not included: {string.Join(", ", reason.Select(f => f.Reference))} ({reason.Key})."));
 
         // Read before the button, where the decision to share is taken — and true of every file in a pack.
         panel.Children.Add(Note(AssetPacks.ShareNotice, Tone.Warning));

@@ -415,11 +415,11 @@ internal static class GameAssetsChecks
 
             Program.Check(uses.Count == 5 && Use("Candara").Includable && Use("comicbd").Includable
                           && !Use("Cambria").Includable && Use("Cambria").Why!.Contains(".ttc")
-                          && !Use("Missing").Includable && Use("Missing").Why!.Contains("not installed"),
+                          && !Use("Missing").Includable && Use("Missing").Why!.Contains("not on this computer"),
                 "installed fonts are found as the mod finds them, and each one that cannot go says why",
                 "a name, a file name in a subfolder, the system's table; a collection and a missing font are named, not skipped");
 
-            Program.Check(!Use("Legacy").Includable && Use("Legacy").Why!.Contains("legacy text"),
+            Program.Check(!Use("Legacy").Includable && Use("Legacy").Why!.Contains("from a pack"),
                 "an installed font used only by legacy text is not offered, and says why",
                 "legacy text is drawn from installed fonts: a copy carried for it would arrive and never be used");
 

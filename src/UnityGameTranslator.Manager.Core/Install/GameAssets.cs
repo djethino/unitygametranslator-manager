@@ -374,7 +374,7 @@ public static class GameAssets
             // Said even when fonts/ holds a copy: that copy is not exported either (UseOf).
             if (!group.Any(r => r.ReadsFiles))
             {
-                uses.Add(new SystemFontUse(stem, null, "used by legacy text (UI.Text), which only uses fonts installed on the computer"));
+                uses.Add(new SystemFontUse(stem, null, "the text using it can't use a font from a pack"));
                 continue;
             }
 
@@ -383,9 +383,9 @@ public static class GameAssets
             var found = FindInstalledFont(stem, table, folders);
             uses.Add(found switch
             {
-                null => new SystemFontUse(stem, null, "not installed on this computer"),
+                null => new SystemFontUse(stem, null, "not on this computer"),
                 _ when AssetPacks.IsFontFile(found) => new SystemFontUse(stem, found, null),
-                _ => new SystemFontUse(stem, null, "a font collection (.ttc), which UGT Mod cannot load from a pack"),
+                _ => new SystemFontUse(stem, null, ".ttc files are not supported"),
             });
         }
 

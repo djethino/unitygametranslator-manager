@@ -228,15 +228,7 @@ public partial class MainWindow
     private IEnumerable<Control> HeldAssetsView(GameReport report, HeldAssets held, string? refusal)
     {
         var plan = held.Plan;
-        var adds = plan.Offers.Count(o => o.Change == AssetChange.Add);
         var replaces = plan.Offers.Where(o => o.Change == AssetChange.Replace).ToList();
-        var same = plan.Offers.Count(o => o.Change == AssetChange.Same);
-
-        var summary = new List<string>();
-        if (adds > 0) summary.Add($"{adds} new");
-        if (replaces.Count > 0) summary.Add($"{replaces.Count} already in this game and different");
-        if (same > 0) summary.Add($"{same} already in this game");
-        if (plan.Refused.Count > 0) summary.Add($"{plan.Refused.Count} left out");
 
         // The rule above the list, then the decision: on a long pack the buttons stay in view.
         yield return new Border
@@ -275,7 +267,8 @@ public partial class MainWindow
         var head = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         head.Children.Add(new TextBlock
         {
-            Text = string.Join(" · ", summary),
+            // The socle's words — the mod's Translation Tools says the same fact the same way.
+            Text = AssetPlanner.Summary(plan),
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
             VerticalAlignment = VerticalAlignment.Center,
@@ -291,17 +284,12 @@ public partial class MainWindow
 
         // A pack made from another game: said once, above the rows, and never a refusal.
         foreach (var other in plan.MadeFor)
-            yield return Callout($"Made for {other}. Check that it is meant for this game.", Tone.Warning);
+            yield return Callout(AssetPlanner.MadeForText(other), Tone.Warning);
 
         // Pictures made for another language: still worth having — the rows name each picture to
         // remake, and its settings come with it (user, 2026-09-27).
         foreach (var language in plan.OtherLanguages)
-        {
-            var made = Languages.NameOf(language.PackLanguage) ?? language.PackLanguage;
-            var here = Languages.NameOf(language.GameLanguage) ?? language.GameLanguage;
-            yield return Callout($"Images made for {made}. This game's translation is {here}: "
-                                 + $"the pictures in {language.Pack} still show {made} text.", Tone.Warning);
-        }
+            yield return Callout(AssetPlanner.OtherLanguageText(language), Tone.Warning);
 
         // Declining is the default for a replacement; one box for all of them when there are several.
         var rowBoxes = new List<(CheckBox Box, string Key)>();

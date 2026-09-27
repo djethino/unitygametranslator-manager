@@ -13411,7 +13411,7 @@ public partial class MainWindow : Window
         if (!GameConfig(report).IsConfigured)
         {
             // ⚠ Held, not saved — see _pendingPlan. Nothing here has been validated yet.
-            void Keep() => _pendingPlan[report.Game.Path] = (draft.Start, draft.Context);
+            void Keep() => HoldPlan(report, draft);
 
             return new PlanApply
             {
@@ -13485,13 +13485,28 @@ public partial class MainWindow : Window
             // Exactly the defect the settings form had, in the block beside it.
             Record = () =>
             {
-                _pendingPlan[report.Game.Path] = (draft.Start, draft.Context);
+                HoldPlan(report, draft);
 
                 // The bar only — it has its own container, so it can be redrawn while somebody is
                 // still typing in the description box beside it.
                 ShowActionBar(report);
             },
         };
+    }
+
+    /// <summary>
+    /// Holds the plan block's answers — only while they differ from what the block started from.
+    ///
+    /// 🔴 **Nothing held means nothing pending** (2026-09-27). Its controls fire as they fill, not
+    /// only when somebody touches them, and every event used to hold the draft as it stood: opening
+    /// Set up on a configured game put an "Undo" on the bar with nothing to undo, and pressing it
+    /// only brought it back at the next redraw. Same defect, same answer as the settings form
+    /// beside it (<see cref="GameModOverrides.SameAs"/>).
+    /// </summary>
+    private void HoldPlan(GameReport report, PlanDraft draft)
+    {
+        if (draft.Pending == 0) _pendingPlan.Remove(report.Game.Path);
+        else _pendingPlan[report.Game.Path] = (draft.Start, draft.Context);
     }
 
     /// <summary>The two answers this block holds while they wait for Apply.</summary>

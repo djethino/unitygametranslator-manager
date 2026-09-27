@@ -83,7 +83,9 @@ public partial class MainWindow
         // One answer for every write into this game: running, or set up under another account.
         var refusal = WriteRefusal(report);
 
-        var add = new Button { Content = "Add files...", IsEnabled = refusal is null };
+        // ⚠ "Open", never "Add" (user, 2026-09-27): it lists what the files hold; Apply installs.
+        // The mod's Asset Packs card says the same word for the same gesture.
+        var add = new Button { Content = "Open files...", IsEnabled = refusal is null };
         add.Click += async (_, _) => await PickAssetFilesAsync(report);
 
         panel.Children.Add(DropZone(report, add, refusal is null));
@@ -169,7 +171,7 @@ public partial class MainWindow
     {
         var picked = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "Add fonts and images",
+            Title = "Open fonts, images or packs",
             AllowMultiple = true,
             FileTypeFilter =
             [

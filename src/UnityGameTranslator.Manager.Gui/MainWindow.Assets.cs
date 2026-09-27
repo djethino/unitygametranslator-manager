@@ -453,8 +453,8 @@ public partial class MainWindow
             var (use, tone) = font.Use switch
             {
                 FontUse.Used => ("Used", Tone.Neutral),
-                FontUse.InstalledInstead => ("Not used: the installed font with this name is used", Tone.Warning),
-                FontUse.GameInstead => ("Not used: the game's font with this name is used", Tone.Warning),
+                FontUse.InstalledInstead => ("Ignored: the game shows the installed font with this name", Tone.Warning),
+                FontUse.GameInstead => ("Ignored: the game shows its own font with this name", Tone.Warning),
                 _ => ("Not used", Tone.Neutral),
             };
             list.Children.Add(NameAndDetail(font.Name, use + " · " + SizeOf(font.Length), tone));

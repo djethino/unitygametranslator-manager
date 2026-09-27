@@ -453,8 +453,9 @@ public partial class MainWindow
             var (use, tone) = font.Use switch
             {
                 FontUse.Used => ("Used", Tone.Neutral),
-                FontUse.InstalledInstead => ("Ignored: the game shows the installed font with this name", Tone.Warning),
-                FontUse.GameInstead => ("Ignored: the game shows its own font with this name", Tone.Warning),
+                // The mod's own words for the three origins: Game, Custom, System (FontManager).
+                FontUse.InstalledInstead => ("Not used: the translation uses the System font of the same name", Tone.Warning),
+                FontUse.GameInstead => ("Not used: the translation uses the Game font of the same name", Tone.Warning),
                 _ => ("Not used", Tone.Neutral),
             };
             list.Children.Add(NameAndDetail(font.Name, use + " · " + SizeOf(font.Length), tone));
@@ -464,7 +465,7 @@ public partial class MainWindow
         panel.Children.Add(Note("Choose which game font each one replaces in UGT Mod: Translation Tools, Fonts tab."));
 
         if (state.Fonts.Any(f => f.Use is FontUse.InstalledInstead or FontUse.GameInstead))
-            panel.Children.Add(Note("To use one of these files, pick it as a Custom font in UGT Mod: Translation Tools, Fonts tab.", Tone.Warning));
+            panel.Children.Add(Note("To use one of these files, choose its Custom font in UGT Mod: Translation Tools, Fonts tab.", Tone.Warning));
         return panel;
     }
 

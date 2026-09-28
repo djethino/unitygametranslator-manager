@@ -100,6 +100,18 @@ public static class SituationReader
             //
             // What stays this list's own is the VERB on the button, which is not a description of
             // the state but of the act this window offers for it.
+            // 🔴 **A file of captures only is not work waiting to be published** (user, 2026-09-28).
+            // It holds the game's own text and not one translated line; "Unpublished changes ·
+            // 1,286 lines" read as a translation nobody had made. Said in the mod's words for the
+            // same file ("Nothing translated yet"), and only for the verdicts that would have
+            // called it unpublished work — an update or a conflict is still said as such.
+            if (local is { Counts.IsCaptureOnly: true }
+                && (report.Sync is SyncDirection.Upload || (report.Sync is null && local.LocalChanges > 0)))
+            {
+                return new GameSituationInfo(Situation.Ready, "Nothing translated yet",
+                    $"{Composition.Amount(local.EntryCount, "line", "lines")} to translate", "Manage", pending);
+            }
+
             if (report.Sync is { } sync && sync != SyncDirection.InSync)
             {
                 var (verb, situation) = sync switch

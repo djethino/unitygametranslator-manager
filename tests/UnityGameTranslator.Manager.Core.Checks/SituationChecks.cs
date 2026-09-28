@@ -98,6 +98,35 @@ internal static class SituationChecks
         Program.Check(only.Situation == Situation.UnpublishedWork,
             "unpublished work with no online side is still named", "Sync is null, the work is not");
 
+        // Captures only: the game's own text, not one line translated — never "Unpublished
+        // changes", whichever way the verdict was reached; one translated line and it is again.
+        var captured = Local(localChanges: 400);
+        foreach (var (sync, counts, expected) in new (SyncDirection?, TagCounts, string)[]
+        {
+            (null, new TagCounts(0, 0, 0, 400, 0), "Nothing translated yet"),
+            (SyncDirection.Upload, new TagCounts(0, 0, 0, 400, 0), "Nothing translated yet"),
+            (null, new TagCounts(1, 0, 0, 399, 0), "Unpublished changes"),
+        })
+        {
+            var read = SituationReader.Read(new GameReport
+            {
+                Game = Game(),
+                InstalledLoader = Loader(),
+                LocalTranslation = new LocalTranslation
+                {
+                    Path = captured.Path, Uuid = captured.Uuid, EntryCount = 400,
+                    LocalChanges = 400, Counts = counts,
+                },
+                InstalledPluginVersion = "0.12.0",
+                Sync = sync,
+            }, "fr", onlineChecked: true);
+
+            Program.Check(read.Headline == expected
+                          && (expected != "Nothing translated yet" || read.Detail == "400 lines to translate"),
+                $"{counts.Human} translated of 400 captured ({sync?.ToString() ?? "never published"}): \"{expected}\"",
+                "\"Unpublished changes · 1,286 lines\" on a file nobody had translated a line of (2026-09-28)");
+        }
+
         // A translation file is proof the mod ran here, whatever is on disk beside it — the row
         // must not offer to install a mod that is already working.
         //

@@ -3023,13 +3023,17 @@ public partial class MainWindow : Window
         // in two registers, one of them narrower than the truth. The invitation to publish, which
         // is the other half of this banner, is not affected: it needs lines here to be worth
         // reading, and that is exactly what `started` tests.
-        if (report.OnlineTranslations.Count == 0 && report.LocalTranslation is null) return null;
+        // ⚠ Captured lines are not lines in that language: a file of captures only is the game's
+        // own text, and "1286 French lines not published" described a translation nobody had made
+        // (2026-09-28). Such a file has not STARTED a translation, so it falls under this rule too.
+        var started = report.LocalTranslation is { EntryCount: > 0, Counts.IsCaptureOnly: not true };
+
+        if (report.OnlineTranslations.Count == 0 && !started) return null;
 
         // Two propositions, and they are not the same one worded twice. Nothing here yet is an
         // invitation to start; work here that has never left the machine is an invitation to
         // publish — and that second case had no banner at all, because the guard that stopped the
         // first from nagging a translator also silenced the one message they had earned.
-        var started = report.LocalTranslation is { EntryCount: > 0 };
 
         // Published translations of this file would appear as the matching entry. Its absence,
         // once a search has run, is what "never shared" means.

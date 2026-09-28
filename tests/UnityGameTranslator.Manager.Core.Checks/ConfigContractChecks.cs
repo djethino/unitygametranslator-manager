@@ -117,6 +117,13 @@ internal static class ConfigContractChecks
                     $"backend {backend}: the mod reads back what was asked",
                     $"wrote translation_backend={writtenBackend}, enable_ai={enableAi} — "
                     + "the mod turns enable_ai:true + none into llm at load");
+
+                // And what THIS tool reads back is what it wrote: a game's own settings are shown,
+                // and applied again, from this read.
+                var readBack = GameConfigWriter.Read(gamePath, descriptor).Values.TranslationBackend;
+                Program.Check(readBack == backend,
+                    $"backend {backend}: UGT Manager reads back what it wrote",
+                    $"read {readBack} — \"captures only\" came back as \"community\" on the next Apply (2026-09-28)");
             }
             finally
             {

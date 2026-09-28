@@ -301,7 +301,14 @@ public sealed class GameConfigWriter
             var values = new GameModOverrides
             {
                 TargetLanguage = Text(root, null, TargetLanguageKey),
-                TranslationBackend = Text(root, null, "translation_backend"),
+                // 🔴 Read back the way it is written: "captures only" is no backend PLUS the capture
+                // flag (see the writer below). Reading the backend alone turned a game set to
+                // captures only back into "Community translations only" on the next Apply
+                // (2026-09-28).
+                TranslationBackend = Text(root, null, "translation_backend") is var backend
+                                     && backend == "none" && Flag(root, null, "capture_keys_only") == true
+                    ? "capture"
+                    : backend,
                 // Read as the mod will read it — respelled (Endpoints.Canonical, spec/config) — so a
                 // game still carrying "localhost" is not shown as disagreeing with 127.0.0.1.
                 AiUrl = Endpoints.Canonical(Text(root, null, "ai_url")),

@@ -157,6 +157,10 @@ internal static class GameAssetsChecks
                 "an exported pack read back into its own game changes nothing",
                 "the format written and the format read are the same format");
 
+            Program.Check(!AssetPlanner.AnythingToAdd(again) && AssetPlanner.Summary(again).StartsWith("Nothing to add"),
+                "and it says so as the outcome, with nothing left to apply",
+                "a count above a greyed Apply left somebody looking for a step that does not exist");
+
             Program.Check(again.Files.Any(f => f.Asset.Name == "a.ttf") && again.Files.All(f => f.Asset.Name != "b.otf")
                           && GameAssets.Read(gamePath, descriptor, _ => false).Fonts.Single(f => f.Name == "b.otf").Use == FontUse.NotUsed,
                 "only the fonts the translation uses are exported, and the tab says which",

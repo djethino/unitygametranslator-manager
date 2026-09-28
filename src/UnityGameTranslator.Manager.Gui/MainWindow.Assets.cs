@@ -88,7 +88,8 @@ public partial class MainWindow
         var add = new Button { Content = "Open files...", IsEnabled = refusal is null };
         add.Click += async (_, _) => await PickAssetFilesAsync(report);
 
-        panel.Children.Add(DropZone(report, add, refusal is null));
+        _pendingAssets.TryGetValue(report.Game.Path, out var opened);
+        panel.Children.Add(DropZone(report, add, refusal is null, opened?.Paths));
 
         if (refusal is not null) panel.Children.Add(Note(refusal, Tone.Warning));
 
@@ -103,22 +104,65 @@ public partial class MainWindow
     /// <summary>
     /// Where files are dropped — the whole block, not a target to aim at. The button beside the
     /// words is the same act for somebody who would rather browse.
+    ///
+    /// 🔴 **Once files are opened, the zone names them** (user, 2026-09-28: a pack double-clicked in
+    /// the file explorer landed here and nothing said an import was under way). The edge turns solid
+    /// in the accent colour, and the files and their folders are listed where the eye already is.
     /// </summary>
-    private Control DropZone(GameReport report, Button add, bool allowed)
+    private Control DropZone(GameReport report, Button add, bool allowed, IReadOnlyList<string>? opened)
     {
+        var holding = opened is { Count: > 0 };
+
         var edge = new Rectangle
         {
-            Stroke = Brush("BorderSubtle"),
-            StrokeThickness = 1.5,
-            StrokeDashArray = new Avalonia.Collections.AvaloniaList<double> { 4, 3 },
+            Stroke = Brush(holding ? "AccentEdge" : "BorderSubtle"),
+            StrokeThickness = holding ? 2 : 1.5,
+            StrokeDashArray = holding ? null : new Avalonia.Collections.AvaloniaList<double> { 4, 3 },
             RadiusX = 6,
             RadiusY = 6,
         };
 
         var words = new StackPanel { Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center };
+
+        if (holding)
+        {
+            words.Children.Add(new TextBlock
+            {
+                Text = opened!.Count == 1 ? "Opening" : $"Opening {opened.Count} files",
+                FontSize = 11,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Foreground = Brush("TextMuted"),
+            });
+
+            foreach (var path in opened)
+            {
+                var file = new StackPanel { Spacing = 1, HorizontalAlignment = HorizontalAlignment.Center };
+                file.Children.Add(new TextBlock
+                {
+                    Text = System.IO.Path.GetFileName(path),
+                    FontSize = 13,
+                    FontWeight = FontWeight.SemiBold,
+                    TextAlignment = TextAlignment.Center,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = Brush("TextPrimary"),
+                });
+                file.Children.Add(new TextBlock
+                {
+                    Text = System.IO.Path.GetDirectoryName(path) ?? "",
+                    FontSize = 11,
+                    TextAlignment = TextAlignment.Center,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    Foreground = Brush("TextMuted"),
+                });
+                words.Children.Add(file);
+            }
+        }
+
         words.Children.Add(new TextBlock
         {
-            Text = "Drop fonts (.ttf, .otf), images (.png) or asset packs (.ugtpack) here",
+            Text = holding
+                ? "Drop more files here to add them to the list"
+                : "Drop fonts (.ttf, .otf), images (.png) or asset packs (.ugtpack) here",
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
             TextAlignment = TextAlignment.Center,
@@ -142,7 +186,7 @@ public partial class MainWindow
 
         DragDrop.SetAllowDrop(zone, true);
 
-        void Lit(bool on) => edge.Stroke = Brush(on ? "AccentEdge" : "BorderSubtle");
+        void Lit(bool on) => edge.Stroke = Brush(on || holding ? "AccentEdge" : "BorderSubtle");
 
         // ⚠ While dragging, only whether files are coming — which ones is read on the drop, and each
         // file that is not a font, an image or a pack is then said, never silently refused here.
@@ -249,7 +293,7 @@ public partial class MainWindow
             ScopeMark.SetLabel(apply, count > 0 ? $"Apply ({count})" : "Apply");
             ToolTip.SetTip(apply, count > 0
                 ? $"Writes {Composition.Amount(count, "font or image", "fonts and images")} into this game."
-                : "Nothing to add.");
+                : "Tick Replace on the files to take.");
 
             // Last, so the refusal replaces the tooltip above rather than the reverse.
             apply.IsEnabled = count > 0 && refusal is null;
@@ -258,7 +302,10 @@ public partial class MainWindow
 
         apply.Click += async (_, _) => await ApplyHeldAssetsAsync(report);
 
-        var undo = new Button { Content = "Undo" };
+        // 🔴 When nothing here could ever be written, there is nothing to undo and no Apply to wait
+        // for: the list is closed, and Apply is not shown (a verb that cannot act does not appear).
+        var something = AssetPlanner.AnythingToAdd(plan);
+        var undo = new Button { Content = something ? "Undo" : "Close" };
         ToolTip.SetTip(undo, "Clears this list. Nothing in the game is changed.");
         undo.Click += async (_, _) =>
         {
@@ -279,7 +326,7 @@ public partial class MainWindow
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         buttons.Children.Add(undo);
-        buttons.Children.Add(apply);
+        if (something) buttons.Children.Add(apply);
         Grid.SetColumn(buttons, 1);
         head.Children.Add(buttons);
         yield return head;
@@ -360,8 +407,8 @@ public partial class MainWindow
 
         Control state = offer.Change switch
         {
-            AssetChange.Add => new TextBlock { Text = "New", FontSize = 11, Foreground = Brush(TextColour(Tone.Success)) },
-            AssetChange.Same => new TextBlock { Text = "Already in this game", FontSize = 11, Foreground = Brush("TextMuted") },
+            AssetChange.Add => new TextBlock { Text = AssetPlanner.StateText(offer.Change), FontSize = 11, Foreground = Brush(TextColour(Tone.Success)) },
+            AssetChange.Same => new TextBlock { Text = AssetPlanner.StateText(offer.Change), FontSize = 11, Foreground = Brush("TextMuted") },
             _ => ReplaceBox(offer, held, boxes, refreshApply),
         };
 

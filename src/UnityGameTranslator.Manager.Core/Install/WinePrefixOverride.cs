@@ -60,7 +60,10 @@ public static class WinePrefixOverride
         }
         else
         {
-            lines.Insert(start + 1, entry);
+            // After the header's own metadata ("#time=…"), where Wine keeps it.
+            var after = start + 1;
+            while (after < lines.Count && lines[after].StartsWith('#')) after++;
+            lines.Insert(after, entry);
         }
 
         Write(userReg, lines);

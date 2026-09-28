@@ -1272,6 +1272,7 @@ public partial class MainWindow : Window
         // ⚠ Held, not saved. The window used to write it to disk itself, which is how a choice
         // outlived the session that made it — see _pendingTranslation.
         if (window.ChosenTranslation is { } picked) _pendingTranslation[report.Game.Path] = picked;
+        else _pendingTranslation.Remove(report.Game.Path);   // the choice was dropped in the window
 
         await RepublishAsync();
     }
@@ -4596,7 +4597,28 @@ public partial class MainWindow : Window
             report,
             _settings.ResolveTargetLanguage(),
             chosen: ChosenTranslation(report.Game.Path),
-            installed: _preferences.Read(report.Game.Path).InstalledTranslationId);
+            installed: _preferences.Read(report.Game.Path).InstalledTranslationId,
+            ownBranch: OwnBranch(report));
+
+    /// <summary>
+    /// The signed-in account's own branch of this game's lineage, as a translation the game can
+    /// receive — the one "Select your contribution" names in the translations window. Null when the
+    /// account leads the lineage, holds none of it, or its lineages are not known yet.
+    ///
+    /// ⚠ The game's own lineage first (its local file), then any lineage the game's list shows: a
+    /// game with no file yet can still be given somebody's contribution to a published Main.
+    /// </summary>
+    private OnlineTranslation? OwnBranch(GameReport report)
+    {
+        var account = _settings.Current.ApiUser;
+
+        if (_lineages.For(report.LocalTranslation?.Uuid)?.AsOwnBranch(account) is { } held) return held;
+
+        foreach (var listed in report.OnlineTranslations)
+            if (_lineages.For(listed.Uuid)?.AsOwnBranch(account) is { } branch) return branch;
+
+        return null;
+    }
 
     /// <summary>Whether the waiting translation was named by somebody, rather than ranked for them.</summary>
     private bool WasChosenDeliberately(GameReport report, OnlineTranslation picked) =>
@@ -11632,7 +11654,7 @@ public partial class MainWindow : Window
     /// </summary>
     private OnlineTranslation? PickTranslation(GameReport report) =>
         TranslationChoice.Pick(report, _settings.ResolveTargetLanguage(),
-                               ChosenTranslation(report.Game.Path));
+                               ChosenTranslation(report.Game.Path), OwnBranch(report));
 
     /// <summary>
     /// Does everything this game still needs, in one go, asking only where something is at stake.

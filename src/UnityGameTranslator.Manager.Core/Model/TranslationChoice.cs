@@ -28,16 +28,22 @@ public static class TranslationChoice
     /// <param name="installed">
     /// What a past install actually put in this game, when we were the ones who put it there.
     /// </param>
+    /// <param name="ownBranch">
+    /// The account's own branch of this game's lineage (<see cref="LineagePosition.AsOwnBranch"/>):
+    /// never in the public list, so a choice naming it is found here — and only a choice naming it.
+    /// </param>
     public static OnlineTranslation? Waiting(GameReport report, string targetLanguage,
-                                             int? chosen, int? installed)
+                                             int? chosen, int? installed, OnlineTranslation? ownBranch = null)
     {
         // The named one first, including when it is this game's own Main — which is not in the list
-        // of alternatives. Failing that, the pick the one-click reads, so the card and the bar at
-        // the bottom cannot describe different intentions.
+        // of alternatives — or the account's own branch, which is in no list. Failing that, the pick
+        // the one-click reads, so the card and the bar at the bottom cannot describe different
+        // intentions.
         var picked = chosen is { } id
             ? report.OnlineTranslations.FirstOrDefault(t => t.Id == id)
               ?? (report.MatchingOnline is { } main && main.Id == id ? main : null)
-            : Pick(report, targetLanguage, chosen);
+              ?? (ownBranch is { } branch && branch.Id == id ? branch : null)
+            : Pick(report, targetLanguage, chosen, ownBranch);
 
         if (picked is null) return null;
 
@@ -87,8 +93,13 @@ public static class TranslationChoice
     ///    very translation is worth taking. What it does is turn the step into a replacement, which
     ///    is asked about.
     /// </summary>
-    public static OnlineTranslation? Pick(GameReport report, string targetLanguage, int? chosen)
+    public static OnlineTranslation? Pick(GameReport report, string targetLanguage, int? chosen,
+                                         OnlineTranslation? ownBranch = null)
     {
+        // Named, the account's own branch is taken like any named translation — it is simply not
+        // in the list. Never ranked for anybody: a branch is somebody's contribution, not a pick.
+        if (chosen is { } own && ownBranch is { } branch && branch.Id == own) return branch;
+
         if (report.OnlineTranslations.Count == 0) return null;
 
         if (chosen is { } id)

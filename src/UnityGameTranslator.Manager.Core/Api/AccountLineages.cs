@@ -200,6 +200,8 @@ public sealed class AccountLineages
                     AcceptsBranches = Flag(entry, "accepts_branches"),
                     BranchFrozen = Flag(entry, "branch_frozen"),
                     SiteId = Number(entry, "id") ?? 0,
+                    LineCount = Number(entry, "line_count"),
+                    Type = Text(entry, "type"),
                     TargetLanguage = Text(entry, "target_language"),
                     SourceLanguage = Text(entry, "source_language"),
                     GameName = entry.TryGetProperty("game", out var game)

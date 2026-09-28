@@ -416,6 +416,37 @@ public sealed class LineagePosition
     public string? TargetLanguage { get; init; }
     public string? GameName { get; init; }
 
+    /// <summary>Lines in this account's own file of the lineage. Null on a server too old to say.</summary>
+    public int? LineCount { get; init; }
+
+    /// <summary>How that file was produced ("ai_corrected"…), as the site says it.</summary>
+    public string? Type { get; init; }
+
+    /// <summary>
+    /// This account's own BRANCH of the lineage, as a translation a game can receive — or null when
+    /// the account leads the lineage, or is not in it.
+    ///
+    /// 🔴 A branch is never in a game's public list (branches are not published), and every path
+    /// that takes a translation into a game — the choice, the one-click, the download — reasons on
+    /// that list's entries. So "Select your contribution" named an id nothing could find: no Apply,
+    /// no Undo, nothing (seen on screen 2026-09-28). The download itself serves a branch to its
+    /// author; this is the entry that lets the rest reach it.
+    /// </summary>
+    public OnlineTranslation? AsOwnBranch(string? account) =>
+        IsMain || SiteId <= 0
+            ? null
+            : new OnlineTranslation
+            {
+                Id = SiteId,
+                Uuid = Uuid,
+                SourceLanguage = SourceLanguage,
+                TargetLanguage = TargetLanguage,
+                Author = account,
+                LineCount = LineCount ?? 0,
+                Type = Type,
+                FileHash = FileHash,
+            };
+
     /// <summary>
     /// The one sentence that says where this account stands, written once for every screen that
     /// shows it — the game card and the translation chooser both do, and two copies of a sentence

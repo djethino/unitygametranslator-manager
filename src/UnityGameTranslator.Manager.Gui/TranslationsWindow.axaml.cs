@@ -548,6 +548,19 @@ public sealed class TranslationsWindow : Window
         // position that is not this card, on this card's lineage, is a contribution you made to it.
         var contributesHere = !isYours && lineage is { IsMain: false };
 
+        // 🔴 **Two things can be taken from a lineage you contribute to, and only one was offered.**
+        // The Main is what this card shows; your branch is your own work on it, published, never
+        // listed here because branches are not public. Without this the only way back to your own
+        // contribution was to publish over it or to fetch it from the website by hand.
+        var ownBranchId = contributesHere && lineage is { SiteId: > 0 } ? lineage.SiteId : (int?)null;
+
+        // Which of the two this game holds: they share the lineage, so "installed" above cannot tell
+        // them apart — the hash the file was last taken at can (_source.hash).
+        var heldHash = _report.LocalTranslation?.SourceHash;
+        var branchHeld = installed && ownBranchId is not null && !string.IsNullOrEmpty(heldHash)
+                         && string.Equals(heldHash, lineage!.FileHash, StringComparison.OrdinalIgnoreCase);
+        if (branchHeld) installed = false;   // the Main is not what is in the game
+
         // What this card is to the reader, in the socle's chips on the first line — Installed,
         // Main (you), Branch (you) — the same three the mod's community list shows on the same
         // row. They used to be words on the author's line ("you have a branch of this",
@@ -632,11 +645,6 @@ public sealed class TranslationsWindow : Window
         var selectedId = ChosenTranslation;
         var chosen = selectedId == translation.Id;
 
-        // 🔴 **Two things can be taken from a lineage you contribute to, and only one was offered.**
-        // The Main is what this card shows; your branch is your own work on it, published, never
-        // listed here because branches are not public. Without this the only way back to your own
-        // contribution was to publish over it or to fetch it from the website by hand.
-        var ownBranchId = contributesHere && lineage is { SiteId: > 0 } ? lineage.SiteId : (int?)null;
         var branchChosen = ownBranchId is { } branch && selectedId == branch;
 
         var take = new Button
@@ -644,7 +652,10 @@ public sealed class TranslationsWindow : Window
             // Named only where there is something to tell it apart from. On every other card the
             // plain verb is right — inventing "Select the Main" everywhere would raise a question
             // about a distinction that does not exist there.
+            // "Keep the Main": the Main is in the game and the branch was chosen over it — the way
+            // back, which a greyed "Select the Main" did not offer (seen on screen 2026-09-28).
             Content = chosen ? "Selected"
+                    : branchChosen && installed ? "Keep the Main"
                     : ownBranchId is not null ? "Select the Main"
                     : "Select",
             FontSize = 12,
@@ -660,7 +671,7 @@ public sealed class TranslationsWindow : Window
             // ⚠ Absent-in-effect rather than silently inert: the reason is written under it, with
             // where the act actually lives.
             // ⚠ See _mayChoose: the window is open to anyone, choosing is not.
-            IsEnabled = !chosen && !installed && _mayChoose,
+            IsEnabled = !chosen && (!installed || branchChosen) && _mayChoose,
             HorizontalAlignment = HorizontalAlignment.Left,
             Margin = new Thickness(0, 8, 0, 0),
         };
@@ -687,18 +698,28 @@ public sealed class TranslationsWindow : Window
                 : "Installed in this game.");
         }
 
-        take.Click += (_, _) => Select(translation.Id, outcome, ChosenMessage);
+        if (branchChosen && installed)
+            take.Click += (_, _) => Unselect();   // the Main is already here: nothing to take, only the choice to drop
+        else
+            take.Click += (_, _) => Select(translation.Id, outcome, ChosenMessage);
 
         body.Children.Add(take);
 
         if (ownBranchId is { } mine)
         {
+            // Said like the Main's: what is selected, and where it is applied.
+            const string BranchChosenMessage = "Your contribution is selected. Apply it in the game's \"This game\" tab.";
+            if (branchChosen) Ui.Say(outcome, BranchChosenMessage, Tone.Success);
+            else if (branchHeld) Ui.Say(outcome, "Your contribution is installed in this game.", Tone.Success);
+
             var takeMine = new Button
             {
-                Content = branchChosen ? "Your contribution is selected" : "Select your contribution",
+                Content = branchChosen ? "Your contribution is selected"
+                        : branchHeld ? "Your contribution is installed"
+                        : "Select your contribution",
                 FontSize = 12,
                 // ⚠ Own work or not, selecting it points THIS game at it — the same write.
-                IsEnabled = !branchChosen && _mayChoose,
+                IsEnabled = !branchChosen && !branchHeld && _mayChoose,
                 HorizontalAlignment = HorizontalAlignment.Left,
                 Margin = new Thickness(0, 6, 0, 0),
             };
@@ -707,8 +728,7 @@ public sealed class TranslationsWindow : Window
                 "Your branch, as you published it. It differs from the Main by what its owner has "
                 + "not merged yet.");
 
-            takeMine.Click += (_, _) => Select(mine, outcome,
-                "Your contribution is selected. Apply it in the game's \"This game\" tab.");
+            takeMine.Click += (_, _) => Select(mine, outcome, BranchChosenMessage);
 
             body.Children.Add(takeMine);
         }
@@ -801,6 +821,17 @@ public sealed class TranslationsWindow : Window
         // it. Deliberate: the redrawn card says "Selected" on the button and repeats the sentence
         // from the preference, so nothing is lost — and leaving the old cards stale would be worse
         // than losing a line of text.
+        Redraw();
+    }
+
+    /// <summary>
+    /// Drops the choice made in this window — the way back when what was chosen is not what the
+    /// game should get after all. Writes nothing, like choosing; the caller forgets the held answer.
+    /// </summary>
+    private void Unselect()
+    {
+        ChosenTranslation = null;
+        Changed = true;
         Redraw();
     }
 

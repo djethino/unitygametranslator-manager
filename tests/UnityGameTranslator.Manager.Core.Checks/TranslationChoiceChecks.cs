@@ -41,6 +41,20 @@ internal static class TranslationChoiceChecks
     {
         Program.Section("Which translation a game would get");
 
+        // 🔴 **The account's own branch, named, is found** (seen on screen 2026-09-28: "Select your
+        // contribution" named an id no list held — no Apply, no Undo). And only when named.
+        var branch = new LineagePosition { Uuid = "u", IsMain = false, SiteId = 42, TargetLanguage = "fr", LineCount = 10 }.AsOwnBranch("me");
+        Program.Check(
+            TranslationChoice.Waiting(Report(Local(), Published(7)), "fr", chosen: 42, installed: null, ownBranch: branch)?.Id == 42
+            && TranslationChoice.Waiting(Report(Local(), Published(7)), "fr", chosen: 42, installed: null) is null,
+            "the own branch, named, is what the game would receive",
+            "a branch is in no public list; without it the choice leads nowhere");
+        Program.Check(
+            TranslationChoice.Waiting(Report(null), "fr", chosen: null, installed: null, ownBranch: branch) is null
+            && new LineagePosition { Uuid = "u", IsMain = true, SiteId = 42 }.AsOwnBranch("me") is null,
+            "a branch is never ranked for anybody, and a Main is not a branch",
+            "somebody's contribution is taken only when they name it");
+
         // Nothing published: there is nothing to offer, whatever else is true.
         Program.Check(
             TranslationChoice.Waiting(Report(null), "fr", chosen: null, installed: null) is null,

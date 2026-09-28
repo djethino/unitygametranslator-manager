@@ -76,9 +76,15 @@ public sealed class SingleInstance : IDisposable
 
         try
         {
-            // Shared for reading so the second copy can find out who to bring forward; not shared
-            // for writing, which is what makes this a lock at all.
-            var held = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read);
+            // Shared for reading on Windows, so the second copy can find out who to bring forward;
+            // not shared for writing, which is what makes this a lock at all.
+            //
+            // 🔴 Exclusive elsewhere (2026-09-28). On Unix .NET turns FileShare.Read into a SHARED
+            // flock, which a second copy is granted too: both windows opened, and a double-clicked
+            // pack went to a new window instead of the one already open (PackHandoff). The holder's
+            // id is only read on Windows (Program.RaiseExistingWindow), so nothing is lost.
+            var share = OperatingSystem.IsWindows() ? FileShare.Read : FileShare.None;
+            var held = new FileStream(path, FileMode.Create, FileAccess.Write, share);
 
             var id = Environment.ProcessId.ToString(CultureInfo.InvariantCulture);
             var bytes = System.Text.Encoding.UTF8.GetBytes(id);

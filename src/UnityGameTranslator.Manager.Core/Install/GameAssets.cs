@@ -351,14 +351,46 @@ public static class GameAssets
     {
         try
         {
-            var root = Path.GetPathRoot(Path.GetFullPath(folder));
-            return string.IsNullOrEmpty(root) ? null : new DriveInfo(root).AvailableFreeSpace;
+            // 🔴 The mount that HOLDS the folder, not the root of its path (2026-09-28). On Linux the
+            // root is always "/", which on Bazzite and SteamOS is the read-only system image with
+            // 0 bytes free — every pack was refused as too large while /var had gigabytes. The
+            // longest mount point that contains the folder is the drive it is on (on Windows,
+            // its drive letter, as before).
+            var path = Detection.RealPath.Of(folder);
+            var drives = DriveInfo.GetDrives().Where(d => d.IsReady).ToList();
+            var mount = MountHolding(drives.Select(d => d.RootDirectory.FullName), path);
+            if (mount is null) return null;
+
+            return drives.First(d => d.RootDirectory.FullName == mount).AvailableFreeSpace;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
         {
             // A drive that cannot be measured is not refused: the write itself will say if it fails.
             return null;
         }
+    }
+
+    /// <summary>
+    /// The mount point, among <paramref name="mounts"/>, that holds <paramref name="path"/>: the
+    /// longest one it lies under. Null when none does. Pure, for the check.
+    /// </summary>
+    public static string? MountHolding(IEnumerable<string> mounts, string path)
+    {
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        string? best = null;
+
+        foreach (var mount in mounts)
+        {
+            // Either separator: the mount "/" trims to "" and "C:\" to "C:", both then followed by
+            // the separator the path itself uses.
+            var trimmed = mount.TrimEnd('/', '\\');
+            var under = path.StartsWith(trimmed + "/", comparison)
+                        || path.StartsWith(trimmed + "\\", comparison)
+                        || string.Equals(path.TrimEnd('/', '\\'), trimmed, comparison);
+            if (under && (best is null || mount.Length > best.Length)) best = mount;
+        }
+
+        return best;
     }
 
     // ── Exporting ────────────────────────────────────────────────────────────────────────────

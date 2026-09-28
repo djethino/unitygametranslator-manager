@@ -51,6 +51,15 @@ internal static class GameAssetsChecks
     {
         Program.Section("Fonts and images added to a game, and the pack that carries them");
 
+        // The drive a game is on: the longest mount holding it. On Bazzite "/" is the read-only
+        // system image (0 bytes free) and the games are on /var — every pack was refused.
+        Program.Check(GameAssets.MountHolding(new[] { "/", "/var", "/var/home/player/.cache" },
+                          "/var/home/player/.local/share/Steam/steamapps/common/Game") == "/var"
+                      && GameAssets.MountHolding(new[] { "/", "/var" }, "/usr/lib") == "/"
+                      && GameAssets.MountHolding(new[] { "/var" }, "/variable/x") is null,
+            "free space is read on the mount that holds the game",
+            "the root of a Linux path is always /, which on SteamOS and Bazzite has nothing free (2026-09-28)");
+
         var descriptor = new LoaderDescriptor { Id = "bepinex5", UserDataDir = "BepInEx/plugins/UnityGameTranslator" };
         var root = Path.Combine(Path.GetTempPath(), "ugt-assets-" + Guid.NewGuid().ToString("N"));
         var gamePath = Path.Combine(root, "game");

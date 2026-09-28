@@ -189,7 +189,9 @@ public sealed class LinuxPlatform : IPlatform
             "Comment=Set up UnityGameTranslator in your Unity games",
             $"Exec=\"{executable}\"",
             $"Path={Path.GetDirectoryName(executable)}",
-            $"Icon={AppIconName}",
+            // The file itself, not the theme name: a desktop running since before the install keeps
+            // its icon cache, and showed a blank page for the name (Bazzite, 2026-09-28).
+            $"Icon={AppIconFile}",
             "Terminal=false",
             // One main category: two list the tool twice in some menus. Game, where a Steam Deck
             // or Bazzite user looks for what touches their games.

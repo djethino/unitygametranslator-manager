@@ -68,3 +68,58 @@ internal static class NativeLaunchChecks
         }
     }
 }
+
+/// <summary>The loader's DLL override, written into the game's Wine prefix instead of typed into a launcher.</summary>
+internal static class WinePrefixChecks
+{
+    private const string Header = "WINE REGISTRY Version 2\n;; All keys relative to \\User\n\n#arch=win64\n\n";
+
+    internal static void WhatThePrefixHolds()
+    {
+        Program.Section("The Wine prefix: the override written, and taken back");
+
+        var folder = Path.Combine(Path.GetTempPath(), "ugt-prefix-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        try
+        {
+            // No section yet: the common case on a fresh Proton prefix.
+            var fresh = Path.Combine(folder, "fresh.reg");
+            // Verbatim: user.reg doubles the backslashes of a key, and so must this.
+            var freshText = Header + @"[Software\\Wine\\Fonts] 1790000000" + "\n\"LogPixels\"=dword:00000060\n";
+            File.WriteAllText(fresh, freshText);
+
+            var recorded = WinePrefixOverride.Set(fresh, "winhttp");
+            Program.Check(WinePrefixOverride.IsSet(fresh, "winhttp") && recorded.Previous is null
+                          && File.ReadAllText(fresh).Contains(@"[Software\\Wine\\DllOverrides] ")
+                          && File.ReadAllText(fresh).Contains("\"LogPixels\"=dword:00000060"),
+                "a missing section is added, the rest left as it was",
+                "the loader never started under Proton without a launch option somebody had to type");
+
+            WinePrefixOverride.Restore(recorded);
+            Program.Check(!WinePrefixOverride.IsSet(fresh, "winhttp"),
+                "uninstall removes an entry that was not there before",
+                "leaving it would keep Wine preferring a DLL the uninstall deleted");
+
+            // A value of the person's own: replaced, remembered, and put back.
+            var own = Path.Combine(folder, "own.reg");
+            var ownText = Header + @"[Software\\Wine\\DllOverrides] 1790000000"
+                          + "\n\"*d3dcompiler_47\"=\"native\"\n\"winhttp\"=\"builtin\"\n";
+            File.WriteAllText(own, ownText);
+
+            var mine = WinePrefixOverride.Set(own, "winhttp");
+            Program.Check(mine.Previous == "builtin" && WinePrefixOverride.IsSet(own, "winhttp")
+                          && File.ReadAllText(own).Contains("\"*d3dcompiler_47\"=\"native\""),
+                "an existing value is replaced and remembered",
+                "the uninstall must be able to put back what the prefix held");
+
+            WinePrefixOverride.Restore(mine);
+            Program.Check(File.ReadAllText(own) == ownText,
+                "uninstall puts the prefix back exactly",
+                "a registry left different from how it was found is a change nobody asked for");
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+}

@@ -787,11 +787,18 @@ public sealed class GameInventory
             }
         }
 
-        if (_platform.NeedsDllOverride(game) && descriptor.ProtonDllOverride is not null)
+        // Said only when the install cannot do it itself: with a prefix, the override is written
+        // there (WinePrefixOverride); without one — never launched, or another launcher's — the
+        // setting is the person's to make.
+        if (_platform.NeedsDllOverride(game) && descriptor.ProtonDllOverride is not null
+            && WinePrefixOverride.UserRegistry(game) is null)
         {
             var (where, setting) = GameLaunch.DllOverrideAdvice(game, descriptor.ProtonDllOverride);
             report.Warnings.Add($"Runs through {(game.RunsUnderProton ? "Proton" : "Wine")}, and the loader "
-                                + $"does not start without a setting. {where} {setting}");
+                                + $"does not start without a setting. {where} {setting}"
+                                + (game.RunsUnderProton
+                                    ? " Or start the game once first: UGT Manager then sets it for you."
+                                    : ""));
         }
         else if (NativeLaunch.Applies(game, _platform.OsId) && NativeLaunch.Advice(game, descriptor) is { } native)
         {

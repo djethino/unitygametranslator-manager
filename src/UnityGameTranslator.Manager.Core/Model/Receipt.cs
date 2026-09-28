@@ -25,7 +25,8 @@ public sealed class Receipt
     /// <summary>The .NET libraries put beside the game, when it lacked some. Null otherwise.</summary>
     [JsonPropertyName("runtime_libraries")] public ReceiptRuntimeLibraries? RuntimeLibraries { get; set; }
 
-    [JsonPropertyName("steam_launch_options")] public ReceiptLaunchOptions? LaunchOptions { get; set; }
+    /// <summary>The DLL override written into the game's Wine prefix (Install/WinePrefixOverride). Null otherwise.</summary>
+    [JsonPropertyName("wine_dll_override")] public ReceiptWineOverride? WineOverride { get; set; }
 
     /// <summary>"none" | "reused_existing" | "started_existing" | "installed_official" | "installed_portable".</summary>
     [JsonPropertyName("ollama_action")] public string OllamaAction { get; set; } = "none";
@@ -152,8 +153,12 @@ public sealed class ReceiptFile
     [JsonPropertyName("backup")] public string? Backup { get; set; }
 }
 
-public sealed class ReceiptLaunchOptions
+public sealed class ReceiptWineOverride
 {
-    [JsonPropertyName("written")] public bool Written { get; set; }
-    [JsonPropertyName("value")] public string Value { get; set; } = "";
+    /// <summary>The prefix's user.reg.</summary>
+    [JsonPropertyName("file")] public string File { get; set; } = "";
+    [JsonPropertyName("dll")] public string Dll { get; set; } = "";
+
+    /// <summary>What the entry held before; null when there was none, and uninstall removes it.</summary>
+    [JsonPropertyName("previous")] public string? Previous { get; set; }
 }

@@ -462,6 +462,27 @@ public sealed class InstallEngine
                 return new InstallOutcome(false, $"Install check failed: {health}. Nothing was kept.", null);
             }
 
+            // Proton / Wine: the loader's DLL override goes into the game's own prefix, so nothing
+            // has to be typed into a launcher (WinePrefixOverride). Only when the prefix exists —
+            // the summary falls back to the launch option otherwise — and never recorded as ours
+            // when somebody had already set it.
+            receipt.WineOverride = existing?.WineOverride;
+            if (receipt.WineOverride is null
+                && _platform.NeedsDllOverride(plan.Game) && plan.Loader.ProtonDllOverride is { } dll
+                && WinePrefixOverride.UserRegistry(plan.Game) is { } userReg
+                && !WinePrefixOverride.IsSet(userReg, dll))
+            {
+                try
+                {
+                    receipt.WineOverride = WinePrefixOverride.Set(userReg, dll);
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    // Not fatal: the summary still gives the launch option, which does the same.
+                    Status?.Invoke($"Could not write the Wine setting into the game's prefix: {e.Message}");
+                }
+            }
+
             ReceiptStore.Write(plan.Game.Path, receipt);
 
             // ⚠ Beside the receipt, never instead of it: this one survives the uninstall, so the
@@ -839,11 +860,21 @@ public sealed class InstallEngine
                     + "installed, and UGT Mod will ask its own questions on first launch.");
         }
 
-        if (_platform.NeedsDllOverride(plan.Game) && plan.Loader.ProtonDllOverride is not null)
+        if (_platform.NeedsDllOverride(plan.Game) && plan.Loader.ProtonDllOverride is { } dll)
         {
-            var (where, setting) = GameLaunch.DllOverrideAdvice(plan.Game, plan.Loader.ProtonDllOverride);
-            lines.Add("One more step: UGT Mod does not load without it. " + where);
-            lines.Add("  " + setting);
+            if (WinePrefixOverride.UserRegistry(plan.Game) is { } userReg && WinePrefixOverride.IsSet(userReg, dll))
+            {
+                lines.Add($"{(plan.Game.RunsUnderProton ? "Proton" : "Wine")} is set to load {plan.Loader.Display} for this game.");
+            }
+            else
+            {
+                // No prefix yet: it is created at the game's first launch.
+                var (where, setting) = GameLaunch.DllOverrideAdvice(plan.Game, dll);
+                lines.Add("One more step: UGT Mod does not load without it. " + where);
+                lines.Add("  " + setting);
+                if (plan.Game.RunsUnderProton)
+                    lines.Add("Or start the game once, close it, and run Update: UGT Manager then sets it for you.");
+            }
         }
         else if (NativeLaunch.Applies(plan.Game, _platform.OsId)
                  && NativeLaunch.Advice(plan.Game, plan.Loader) is { } native)

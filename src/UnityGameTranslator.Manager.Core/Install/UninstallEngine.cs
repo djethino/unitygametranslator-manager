@@ -525,6 +525,24 @@ public sealed class UninstallEngine
         //     its own.
         SweepOurEmptyFolders(game, files, descriptor, removed);
 
+        // The Wine override we wrote for the loader goes when nothing of ours needs it any more:
+        // our loader removed, or the last of our files gone. Put back as it was, not deleted
+        // blindly — the prefix may have held a value of its own before.
+        if (receipt.WineOverride is { } wine
+            && (receipt.Loader is null || (receipt.Plugin is null && receipt.Loader.InstalledByUs != true)))
+        {
+            try
+            {
+                WinePrefixOverride.Restore(wine);
+                removed.Add($"the {wine.Dll} setting in this game's Wine prefix");
+                receipt.WineOverride = null;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                kept.Add($"the {wine.Dll} setting in this game's Wine prefix (could not be changed: {e.Message})");
+            }
+        }
+
         // 🔴 **No restore here.** Uninstalling removes what we put in. Putting back what the game
         // had before is a different act and belongs to a different verb.
         //
@@ -539,7 +557,8 @@ public sealed class UninstallEngine
         // tool believe it manages a game it no longer touches.
         var ledger = new InstallLedger(_platform);
 
-        if (receipt.Plugin is null && receipt.Loader?.InstalledByUs != true && receipt.RuntimeLibraries is null)
+        if (receipt.Plugin is null && receipt.Loader?.InstalledByUs != true && receipt.RuntimeLibraries is null
+            && receipt.WineOverride is null)
         {
             ReceiptStore.Delete(game.Path);
             FileOperations.TryRemoveEmptyDirectory(

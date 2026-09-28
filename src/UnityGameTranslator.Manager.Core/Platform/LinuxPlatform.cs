@@ -297,8 +297,37 @@ public sealed class LinuxPlatform : IPlatform
             }
         }
 
+        // The default xdg-mime recorded for the type names our entry: taken out of it, so no line is
+        // left pointing at a desktop file that no longer exists (seen after an uninstall on Bazzite,
+        // 2026-09-28). Another program chosen for the type stays.
+        foreach (var list in MimeAppsLists)
+        {
+            try
+            {
+                if (!File.Exists(list)) continue;
+                var text = File.ReadAllText(list);
+                var cleaned = PackFileType.WithoutOurDefault(text, PackDesktopFile);
+                if (cleaned != text) File.WriteAllText(list, cleaned);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // A line pointing at nothing is ignored by every desktop; not worth failing over.
+            }
+        }
+
         RunTool("update-mime-database", Path.Combine(DataHome, "mime"));
         RunTool("update-desktop-database", Path.GetDirectoryName(PackDesktopEntry)!);
+    }
+
+    /// <summary>Where xdg-mime keeps the user's defaults: the current place, then the older one.</summary>
+    private static IEnumerable<string> MimeAppsLists
+    {
+        get
+        {
+            var xdg = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
+            yield return Path.Combine(string.IsNullOrEmpty(xdg) ? Path.Combine(Home, ".config") : xdg, "mimeapps.list");
+            yield return Path.Combine(DataHome, "applications", "mimeapps.list");
+        }
     }
 
     /// <summary>

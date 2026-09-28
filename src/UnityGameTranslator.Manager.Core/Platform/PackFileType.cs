@@ -60,6 +60,34 @@ public static class PackFileType
     }
 
     /// <summary>
+    /// A mimeapps.list with our desktop entry taken out of the .ugtpack line — the line removed
+    /// when nothing else is left on it, anything else chosen for the type kept. The text comes back
+    /// unchanged when there is nothing of ours in it.
+    /// </summary>
+    public static string WithoutOurDefault(string mimeAppsList, string desktopFile)
+    {
+        var newline = mimeAppsList.Contains("\r\n") ? "\r\n" : "\n";
+        var lines = mimeAppsList.Split('\n').Select(l => l.TrimEnd('\r')).ToList();
+        var changed = false;
+
+        for (var i = lines.Count - 1; i >= 0; i--)
+        {
+            var line = lines[i];
+            var equals = line.IndexOf('=');
+            if (equals < 0 || !string.Equals(line.Substring(0, equals).Trim(), MimeType, StringComparison.Ordinal)) continue;
+
+            var entries = line.Substring(equals + 1).Split(';', StringSplitOptions.RemoveEmptyEntries).ToList();
+            if (entries.RemoveAll(e => string.Equals(e.Trim(), desktopFile, StringComparison.Ordinal)) == 0) continue;
+
+            changed = true;
+            if (entries.Count == 0) lines.RemoveAt(i);
+            else lines[i] = MimeType + "=" + string.Join(";", entries) + ";";
+        }
+
+        return changed ? string.Join(newline, lines) : mimeAppsList;
+    }
+
+    /// <summary>
     /// The pack a launch was handed — the file a double-click passes, as a full path — or null.
     ///
     /// ⚠ Only an existing file with the extension. The same test guards what another copy of the

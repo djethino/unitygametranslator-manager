@@ -55,5 +55,21 @@ internal static class PackTargetChecks
                       && PackFileType.Resource(PackFileType.WindowsIconFile).Length > 0,
             "every icon the file type declares is in the build",
             "a missing one throws at install, on the person's machine");
+
+        // The default xdg-mime recorded, taken back at uninstall (seen left behind on Bazzite).
+        const string ours = "unitygametranslator-manager-ugtpack.desktop";
+        const string list = "[Default Applications]\ntext/plain=org.kde.kate.desktop\n"
+                            + "application/x-ugtpack=" + ours + "\n";
+        Program.Check(PackFileType.WithoutOurDefault(list, ours)
+                      == "[Default Applications]\ntext/plain=org.kde.kate.desktop\n",
+            "uninstall takes our default out of mimeapps.list",
+            "the line was left pointing at a desktop file that no longer exists");
+
+        Program.Check(PackFileType.WithoutOurDefault("application/x-ugtpack=other.desktop;" + ours + ";\n", ours)
+                      == "application/x-ugtpack=other.desktop;\n"
+                      && PackFileType.WithoutOurDefault(list.Replace(ours, "other.desktop"), ours)
+                         == list.Replace(ours, "other.desktop"),
+            "another program chosen for the type is kept, and nothing else is touched",
+            "the file is the person's; only our own entry is ours to remove");
     }
 }

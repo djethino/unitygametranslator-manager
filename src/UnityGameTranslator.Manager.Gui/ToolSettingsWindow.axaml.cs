@@ -980,6 +980,7 @@ public sealed class ToolSettingsWindow : Window
                 panel.Children.Add(keep);
             }
 
+            panel.Children.Add(PackTypeBlock(installer));
             return Card("Installation", null, panel);
         }
 
@@ -1034,9 +1035,61 @@ public sealed class ToolSettingsWindow : Window
             if (window.Removed) Rebuild();
         };
 
+        panel.Children.Add(PackTypeBlock(installer));
         panel.Children.Add(remove);
 
         return Card("Installation", null, panel);
+    }
+
+    /// <summary>
+    /// The .ugtpack file type: where it stands, and Associate to declare it again (user,
+    /// 2026-09-28). Acts at once, like Install and Uninstall beside it — nothing to Apply.
+    ///
+    /// ⚠ Greyed on a portable copy, and the reason is written, not left to a tooltip: a copy that
+    /// can be moved cannot be what the system opens packs with.
+    /// </summary>
+    private Control PackTypeBlock(SelfInstaller installer)
+    {
+        var block = new StackPanel { Spacing = 6, Margin = new Thickness(0, 6, 0, 0) };
+        block.Children.Add(new TextBlock
+        {
+            Text = $"{PackFileType.Description}s ({UnityGameTranslator.Common.AssetPacks.Extension})",
+            FontSize = 12,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = Brush("TextPrimary"),
+        });
+
+        var state = installer.PackTypeNow();
+        var (said, tone) = state switch
+        {
+            null => ("Install UGT Manager to open .ugtpack files with it.", Tone.Neutral),
+            PackTypeState.Ours => ("Associated with UGT Manager.", Tone.Success),
+            PackTypeState.Stale => ("Associated with another copy of UGT Manager.", Tone.Warning),
+            PackTypeState.OverriddenByUser => ("Windows opens them with another app. To change it: right-click a pack, "
+                                               + "Open with, Choose another app.", Tone.Warning),
+            _ => ("Not associated with UGT Manager.", Tone.Warning),
+        };
+        block.Children.Add(Note(said, tone));
+
+        var associate = new Button
+        {
+            Content = "Associate",
+            FontSize = 12,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            IsEnabled = state is not null and not PackTypeState.OverriddenByUser,
+        };
+        ToolTip.SetTip(associate, state is null
+            ? "Install UGT Manager to open .ugtpack files with it."
+            : "Shows the pack icon and opens .ugtpack files with UGT Manager.");
+
+        associate.Click += (_, _) =>
+        {
+            installer.AssociatePackType();
+            Rebuild();
+        };
+
+        block.Children.Add(associate);
+        return block;
     }
 
     /// <summary>

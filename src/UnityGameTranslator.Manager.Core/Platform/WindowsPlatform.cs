@@ -343,12 +343,76 @@ public sealed class WindowsPlatform : IPlatform
                 }
             }
 
+            ForgetExplorerTraces();
             AssociationsChanged();
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException
                                       or System.Security.SecurityException)
         {
             // Not ours to delete after all. Nothing left to do.
+        }
+    }
+
+    /// <summary>
+    /// What the explorer copied on its own the first time a pack was opened: our class among the
+    /// type's "Open with" entries, and our executable in its recent programs. Left behind, "Open
+    /// with" would offer a program that no longer exists.
+    ///
+    /// ⚠ Only our two entries. The rest of that key is the person's, and UserChoice — their
+    /// "Always use this app" — is protected by Windows and never touched.
+    /// </summary>
+    private void ForgetExplorerTraces()
+    {
+        var root = $@"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\{UnityGameTranslator.Common.AssetPacks.Extension}";
+
+        using (var progIds = Registry.CurrentUser.OpenSubKey(root + @"\OpenWithProgids", writable: true))
+            progIds?.DeleteValue(PackFileType.ProgId, throwOnMissingValue: false);
+
+        using var recent = Registry.CurrentUser.OpenSubKey(root + @"\OpenWithList", writable: true);
+        if (recent is null) return;
+
+        // Letters naming programs, and MRUList giving their order: ours goes from both.
+        var order = recent.GetValue("MRUList") as string ?? "";
+        foreach (var name in recent.GetValueNames().Where(n => n.Length == 1))
+        {
+            if (!string.Equals(recent.GetValue(name) as string, ExecutableFileName, StringComparison.OrdinalIgnoreCase)) continue;
+
+            recent.DeleteValue(name, throwOnMissingValue: false);
+            order = order.Replace(name, "", StringComparison.Ordinal);
+        }
+
+        if (order.Length > 0) recent.SetValue("MRUList", order);
+        else recent.DeleteValue("MRUList", throwOnMissingValue: false);
+    }
+
+    public PackTypeState PackTypeStateFor(ToolInstallation installation)
+    {
+        try
+        {
+            var extension = UnityGameTranslator.Common.AssetPacks.Extension;
+            using var ext = Registry.CurrentUser.OpenSubKey($@"{Classes}\{extension}");
+            using var command = Registry.CurrentUser.OpenSubKey($@"{Classes}\{PackFileType.ProgId}\shell\open\command");
+
+            if (ext?.GetValue("") as string != PackFileType.ProgId || command is null) return PackTypeState.Absent;
+
+            if (!string.Equals(command.GetValue("") as string, $"\"{installation.Executable}\" \"%1\"",
+                               StringComparison.OrdinalIgnoreCase))
+                return PackTypeState.Stale;
+
+            // The person's own "Always use this app" lives here, protected by Windows: a program may
+            // not rewrite it, only tell them how to change it.
+            using var choice = Registry.CurrentUser.OpenSubKey(
+                $@"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\{extension}\UserChoice");
+            var chosen = choice?.GetValue("ProgId") as string;
+
+            return chosen is not null && !string.Equals(chosen, PackFileType.ProgId, StringComparison.OrdinalIgnoreCase)
+                ? PackTypeState.OverriddenByUser
+                : PackTypeState.Ours;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException
+                                      or System.Security.SecurityException)
+        {
+            return PackTypeState.Absent;
         }
     }
 

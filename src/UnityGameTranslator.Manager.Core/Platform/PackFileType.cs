@@ -11,6 +11,22 @@ namespace UnityGameTranslator.Manager.Core.Platform;
 /// deleted, and an association pointing at where it used to be opens nothing. Each system writes
 /// it its own way (IPlatform.RegisterPackType); what they share is here.
 /// </summary>
+/// <summary>Where the .ugtpack declaration stands on this system.</summary>
+public enum PackTypeState
+{
+    /// <summary>Nothing of ours is declared.</summary>
+    Absent,
+
+    /// <summary>Declared, and pointing at this installation's executable.</summary>
+    Ours,
+
+    /// <summary>Declared, but pointing elsewhere — an older folder, a copy since moved.</summary>
+    Stale,
+
+    /// <summary>Ours is declared, but the person chose another program for the type (Windows keeps that choice apart).</summary>
+    OverriddenByUser,
+}
+
 public static class PackFileType
 {
     /// <summary>The name the system shows for the type — the file picker says the same.</summary>

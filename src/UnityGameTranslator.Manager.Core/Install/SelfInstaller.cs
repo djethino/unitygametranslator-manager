@@ -304,6 +304,27 @@ public sealed class SelfInstaller
     }
 
     /// <summary>
+    /// Where the .ugtpack declaration stands for the installed copy — null when nothing is installed,
+    /// which is the one case the file type cannot be declared at all (a portable copy can move).
+    /// </summary>
+    public PackTypeState? PackTypeNow() =>
+        Installed() is { } installation ? _platform.PackTypeStateFor(installation) : null;
+
+    /// <summary>
+    /// Declares .ugtpack again for the installed copy — the Associate button of the tool's settings.
+    /// Idempotent: fixed names, overwritten in place, and the icon listed once among the files.
+    /// </summary>
+    public PackTypeState AssociatePackType()
+    {
+        var installation = Installed()
+            ?? throw new InvalidOperationException("Install UGT Manager to associate files with it.");
+
+        DeclarePackType(installation);
+        Save(installation);
+        return _platform.PackTypeStateFor(installation);
+    }
+
+    /// <summary>
     /// Declares .ugtpack for this installation, and lists what that put inside its folder among
     /// its files — so a removal takes the icon with everything else, under the same guards.
     /// </summary>
@@ -405,7 +426,7 @@ public sealed class SelfInstaller
             Files: installation.Files,
             Launchers: installation.Launchers,
             Registration: installation.Registration,
-            PackType: installation.PackType,
+            PackType: installation.PackType || _platform.PackTypeStateFor(installation) != PackTypeState.Absent,
             SettingsDirectory: _platform.UserDataDirectory);
     }
 
@@ -452,11 +473,16 @@ public sealed class SelfInstaller
             gone.Add("The entry in the system's list of installed apps");
         }
 
-        if (installation.PackType)
-        {
-            _platform.UnregisterPackType();
-            gone.Add($"The {PackFileType.Description} file type ({AssetPacks.Extension})");
-        }
+        // ⚠ Whatever the receipt says: a flag written false after a failed attempt, or a receipt
+        // older than the file type, must not leave the system opening packs with a deleted program.
+        // Our names are fixed, so removing them when absent is harmless — and the result is read back.
+        var packType = _platform.PackTypeStateFor(installation) != PackTypeState.Absent || installation.PackType;
+        _platform.UnregisterPackType();
+        var packTypeName = $"The {PackFileType.Description} file type ({AssetPacks.Extension})";
+        if (_platform.PackTypeStateFor(installation) != PackTypeState.Absent)
+            left.Add(packTypeName + " — still declared to the system");
+        else if (packType)
+            gone.Add(packTypeName);
 
         // The file we are running from is dealt with last and separately. Everything else goes now.
         string? running = null;

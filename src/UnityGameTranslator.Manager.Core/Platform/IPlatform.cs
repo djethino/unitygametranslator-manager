@@ -99,6 +99,9 @@ public interface IPlatform
     /// </summary>
     void UnregisterPackType();
 
+    /// <summary>Where the declaration stands, read from the system rather than from the receipt.</summary>
+    PackTypeState PackTypeStateFor(ToolInstallation installation);
+
     /// <summary>
     /// Is the given .NET Desktop Runtime major version present? MelonLoader IL2CPP needs 6.0
     /// and fails at game launch without it, so we check instead of promising.

@@ -289,6 +289,25 @@ public sealed class LinuxPlatform : IPlatform
     }
 
     /// <summary>
+    /// From the files themselves. ⚠ Another default chosen by the person lives in mimeapps.list,
+    /// in formats that vary by desktop; not read — Absent, Ours or Stale only.
+    /// </summary>
+    public PackTypeState PackTypeStateFor(ToolInstallation installation)
+    {
+        try
+        {
+            if (!File.Exists(MimePackage) || !File.Exists(PackDesktopEntry)) return PackTypeState.Absent;
+
+            var exec = $"Exec=\"{installation.Executable}\" %f";
+            return File.ReadLines(PackDesktopEntry).Any(line => line == exec) ? PackTypeState.Ours : PackTypeState.Stale;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return PackTypeState.Absent;
+        }
+    }
+
+    /// <summary>
     /// Runs one of the desktop's own tools to the end. False when the system does not have it —
     /// see RegisterPackType for why that is not an error.
     /// </summary>

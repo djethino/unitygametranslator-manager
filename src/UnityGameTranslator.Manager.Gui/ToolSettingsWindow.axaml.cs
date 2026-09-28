@@ -154,6 +154,7 @@ public sealed class ToolSettingsWindow : Window
         layout.Children.Add(LoadersCard());
         layout.Children.Add(NetworkCard());
         layout.Children.Add(HomeCard());
+        layout.Children.Add(PackTypeCard());
         layout.Children.Add(FilesCard());
 
         var cancel = new Button { Content = "Cancel", IsCancel = true };
@@ -980,7 +981,6 @@ public sealed class ToolSettingsWindow : Window
                 panel.Children.Add(keep);
             }
 
-            panel.Children.Add(PackTypeBlock(installer));
             return Card("Installation", null, panel);
         }
 
@@ -1035,7 +1035,6 @@ public sealed class ToolSettingsWindow : Window
             if (window.Removed) Rebuild();
         };
 
-        panel.Children.Add(PackTypeBlock(installer));
         panel.Children.Add(remove);
 
         return Card("Installation", null, panel);
@@ -1043,26 +1042,28 @@ public sealed class ToolSettingsWindow : Window
 
     /// <summary>
     /// The .ugtpack file type: where it stands, and Associate to declare it again (user,
-    /// 2026-09-28). Acts at once, like Install and Uninstall beside it — nothing to Apply.
+    /// 2026-09-28). Acts at once, like Install and Uninstall — nothing to Apply.
+    ///
+    /// 🔴 **A card of its own, shaped like Data folder below it**: what it is, where it stands, its
+    /// one button. Put inside Installation, Associate sat right above Uninstall, far from the text
+    /// Uninstall belongs to — it read as "uninstall the association" (user, 2026-09-28).
     ///
     /// ⚠ Greyed on a portable copy, and the reason is written, not left to a tooltip: a copy that
     /// can be moved cannot be what the system opens packs with.
     /// </summary>
-    private Control PackTypeBlock(SelfInstaller installer)
+    private Control PackTypeCard()
     {
-        var block = new StackPanel { Spacing = 6, Margin = new Thickness(0, 6, 0, 0) };
-        block.Children.Add(new TextBlock
-        {
-            Text = $"{PackFileType.Description}s ({UnityGameTranslator.Common.AssetPacks.Extension})",
-            FontSize = 12,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = Brush("TextPrimary"),
-        });
+        var installer = new SelfInstaller(_platform);
+        var block = new StackPanel { Spacing = 8 };
+        block.Children.Add(Intro(
+            $"Asset packs ({UnityGameTranslator.Common.AssetPacks.Extension}) show their own icon and open "
+            + "in UGT Manager with a double-click."));
 
         var state = installer.PackTypeNow();
         var (said, tone) = state switch
         {
-            null => ("Install UGT Manager to open .ugtpack files with it.", Tone.Neutral),
+            // Named first, placed after (name-things-in-ui.md): the card that installs it, then where.
+            null => ("Install UGT Manager on this computer first, from the Installation card above.", Tone.Neutral),
             PackTypeState.Ours => ("Associated with UGT Manager.", Tone.Success),
             PackTypeState.Stale => ("Associated with another copy of UGT Manager.", Tone.Warning),
             PackTypeState.OverriddenByUser => ("Windows opens them with another app. To change it: right-click a pack, "
@@ -1089,7 +1090,7 @@ public sealed class ToolSettingsWindow : Window
         };
 
         block.Children.Add(associate);
-        return block;
+        return Card("Asset pack files", null, block);
     }
 
     /// <summary>

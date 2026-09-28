@@ -51,6 +51,7 @@ internal static class Program
         GameAssetsChecks.WhatASystemFontExportCarries();
         PackTargetChecks.WhichGameAPackGoesTo();
         GameAssetsChecks.WhichFontsAProtonGameSees();
+        WineChecks.WhereTheOverrideGoes();
         SetupWayChecks.WhenTheSetupHasBeenAnswered();
         PreferenceFieldsChecks.WhatAGamesAnswersAreFor();
         ForkOriginChecks.WhereTheFileCameFrom();

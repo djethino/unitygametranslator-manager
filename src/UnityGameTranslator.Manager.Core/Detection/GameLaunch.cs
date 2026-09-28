@@ -66,6 +66,11 @@ public static class GameLaunch
                 "Started through the Epic launcher, which some titles require.");
         }
 
+        // Off Windows, a Windows build outside Steam belongs to the launcher that holds its Wine
+        // prefix (Heroic, Lutris, Bottles): started from here it would run without that prefix and
+        // without the DLL override set there — or not at all. Nothing to press Play on.
+        if (!OperatingSystem.IsWindows() && game.IsWindowsBuild) return null;
+
         if (game.ExecutablePath is { Length: > 0 } exe && File.Exists(exe))
         {
             return new LaunchRoute(exe, false,
@@ -74,6 +79,21 @@ public static class GameLaunch
 
         return null;
     }
+
+    /// <summary>
+    /// Where the Wine DLL override goes for this game, and what to write there — one sentence and
+    /// one line, for the install report and the game's card alike.
+    ///
+    /// 🔴 Not only Steam's (2026-09-28): a Windows build from Heroic, Lutris or Bottles runs through
+    /// Wine too, and its override is an environment variable in that launcher's settings. Told
+    /// "Steam launch options" for such a game, somebody had nowhere to put it.
+    /// </summary>
+    public static (string Where, string Setting) DllOverrideAdvice(GameInstall game, string dll) =>
+        game.RunsUnderProton
+            ? ("Set this as the game's Steam launch options:",
+               $"WINEDLLOVERRIDES=\"{dll}=n,b\" %command%")
+            : ("Add this environment variable in the game's settings in its launcher (Heroic, Lutris, Bottles):",
+               $"WINEDLLOVERRIDES={dll}=n,b");
 
     /// <summary>
     /// Starts it, and says what went wrong rather than throwing into an interface.

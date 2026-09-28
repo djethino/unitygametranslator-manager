@@ -347,7 +347,8 @@ public sealed class LinuxPlatform : IPlatform
     /// </summary>
     public bool? HasDotnetDesktopRuntime(string majorVersion) => null;
 
-    public bool NeedsDllOverride(GameInstall game) => game.RunsUnderProton;
+    /// <summary>Every Windows build here runs through Wine — Proton, or Heroic, Lutris, Bottles.</summary>
+    public bool NeedsDllOverride(GameInstall game) => game.IsWindowsBuild;
 
     public string? SystemLanguage()
     {

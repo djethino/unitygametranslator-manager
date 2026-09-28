@@ -709,7 +709,10 @@ public sealed class GameInventory
     /// </summary>
     public LoaderAsset? FindAsset(IReadOnlyList<LoaderAsset> assets, GameInstall game)
     {
-        var os = game.RunsUnderProton ? "windows" : _platform.OsId;
+        // 🔴 By the BUILD, not by where it was found (2026-09-28): a Windows build from Heroic,
+        // Lutris or Bottles runs through Wine exactly like a Proton one, and was handed the Linux
+        // loader, which never loads inside it.
+        var os = game.IsWindowsBuild ? "windows" : _platform.OsId;
 
         // No fallback to the host architecture. It used to default to x64 on a 64-bit machine,
         // which quietly installed the wrong loader into a 32-bit game; an unread architecture is
@@ -785,10 +788,9 @@ public sealed class GameInventory
 
         if (_platform.NeedsDllOverride(game) && descriptor.ProtonDllOverride is not null)
         {
-            report.Warnings.Add(
-                $"Runs through Proton: the game's Steam launch options must contain " +
-                $"WINEDLLOVERRIDES=\"{descriptor.ProtonDllOverride}=n,b\" %command%, " +
-                "or the loader never starts.");
+            var (where, setting) = GameLaunch.DllOverrideAdvice(game, descriptor.ProtonDllOverride);
+            report.Warnings.Add($"Runs through {(game.RunsUnderProton ? "Proton" : "Wine")}, and the loader "
+                                + $"does not start without a setting. {where} {setting}");
         }
 
         // A missing download for this OS/architecture IS blocking: there is nothing to install.

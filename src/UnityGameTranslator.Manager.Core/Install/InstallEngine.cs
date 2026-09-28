@@ -834,9 +834,9 @@ public sealed class InstallEngine
 
         if (_platform.NeedsDllOverride(plan.Game) && plan.Loader.ProtonDllOverride is not null)
         {
-            lines.Add("One more step: UGT Mod does not load without it. Set this as the " +
-                      "game's Steam launch options:");
-            lines.Add($"  WINEDLLOVERRIDES=\"{plan.Loader.ProtonDllOverride}=n,b\" %command%");
+            var (where, setting) = GameLaunch.DllOverrideAdvice(plan.Game, plan.Loader.ProtonDllOverride);
+            lines.Add("One more step: UGT Mod does not load without it. " + where);
+            lines.Add("  " + setting);
         }
 
         // 🔴 **.Text, and only the ones that apply.** This printed the OBJECT — every reader got

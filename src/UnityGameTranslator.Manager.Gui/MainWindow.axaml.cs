@@ -5217,6 +5217,8 @@ public partial class MainWindow : Window
 
         if (game.RunsUnderProton)
             rows.Add(("Proton", "yes (needs a Steam launch option)"));
+        else if (!OperatingSystem.IsWindows() && game.IsWindowsBuild)
+            rows.Add(("Wine", "yes (needs a setting in its launcher)"));
 
         for (var i = 0; i < rows.Count; i++)
         {

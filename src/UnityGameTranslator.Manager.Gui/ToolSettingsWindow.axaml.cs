@@ -950,8 +950,18 @@ public sealed class ToolSettingsWindow : Window
                 else
                 {
                     // The version in use is kept beside the new one until the restart (SelfUpdater).
+                    // Its way out beside the fact, as for the installed copy above: a note saying
+                    // "restart" with nothing to press left people closing and finding the file.
                     _updatePanel.Children.Add(Note(
                         $"Updated to {result.Version}. Restart UGT Manager to use it.", Tone.Success));
+                    var restart = new Button { Content = "Restart now", FontSize = 12, Classes = { "primary" } };
+                    var executable = result.ExecutablePath;
+                    restart.Click += (_, _) =>
+                    {
+                        if (Relaunch.Start(executable) is { } failure) Ui.Say(progress, failure, Tone.Error);
+                    };
+                    _updatePanel.Children.Add(restart);
+                    _updatePanel.Children.Add(progress);
                 }
             }
             catch (Exception ex)

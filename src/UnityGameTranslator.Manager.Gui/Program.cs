@@ -54,6 +54,10 @@ internal static class Program
         // A .ugtpack double-clicked in the file explorer (PackFileType): the system passes its path.
         var pack = PackFileType.PackIn(args);
 
+        // A restart, or "Open installed copy": the copy that started us still holds the lock until
+        // it has closed (Relaunch).
+        Relaunch.WaitForPredecessor();
+
         using var single = AcquireWindowRight();
         if (single is null)
         {

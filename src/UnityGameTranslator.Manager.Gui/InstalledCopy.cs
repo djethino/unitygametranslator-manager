@@ -1,6 +1,4 @@
-using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.ApplicationLifetimes;
 using UnityGameTranslator.Common;
 using UnityGameTranslator.Manager.Core.Install;
 using UnityGameTranslator.Manager.Core.Model;
@@ -26,29 +24,11 @@ internal static class InstalledCopy
     public static string Verb(bool canUpdate) => canUpdate ? "Update installed copy" : "Open installed copy";
 
     /// <summary>
-    /// Starts the installed copy and ends this one — two windows would share one settings file, and
-    /// the one-window lock would make the new one close again. Null when it started; the reason
-    /// otherwise.
+    /// Starts the installed copy and ends this one — two windows would share one settings file.
+    /// Null when it started; the reason otherwise.
     /// </summary>
-    public static string? Open(ToolInstallation installed)
-    {
-        try
-        {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(installed.Executable)
-            {
-                UseShellExecute = true,
-                WorkingDirectory = installed.Directory,
-            });
-        }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
-                                       or FileNotFoundException)
-        {
-            return $"Could not start {installed.Executable}: {ex.Message}";
-        }
-
-        (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
-        return null;
-    }
+    public static string? Open(ToolInstallation installed) =>
+        Relaunch.Start(installed.Executable, installed.Directory);
 
     /// <summary>
     /// Copies this file over the installed copy, then offers to open it. Null when done (opened or

@@ -567,7 +567,14 @@ public sealed class InstallEngine
         var before = files.WrittenFiles.Count;
         var dirsBefore = files.CreatedDirectories.Count;
 
+        // A native Linux game starts its loader through a preload (NativeLaunch): readied in the
+        // staging copy, so the receipt records the file as it lands.
+        var native = NativeLaunch.Applies(plan.Game, _platform.OsId);
+        if (native) NativeLaunch.PrepareExtracted(archive.ExtractedPath, plan.Loader, plan.Game);
+
         CopyTree(archive.ExtractedPath, "", files);
+
+        if (native) NativeLaunch.MakeExecutables(plan.Game.Path, plan.Loader);
 
         var wasOurs = existing?.Loader is { InstalledByUs: true } ? existing.Loader : null;
 
@@ -837,6 +844,12 @@ public sealed class InstallEngine
             var (where, setting) = GameLaunch.DllOverrideAdvice(plan.Game, plan.Loader.ProtonDllOverride);
             lines.Add("One more step: UGT Mod does not load without it. " + where);
             lines.Add("  " + setting);
+        }
+        else if (NativeLaunch.Applies(plan.Game, _platform.OsId)
+                 && NativeLaunch.Advice(plan.Game, plan.Loader) is { } native)
+        {
+            lines.Add("One more step: UGT Mod does not load without it. " + native.Where);
+            lines.Add("  " + native.Setting);
         }
 
         // 🔴 **.Text, and only the ones that apply.** This printed the OBJECT — every reader got

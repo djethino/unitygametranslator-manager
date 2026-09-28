@@ -599,7 +599,10 @@ public static class CommandLine
         Console.WriteLine($"Unity       : {game.UnityVersion ?? "unknown"}");
         Console.WriteLine($"Architecture: {game.Architecture}");
         if (GameLaunch.RunsWith(game) is { } runsWith)
-            Console.WriteLine($"Runs with   : {runsWith}{(game.ProtonPrefix is null ? "" : $" ({game.ProtonPrefix})")}");
+            // The prefix only for a game that uses it: Steam can leave a compatdata folder behind a
+            // native game (seen on Bazzite), and naming it beside "native" read as a contradiction.
+            Console.WriteLine($"Runs with   : {runsWith}"
+                              + (game.RunsUnderProton && game.ProtonPrefix is { } prefix ? $" ({prefix})" : ""));
         // The same two lines as the card's first block, from the same socle words.
         Console.WriteLine($"Text shown  : {TextShown(report)}");
         if (report.TextsContained is { } contained)
@@ -654,7 +657,9 @@ public static class CommandLine
 
         Console.WriteLine($"Recommends  : {report.RecommendedLoader?.Display ?? "nothing"}");
         if (report.RecommendationReason is not null) Console.WriteLine($"              {report.RecommendationReason}");
-        if (report.PluginBuildId is not null) Console.WriteLine($"Build       : {report.PluginBuildId}");
+        // The catalogue names the archive with a {version} slot; printed raw, it read as a bug.
+        if (report.PluginBuildId is not null)
+            Console.WriteLine($"Build       : {report.PluginBuildId.Replace("{version}", report.PluginStanding?.Available ?? "<latest>")}");
         Console.WriteLine();
 
         if (report.LocalTranslation is { } local)
@@ -1634,7 +1639,8 @@ public static class CommandLine
             : settings.ToolReleaseChannel;
 
         Console.WriteLine($"Running  : {SelfUpdater.CurrentVersion}");
-        Console.WriteLine($"From     : {SelfUpdater.RunningExecutable ?? "unknown"}");
+        // The .AppImage file, not the folder it is mounted on for the session.
+        Console.WriteLine($"From     : {SelfUpdater.RunningAppImage ?? SelfUpdater.RunningExecutable ?? "unknown"}");
         Console.WriteLine($"Channel  : {(channel == ReleaseChannel.Beta ? "beta" : "stable")}");
 
         // Silent for a normal build. A build pointed elsewhere otherwise reports a network failure

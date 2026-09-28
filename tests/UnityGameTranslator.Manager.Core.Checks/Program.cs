@@ -52,6 +52,7 @@ internal static class Program
         PackTargetChecks.WhichGameAPackGoesTo();
         GameAssetsChecks.WhichFontsAProtonGameSees();
         WineChecks.WhereTheOverrideGoes();
+        NativeLaunchChecks.HowALinuxGameStartsItsLoader();
         SetupWayChecks.WhenTheSetupHasBeenAnswered();
         PreferenceFieldsChecks.WhatAGamesAnswersAreFor();
         ForkOriginChecks.WhereTheFileCameFrom();

@@ -687,7 +687,7 @@ public sealed class GameInventory
             // 🔴 Not "recommended". The order comes from an integer in the catalog whose only
             // documentation is "higher wins" — calling that a recommendation claims a judgement
             // nobody has made. What is true is that this one is used if nothing is changed.
-            ? $"This game is {Describe(game.Runtime)}. {best.Display} is used unless you choose another: {string.Join(" and ", alternatives)} also fit."
+            ? $"This game is {Describe(game.Runtime)}. {best.Display} is used unless you choose another: {string.Join(" and ", alternatives)} also {(alternatives.Count == 1 ? "fits" : "fit")}."
             : $"This game is {Describe(game.Runtime)}. {best.Display} is the only option.";
 
         return best;
@@ -792,6 +792,10 @@ public sealed class GameInventory
             var (where, setting) = GameLaunch.DllOverrideAdvice(game, descriptor.ProtonDllOverride);
             report.Warnings.Add($"Runs through {(game.RunsUnderProton ? "Proton" : "Wine")}, and the loader "
                                 + $"does not start without a setting. {where} {setting}");
+        }
+        else if (NativeLaunch.Applies(game, _platform.OsId) && NativeLaunch.Advice(game, descriptor) is { } native)
+        {
+            report.Warnings.Add($"On Linux the loader does not start without a setting. {native.Where} {native.Setting}");
         }
 
         // A missing download for this OS/architecture IS blocking: there is nothing to install.

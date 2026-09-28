@@ -2576,6 +2576,12 @@ public sealed class SettingsWindow : Window
         Compare("Google key", _draft.GoogleApiKey, saved.GoogleApiKey);
         Compare("DeepL key", _draft.DeeplApiKey, saved.DeeplApiKey);
 
+        // 🔴 Accepting the values as they are IS a change until it has been done once (user,
+        // 2026-09-28). Without this, somebody content with the defaults saw "Close", which closed
+        // without recording anything — and the OneClick stayed greyed on "Fill in Mod defaults
+        // first" with no way to say yes. Reviewed is what that guard reads (Save sets it).
+        if (!saved.Reviewed) changes.Add("Mod defaults: use these values for games set up from now on");
+
         return changes;
     }
 

@@ -21,7 +21,9 @@ public sealed class SteamScanner
 
         foreach (var steamRoot in _platform.SteamRoots())
         {
-            var steamApps = Path.Combine(steamRoot, "steamapps");
+            // Resolved: on Linux several of these roots are links to one folder (RealPath), and a
+            // library seen through two of them listed every game twice.
+            var steamApps = RealPath.Of(Path.Combine(steamRoot, "steamapps"));
             if (Directory.Exists(steamApps) && seen.Add(steamApps)) yield return steamApps;
 
             // libraryfolders.vdf lists every other drive/partition the user added. Steam has
@@ -44,7 +46,7 @@ public sealed class SteamScanner
                     var path = entry.IsLeaf ? entry.Value : entry.GetString("path");
                     if (string.IsNullOrWhiteSpace(path)) continue;
 
-                    var candidate = Path.Combine(path, "steamapps");
+                    var candidate = RealPath.Of(Path.Combine(path, "steamapps"));
                     if (Directory.Exists(candidate) && seen.Add(candidate)) yield return candidate;
                 }
             }

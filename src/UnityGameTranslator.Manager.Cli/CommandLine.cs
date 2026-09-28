@@ -337,7 +337,8 @@ public static class CommandLine
 
         var flags = new List<string>();
         if (game.SteamAppId is not null) flags.Add($"steam:{game.SteamAppId}");
-        if (game.RunsUnderProton) flags.Add("proton");
+        if (GameLaunch.RunsWith(game) is not null)
+            flags.Add(game.RunsUnderProton ? "proton" : game.IsWindowsBuild ? "wine" : "native");
         if (!game.IsModdable) flags.Add($"BLOCKED: {game.VerdictDetail ?? game.Verdict.ToString()}");
 
         var suffix = flags.Count > 0 ? "  [" + string.Join(", ", flags) + "]" : "";
@@ -597,7 +598,8 @@ public static class CommandLine
         Console.WriteLine($"Runtime     : {game.Runtime}");
         Console.WriteLine($"Unity       : {game.UnityVersion ?? "unknown"}");
         Console.WriteLine($"Architecture: {game.Architecture}");
-        if (game.RunsUnderProton) Console.WriteLine($"Proton      : yes ({game.ProtonPrefix})");
+        if (GameLaunch.RunsWith(game) is { } runsWith)
+            Console.WriteLine($"Runs with   : {runsWith}{(game.ProtonPrefix is null ? "" : $" ({game.ProtonPrefix})")}");
         // The same two lines as the card's first block, from the same socle words.
         Console.WriteLine($"Text shown  : {TextShown(report)}");
         if (report.TextsContained is { } contained)

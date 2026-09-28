@@ -5191,6 +5191,19 @@ public partial class MainWindow : Window
                 _ => "unknown",
             }),
             ("Unity", game.UnityVersion ?? "unknown"),
+        };
+
+        // Beside the engine, off Windows only: native, Proton or Wine decides what setting up the
+        // mod asks of the person (GameLaunch.RunsWith, the command line says the same).
+        if (GameLaunch.RunsWith(game) is { } runsWith)
+        {
+            rows.Add(("Runs with", game.RunsUnderProton ? runsWith + " (needs a Steam launch option)"
+                                 : game.IsWindowsBuild ? runsWith + " (needs a setting in its launcher)"
+                                 : runsWith));
+        }
+
+        rows.AddRange(new (string Label, string Value)[]
+        {
             // ⚠ What is here AND what is published, on one line each. This block is the answer to
             // "where does this game stand", and it gave half of it: the installed version alone
             // says nothing without the one it should be compared to. Said for a loader we did not
@@ -5201,7 +5214,7 @@ public partial class MainWindow : Window
                 report.LoaderStanding)),
             ("UGT Mod", Published(report.InstalledPluginVersion ?? "not installed",
                                   report.PluginStanding)),
-        };
+        });
 
         // Two rows, never one: what the game SHOWED is UGT Mod's record, what its files CONTAIN is
         // read from them — a shipped library is whole, so the second says what could appear and
@@ -5214,11 +5227,6 @@ public partial class MainWindow : Window
 
         if (report.RecommendationReason is not null)
             rows.Add(("Recommended", report.RecommendationReason));
-
-        if (game.RunsUnderProton)
-            rows.Add(("Proton", "yes (needs a Steam launch option)"));
-        else if (!OperatingSystem.IsWindows() && game.IsWindowsBuild)
-            rows.Add(("Wine", "yes (needs a setting in its launcher)"));
 
         for (var i = 0; i < rows.Count; i++)
         {

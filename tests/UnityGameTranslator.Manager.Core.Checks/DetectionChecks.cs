@@ -118,6 +118,48 @@ internal static class DetectionChecks
             "written per call site it was 2 three times and 1 for GOG, for no reason anybody gave");
     }
 
+    internal static void OneFolderThroughTwoDoors()
+    {
+        Program.Section("One folder reached through a link is one folder");
+
+        using var sandbox = new Sandbox();
+
+        // Bazzite, 2026-09-28: ~/.steam/steam and ~/.steam/root are links to ~/.local/share/Steam,
+        // and every game was listed once per door.
+        var real = sandbox.Folder("share/Steam");
+        sandbox.File(real, "steamapps/common/Game/Game_Data/globalgamemanagers");
+        var door = Path.Combine(sandbox.Folder("dot-steam"), "steam");
+
+        // On Windows a junction: a symbolic link needs Developer Mode, a junction nothing, and .NET
+        // reports both through LinkTarget — the path RealPath reads.
+        if (OperatingSystem.IsWindows())
+        {
+            using var mklink = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                "cmd.exe", $"/c mklink /J \"{door}\" \"{real}\"")
+            { CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true })!;
+            mklink.WaitForExit();
+        }
+        else
+        {
+            Directory.CreateSymbolicLink(door, real);
+        }
+
+        Program.Check(new DirectoryInfo(door).LinkTarget is not null,
+            "a link can be made to test with",
+            "without one the cases below would pass for the wrong reason");
+
+        var throughDoor = RealPath.Of(Path.Combine(door, "steamapps", "common", "Game"));
+        var direct = RealPath.Of(Path.Combine(real, "steamapps", "common", "Game"));
+        Program.Check(string.Equals(throughDoor, direct, StringComparison.OrdinalIgnoreCase),
+            "a path through a link resolves to the real folder",
+            "compared as text, the two were two libraries and every game appeared twice");
+
+        Program.Check(RealPath.Of(Path.Combine(real, "missing", "..", "steamapps"))
+                      == Path.GetFullPath(Path.Combine(real, "steamapps")),
+            "a path is tidied like GetFullPath when nothing is a link",
+            "the plain case must not change");
+    }
+
     internal static void WhatAStoreManifestNames()
     {
         Program.Section("What a store manifest names");

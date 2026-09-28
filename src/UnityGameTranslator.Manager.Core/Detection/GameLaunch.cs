@@ -96,6 +96,21 @@ public static class GameLaunch
                $"WINEDLLOVERRIDES={dll}=n,b");
 
     /// <summary>
+    /// How this game runs on this computer — native, Proton or Wine — or null on Windows, where
+    /// every game is native and saying so would be noise.
+    ///
+    /// ⚠ One answer for the game's card and the command line alike (user, 2026-09-28: which of the
+    /// three it is decides what setting up the mod asks of the person).
+    /// </summary>
+    public static string? RunsWith(GameInstall game)
+    {
+        if (OperatingSystem.IsWindows()) return null;
+        if (game.RunsUnderProton) return "Proton";
+        if (game.IsWindowsBuild) return "Wine";
+        return OperatingSystem.IsMacOS() ? "macOS (native)" : "Linux (native)";
+    }
+
+    /// <summary>
     /// Starts it, and says what went wrong rather than throwing into an interface.
     ///
     /// ⚠ UseShellExecute for both cases, which is what makes one call serve a protocol address and

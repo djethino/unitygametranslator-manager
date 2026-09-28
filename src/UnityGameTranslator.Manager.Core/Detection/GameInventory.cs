@@ -142,7 +142,8 @@ public sealed class GameInventory
 
         void Add(GameInstall game)
         {
-            if (seen.Add(Path.GetFullPath(game.Path))) games.Add(game);
+            // The same folder reached through a link is the same game (RealPath).
+            if (seen.Add(RealPath.Of(game.Path))) games.Add(game);
         }
 
         // 🔴 **The two libraries are swept at once.** They are independent walks of different

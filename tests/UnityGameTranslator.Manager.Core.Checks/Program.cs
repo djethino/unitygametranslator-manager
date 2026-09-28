@@ -62,6 +62,7 @@ internal static class Program
         // `EdgeGiveChecks` in common/tests, run by `./verify-common.ps1`.
         DetectionChecks.WhatMakesAFolderAGame();
         DetectionChecks.HowFarBelowAFolderWeLook();
+        DetectionChecks.OneFolderThroughTwoDoors();
         DetectionChecks.WhatAStoreManifestNames();
         RuntimeLibrariesChecks.WhatAGameLacks();
         LaunchWatchChecks.WhenAStartingGameIsGivenBack();

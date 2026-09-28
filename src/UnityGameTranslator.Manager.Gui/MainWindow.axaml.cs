@@ -4264,11 +4264,18 @@ public partial class MainWindow : Window
         // this card — Mod defaults changes nothing, and offering it is a second voice saying
         // something about a game whose answer is already no. This warning is for a game that WOULD
         // work and has nothing to work with.
+        // ⚠ What THIS game is translated with — its own settings, what it holds, Mod defaults last
+        // (SettingsFor) — never Mod defaults alone: a game set to "Captures only" on Set up was told
+        // Mod defaults had nothing to translate it with (2026-09-28).
+        var effective = EffectivePreference(report);
         if (report.Game.IsModdable
             && report.Blockers.Count == 0
             && report.OnlineTranslations.Count == 0
-            && TranslationBackendLabel(_settings.Current) is null)
+            && TranslationBackendLabel(SettingsFor(report, effective)) is null)
         {
+            // Named after where the answer lives: Mod defaults, or this game's own settings.
+            var followsDefaults = effective.UsesModDefaults(GameConfig(report));
+
             var empty = new StackPanel { Spacing = 4 };
 
             empty.Children.Add(new TextBlock
@@ -4285,9 +4292,13 @@ public partial class MainWindow : Window
                 // ⚠ Same order as the banner and the picker: what costs nothing first. An AI on
                 // the machine is the short road when the machine allows it; writing the lines
                 // yourself always works.
-                Text = "Mod defaults is set to \"Community translations only\", and this game has "
-                     + "none. Choose a local AI (free if your computer can run one), or \"Captures "
-                     + "only\" to write the translations yourself in UGT Mod.",
+                Text = followsDefaults
+                    ? "Mod defaults is set to \"Community translations only\", and this game has "
+                      + "none. Choose a local AI (free if your computer can run one), or \"Captures "
+                      + "only\" to write the translations yourself in UGT Mod."
+                    : "This game is set to \"Community translations only\", and has none. On Set up, "
+                      + "choose a local AI (free if your computer can run one), or \"Captures only\" "
+                      + "to write the translations yourself in UGT Mod.",
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brush("TextSecondary"),
@@ -4305,7 +4316,10 @@ public partial class MainWindow : Window
                                  + "with your key. Applies to every game that uses Mod defaults.");
 
             open.Click += async (_, _) => await OpenSettingsAsync();
-            empty.Children.Add(open);
+
+            // Mod defaults' door only where Mod defaults decides; otherwise the answer is on the
+            // Set up tab, named in the sentence and right above this card.
+            if (followsDefaults) empty.Children.Add(open);
 
             yield return Callout(empty, Tone.Warning);
         }

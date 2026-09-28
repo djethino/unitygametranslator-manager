@@ -293,8 +293,10 @@ public sealed class SelfInstaller
             CreatedDirectory = createdDirectory || previous?.CreatedDirectory == true,
         };
 
+        // Distinct: two launchers can share a file (on Linux, the icon both desktop entries name).
         foreach (var kind in launchers)
-            installation.Launchers.AddRange(_platform.CreateLauncher(kind, plan.TargetExecutable));
+            foreach (var file in _platform.CreateLauncher(kind, plan.TargetExecutable))
+                if (!installation.Launchers.Contains(file)) installation.Launchers.Add(file);
 
         installation.Registration = _platform.RegisterInstalled(installation);
         DeclarePackType(installation);

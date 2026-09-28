@@ -47,3 +47,6 @@ catalog/*.local.json
 # Local notes and analysis stay out of the public repo.
 TODO.md
 analyse/
+
+# AppImage tools, downloaded and checked by prepare-release.ps1
+.build-tools/

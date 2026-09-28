@@ -152,6 +152,33 @@ public sealed class SelfUpdater
     public static string? RunningExecutable => Environment.ProcessPath;
 
     /// <summary>
+    /// The .AppImage file this process was opened from, or null.
+    ///
+    /// ⚠ The executable then lives in a read-only image mounted for the session
+    /// (<c>$APPDIR/usr/bin</c>), so it cannot replace itself — and the file that could be replaced,
+    /// <c>$APPIMAGE</c>, carries its version in its name. What this build does from an AppImage is
+    /// what it does from a download: install a copy of itself (the binary inside the image, the
+    /// same one the tar.gz ships), and that copy updates itself.
+    ///
+    /// ⚠ Both variables are inherited by every process the AppImage starts, the installed copy
+    /// included ("Open installed copy"). Only a process whose executable is inside APPDIR is the
+    /// AppImage.
+    /// </summary>
+    public static string? RunningAppImage
+    {
+        get
+        {
+            var image = Environment.GetEnvironmentVariable("APPIMAGE");
+            var mount = Environment.GetEnvironmentVariable("APPDIR");
+            if (string.IsNullOrEmpty(image) || string.IsNullOrEmpty(mount) || RunningExecutable is not { } running)
+                return null;
+
+            var root = Path.GetFullPath(mount).TrimEnd('/') + "/";
+            return Path.GetFullPath(running).StartsWith(root, StringComparison.Ordinal) ? image : null;
+        }
+    }
+
+    /// <summary>
     /// What an update replaces.
     ///
     /// 🔴 **The installed copy, when there is one** — even from a downloaded file opened on that
@@ -179,9 +206,14 @@ public sealed class SelfUpdater
     /// </summary>
     public string? WhyCannotApply()
     {
-        var executable = Target()?.Executable;
+        var target = Target();
+        var executable = target?.Executable;
         if (executable is null)
             return "UGT Manager cannot find where it is running from, so it cannot update itself.";
+
+        if (target is { IsInstalledCopy: false } && RunningAppImage is not null)
+            return "An AppImage cannot update itself. Install UGT Manager to get updates, "
+                   + "or download the new AppImage.";
 
         var folder = Path.GetDirectoryName(executable);
         if (folder is null || !Directory.Exists(folder))

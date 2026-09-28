@@ -147,12 +147,20 @@ public sealed class LinuxPlatform : IPlatform
             "Comment=Set up UnityGameTranslator in your Unity games",
             $"Exec=\"{executable}\"",
             $"Path={Path.GetDirectoryName(executable)}",
+            $"Icon={AppIconName}",
             "Terminal=false",
-            "Categories=Game;Utility;",
+            // One main category: two list the tool twice in some menus. Game, where a Steam Deck
+            // or Bazzite user looks for what touches their games.
+            "Categories=Game;",
             "");
 
         try
         {
+            // The icon the entry names, in the hicolor theme. Returned with the entry so removing
+            // the launcher removes it too (both kinds name the same file; deleting twice is fine).
+            Directory.CreateDirectory(Path.GetDirectoryName(AppIconFile)!);
+            File.WriteAllBytes(AppIconFile, PackFileType.Resource(AppIconName + "-128.png"));
+
             Directory.CreateDirectory(folder);
             File.WriteAllText(path, entry);
 
@@ -165,13 +173,18 @@ public sealed class LinuxPlatform : IPlatform
                     | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
             }
 
-            return [path];
+            return [path, AppIconFile];
         }
         catch
         {
             return [];
         }
     }
+
+    private const string AppIconName = "unitygametranslator-manager";
+
+    private static string AppIconFile =>
+        Path.Combine(DataHome, "icons", "hicolor", "128x128", "apps", AppIconName + ".png");
 
     /// <summary>
     /// Nothing to register. A desktop system's list of applications IS the .desktop file written

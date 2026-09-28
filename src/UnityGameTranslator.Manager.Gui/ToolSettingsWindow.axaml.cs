@@ -768,6 +768,11 @@ public sealed class ToolSettingsWindow : Window
         panel.Children.Add(_checkContentUpdates);
         panel.Children.Add(Note("Without it, game pages cannot show which version would be installed."));
 
+        // Where an update lands: the file in front of them, not the one in their menu.
+        var installer = new SelfInstaller(_platform);
+        if (installer.Installed() is not null && !installer.RunningTheInstalledCopy())
+            panel.Children.Add(Note("Updates apply to the copy you are running, not to the installed one.", Tone.Warning));
+
         var check = new Button { Content = "Check now", FontSize = 12 };
         check.HorizontalAlignment = HorizontalAlignment.Left;
         check.Click += async (_, _) => await CheckForUpdateAsync(check);
@@ -1017,14 +1022,9 @@ public sealed class ToolSettingsWindow : Window
             panel.Children.Add(repair);
         }
 
-        if (!installer.RunningTheInstalledCopy())
-        {
-            // Worth saying because it changes what every other button here means: an update applied
-            // from this window lands on the file in front of them, not on the one in their menu.
-            panel.Children.Add(Note(
-                "Changes and updates apply to the copy you are running, not to the installed one.",
-                Tone.Warning));
-        }
+        // ⚠ The note about which copy an update lands on lives in the Updates card now, beside Check
+        // now. Here it sat above Uninstall and said "changes" too — false: every copy reads the same
+        // settings folder, so a setting changed here is changed for both (user, 2026-09-28).
 
         var remove = new Button { Content = "Uninstall...", FontSize = 12 };
         remove.HorizontalAlignment = HorizontalAlignment.Left;
@@ -1072,6 +1072,11 @@ public sealed class ToolSettingsWindow : Window
         };
         block.Children.Add(Note(said, tone));
 
+        // 🔴 From a downloaded copy, Associate still works — for the INSTALLED one, which is what the
+        // system must open (a download can move). Said, or it reads as associating this file.
+        if (state is not null && !installer.RunningTheInstalledCopy())
+            block.Children.Add(Note("Packs open in the installed copy of UGT Manager, not in the one you are running."));
+
         var associate = new Button
         {
             Content = "Associate",
@@ -1081,7 +1086,7 @@ public sealed class ToolSettingsWindow : Window
         };
         ToolTip.SetTip(associate, state is null
             ? "Install UGT Manager to open .ugtpack files with it."
-            : "Shows the pack icon and opens .ugtpack files with UGT Manager.");
+            : "Shows the pack icon and opens .ugtpack files with the installed copy of UGT Manager.");
 
         associate.Click += (_, _) =>
         {

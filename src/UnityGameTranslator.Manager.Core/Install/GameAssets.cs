@@ -369,40 +369,14 @@ public static class GameAssets
         if (SystemFontMemory.TryGetValue(translationPath, out var kept) && kept.Stamp == stamp) return kept.Uses;
 
         var read = ReadTranslation(translationPath);
-        var local = new List<string>();
-        var fontsFolder = Path.Combine(folder, AssetPacks.FontsFolder);
-        if (Directory.Exists(fontsFolder)) local.AddRange(Directory.EnumerateFiles(fontsFolder).Select(Path.GetFileName).OfType<string>());
-
         var table = registered().ToList();
-        var uses = new List<SystemFontUse>();
 
-        // ⚠ Only BARE references name an installed font (FontReferences): "[Custom] X" is fonts/'s and
-        // "[Game] X" the game's — neither may be carried from the system, whatever is installed.
-        var installed = FontReferencesNamed(read.Root)
-            .Where(r => FontReferences.Order(r)[0] == FontSource.System)
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(r => r, StringComparer.OrdinalIgnoreCase);
-
-        foreach (var stem in installed)
-        {
-            // A copy already in fonts/ (a pack laid in, say) is still a System font of the translation:
-            // carried from there, and only when asked like any other (user, 2026-09-28 — the copies
-            // used to leave in every pack, the box unticked and hidden).
-            var copy = local.FirstOrDefault(file => AssetPacks.IsFontFileFor(file, stem));
-            if (copy is not null)
-            {
-                uses.Add(new SystemFontUse(stem, Path.Combine(fontsFolder, copy), null));
-                continue;
-            }
-
-            var found = FindInstalledFont(stem, table, folders);
-            uses.Add(found switch
-            {
-                null => new SystemFontUse(stem, null, "not on this computer"),
-                _ when AssetPacks.IsFontFile(found) => new SystemFontUse(stem, found, null),
-                _ => new SystemFontUse(stem, null, ".ttc files are not supported"),
-            });
-        }
+        // The rule is the socle's (AssetPackWriter.SystemFonts), the mod's export applies the same;
+        // what is this product's is how an installed font is found.
+        var uses = AssetPackWriter.SystemFonts(FontReferencesNamed(read.Root), folder,
+                                               stem => FindInstalledFont(stem, table, folders))
+            .Select(c => new SystemFontUse(c.Reference, c.Path, c.Why))
+            .ToList();
 
         SystemFontMemory[translationPath] = (stamp, uses);
         return uses;

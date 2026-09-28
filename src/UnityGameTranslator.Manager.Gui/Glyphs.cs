@@ -163,6 +163,27 @@ public static class Glyphs
         + "M9.4,6.9 L12.1,6.9 A1.1,1.1 0 0 1 12.1,9.1 L9.4,9.1 A1.1,1.1 0 0 1 9.4,6.9 Z");
 
     /// <summary>
+    /// A penguin, for a game built for Linux — beside its name in the list, off Windows only
+    /// (GameLaunch.RunsWith). Belly and eyes are holes (even-odd); the feet are a layer of their
+    /// own because they overlap the body.
+    /// </summary>
+    public static Control Linux(string? colour = null) => Shape(colour,
+        "M8,1.2 C6.3,1.2 5.3,2.5 5.3,4.2 C5.3,5.2 5,6 4.3,7 C3.3,8.4 2.9,9.9 3.1,11.5 "
+        + "C3.3,13.3 5,14.4 8,14.4 C11,14.4 12.7,13.3 12.9,11.5 C13.1,9.9 12.7,8.4 11.7,7 "
+        + "C11,6 10.7,5.2 10.7,4.2 C10.7,2.5 9.7,1.2 8,1.2 Z "
+        + "M8,6.6 C6.5,6.6 5.6,8.3 5.6,10.3 C5.6,12.1 6.6,13.3 8,13.3 C9.4,13.3 10.4,12.1 10.4,10.3 "
+        + "C10.4,8.3 9.5,6.6 8,6.6 Z "
+        + "M6.3,3.9 A0.75,0.9 0 1,0 7.8,3.9 A0.75,0.9 0 1,0 6.3,3.9 Z "
+        + "M8.2,3.9 A0.75,0.9 0 1,0 9.7,3.9 A0.75,0.9 0 1,0 8.2,3.9 Z",
+        "M3.6,13.6 C4.6,13.2 6.4,13.5 7,14.3 C6.6,15 4.6,15.1 3.4,14.7 C3,14.4 3.1,13.9 3.6,13.6 Z "
+        + "M12.4,13.6 C11.4,13.2 9.6,13.5 9,14.3 C9.4,15 11.4,15.1 12.6,14.7 C13,14.4 12.9,13.9 12.4,13.6 Z");
+
+    /// <summary>Four panes in perspective, for a Windows build — run through Proton or Wine off Windows.</summary>
+    public static Control Windows(string? colour = null) => Shape(colour,
+        "M2,2.6 L7.4,2 L7.4,7.5 L2,7.5 Z M8.4,1.9 L14,1.2 L14,7.5 L8.4,7.5 Z "
+        + "M2,8.5 L7.4,8.5 L7.4,14 L2,13.4 Z M8.4,8.5 L14,8.5 L14,14.8 L8.4,14.1 Z");
+
+    /// <summary>
     /// The same mark, drawn smaller.
     ///
     /// ⚠ Scales the whole 16x16 box, never a single path to its own outline — which is the rule

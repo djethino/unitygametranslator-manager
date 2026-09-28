@@ -2244,6 +2244,9 @@ public partial class MainWindow : Window
     /// The technical facts (runtime, Unity version, architecture) are not here on purpose: they
     /// answer "what is this" while someone scanning this list is asking "what can I do". They
     /// live in the card on the right, where they serve diagnosis.
+    ///
+    /// 🔸 One exception, a mark and not a word: off Windows, whether a game is native or goes
+    /// through Proton/Wine changes what setting it up involves (user, 2026-09-28).
     /// </summary>
     private ListBoxItem BuildListItem(GameInstall game, RowFacts facts)
     {
@@ -2285,7 +2288,28 @@ public partial class MainWindow : Window
             Foreground = Brush("TextPrimary"),
         };
 
-        var body = new StackPanel { Spacing = 3, Children = { title } };
+        // Off Windows, a mark before the name says how the game runs (user, 2026-09-28): Linux
+        // for a native build, Windows for one that goes through Proton or Wine — which decides
+        // what setting it up involves. The card names which of the two. A Grid, not a horizontal
+        // StackPanel: the name must still trim (see the icon row below for why).
+        Control heading = title;
+        if (GameLaunch.RunsWith(game) is { } runsWith)
+        {
+            var mark = Glyphs.Sized(game.IsWindowsBuild ? Glyphs.Windows() : Glyphs.Linux(), 12);
+            mark.Margin = new Avalonia.Thickness(0, 0, 6, 0);
+            ToolTip.SetTip(mark, game.RunsUnderProton ? "Windows build, runs with Proton"
+                               : game.IsWindowsBuild ? "Windows build, runs with Wine"
+                               : runsWith);
+
+            var line = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
+            Grid.SetColumn(mark, 0);
+            Grid.SetColumn(title, 1);
+            line.Children.Add(mark);
+            line.Children.Add(title);
+            heading = line;
+        }
+
+        var body = new StackPanel { Spacing = 3, Children = { heading } };
 
         // Said first, because it changes what every other line on this row is worth: a game that is
         // open cannot be set up or removed until it is closed, whatever its situation says.

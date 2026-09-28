@@ -302,8 +302,9 @@ public sealed class TranslationDetailsWindow : Window
         layout.Children.Add(_url);
 
         // UGT Mod's own hint for the same field (spec/screens/upload.json, UrlHint), plus "Optional".
-        layout.Children.Add(Hint("Optional. External link to custom fonts or replacement images. "
-                                 + "Not hosted by us."));
+        // The mod's Upload window says the same (common/spec/screens/upload.json, UrlHint).
+        layout.Children.Add(Hint("Optional. Link to fonts, images or a .ugtpack file, never a program. "
+                                 + "Not hosted by UnityGameTranslator."));
 
         if (onABranch)
         {

@@ -190,6 +190,9 @@ function New-AppImage {
         'apt-get update -qq'
         'apt-get install -y -qq --no-install-recommends file > /dev/null'
         'cp -r /appdir /tmp/AppDir'
+        # The mounted Windows folder reports every file as executable: modes set from scratch,
+        # so the licences do not arrive executable in an installed copy.
+        'find /tmp/AppDir -type d -exec chmod 755 {} + && find /tmp/AppDir -type f -exec chmod 644 {} +'
         "chmod 755 /tmp/AppDir/AppRun /tmp/AppDir/usr/bin/$ExecutableName"
         'cp /tools/appimagetool-x86_64.AppImage /tmp/appimagetool && chmod 755 /tmp/appimagetool'
         'cd /tmp'

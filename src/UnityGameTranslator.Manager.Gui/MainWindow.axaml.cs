@@ -463,6 +463,14 @@ public partial class MainWindow : Window
                 UpdateSlot.Content = null;
                 break;
 
+            // GitHub's hourly limit, reached: the message says when it lifts, and nothing on this
+            // machine is to blame — no firewall advice, which sent people looking for a fault.
+            case SelfUpdateState.CheckFailed when result.RateLimited:
+                ShowUpdateNotice("Couldn't check for updates",
+                    $"Updates to UGT Manager, not UGT Mod.\n\n{result.Message}",
+                    primary: false, result);
+                break;
+
             default:
                 ShowUpdateNotice("Couldn't check for updates",
                     $"Updates to UGT Manager, not UGT Mod.\n\n{result.Message}\n\nA firewall, "

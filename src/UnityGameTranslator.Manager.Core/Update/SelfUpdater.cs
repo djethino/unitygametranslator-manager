@@ -37,7 +37,12 @@ public sealed record SelfUpdateOffer(
     long? SizeBytes,
     string ReleasePageUrl);
 
-public sealed record SelfUpdateCheck(SelfUpdateState State, SelfUpdateOffer? Offer, string? Message);
+/// <param name="RateLimited">
+/// The check failed because GitHub refused a network that asked too often — nothing to fix, a time
+/// to wait for (Net/GitHubRateLimit). Shown without the firewall and proxy advice.
+/// </param>
+public sealed record SelfUpdateCheck(SelfUpdateState State, SelfUpdateOffer? Offer, string? Message,
+                                     bool RateLimited = false);
 
 public sealed record SelfUpdateResult(string ExecutablePath, string PreviousCopy, string Version,
                                       bool IntoInstalledCopy);
@@ -265,6 +270,10 @@ public sealed class SelfUpdater
         catch (OperationCanceledException)
         {
             throw;
+        }
+        catch (Net.GitHubRateLimitException ex)
+        {
+            return new SelfUpdateCheck(SelfUpdateState.CheckFailed, null, ex.Message, RateLimited: true);
         }
         catch (Exception ex)
         {

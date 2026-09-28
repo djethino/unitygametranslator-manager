@@ -1,4 +1,4 @@
-namespace UnityGameTranslator.Manager.Core.Checks;
+﻿namespace UnityGameTranslator.Manager.Core.Checks;
 
 /// <summary>
 /// Runs the Manager's own decisions against the answers they are supposed to give.
@@ -60,6 +60,7 @@ internal static class Program
         ForkOriginChecks.WhereTheFileCameFrom();
         DownloadOriginsChecks.WhereADownloadMayStart();
         DownloadOriginsChecks.WhereADownloadMayLand();
+        RateLimitChecks.WhenGitHubSaysWait();
         // ⚠ The scroll edge is NOT checked here any more: it moved to the socle on 2026-09-12, so
         // the mod and the Manager share one answer rather than two that can drift. Its cases are
         // `EdgeGiveChecks` in common/tests, run by `./verify-common.ps1`.

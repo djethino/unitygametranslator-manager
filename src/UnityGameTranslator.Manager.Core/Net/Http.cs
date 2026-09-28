@@ -94,7 +94,9 @@ public static class Http
         // ⚠ Same shape as the note on Proxy above ("clients created afterwards"), which is exactly
         // the trap this avoids: a value snapshotted at construction is a value that can be missing
         // from precisely the client that matters.
-        var client = new HttpClient(new DeviceHeader(handler ?? DefaultHandler()));
+        // GitHubRateLimit outermost: it reads the answer, and names GitHub's "asked too often"
+        // for what it is rather than as a network failure.
+        var client = new HttpClient(new GitHubRateLimit(new DeviceHeader(handler ?? DefaultHandler())));
 
         client.Timeout = timeout;
         client.DefaultRequestHeaders.UserAgent.ParseAdd(

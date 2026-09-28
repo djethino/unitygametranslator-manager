@@ -766,7 +766,6 @@ public sealed class ToolSettingsWindow : Window
             FontSize = 12,
         };
         panel.Children.Add(_checkContentUpdates);
-        panel.Children.Add(Note("Without it, game pages cannot show which version would be installed."));
 
         var check = new Button { Content = "Check now", FontSize = 12 };
         check.Click += async (_, _) => await CheckForUpdateAsync(check);
@@ -776,10 +775,12 @@ public sealed class ToolSettingsWindow : Window
 
         // From a downloaded copy, the way into the installed one sits here too (user, 2026-09-28):
         // that is the copy updates go to. Same door as the Installation card (InstalledCopy).
+        // 🔴 And the same look and place: first in its row, in the primary colour, exactly as in the
+        // Installation card — one button, one grammar, wherever it appears.
         var installer = new SelfInstaller(_platform);
         if (installer.Installed() is { } installed && !installer.RunningTheInstalledCopy() && !installer.Inspect().NeedsRepair)
         {
-            var open = new Button { Content = InstalledCopy.Verb(canUpdate: false), FontSize = 12 };
+            var open = new Button { Content = InstalledCopy.Verb(canUpdate: false), FontSize = 12, Classes = { "primary" } };
             var failed = Note("");
             failed.IsVisible = false;
             open.Click += (_, _) =>
@@ -789,7 +790,7 @@ public sealed class ToolSettingsWindow : Window
                 failed.IsVisible = true;
             };
 
-            checkRow.Children.Add(open);
+            checkRow.Children.Insert(0, open);
             panel.Children.Add(failed);
         }
 

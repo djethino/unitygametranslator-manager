@@ -151,6 +151,10 @@ dotnet run --project src/UnityGameTranslator.Manager.Gui -- scan
 
 `Gui` is the executable and `Cli` is a library it links in — one binary, two faces.
 
+Packaging the release files (`prepare-release.ps1`, PowerShell 7) also needs **Docker** for Linux:
+the AppImage is built in a container with `appimagetool`, which the script downloads once and checks
+against a pinned checksum. `-Rid win-x64` builds Windows only and needs no Docker.
+
 ## Project layout
 
 ```

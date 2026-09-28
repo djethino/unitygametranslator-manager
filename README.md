@@ -43,13 +43,17 @@ can: **whether the community has already translated this game**.
 
 ## Install
 
-Download the archive for your system from the
-[releases page](https://github.com/djethino/unitygametranslator-manager/releases), unzip it
-anywhere, and run `UnityGameTranslatorManager.exe`. There is nothing to install: it is a single
-executable, and it offers to install itself properly if you want to keep it around.
+Download the file for your system from the
+[releases page](https://github.com/djethino/unitygametranslator-manager/releases):
 
-**Windows only for now.** Linux is written for but has never been run, so no build is published —
-see [Supported systems](#supported-systems).
+- **Windows**: the `.zip`. Unzip it anywhere and run `UnityGameTranslatorManager.exe`.
+- **Linux, SteamOS, Bazzite**: the `.AppImage`. Allow it to run as a program (in Dolphin:
+  Properties → Permissions → "Is executable"; or `chmod +x`), then open it. The `.tar.gz` holds
+  the same program without the AppImage wrapper.
+
+There is nothing to install: it is a single program, and it offers to install itself properly if
+you want to keep it around — a menu entry, an uninstaller, and `.ugtpack` files that open in it.
+See [Supported systems](#supported-systems).
 
 > **Windows SmartScreen will warn you.** This build is not signed with a paid certificate, and an
 > unknown executable with no reputation is exactly what SmartScreen exists to flag. Check the
@@ -87,12 +91,27 @@ folder onto it, and you get the window.
 
 | System | Status |
 |---|---|
-| Windows | Supported — this is what the published build is |
-| Linux / SteamOS (Steam Deck) | **Written for, never run.** No build is published: the code handles Proton and the Deck, but some of its paths are known to be wrong and nobody has started it once. A later release |
+| Windows | Supported |
+| Linux / SteamOS | Supported — tested on Bazzite (KDE Plasma, Steam), the same desktop as SteamOS's Desktop Mode |
 | macOS | Not yet — see below |
 
-⚠ The Linux line used to read "Supported". It was not: it described what the code was written to
-do, which is not the same claim, and somebody on a Deck would have found that out the hard way.
+### Linux and SteamOS
+
+Run UGT Manager in Desktop Mode. It finds your Steam libraries and handles both kinds of game you
+meet there, with nothing to type into Steam:
+
+- **Native Linux games**: UGT Manager starts the game through its mod loader from any launcher.
+  If Steam updates the game (or "Verify integrity of game files" is used), the game starts without
+  the mod again: the game's page says so, and **Update** sets it back up.
+- **Windows games through Proton**: start the game once before installing, so that Steam creates
+  its Proton folder. UGT Manager then writes the setting the mod loader needs there. If the game
+  has never been started, UGT Manager shows the launch option to use instead.
+- **Windows games through Heroic, Lutris or Bottles**: UGT Manager shows the setting to add in
+  that launcher.
+
+Not tested yet: a Steam Deck itself (as opposed to Bazzite), and MelonLoader in native Linux
+games. In Game Mode there is no keyboard, so the key that opens UGT Mod in a game needs one —
+[see the mod's README](https://github.com/djethino/UnityGameTranslator#linux-and-steamos).
 
 ### macOS
 

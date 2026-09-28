@@ -2295,7 +2295,8 @@ public partial class MainWindow : Window
         Control heading = title;
         if (GameLaunch.RunsWith(game) is { } runsWith)
         {
-            var mark = Glyphs.Sized(game.IsWindowsBuild ? Glyphs.Windows() : Glyphs.Linux(), 12);
+            // 14, not 12: at 12 on a selected row the penguin read as a padlock (seen 2026-09-28).
+            var mark = Glyphs.Sized(game.IsWindowsBuild ? Glyphs.Windows() : Glyphs.Linux(), 14);
             mark.Margin = new Avalonia.Thickness(0, 0, 6, 0);
             ToolTip.SetTip(mark, game.RunsUnderProton ? "Windows build, runs with Proton"
                                : game.IsWindowsBuild ? "Windows build, runs with Wine"

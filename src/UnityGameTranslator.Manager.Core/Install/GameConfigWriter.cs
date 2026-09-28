@@ -305,10 +305,7 @@ public sealed class GameConfigWriter
                 // flag (see the writer below). Reading the backend alone turned a game set to
                 // captures only back into "Community translations only" on the next Apply
                 // (2026-09-28).
-                TranslationBackend = Text(root, null, "translation_backend") is var backend
-                                     && backend == "none" && Flag(root, null, "capture_keys_only") == true
-                    ? "capture"
-                    : backend,
+                TranslationBackend = BackendOf(root),
                 // Read as the mod will read it — respelled (Endpoints.Canonical, spec/config) — so a
                 // game still carrying "localhost" is not shown as disagreeing with 127.0.0.1.
                 AiUrl = Endpoints.Canonical(Text(root, null, "ai_url")),
@@ -1154,10 +1151,18 @@ public sealed class GameConfigWriter
             // anyway, and offering to "fix" it here would be asking somebody to approve a spelling.
             if (intent.Parent is null && intent.Key == "ai_url") inGame = Endpoints.Canonical(inGame);
 
+            // 🔴 The backend as it is READ, on both sides: "captures only" is written as "none" plus
+            // the capture flag, so comparing the raw key saw no difference between community and
+            // captures only — and the one-click had nothing to do while the form counted a change
+            // (2026-09-28). The flag's own line is answered with the backend, never listed apart.
+            var backendLine = intent.Parent is null && intent.Key == "translation_backend";
+            if (backendLine) inGame = BackendOf(root);
+
             // ⚠ "not set" on our side too when the intent is to remove the key — the same words the
             // left-hand side uses for an absent value, so a line reads the same way whichever end
             // of it is empty.
-            var ours = intent.Value is null ? "not set" : Render(intent.Value, intent.Secret);
+            var ours = backendLine ? settings.TranslationBackend
+                     : intent.Value is null ? "not set" : Render(intent.Value, intent.Secret);
 
             if (inGame is not null && string.Equals(inGame, ours, StringComparison.Ordinal)) continue;
 
@@ -1171,6 +1176,17 @@ public sealed class GameConfigWriter
 
         return differences;
     }
+
+    /// <summary>
+    /// The translation backend a game holds, in this tool's words: "capture" for no backend with
+    /// the capture flag on — the pair GameConfigWriter writes for "captures only", which the mod
+    /// has no single word for. One reading for Read and Compare, so the two cannot disagree.
+    /// </summary>
+    private static string? BackendOf(JsonObject root) =>
+        Text(root, null, "translation_backend") is var backend
+        && backend == "none" && Flag(root, null, "capture_keys_only") == true
+            ? "capture"
+            : backend;
 
     /// <summary>
     /// A stored value as it should be compared: secrets decrypted, everything else as written.

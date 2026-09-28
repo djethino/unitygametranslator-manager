@@ -124,6 +124,20 @@ internal static class ConfigContractChecks
                 Program.Check(readBack == backend,
                     $"backend {backend}: UGT Manager reads back what it wrote",
                     $"read {readBack} — \"captures only\" came back as \"community\" on the next Apply (2026-09-28)");
+
+                // The comparison the one-click decides its work by: nothing left against what was
+                // just written, and a change seen against every other backend.
+                var writer = new GameConfigWriter(null);
+                var same = writer.Compare(gamePath, descriptor, settings, "French")
+                                 .Where(d => d.Key == "translation_backend").ToList();
+                var others = new[] { "none", "capture", "llm", "google", "deepl" }.Where(b => b != backend)
+                    .All(other => writer.Compare(gamePath, descriptor,
+                                      new InstallerSettings { TranslationBackend = other, EnableAi = true }, "French")
+                                  .Any(d => d.Key == "translation_backend" && d.Writes));
+                Program.Check(same.Count == 0 && others,
+                    $"backend {backend}: a change of backend is work for the one-click",
+                    "community and captures only are both \"none\" in the file; compared raw, the one-click "
+                    + "saw nothing to do while the form counted a change (2026-09-28)");
             }
             finally
             {

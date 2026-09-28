@@ -419,9 +419,9 @@ internal static class GameAssetsChecks
                 "installed fonts are found as the mod finds them, and each one that cannot go says why",
                 "a name, a file name in a subfolder, the system's table; a collection and a missing font are named, not skipped");
 
-            Program.Check(!Use("Legacy").Includable && Use("Legacy").Why!.Contains("from a pack"),
-                "an installed font used only by legacy text is not offered, and says why",
-                "legacy text is drawn from installed fonts: a copy carried for it would arrive and never be used");
+            Program.Check(Use("Legacy").Includable,
+                "an installed font used by legacy text is offered like any other",
+                "legacy text reads a fonts/ copy too since the mod shows fonts/ to the engine (2026-09-28)");
 
             Program.Check(uses.All(u => u.Reference is not ("arial" or "[Custom] arial")),
                 "a reference to fonts/ is never carried from the system, even when that font is installed",
@@ -449,7 +449,7 @@ internal static class GameAssetsChecks
             using (var zip = ZipFile.OpenRead(with))
             {
                 var fonts = zip.Entries.Select(e => e.FullName).Where(n => n.StartsWith("fonts/")).OrderBy(n => n, StringComparer.Ordinal).ToList();
-                Program.Check(fonts.SequenceEqual(["fonts/Candara.ttf", "fonts/comicbd.ttf", "fonts/mine.ttf"]),
+                Program.Check(fonts.SequenceEqual(["fonts/Candara.ttf", "fonts/Legacy.ttf", "fonts/comicbd.ttf", "fonts/mine.ttf"]),
                     "asked, it carries them under the name the translation uses — \"Candara.ttf\" from candara.ttf",
                     "the mod receiving the pack looks the name up exactly, among its own fonts first");
             }
@@ -475,10 +475,9 @@ internal static class GameAssetsChecks
             using (var zip = ZipFile.OpenRead(copies))
             {
                 var fonts = zip.Entries.Select(e => e.FullName).Where(n => n.StartsWith("fonts/")).OrderBy(n => n, StringComparer.Ordinal).ToList();
-                Program.Check(fonts.SequenceEqual(["fonts/Candara.ttf", "fonts/comicbd.ttf", "fonts/mine.ttf"])
-                              && GameAssets.SystemFontsUsed(game, descriptor, [system], () => table).Any(u => u.Reference == "Legacy" && !u.Includable),
-                    "a copy only legacy text names is not exported, and the export still says why",
-                    "it would arrive in another game and be used there no more than here");
+                Program.Check(fonts.SequenceEqual(["fonts/Candara.ttf", "fonts/Legacy.ttf", "fonts/comicbd.ttf", "fonts/mine.ttf"]),
+                    "the copies of installed fonts in fonts/ are exported, the retouched game font and the unused one are not",
+                    "a copy serves a player without that font; a file named like a game font is not the one shown");
             }
         }
         finally

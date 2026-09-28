@@ -361,23 +361,12 @@ public static class GameAssets
         // ⚠ Only BARE references name an installed font (FontReferences): "[Custom] X" is fonts/'s and
         // "[Game] X" the game's — neither may be carried from the system, whatever is installed.
         var installed = FontReferencesNamed(read.Root)
-            .Where(r => FontReferences.Order(r.Reference)[0] == FontSource.System)
-            .GroupBy(r => r.Reference, StringComparer.Ordinal)
-            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase);
+            .Where(r => FontReferences.Order(r)[0] == FontSource.System)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(r => r, StringComparer.OrdinalIgnoreCase);
 
-        foreach (var group in installed)
+        foreach (var stem in installed)
         {
-            var stem = group.Key;
-
-            // 🔴 A copy only helps TextMeshPro text (FontReferences.ReadsFontFiles): legacy text is
-            // drawn from INSTALLED fonts, so a copy carried for it would arrive and never be used.
-            // Said even when fonts/ holds a copy: that copy is not exported either (UseOf).
-            if (!group.Any(r => r.ReadsFiles))
-            {
-                uses.Add(new SystemFontUse(stem, null, "the text using it can't use a font from a pack"));
-                continue;
-            }
-
             if (local.Any(file => AssetPacks.IsFontFileFor(file, stem))) continue;   // fonts/ provides it
 
             var found = FindInstalledFont(stem, table, folders);
@@ -620,44 +609,33 @@ public static class GameAssets
     /// Which font is shown on this computer where the translation names this file's name — the rule
     /// the mod serves fonts by (<see cref="FontReferences"/>).
     ///
-    /// 🔴 Named is not used. "[Game] X" is the game's X even with fonts/X.ttf beside it; a bare "X"
-    /// is the installed X first; and legacy text (UI.Text) never reads a font file at all, so a
-    /// file named only by it is shown nowhere.
+    /// 🔴 Named is not used. "[Game] X" is the game's X even with fonts/X.ttf beside it, and a bare
+    /// "X" is the installed X first. Every kind of text reads a fonts/ file otherwise — TextMeshPro
+    /// through the mod's atlas, legacy text since the mod shows fonts/ to the engine (2026-09-28).
     /// </summary>
-    private static FontUse UseOf(string fileName, List<(string Reference, bool ReadsFiles)> references, Func<string, bool> installed)
+    private static FontUse UseOf(string fileName, List<string> references, Func<string, bool> installed)
     {
         var naming = references
-            .Where(r => AssetPacks.IsFontFileFor(fileName, FontReferences.Name(r.Reference)))
+            .Where(r => AssetPacks.IsFontFileFor(fileName, FontReferences.Name(r)))
             .ToList();
 
         if (naming.Count == 0) return FontUse.NotUsed;
 
-        var name = FontReferences.Name(naming[0].Reference);
-        var isInstalled = naming.Any(r => FontReferences.Order(r.Reference)[0] == FontSource.System) && installed(name);
+        if (naming.Any(r => FontReferences.Order(r)[0] == FontSource.Custom)) return FontUse.Used;
 
-        foreach (var r in naming)
-        {
-            if (!r.ReadsFiles) continue;
-            var first = FontReferences.Order(r.Reference)[0];
-            if (first == FontSource.Custom || (first == FontSource.System && !isInstalled)) return FontUse.Used;
-        }
+        if (naming.Any(r => FontReferences.Order(r)[0] == FontSource.System))
+            return installed(FontReferences.Name(naming[0])) ? FontUse.InstalledInstead : FontUse.Used;
 
-        if (isInstalled) return FontUse.InstalledInstead;
-
-        // Game-marked, or a bare name the computer lacks served to legacy text: the game's font.
-        // A "[Custom]" reference only on legacy text shows nothing — that text cannot read a file.
-        return naming.Any(r => FontReferences.Order(r.Reference)[0] != FontSource.Custom) ? FontUse.GameInstead : FontUse.NotUsed;
+        return FontUse.GameInstead;
     }
 
     /// <summary>
-    /// Whether an export carries this file: a custom font, or a copy of an installed font, for text
-    /// that can be drawn from a file — shown on a computer without that font. Never one named only
-    /// by legacy text (UI.Text) or marked as the game's.
+    /// Whether an export carries this file: a custom font, or a copy of an installed font — shown on
+    /// a computer without that font. Never one marked as the game's.
     /// </summary>
-    private static bool IsExported(string fileName, List<(string Reference, bool ReadsFiles)> references) =>
-        references.Any(r => r.ReadsFiles
-                            && FontReferences.Order(r.Reference)[0] is FontSource.Custom or FontSource.System
-                            && AssetPacks.IsFontFileFor(fileName, FontReferences.Name(r.Reference)));
+    private static bool IsExported(string fileName, List<string> references) =>
+        references.Any(r => FontReferences.Order(r)[0] is FontSource.Custom or FontSource.System
+                            && AssetPacks.IsFontFileFor(fileName, FontReferences.Name(r)));
 
     /// <summary>Whether a font of this name is installed, found as the mod finds it — remembered while the font folders stay as they are.</summary>
     private static bool IsInstalled(string name, IEnumerable<string> fontFolders, Func<IEnumerable<(string Name, string Path)>> registered)
@@ -676,17 +654,15 @@ public static class GameAssets
         InstalledMemory = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// Every font reference the translation applies, as written (origin mark included), and
-    /// whether the text it serves can be drawn from a font file (<see cref="FontReferences.ReadsFontFiles"/>).
-    /// A rule carries no text kind: it is counted as able to, since it may reach TextMeshPro text.
+    /// Every font reference the translation applies, as written (origin mark included).
     /// </summary>
-    private static List<(string Reference, bool ReadsFiles)> FontReferencesNamed(JsonObject? root)
+    private static List<string> FontReferencesNamed(JsonObject? root)
     {
-        var references = new List<(string, bool)>();
+        var references = new List<string>();
 
-        void Take(JsonNode? reference, bool readsFiles)
+        void Take(JsonNode? reference)
         {
-            if (TextOf(reference) is { } text) references.Add((text, readsFiles));
+            if (TextOf(reference) is { } text) references.Add(text);
         }
 
         // ⚠ Read as the mod reads them (TranslatorCore.ParseFontsSection / ParseFontOverridesSection):
@@ -699,14 +675,14 @@ public static class GameAssets
         {
             foreach (var (_, settings) in fonts)
                 if (settings is JsonObject font && On(font))
-                    Take(font["fallback"], FontReferences.ReadsFontFiles(TextOf(font["type"])));
+                    Take(font["fallback"]);
         }
 
         if (root?[SettingsSections.FontRulesKey] is JsonArray rules)
         {
             foreach (var rule in rules.OfType<JsonObject>())
             {
-                if (On(rule) && TextOf(rule["match"]) is not null) Take(rule["replacement"], readsFiles: true);
+                if (On(rule) && TextOf(rule["match"]) is not null) Take(rule["replacement"]);
             }
         }
 

@@ -58,13 +58,75 @@ internal static class NativeLaunchChecks
             File.WriteAllText(Path.Combine(staging, NativeLaunch.BepInExScript), "#!/bin/sh\nexecutable_name=\"\"\nexit 0\n");
             NativeLaunch.PrepareExtracted(staging, bepinex, steamGame);
             var text = File.ReadAllText(Path.Combine(staging, NativeLaunch.BepInExScript));
-            Program.Check(text.Contains("executable_name=\"Game.x86_64\"") && text.StartsWith("#!/bin/sh\n"),
-                "the script is given the game's executable, nothing else changed",
+            Program.Check(text.Contains("executable_name=\"Game.ugt\"") && text.StartsWith("#!/bin/sh\n"),
+                "the script is given the game's renamed executable, nothing else changed",
                 "started directly, run_bepinex.sh stops on an empty executable_name");
         }
         finally
         {
             Directory.Delete(staging, recursive: true);
+        }
+
+        Program.Check(NativeLaunch.MovedName("Bioprototype.x86_64") == "Bioprototype.ugt"
+                      && NativeLaunch.MovedName("Tap Ninja.x86_64") == "Tap Ninja.ugt"
+                      && NativeLaunch.MovedName("Game") == "Game.ugt",
+            "the renamed executable keeps the stem Unity finds its data by",
+            "Unity looks for <name>_Data under the executable's name without its last extension");
+    }
+
+    /// <summary>
+    /// The start file, as a sequence on real files — the moment matters: a game update comes
+    /// between the install and the uninstall, and each step must read what the previous one left.
+    /// </summary>
+    internal static void TheStartFileThroughAGameUpdate()
+    {
+        Program.Section("A native Linux game: the start file, through a game update");
+
+        var bepinex = new LoaderDescriptor { Id = "bepinex5", Display = "BepInEx 5" };
+        var root = Path.Combine(Path.GetTempPath(), "ugt-start-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var executable = Path.Combine(root, "My Game.x86_64");
+            var moved = Path.Combine(root, "My Game.ugt");
+            File.WriteAllText(executable, "ELF version 1");
+            var game = new GameInstall { Name = "My Game", Path = root, ExecutablePath = executable };
+
+            var recorded = NativeLaunch.Install(game, bepinex, existing: null);
+            var script = File.ReadAllText(executable);
+            Program.Check(recorded is { Executable: "My Game.x86_64", MovedTo: "My Game.ugt" }
+                          && File.ReadAllText(moved) == "ELF version 1"
+                          && NativeLaunch.IsOurStartFile(executable)
+                          && script.Contains("exec ./run_bepinex.sh './My Game.ugt' \"$@\"")
+                          && !script.Contains('\r'),
+                "install: the game renamed, the start file under its name",
+                "every launcher starts the game through the loader, with nothing typed (2026-09-28)");
+
+            Program.Check(NativeLaunch.Install(game, bepinex, recorded) is not null
+                          && File.ReadAllText(moved) == "ELF version 1",
+                "installing again leaves the renamed game as it is",
+                "moving the start file onto the game would destroy the game");
+
+            // Steam updates the game: the real executable comes back over the start file.
+            File.WriteAllText(executable, "ELF version 2");
+            Program.Check(NativeLaunch.IsBroken(root, recorded!),
+                "a game update over the start file is seen",
+                "the game then runs without the mod, and nothing on screen would say why");
+
+            NativeLaunch.Install(game, bepinex, recorded);
+            Program.Check(File.ReadAllText(moved) == "ELF version 2" && NativeLaunch.IsOurStartFile(executable),
+                "the next update takes the new executable and puts the start file back",
+                "keeping the old copy would start the game from before its update");
+
+            var removed = new List<string>();
+            NativeLaunch.Remove(root, recorded!, removed);
+            Program.Check(File.ReadAllText(executable) == "ELF version 2" && !File.Exists(moved),
+                "uninstall gives the game its executable back",
+                "the game folder must end as the game left it");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
         }
     }
 }

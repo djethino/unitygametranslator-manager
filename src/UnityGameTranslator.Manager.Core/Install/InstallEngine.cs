@@ -483,6 +483,24 @@ public sealed class InstallEngine
                 }
             }
 
+            // Native Linux: the start file in place of the game's executable, so any launcher
+            // starts it through our loader (NativeLaunch). Also on a plugin-only update: that is
+            // how a game update that put the real executable back gets repaired.
+            receipt.StartFile = existing?.StartFile;
+            if (NativeLaunch.Applies(plan.Game, _platform.OsId) && receipt.Loader is { InstalledByUs: true })
+            {
+                try
+                {
+                    receipt.StartFile = NativeLaunch.Install(plan.Game, plan.Loader, receipt.StartFile)
+                                        ?? receipt.StartFile;
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    // Not fatal: the summary then gives the launch option, which does the same.
+                    Status?.Invoke($"Could not put the start file in place: {e.Message}");
+                }
+            }
+
             ReceiptStore.Write(plan.Game.Path, receipt);
 
             // ⚠ Beside the receipt, never instead of it: this one survives the uninstall, so the
@@ -877,6 +895,7 @@ public sealed class InstallEngine
             }
         }
         else if (NativeLaunch.Applies(plan.Game, _platform.OsId)
+                 && !(plan.Game.ExecutablePath is { } started && NativeLaunch.IsOurStartFile(started))
                  && NativeLaunch.Advice(plan.Game, plan.Loader) is { } native)
         {
             lines.Add("One more step: UGT Mod does not load without it. " + native.Where);

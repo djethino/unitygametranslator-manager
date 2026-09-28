@@ -28,6 +28,9 @@ public sealed class Receipt
     /// <summary>The DLL override written into the game's Wine prefix (Install/WinePrefixOverride). Null otherwise.</summary>
     [JsonPropertyName("wine_dll_override")] public ReceiptWineOverride? WineOverride { get; set; }
 
+    /// <summary>The start file put in place of a native Linux game's executable (Install/NativeLaunch). Null otherwise.</summary>
+    [JsonPropertyName("start_file")] public ReceiptStartFile? StartFile { get; set; }
+
     /// <summary>"none" | "reused_existing" | "started_existing" | "installed_official" | "installed_portable".</summary>
     [JsonPropertyName("ollama_action")] public string OllamaAction { get; set; } = "none";
 
@@ -161,4 +164,13 @@ public sealed class ReceiptWineOverride
 
     /// <summary>What the entry held before; null when there was none, and uninstall removes it.</summary>
     [JsonPropertyName("previous")] public string? Previous { get; set; }
+}
+
+public sealed class ReceiptStartFile
+{
+    /// <summary>The name every launcher starts — now UGT Manager's start file.</summary>
+    [JsonPropertyName("executable")] public string Executable { get; set; } = "";
+
+    /// <summary>The name the game's own executable was given, beside it.</summary>
+    [JsonPropertyName("moved_to")] public string MovedTo { get; set; } = "";
 }

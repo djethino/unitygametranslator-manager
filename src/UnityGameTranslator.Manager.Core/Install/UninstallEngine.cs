@@ -525,6 +525,20 @@ public sealed class UninstallEngine
         //     its own.
         SweepOurEmptyFolders(game, files, descriptor, removed);
 
+        // The start file goes with our loader: without the loader it would start nothing.
+        if (receipt.StartFile is { } start && receipt.Loader is null)
+        {
+            try
+            {
+                NativeLaunch.Remove(game.Path, start, removed);
+                receipt.StartFile = null;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                kept.Add($"the start file in place of {start.Executable} (could not be changed: {e.Message})");
+            }
+        }
+
         // The Wine override we wrote for the loader goes when nothing of ours needs it any more:
         // our loader removed, or the last of our files gone. Put back as it was, not deleted
         // blindly — the prefix may have held a value of its own before.
@@ -558,7 +572,7 @@ public sealed class UninstallEngine
         var ledger = new InstallLedger(_platform);
 
         if (receipt.Plugin is null && receipt.Loader?.InstalledByUs != true && receipt.RuntimeLibraries is null
-            && receipt.WineOverride is null)
+            && receipt.WineOverride is null && receipt.StartFile is null)
         {
             ReceiptStore.Delete(game.Path);
             FileOperations.TryRemoveEmptyDirectory(

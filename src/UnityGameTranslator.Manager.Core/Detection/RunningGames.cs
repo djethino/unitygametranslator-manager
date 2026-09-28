@@ -92,7 +92,12 @@ public sealed class RunningGames
         {
             try
             {
-                if (!byName.TryGetValue(process.ProcessName, out var candidates)) continue;
+                // As given, then without its extension: on Linux a process keeps it — "Game.x86_64",
+                // or "Game.ugt" behind UGT Manager's start file (NativeLaunch) — and the kernel
+                // cuts the name at 15 characters, which a stem survives better than a full name.
+                if (!byName.TryGetValue(process.ProcessName, out var candidates)
+                    && !byName.TryGetValue(Path.GetFileNameWithoutExtension(process.ProcessName), out candidates))
+                    continue;
 
                 // Only now is a handle opened, and only for a process whose name says it might be
                 // one of these games.

@@ -317,6 +317,14 @@ public sealed class GameInventory
 
             detected.InstalledByUs = receipt?.Loader is { InstalledByUs: true } ours
                                      && string.Equals(ours.Id, detected.Id, StringComparison.OrdinalIgnoreCase);
+
+            // Reconciled from the files: a game update (or Steam's "Verify files") puts the real
+            // executable back over the start file, and the game then runs without the mod.
+            if (receipt?.StartFile is { } start && NativeLaunch.IsBroken(game.Path, start))
+            {
+                report.Warnings.Add("The game was updated and now starts without its mod loader. "
+                                    + "Update the game here to set it up again.");
+            }
         }
         t = ReportTimings.Add(2, t);
 
@@ -800,7 +808,9 @@ public sealed class GameInventory
                                     ? " Or start the game once first: UGT Manager then sets it for you."
                                     : ""));
         }
-        else if (NativeLaunch.Applies(game, _platform.OsId) && NativeLaunch.Advice(game, descriptor) is { } native)
+        // Only when the install cannot put its start file in place (the executable is unknown).
+        else if (NativeLaunch.Applies(game, _platform.OsId) && game.ExecutablePath is null
+                 && NativeLaunch.Advice(game, descriptor) is { } native)
         {
             report.Warnings.Add($"On Linux the loader does not start without a setting. {native.Where} {native.Setting}");
         }

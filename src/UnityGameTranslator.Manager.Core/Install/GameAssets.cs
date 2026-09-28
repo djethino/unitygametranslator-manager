@@ -1,4 +1,3 @@
-using System.IO.Compression;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -100,7 +99,7 @@ public static class GameAssets
             {
                 var name = Path.GetFileName(file);
                 if (AssetPacks.IsFontFile(name))
-                    fonts.Add(new GameFont(name, new FileInfo(file).Length, UseOf(name, references, installed), IsExported(name, references)));
+                    fonts.Add(new GameFont(name, new FileInfo(file).Length, UseOf(name, references, installed), AssetPackWriter.IsExported(name, references)));
             }
         }
 
@@ -492,79 +491,28 @@ public static class GameAssets
 
         try
         {
-            var written = 0;
             var read = ReadTranslation(TranslationPath(folder));
             if (read.Damaged) return new(false, 0, AssetPlanner.DamagedTranslation);
             var root = read.Root;
 
-            using (var zip = ZipFile.Open(temp, ZipArchiveMode.Create))
-            {
-                var images = new JsonArray();
+            // 🔴 What goes, and how it is written, are the socle's (AssetPackWriter) — the mod exports
+            // through the same code, so the two products make the same pack from the same game.
+            var plan = AssetPackWriter.Plan(folder, FontReferencesNamed(root), Definitions(root),
+                systemFonts.Where(f => f.Includable)
+                           .Select(f => new KeyValuePair<string, string>(f.Reference, f.Path!)));
 
-                foreach (var definition in Definitions(root))
-                {
-                    var file = definition.File;
-                    if (file is null || !AssetPacks.IsSafeFileName(file) || !AssetPacks.IsImageFile(file)) continue;
+            if (plan.IsEmpty) return new(false, 0, AssetPackWriter.NothingToExport);
 
-                    var source = Path.Combine(folder, AssetPacks.ImagesFolder, file);
-                    if (!File.Exists(source)) continue;
+            // The language the pictures' text is in — the translation's target. A player of another
+            // language is told, and knows which pictures to remake.
+            var manifest = AssetPackWriter.ManifestJson(game.ProductName ?? game.Name, game.SteamAppId, madeBy,
+                                                        TextOf(root?["_target_language"]), plan.Images);
 
-                    zip.CreateEntryFromFile(source, AssetPacks.ImagesFolder + "/" + file, CompressionLevel.Optimal);
-                    images.Add(ToJson(definition));   // the allow-list again: a pack carries what the mod reads
-                    written++;
-                }
-
-                var references = FontReferencesNamed(root);
-                var packed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                var fontsFolder = Path.Combine(folder, AssetPacks.FontsFolder);
-                if (Directory.Exists(fontsFolder))
-                {
-                    foreach (var file in Directory.EnumerateFiles(fontsFolder))
-                    {
-                        var name = Path.GetFileName(file);
-                        if (!AssetPacks.IsFontFile(name) || !AssetPacks.IsSafeFileName(name)) continue;
-                        if (!IsExported(name, references)) continue;
-
-                        zip.CreateEntryFromFile(file, AssetPacks.FontsFolder + "/" + name, CompressionLevel.Optimal);
-                        packed.Add(name);
-                        written++;
-                    }
-                }
-
-                foreach (var system in systemFonts.Where(f => f.Includable))
-                {
-                    var name = system.Reference + Path.GetExtension(system.Path!).ToLowerInvariant();
-                    if (!AssetPacks.IsSafeFileName(name) || !AssetPacks.IsFontFile(name) || !packed.Add(name)) continue;
-
-                    zip.CreateEntryFromFile(system.Path!, AssetPacks.FontsFolder + "/" + name, CompressionLevel.Optimal);
-                    written++;
-                }
-
-                if (written == 0) return new(false, 0, "This game's translation uses no added font or image.");
-
-                var gameNode = new JsonObject { [PackManifest.GameNameField] = game.ProductName ?? game.Name };
-                if (!string.IsNullOrWhiteSpace(game.SteamAppId)) gameNode[PackManifest.SteamIdField] = game.SteamAppId;
-
-                var manifest = new JsonObject
-                {
-                    [PackManifest.FormatField] = AssetPacks.Format,
-                    [PackManifest.GameField] = gameNode,
-                    [PackManifest.MadeByField] = madeBy,
-                    [PackManifest.ImagesField] = images,
-                };
-
-                // The language the pictures' text is in — the translation's target. A player of
-                // another language is told, and knows which pictures to remake.
-                var language = TextOf(root?["_target_language"]);
-                if (Languages.IsSettled(language)) manifest[PackManifest.TargetLanguageField] = language;
-
-                var entry = zip.CreateEntry(AssetPacks.ManifestName, CompressionLevel.Optimal);
-                using var writer = new StreamWriter(entry.Open(), new UTF8Encoding(false));
-                writer.Write(manifest.ToJsonString(WriteOptions));
-            }
+            using (var output = File.Create(temp))
+                AssetPackWriter.Write(output, plan.Files, manifest);
 
             File.Move(temp, destination, overwrite: true);
-            return new(true, written, null);
+            return new(true, plan.Files.Count, null);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException)
         {
@@ -656,14 +604,6 @@ public static class GameAssets
         return FontUse.GameInstead;
     }
 
-    /// <summary>
-    /// Whether an export always carries this file: a Custom font the translation uses. A copy of a
-    /// System font goes only when the System fonts are asked for (SystemFontsUsed) — their licences
-    /// are the sharer's to check; a file marked as the game's never goes.
-    /// </summary>
-    private static bool IsExported(string fileName, List<string> references) =>
-        references.Any(r => FontReferences.Order(r)[0] == FontSource.Custom
-                            && AssetPacks.IsFontFileFor(fileName, FontReferences.Name(r)));
 
     /// <summary>Whether a font of this name is installed, found as the mod finds it — remembered while the font folders stay as they are.</summary>
     private static bool IsInstalled(string name, IEnumerable<string> fontFolders, Func<IEnumerable<(string Name, string Path)>> registered)

@@ -587,7 +587,7 @@ public partial class MainWindow
                 ? $"{Composition.Amount(fonts + system, "font", "fonts")}, {Composition.Amount(images, "image", "images")}"
                 : "Nothing to export";
             export.IsEnabled = any;
-            ToolTip.SetTip(export, any ? null : "This game's translation uses no added font or image.");
+            ToolTip.SetTip(export, any ? null : AssetPackWriter.NothingToExport);
         }
 
         // The option first, then what it is about, then the act — the order the rest of the card reads in.
@@ -645,7 +645,8 @@ public partial class MainWindow
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = "Export fonts and images",
-            SuggestedFileName = $"{report.Game.Name} assets{AssetPacks.Extension}",
+            // Dated, as the mod names its exports: a pack already sent is not overwritten by a newer state.
+            SuggestedFileName = AssetPackWriter.FileName(report.Game.Name, DateTime.Now),
             DefaultExtension = AssetPacks.Extension.TrimStart('.'),
             FileTypeChoices = [new FilePickerFileType("UGT asset pack") { Patterns = ["*" + AssetPacks.Extension] }],
         });

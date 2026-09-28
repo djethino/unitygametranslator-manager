@@ -1,4 +1,4 @@
-using UnityGameTranslator.Common;
+﻿using UnityGameTranslator.Common;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
 
@@ -71,5 +71,12 @@ internal static class PackTargetChecks
                          == list.Replace(ours, "other.desktop"),
             "another program chosen for the type is kept, and nothing else is touched",
             "the file is the person's; only our own entry is ours to remove");
+
+        // The desktop icon goes where the desktop is — named by the system's language.
+        const string userDirs = "# comment\nXDG_DESKTOP_DIR=\"$HOME/Bureau\"\n";
+        Program.Check(LinuxPlatform.DesktopFrom(userDirs, "/home/player") == "/home/player/Bureau"
+                      && LinuxPlatform.DesktopFrom(null, "/home/player").Replace('\\', '/') == "/home/player/Desktop",
+            "the desktop folder is the one user-dirs.dirs names",
+            "~/Desktop on a French system wrote the icon into a folder nobody sees (2026-09-28)");
     }
 }

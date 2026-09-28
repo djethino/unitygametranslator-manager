@@ -25,6 +25,44 @@ public sealed class LinuxPlatform : IPlatform
     private static string Home =>
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
+    /// <summary>
+    /// The desktop folder as the desktop itself names it: <c>XDG_DESKTOP_DIR</c> in
+    /// <c>user-dirs.dirs</c> — "~/Bureau" on a French system, "~/Escritorio" on a Spanish one.
+    /// "~/Desktop" wrote the icon into a folder the desktop never shows (Bazzite, 2026-09-28).
+    /// </summary>
+    private static string DesktopDirectory()
+    {
+        var xdg = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
+        var file = Path.Combine(string.IsNullOrEmpty(xdg) ? Path.Combine(Home, ".config") : xdg, "user-dirs.dirs");
+
+        string? text = null;
+        try { if (File.Exists(file)) text = File.ReadAllText(file); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+
+        return DesktopFrom(text, Home);
+    }
+
+    /// <summary>
+    /// XDG_DESKTOP_DIR read from a user-dirs.dirs text, <c>$HOME</c> expanded; ~/Desktop when
+    /// absent — the specification's own default. Pure, so the check can hold it.
+    /// </summary>
+    public static string DesktopFrom(string? userDirs, string home)
+    {
+        foreach (var raw in (userDirs ?? "").Split('\n'))
+        {
+            var line = raw.Trim();
+            if (!line.StartsWith("XDG_DESKTOP_DIR=", StringComparison.Ordinal)) continue;
+
+            var value = line.Substring("XDG_DESKTOP_DIR=".Length).Trim().Trim('"');
+            if (value.StartsWith("$HOME", StringComparison.Ordinal)) value = home + value.Substring("$HOME".Length);
+
+            // Only an absolute path counts: the specification allows nothing else here.
+            if (value.StartsWith('/')) return value.TrimEnd('/');
+        }
+
+        return Path.Combine(home, "Desktop");
+    }
+
     public IEnumerable<string> SteamRoots()
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -135,8 +173,12 @@ public sealed class LinuxPlatform : IPlatform
     public IReadOnlyList<string> CreateLauncher(LauncherKind kind, string executable)
     {
         var folder = kind == LauncherKind.Desktop
-            ? Path.Combine(Home, "Desktop")
+            ? DesktopDirectory()
             : Path.Combine(Home, ".local", "share", "applications");
+
+        // No desktop folder to put it in (a desktop without one): nothing written. Creating
+        // ~/Desktop there made a folder nobody sees, holding an icon nobody sees.
+        if (kind == LauncherKind.Desktop && !Directory.Exists(folder)) return [];
 
         var path = Path.Combine(folder, "unitygametranslator-manager.desktop");
 

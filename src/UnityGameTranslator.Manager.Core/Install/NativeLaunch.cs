@@ -105,8 +105,13 @@ public static class NativeLaunch
 
         // The game's own file where the start file should be: the first install, or an update
         // that put it back. Either way it is the current game, and it replaces a stale copy.
+        // ⚠ Only a Linux program (ELF): anything else there is not the game Unity built, and
+        // renaming it could leave a game that no longer starts. The launch option is given instead.
         if (File.Exists(executable) && !IsOurStartFile(executable))
+        {
+            if (!IsElf(executable)) return null;
             File.Move(executable, movedPath, overwrite: true);
+        }
 
         if (!File.Exists(movedPath)) return null;
 
@@ -147,6 +152,21 @@ public static class NativeLaunch
     {
         var executable = Path.Combine(gameRoot, recorded.Executable);
         return File.Exists(executable) && !IsOurStartFile(executable);
+    }
+
+    private static bool IsElf(string path)
+    {
+        try
+        {
+            using var file = File.OpenRead(path);
+            Span<byte> magic = stackalloc byte[4];
+            return file.Read(magic) == 4 && magic[0] == 0x7F && magic[1] == (byte)'E'
+                   && magic[2] == (byte)'L' && magic[3] == (byte)'F';
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     public static bool IsOurStartFile(string path)
@@ -209,14 +229,20 @@ public static class NativeLaunch
             "cd \"$(dirname \"$(readlink -f \"$0\")\")\" || exit 1",
         };
 
+        // 🔴 The loader gone (deleted by hand, say), the game still starts — without the mod. A
+        // start file that could leave a game unable to launch would be the one thing worse than
+        // no mod at all.
         if (IsBepInEx(loader))
         {
+            lines.Add($"[ -x ./{BepInExScript} ] || exec {quoted} \"$@\"");
             lines.Add($"exec ./{BepInExScript} {quoted} \"$@\"");
         }
         else
         {
+            var library = MelonPreload(game.Path);
+            lines.Add($"[ -f ./{library} ] || exec {quoted} \"$@\"");
             lines.Add("export LD_LIBRARY_PATH=\"$PWD${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}\"");
-            lines.Add($"export LD_PRELOAD=\"{MelonPreload(game.Path)}${{LD_PRELOAD:+:$LD_PRELOAD}}\"");
+            lines.Add($"export LD_PRELOAD=\"{library}${{LD_PRELOAD:+:$LD_PRELOAD}}\"");
             lines.Add($"exec {quoted} \"$@\"");
         }
 

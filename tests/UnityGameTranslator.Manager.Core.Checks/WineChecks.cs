@@ -89,13 +89,13 @@ internal static class NativeLaunchChecks
         {
             var executable = Path.Combine(root, "My Game.x86_64");
             var moved = Path.Combine(root, "My Game.ugt");
-            File.WriteAllText(executable, "ELF version 1");
+            File.WriteAllText(executable, "ELF version 1");
             var game = new GameInstall { Name = "My Game", Path = root, ExecutablePath = executable };
 
             var recorded = NativeLaunch.Install(game, bepinex, existing: null);
             var script = File.ReadAllText(executable);
             Program.Check(recorded is { Executable: "My Game.x86_64", MovedTo: "My Game.ugt" }
-                          && File.ReadAllText(moved) == "ELF version 1"
+                          && File.ReadAllText(moved) == "ELF version 1"
                           && NativeLaunch.IsOurStartFile(executable)
                           && script.Contains("exec ./run_bepinex.sh './My Game.ugt' \"$@\"")
                           && !script.Contains('\r'),
@@ -103,30 +103,55 @@ internal static class NativeLaunchChecks
                 "every launcher starts the game through the loader, with nothing typed (2026-09-28)");
 
             Program.Check(NativeLaunch.Install(game, bepinex, recorded) is not null
-                          && File.ReadAllText(moved) == "ELF version 1",
+                          && File.ReadAllText(moved) == "ELF version 1",
                 "installing again leaves the renamed game as it is",
                 "moving the start file onto the game would destroy the game");
 
             // Steam updates the game: the real executable comes back over the start file.
-            File.WriteAllText(executable, "ELF version 2");
+            File.WriteAllText(executable, "ELF version 2");
             Program.Check(NativeLaunch.IsBroken(root, recorded!),
                 "a game update over the start file is seen",
                 "the game then runs without the mod, and nothing on screen would say why");
 
             NativeLaunch.Install(game, bepinex, recorded);
-            Program.Check(File.ReadAllText(moved) == "ELF version 2" && NativeLaunch.IsOurStartFile(executable),
+            Program.Check(File.ReadAllText(moved) == "ELF version 2" && NativeLaunch.IsOurStartFile(executable),
                 "the next update takes the new executable and puts the start file back",
                 "keeping the old copy would start the game from before its update");
 
+            Program.Check(script.Contains("[ -x ./run_bepinex.sh ] || exec './My Game.ugt' \"$@\""),
+                "without its loader, the start file still starts the game",
+                "a loader deleted by hand would otherwise leave a game that no longer launches");
+
             var removed = new List<string>();
             NativeLaunch.Remove(root, recorded!, removed);
-            Program.Check(File.ReadAllText(executable) == "ELF version 2" && !File.Exists(moved),
+            Program.Check(File.ReadAllText(executable) == "ELF version 2" && !File.Exists(moved),
                 "uninstall gives the game its executable back",
                 "the game folder must end as the game left it");
         }
         finally
         {
             Directory.Delete(root, recursive: true);
+        }
+
+        // Not a Linux program where the game should be: left alone, the launch option given instead.
+        var other = Path.Combine(Path.GetTempPath(), "ugt-start-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(other);
+        try
+        {
+            var launcher = Path.Combine(other, "Game.x86_64");
+            const string script = "#!/bin/sh\nexec ./something-else\n";
+            File.WriteAllText(launcher, script);
+            var game = new GameInstall { Name = "Game", Path = other, ExecutablePath = launcher };
+
+            Program.Check(NativeLaunch.Install(game, bepinex, existing: null) is null
+                          && File.ReadAllText(launcher) == script
+                          && !File.Exists(Path.Combine(other, "Game.ugt")),
+                "a file that is not a Linux program is never renamed",
+                "renaming something that is not the game Unity built could leave it unable to start");
+        }
+        finally
+        {
+            Directory.Delete(other, recursive: true);
         }
     }
 }

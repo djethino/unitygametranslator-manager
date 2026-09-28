@@ -89,13 +89,26 @@ public static class TranslationOffers
     }
 
     /// <summary>
-    /// Whether the box may start ticked. ONLY where nothing is at stake.
+    /// Whether the box starts ticked.
     ///
-    /// ⚠ A stored "yes" is never honoured outside this case, and that is the safety property: the
-    /// answer was given about the game as it was, and a game that has since acquired unpublished
-    /// work is a different question. Ticking it there has to be a fresh, deliberate act.
+    /// ⚠ A stored "yes" is honoured only where nothing is at stake, and that is the safety
+    /// property: the answer was given about the game as it was, and a game that has since acquired
+    /// unpublished work is a different question.
+    ///
+    /// ⚠ **A translation named in this session also ticks it over a DIFFERENT published one**
+    /// (2026-09-28, owner's decision): selecting it was the decision, and the box asking again was a
+    /// second confirmation of the same act. That one is re-downloadable, and the one-click still
+    /// confirms and backs the file up. 🔴 **Never over unpublished lines**: the window where the
+    /// choice was made does not show them, so the unticked box is where they are learnt about.
     /// </summary>
-    public static bool MayDefaultToYes(TranslationOffer offer) => offer == TranslationOffer.FreeToTake;
+    /// <param name="named">A translation was chosen for this game in this session, not applied yet.</param>
+    /// <param name="storedYes">The answer kept from an earlier session.</param>
+    public static bool StartsTicked(TranslationOffer offer, bool named, bool storedYes) => offer switch
+    {
+        TranslationOffer.FreeToTake => named || storedYes,
+        TranslationOffer.ReplacesChoice => named,
+        _ => false,
+    };
 
     /// <summary>
     /// What is at stake, as a SENTENCE that stands on its own, or null when nothing is.

@@ -91,7 +91,7 @@ public partial class MainWindow : Window
     ///
     /// ⚠ Held here rather than read from the preferences on every draw, and the difference matters.
     /// The stored answer is honoured only where nothing is at stake (see
-    /// <see cref="TranslationOffers.MayDefaultToYes"/>); on a game carrying unpublished work the
+    /// <see cref="TranslationOffers.StartsTicked"/>); on a game carrying unpublished work the
     /// box starts unticked whatever was stored, because that "yes" was given about a game in
     /// another state. Once somebody ticks it here, it has to STAY ticked — recomputing the safe
     /// default on the redraw their own click causes would untick it under their hand.
@@ -3840,9 +3840,9 @@ public partial class MainWindow : Window
         // answer says. The translations window used to obtain this by writing InstallTranslation to
         // disk as it selected — which then stayed true for every later launch, on a game where
         // nobody had asked for anything.
-        _takeTranslation = TranslationOffers.MayDefaultToYes(offer)
-                           && (ChosenTranslation(report.Game.Path) is not null
-                               || _preferences.Read(report.Game.Path).InstallTranslation);
+        _takeTranslation = TranslationOffers.StartsTicked(offer,
+            named: ChosenTranslation(report.Game.Path) is not null,
+            storedYes: _preferences.Read(report.Game.Path).InstallTranslation);
 
         ShowTabBody(report, inPlace);
 
@@ -11298,9 +11298,10 @@ public partial class MainWindow : Window
             };
 
             ToolTip.SetTip(withTranslation, replaces
-                ? "Not ticked on purpose. " + TranslationOffers.Caution(offer)
-                  + " Tick it to take the community translation anyway: you will be asked to "
-                  + "confirm, and the current file is backed up."
+                // ⚠ No "not ticked on purpose": a translation chosen in the list ticks it over a
+                // different published one (TranslationOffers.StartsTicked).
+                ? TranslationOffers.Caution(offer)
+                  + " When ticked, you are asked to confirm, and the current file is backed up."
                 // ⚠ Says what unticking DOES — skip the download — not what it feels like. The
                 // previous wording, "untick to start from a blank sheet", promised a reset this
                 // box has never performed: it decides whether a translation comes down with the

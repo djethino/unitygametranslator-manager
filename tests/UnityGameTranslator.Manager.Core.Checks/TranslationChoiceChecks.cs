@@ -90,6 +90,23 @@ internal static class TranslationChoiceChecks
             TranslationChoice.Waiting(Report(Local(), Published(7)), "fr", chosen: 7, installed: null)?.Id == 7,
             "a named choice is honoured over local work", "refusing it would make the list advisory");
 
+        // 🔴 **Whether the one-click box starts ticked** (owner's decision, 2026-09-28). Naming a
+        // translation ticks it over another published one — selecting was the decision — but never
+        // over unpublished lines, which the list where it was chosen does not show. A stored "yes"
+        // from an earlier session ticks it only where nothing is at stake.
+        Program.Check(
+            TranslationOffers.StartsTicked(TranslationOffer.ReplacesChoice, named: true, storedYes: false)
+            && !TranslationOffers.StartsTicked(TranslationOffer.ReplacesChoice, named: false, storedYes: true),
+            "named over another published one: ticked; a stored yes: not", "re-downloadable, and chosen now");
+        Program.Check(
+            !TranslationOffers.StartsTicked(TranslationOffer.ReplacesWork, named: true, storedYes: true),
+            "over unpublished lines: never ticked", "the unticked box is where they are learnt about");
+        Program.Check(
+            TranslationOffers.StartsTicked(TranslationOffer.FreeToTake, named: false, storedYes: true)
+            && TranslationOffers.StartsTicked(TranslationOffer.FreeToTake, named: true, storedYes: false)
+            && !TranslationOffers.StartsTicked(TranslationOffer.FreeToTake, named: false, storedYes: false),
+            "nothing at stake: ticked on either answer", "and only on one");
+
         // ⚠ **A named choice that is gone from the catalogue offers NOTHING — and the two entry
         // points disagree about that.** Pick() says it falls through to the ranking ("the one they
         // named no longer being there is not a reason to leave them without one"); Waiting() never

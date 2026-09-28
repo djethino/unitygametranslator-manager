@@ -1685,6 +1685,10 @@ public static class CommandLine
             return 0;
         }
 
+        // Named when it is not the file running: the installed copy is what an update replaces.
+        if (updater.Target() is { IsInstalledCopy: true } installedCopy)
+            Console.WriteLine($"Updates the installed copy: {installedCopy.Executable}");
+
         if (!Confirm(args, $"Replace {offer.CurrentVersion} with {offer.NewVersion}?"))
         {
             Console.WriteLine("Cancelled. Nothing was downloaded.");
@@ -1705,8 +1709,10 @@ public static class CommandLine
         {
             var result = await updater.ApplyAsync(offer);
             Console.WriteLine();
-            Console.WriteLine($"Updated to {result.Version}.");
-            Console.WriteLine($"The version you were running is beside it as "
+            Console.WriteLine(result.IntoInstalledCopy
+                ? $"Updated the installed copy to {result.Version}: {result.ExecutablePath}"
+                : $"Updated to {result.Version}.");
+            Console.WriteLine($"The previous version is beside it as "
                               + $"{Path.GetFileName(result.PreviousCopy)}; it is removed the next "
                               + "time the new one starts.");
             return 0;

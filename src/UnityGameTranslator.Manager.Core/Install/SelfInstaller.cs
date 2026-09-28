@@ -385,6 +385,23 @@ public sealed class SelfInstaller
     }
 
     /// <summary>
+    /// The installed copy was just replaced by a downloaded release (SelfUpdater, from another
+    /// copy): its receipt, its entry in the system's list and the file type say so at once.
+    /// </summary>
+    public void RecordUpdated(string version)
+    {
+        var installation = Installed();
+        if (installation is null) return;
+
+        installation.Version = version;
+        installation.UpdatedAt = DateTimeOffset.UtcNow;
+        installation.Registration = _platform.RegisterInstalled(installation);
+        DeclarePackType(installation);
+
+        Save(installation);
+    }
+
+    /// <summary>
     /// Brings the system's entry back in step after the tool has updated itself.
     ///
     /// Without it, Windows' list of installed applications keeps showing the version that was

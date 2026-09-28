@@ -3318,10 +3318,9 @@ public partial class MainWindow : Window
         if (state.NeedsRepair) return RepairBanner(installer, installed, state);
 
         var running = SelfUpdater.CurrentVersion;
-        var newer = Versions.Compare(running, installed.Version) > 0;
 
         // A build that cannot install itself cannot update one either; going across still can.
-        var canUpdate = newer && installer.Plan().Refusal is null;
+        var canUpdate = InstalledCopy.CanUpdateFromHere(installer, installed);
 
         var text = new StackPanel { Spacing = 2 };
 
@@ -3346,8 +3345,7 @@ public partial class MainWindow : Window
                 ? $"Version {installed.Version} is installed in {installed.Directory}. Updating it "
                   + "keeps your shortcut. Both copies share the same settings."
                 : $"Version {installed.Version} is installed in {installed.Directory}. This window "
-                  + $"is version {running}, running from another folder. Settings are shared, but "
-                  + "updates made here apply to this copy only.",
+                  + $"is version {running}, running from another folder. Both copies share the same settings.",
             FontSize = 11,
             Foreground = Brush("TextSecondary"),
             TextWrapping = TextWrapping.Wrap,
@@ -3355,38 +3353,28 @@ public partial class MainWindow : Window
 
         var action = new Button
         {
-            Content = canUpdate ? "Update installed copy" : "Open installed copy",
+            Content = InstalledCopy.Verb(canUpdate),
             FontSize = 12,
             Classes = { "primary" },
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
             Margin = new Avalonia.Thickness(14, 0, 0, 0),
         };
 
+        // The same two acts as the Installation card in Settings (InstalledCopy).
         action.Click += async (_, _) =>
         {
             if (!canUpdate) { SwitchTo(installed); return; }
 
             action.IsEnabled = false;
 
-            try
+            if (await InstalledCopy.UpdateFromHereAsync(this, installer) is { } failure)
             {
-                var updated = installer.UpdateInstalled();
-
-                // Offered rather than done: they are still in the loose copy, and the point of
-                // updating the installed one is to end up in it.
-                var across = await ConfirmationWindow.AskAsync(this,
-                    $"Open the updated copy ({updated.Version})?",
-                    $"It is in {updated.Directory}, where your shortcut points. The downloaded file "
-                    + "stays where it is.",
-                    "Open");
-
-                if (across) SwitchTo(updated); else ShowOverview();
-            }
-            catch (Exception ex)
-            {
-                Status(ex.Message);
+                Status(failure);
                 action.IsEnabled = true;
+                return;
             }
+
+            ShowOverview();
         };
 
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
@@ -3395,9 +3383,8 @@ public partial class MainWindow : Window
         row.Children.Add(text);
         row.Children.Add(action);
 
-        // Amber: everything works, and that is the trap. Settings changed here, and updates made
-        // here, land on the copy about to be closed rather than on the one in the menu — the plainest
-        // case of "it works, but not the way it looks".
+        // Amber: everything works, and that is the trap. This window is not the one the menu, the
+        // shortcut and the .ugtpack association open — "it works, but not the way it looks".
         //
         // ⚠ The same fact about the MOD — installed twice, and the loader picks one — is amber in
         // DuplicatePluginNotice. One fact, one colour, whichever product is saying it.
@@ -3470,22 +3457,9 @@ public partial class MainWindow : Window
     /// </summary>
     private void SwitchTo(ToolInstallation installed)
     {
-        try
-        {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(installed.Executable)
-            {
-                UseShellExecute = true,
-                WorkingDirectory = installed.Directory,
-            });
-
-            Close();
-        }
-        catch (Exception ex)
-        {
-            // It could not be started. The window in front of them still works, so this is a line
-            // in the status bar rather than a dialog.
-            Status($"Could not start {installed.Executable}: {ex.Message}");
-        }
+        // It could not be started: the window in front of them still works, so this is a line in
+        // the status bar rather than a dialog.
+        if (InstalledCopy.Open(installed) is { } failure) Status(failure);
     }
 
     /// <summary>
@@ -3517,9 +3491,8 @@ public partial class MainWindow : Window
         // while the reason is obvious, rather than left as a difference nobody notices.
         var switchOver = await ConfirmationWindow.AskAsync(this,
             "Open the installed copy?",
-            $"It is now in {installed.Directory}. This window is still the downloaded file: switch "
-            + "so that updates apply to the installed copy. You can delete the downloaded file "
-            + "afterwards.",
+            $"It is now in {installed.Directory}, where your shortcut points. This window is still "
+            + "the downloaded file: you can delete it afterwards.",
             "Open");
 
         if (!switchOver)

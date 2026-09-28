@@ -768,11 +768,6 @@ public sealed class ToolSettingsWindow : Window
         panel.Children.Add(_checkContentUpdates);
         panel.Children.Add(Note("Without it, game pages cannot show which version would be installed."));
 
-        // Where an update lands: the file in front of them, not the one in their menu.
-        var installer = new SelfInstaller(_platform);
-        if (installer.Installed() is not null && !installer.RunningTheInstalledCopy())
-            panel.Children.Add(Note("Updates apply to the copy you are running, not to the installed one.", Tone.Warning));
-
         var check = new Button { Content = "Check now", FontSize = 12 };
         check.HorizontalAlignment = HorizontalAlignment.Left;
         check.Click += async (_, _) => await CheckForUpdateAsync(check);
@@ -878,9 +873,15 @@ public sealed class ToolSettingsWindow : Window
         }
 
         var size = offer.SizeBytes is { } bytes ? $" ({bytes / 1024d / 1024d:0.#} MB)" : "";
+
+        // From a downloaded copy, the update goes to the installed one (SelfUpdater.Target) — the
+        // button names it, so nobody expects the file in front of them to change.
+        var intoInstalled = updater.Target() is { IsInstalledCopy: true };
         var apply = new Button
         {
-            Content = $"Update to {offer.NewVersion}{size}",
+            Content = intoInstalled
+                ? $"Update installed copy to {offer.NewVersion}{size}"
+                : $"Update to {offer.NewVersion}{size}",
             FontSize = 12,
             Classes = { "primary" },
         };
@@ -912,9 +913,25 @@ public sealed class ToolSettingsWindow : Window
                 var result = await Task.Run(() => updater.ApplyAsync(offer));
 
                 _updatePanel.Children.Clear();
-                // The version in use is kept beside the new one until the restart (SelfUpdater).
-                _updatePanel.Children.Add(Note(
-                    $"Updated to {result.Version}. Restart UGT Manager to use it.", Tone.Success));
+
+                if (result.IntoInstalledCopy && new SelfInstaller(_platform).Installed() is { } installed)
+                {
+                    // Its way in, beside the fact: the same door as the Installation card.
+                    _updatePanel.Children.Add(Note($"Installed copy updated to {result.Version}.", Tone.Success));
+                    var open = new Button { Content = "Open installed copy", FontSize = 12, Classes = { "primary" } };
+                    open.Click += (_, _) =>
+                    {
+                        if (InstalledCopy.Open(installed) is { } failure) Ui.Say(progress, failure, Tone.Error);
+                    };
+                    _updatePanel.Children.Add(open);
+                    _updatePanel.Children.Add(progress);
+                }
+                else
+                {
+                    // The version in use is kept beside the new one until the restart (SelfUpdater).
+                    _updatePanel.Children.Add(Note(
+                        $"Updated to {result.Version}. Restart UGT Manager to use it.", Tone.Success));
+                }
             }
             catch (Exception ex)
             {
@@ -1022,12 +1039,7 @@ public sealed class ToolSettingsWindow : Window
             panel.Children.Add(repair);
         }
 
-        // ⚠ The note about which copy an update lands on lives in the Updates card now, beside Check
-        // now. Here it sat above Uninstall and said "changes" too — false: every copy reads the same
-        // settings folder, so a setting changed here is changed for both (user, 2026-09-28).
-
         var remove = new Button { Content = "Uninstall...", FontSize = 12 };
-        remove.HorizontalAlignment = HorizontalAlignment.Left;
         remove.Click += async (_, _) =>
         {
             var window = new SelfRemoveWindow(_platform, installer);
@@ -1035,7 +1047,40 @@ public sealed class ToolSettingsWindow : Window
             if (window.Removed) Rebuild();
         };
 
-        panel.Children.Add(remove);
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        TextBlock? failed = null;
+
+        // 🔴 "Running another copy" comes with its way out, right under it (user, 2026-09-28) — the
+        // same two acts as the overview's banner, through the same door (InstalledCopy).
+        if (!state.NeedsRepair && !installer.RunningTheInstalledCopy())
+        {
+            var canUpdate = InstalledCopy.CanUpdateFromHere(installer, installed);
+            var across = new Button { Content = InstalledCopy.Verb(canUpdate), FontSize = 12, Classes = { "primary" } };
+            var said = failed = Note("");
+            said.IsVisible = false;
+            across.Click += async (_, _) =>
+            {
+                across.IsEnabled = false;
+                var failure = canUpdate
+                    ? await InstalledCopy.UpdateFromHereAsync(this, installer)
+                    : InstalledCopy.Open(installed);
+
+                if (failure is not null)
+                {
+                    Ui.Say(said, failure, Tone.Error);
+                    said.IsVisible = true;
+                }
+
+                across.IsEnabled = true;
+                if (failure is null) Rebuild();
+            };
+
+            buttons.Children.Add(across);
+        }
+
+        buttons.Children.Add(remove);
+        panel.Children.Add(buttons);
+        if (failed is not null) panel.Children.Add(failed);
 
         return Card("Installation", null, panel);
     }

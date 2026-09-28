@@ -38,7 +38,17 @@ public sealed record SelfUpdateOffer(
 
 public sealed record SelfUpdateCheck(SelfUpdateState State, SelfUpdateOffer? Offer, string? Message);
 
-public sealed record SelfUpdateResult(string ExecutablePath, string PreviousCopy, string Version);
+public sealed record SelfUpdateResult(string ExecutablePath, string PreviousCopy, string Version,
+                                      bool IntoInstalledCopy);
+
+/// <summary>
+/// The executable an update replaces, and the version it holds.
+/// </summary>
+/// <param name="IsInstalledCopy">
+/// True when it is the installed copy while ANOTHER copy is running — a downloaded file opened
+/// on a computer where UGT Manager is installed.
+/// </param>
+public sealed record UpdateTarget(string Executable, string Version, bool IsInstalledCopy);
 
 /// <summary>
 /// The tool updating itself.
@@ -142,6 +152,25 @@ public sealed class SelfUpdater
     public static string? RunningExecutable => Environment.ProcessPath;
 
     /// <summary>
+    /// What an update replaces.
+    ///
+    /// 🔴 **The installed copy, when there is one** — even from a downloaded file opened on that
+    /// computer (user, 2026-09-28). The installed copy is what the menu, the shortcut and the
+    /// .ugtpack association open; replacing the downloaded file instead left all of them on the old
+    /// version, and a note "updates apply to the copy you are running" explained a behaviour nobody
+    /// wanted. Without an installation, the running file is the tool (kept on a USB stick, say),
+    /// and it replaces itself.
+    /// </summary>
+    public UpdateTarget? Target()
+    {
+        var installer = new SelfInstaller(_platform);
+        if (installer.Installed() is { } installed && !installer.RunningTheInstalledCopy())
+            return new UpdateTarget(installed.Executable, installed.Version, IsInstalledCopy: true);
+
+        return RunningExecutable is { } running ? new UpdateTarget(running, CurrentVersion, IsInstalledCopy: false) : null;
+    }
+
+    /// <summary>
     /// Why an update could not be applied here, or null when it could.
     ///
     /// Asked BEFORE downloading fifty megabytes. Someone who put the tool in a read-only place —
@@ -150,7 +179,7 @@ public sealed class SelfUpdater
     /// </summary>
     public string? WhyCannotApply()
     {
-        var executable = RunningExecutable;
+        var executable = Target()?.Executable;
         if (executable is null)
             return "UGT Manager cannot find where it is running from, so it cannot update itself.";
 
@@ -189,6 +218,12 @@ public sealed class SelfUpdater
     public async Task<SelfUpdateCheck> CheckAsync(ReleaseChannel channel = ReleaseChannel.Stable,
                                                   CancellationToken ct = default)
     {
+        // Measured against what an update would replace: the installed copy may be older than the
+        // file running, and it is the one a newer release is for.
+        var target = Target();
+        var current = target?.Version ?? CurrentVersion;
+        var which = target is { IsInstalledCopy: true } ? "The installed copy (" + current + ")" : current;
+
         PublishedRelease? release;
         try
         {
@@ -210,14 +245,14 @@ public sealed class SelfUpdater
             // first release exists this is what everyone gets, and reporting it as "could not
             // check" would have every one of them looking for a network problem.
             return new SelfUpdateCheck(SelfUpdateState.UpToDate, null,
-                $"Nothing published on the {Describe(channel)} channel yet. {CurrentVersion} is "
+                $"Nothing published on the {Describe(channel)} channel yet. {which} is "
                 + "the latest.");
         }
 
-        if (!Versions.IsNewer(CurrentVersion, release.Version))
+        if (!Versions.IsNewer(current, release.Version))
         {
             return new SelfUpdateCheck(SelfUpdateState.UpToDate, null,
-                $"{CurrentVersion} is the latest on the {Describe(channel)} channel.");
+                $"{which} is the latest on the {Describe(channel)} channel.");
         }
 
         var assetName = AssetNameFor(release.Version);
@@ -258,7 +293,7 @@ public sealed class SelfUpdater
         release.AssetSizes.TryGetValue(assetName, out var size);
 
         var offer = new SelfUpdateOffer(
-            CurrentVersion: CurrentVersion,
+            CurrentVersion: current,
             NewVersion: release.Version,
             TagName: release.TagName,
             IsPrerelease: release.IsPrerelease,
@@ -284,7 +319,8 @@ public sealed class SelfUpdater
         var blocked = WhyCannotApply();
         if (blocked is not null) throw new InvalidOperationException(blocked);
 
-        var executable = RunningExecutable!;
+        var target = Target()!;
+        var executable = target.Executable;
         var folder = Path.GetDirectoryName(executable)!;
 
         var staging = Path.Combine(_platform.UserDataDirectory, "update-staging");
@@ -338,7 +374,11 @@ public sealed class SelfUpdater
 
         try { Directory.Delete(staging, recursive: true); } catch { /* staging is disposable */ }
 
-        return new SelfUpdateResult(executable, previous, offer.NewVersion);
+        // The installed copy's receipt, the system's list of apps and the .ugtpack association say
+        // the new version now — not at its next start, which may be a long way off.
+        if (target.IsInstalledCopy) new SelfInstaller(_platform).RecordUpdated(offer.NewVersion);
+
+        return new SelfUpdateResult(executable, previous, offer.NewVersion, target.IsInstalledCopy);
     }
 
     /// <summary>

@@ -1,3 +1,4 @@
+using UnityGameTranslator.Manager.Core.Detection;
 using UnityGameTranslator.Manager.Core.Install;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
@@ -173,8 +174,8 @@ public sealed class SelfUpdater
             if (string.IsNullOrEmpty(image) || string.IsNullOrEmpty(mount) || RunningExecutable is not { } running)
                 return null;
 
-            var root = Path.GetFullPath(mount).TrimEnd('/') + "/";
-            return Path.GetFullPath(running).StartsWith(root, StringComparison.Ordinal) ? image : null;
+            var root = RealPath.Of(mount).TrimEnd('/') + "/";
+            return RealPath.Of(running).StartsWith(root, StringComparison.Ordinal) ? image : null;
         }
     }
 

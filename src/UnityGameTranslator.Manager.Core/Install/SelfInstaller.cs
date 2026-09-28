@@ -1,5 +1,6 @@
 using System.Text.Json;
 using UnityGameTranslator.Common;
+using UnityGameTranslator.Manager.Core.Detection;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
 using UnityGameTranslator.Manager.Core.Update;
@@ -143,7 +144,10 @@ public sealed class SelfInstaller
         var running = SelfUpdater.RunningExecutable;
         if (running is null) return false;
 
-        return string.Equals(Path.GetFullPath(running), Path.GetFullPath(installed.Executable),
+        // Resolved (RealPath): on Bazzite /home is a link to /var/home, the receipt holds one
+        // spelling and the running process reports the other — and the installed copy said it was
+        // not the installed copy (2026-09-28).
+        return string.Equals(RealPath.Of(running), RealPath.Of(installed.Executable),
                              StringComparison.OrdinalIgnoreCase);
     }
 
@@ -211,8 +215,8 @@ public sealed class SelfInstaller
     /// </summary>
     private string? RefusalFor(string source, string target)
     {
-        if (string.Equals(Path.GetFullPath(Path.GetDirectoryName(source) ?? ""),
-                          Path.GetFullPath(target), StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(RealPath.Of(Path.GetDirectoryName(source) ?? ""),
+                          RealPath.Of(target), StringComparison.OrdinalIgnoreCase))
         {
             return "This is already the installed copy.";
         }
@@ -738,7 +742,8 @@ public sealed class SelfInstaller
     }
 
     private static bool IsRunning(string file) =>
-        string.Equals(SelfUpdater.RunningExecutable, file, StringComparison.OrdinalIgnoreCase);
+        SelfUpdater.RunningExecutable is { } running
+        && string.Equals(RealPath.Of(running), RealPath.Of(file), StringComparison.OrdinalIgnoreCase);
 
 
     /// <summary>

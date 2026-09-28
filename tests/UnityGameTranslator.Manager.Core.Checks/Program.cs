@@ -49,6 +49,7 @@ internal static class Program
         GameAssetsChecks.WhatAPackPutsIntoAGame();
         GameAssetsChecks.WhatTheTranslationFileKeeps();
         GameAssetsChecks.WhatASystemFontExportCarries();
+        PackTargetChecks.WhichGameAPackGoesTo();
         SetupWayChecks.WhenTheSetupHasBeenAnswered();
         PreferenceFieldsChecks.WhatAGamesAnswersAreFor();
         ForkOriginChecks.WhereTheFileCameFrom();

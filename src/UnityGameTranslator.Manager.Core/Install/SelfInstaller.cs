@@ -1,4 +1,5 @@
 using System.Text.Json;
+using UnityGameTranslator.Common;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
 using UnityGameTranslator.Manager.Core.Update;
@@ -13,6 +14,7 @@ public sealed record SelfInstallPlan(
     IReadOnlyList<string> Files,
     IReadOnlyList<LauncherKind> Launchers,
     bool RegistersWithTheSystem,
+    bool RegistersPackType,
     bool AlreadyInstalled,
     string? Refusal);
 
@@ -22,6 +24,7 @@ public sealed record SelfRemovalPlan(
     IReadOnlyList<string> Files,
     IReadOnlyList<string> Launchers,
     string? Registration,
+    bool PackType,
     string SettingsDirectory);
 
 /// <summary>An installation as the disk describes it, rather than as the receipt remembers it.</summary>
@@ -159,7 +162,7 @@ public sealed class SelfInstaller
 
         if (source is null)
         {
-            return new SelfInstallPlan("", target, targetExecutable, [], [], false, false,
+            return new SelfInstallPlan("", target, targetExecutable, [], [], false, false, false,
                 "This build cannot tell where it is running from, so it will not copy itself.");
         }
 
@@ -180,6 +183,7 @@ public sealed class SelfInstaller
             Files: files,
             Launchers: _platform.LauncherKinds,
             RegistersWithTheSystem: OperatingSystem.IsWindows(),
+            RegistersPackType: true,
             AlreadyInstalled: Installed() is not null,
             Refusal: refusal);
     }
@@ -293,9 +297,24 @@ public sealed class SelfInstaller
             installation.Launchers.AddRange(_platform.CreateLauncher(kind, plan.TargetExecutable));
 
         installation.Registration = _platform.RegisterInstalled(installation);
+        DeclarePackType(installation);
 
         Save(installation);
         return installation;
+    }
+
+    /// <summary>
+    /// Declares .ugtpack for this installation, and lists what that put inside its folder among
+    /// its files — so a removal takes the icon with everything else, under the same guards.
+    /// </summary>
+    private void DeclarePackType(ToolInstallation installation)
+    {
+        var written = _platform.RegisterPackType(installation);
+        installation.PackType = written is not null;
+        if (written is null) return;
+
+        foreach (var file in written)
+            if (!installation.Files.Contains(file, StringComparer.OrdinalIgnoreCase)) installation.Files.Add(file);
     }
 
     /// <summary>
@@ -338,6 +357,7 @@ public sealed class SelfInstaller
         installed.UpdatedAt = DateTimeOffset.UtcNow;
         installed.Files = written;
         installed.Registration = _platform.RegisterInstalled(installed);
+        DeclarePackType(installed);
 
         Save(installed);
         return installed;
@@ -356,11 +376,20 @@ public sealed class SelfInstaller
         var installation = Installed();
         if (installation is null) return;
         if (!RunningTheInstalledCopy()) return;
-        if (installation.Version == SelfUpdater.CurrentVersion) return;
 
-        installation.Version = SelfUpdater.CurrentVersion;
-        installation.UpdatedAt = DateTimeOffset.UtcNow;
-        installation.Registration = _platform.RegisterInstalled(installation);
+        // ⚠ An installation from before .ugtpack was declared is brought up to it here, once: the
+        // person agreed to have the tool installed, and a pack showing its icon and opening in it
+        // is part of what an installed tool is now. Nothing is written when both are in step.
+        if (installation.Version == SelfUpdater.CurrentVersion && installation.PackType) return;
+
+        if (installation.Version != SelfUpdater.CurrentVersion)
+        {
+            installation.Version = SelfUpdater.CurrentVersion;
+            installation.UpdatedAt = DateTimeOffset.UtcNow;
+            installation.Registration = _platform.RegisterInstalled(installation);
+        }
+
+        DeclarePackType(installation);
 
         Save(installation);
     }
@@ -376,6 +405,7 @@ public sealed class SelfInstaller
             Files: installation.Files,
             Launchers: installation.Launchers,
             Registration: installation.Registration,
+            PackType: installation.PackType,
             SettingsDirectory: _platform.UserDataDirectory);
     }
 
@@ -420,6 +450,12 @@ public sealed class SelfInstaller
         {
             _platform.UnregisterInstalled(registration);
             gone.Add("The entry in the system's list of installed apps");
+        }
+
+        if (installation.PackType)
+        {
+            _platform.UnregisterPackType();
+            gone.Add($"The {PackFileType.Description} file type ({AssetPacks.Extension})");
         }
 
         // The file we are running from is dealt with last and separately. Everything else goes now.

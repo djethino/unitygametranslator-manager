@@ -186,6 +186,141 @@ public sealed class LinuxPlatform : IPlatform
     /// <summary>Nothing was registered, so nothing can be missing. See RegisterInstalled.</summary>
     public bool IsRegistered(string registration) => true;
 
+    private static string DataHome
+    {
+        get
+        {
+            var xdg = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
+            return string.IsNullOrEmpty(xdg) ? Path.Combine(Home, ".local", "share") : xdg;
+        }
+    }
+
+    private static string MimePackage => Path.Combine(DataHome, "mime", "packages", "unitygametranslator-manager.xml");
+
+    /// <summary>
+    /// A desktop entry of its own, hidden from the menu: it is what the association names, and it
+    /// must exist whether or not somebody asked for a menu launcher.
+    /// </summary>
+    private const string PackDesktopFile = "unitygametranslator-manager-ugtpack.desktop";
+
+    private static string PackDesktopEntry => Path.Combine(DataHome, "applications", PackDesktopFile);
+
+    private static string IconFile(int size) =>
+        Path.Combine(DataHome, "icons", "hicolor", $"{size}x{size}", "mimetypes", PackFileType.IconName + ".png");
+
+    /// <summary>
+    /// The freedesktop way, all in the user's data folder: a MIME package declaring the type by its
+    /// extension (a sub-class of zip, which it is), the icon in the hicolor theme under the name the
+    /// type asks for, a hidden desktop entry that opens it, and that entry made the default.
+    ///
+    /// ⚠ The databases are rebuilt by the system's own tools. Where one is missing the files are
+    /// still in place and a desktop that rebuilds on its own (KDE does) still picks them up — so a
+    /// missing tool is not a failure; a file that could not be written is.
+    /// </summary>
+    public IReadOnlyList<string>? RegisterPackType(ToolInstallation installation)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(MimePackage)!);
+            File.WriteAllText(MimePackage, string.Join('\n',
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                "<mime-info xmlns=\"http://www.freedesktop.org/standards/shared-mime-info\">",
+                $"  <mime-type type=\"{PackFileType.MimeType}\">",
+                $"    <comment>{PackFileType.Description}</comment>",
+                "    <sub-class-of type=\"application/zip\"/>",
+                $"    <glob pattern=\"*{UnityGameTranslator.Common.AssetPacks.Extension}\"/>",
+                $"    <icon name=\"{PackFileType.IconName}\"/>",
+                "  </mime-type>",
+                "</mime-info>",
+                ""));
+
+            foreach (var size in PackFileType.IconSizes)
+            {
+                var icon = IconFile(size);
+                Directory.CreateDirectory(Path.GetDirectoryName(icon)!);
+                File.WriteAllBytes(icon, PackFileType.Resource(PackFileType.PngFile(size)));
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(PackDesktopEntry)!);
+            File.WriteAllText(PackDesktopEntry, string.Join('\n',
+                "[Desktop Entry]",
+                "Type=Application",
+                "Name=UnityGameTranslator Manager",
+                $"Comment=Open {PackFileType.Description}s",
+                $"Exec=\"{installation.Executable}\" %f",
+                $"MimeType={PackFileType.MimeType};",
+                "NoDisplay=true",
+                "Terminal=false",
+                ""));
+
+            RunTool("update-mime-database", Path.Combine(DataHome, "mime"));
+            RunTool("update-desktop-database", Path.GetDirectoryName(PackDesktopEntry)!);
+            RunTool("xdg-mime", "default", PackDesktopFile, PackFileType.MimeType);
+
+            // Nothing inside the installation folder: every file above is at a fixed place outside
+            // it, which UnregisterPackType removes by name.
+            return [];
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    public void UnregisterPackType()
+    {
+        var files = new List<string> { MimePackage, PackDesktopEntry };
+        files.AddRange(PackFileType.IconSizes.Select(IconFile));
+
+        foreach (var file in files)
+        {
+            try
+            {
+                if (File.Exists(file)) File.Delete(file);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // Left where it was; nothing else depends on it once the databases forget it.
+            }
+        }
+
+        RunTool("update-mime-database", Path.Combine(DataHome, "mime"));
+        RunTool("update-desktop-database", Path.GetDirectoryName(PackDesktopEntry)!);
+    }
+
+    /// <summary>
+    /// Runs one of the desktop's own tools to the end. False when the system does not have it —
+    /// see RegisterPackType for why that is not an error.
+    /// </summary>
+    private static bool RunTool(string tool, params string[] arguments)
+    {
+        try
+        {
+            var start = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = tool,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            foreach (var argument in arguments) start.ArgumentList.Add(argument);
+
+            using var process = System.Diagnostics.Process.Start(start);
+            if (process is null) return false;
+
+            // Read before waiting: a full pipe would otherwise hold the tool, and us with it.
+            process.StandardOutput.ReadToEnd();
+            process.StandardError.ReadToEnd();
+            process.WaitForExit();
+            return process.ExitCode == 0;
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            return false;
+        }
+    }
+
     /// <summary>
     /// The .NET *Desktop* runtime is a Windows-only product. For a Proton game the runtime that
     /// matters lives inside the prefix, which we cannot inspect reliably — so we answer "unknown"

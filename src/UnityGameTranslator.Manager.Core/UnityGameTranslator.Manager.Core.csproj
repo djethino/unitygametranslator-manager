@@ -24,6 +24,12 @@
          without downloading anything; an install checks the plugin it has just put in place. -->
     <EmbeddedResource Include="Detection\mod-requirements.txt"
                       LogicalName="UnityGameTranslator.Manager.Core.Resources.mod-requirements.txt" />
+
+    <!-- The .ugtpack file icon, written out when the installed tool registers the file type
+         (Platform/PackFileType.cs). Rendered from the two SVGs beside them by make-pack-icon.py;
+         the sources and the script are not embedded. -->
+    <EmbeddedResource Include="Platform\PackIcon\ugtpack.ico;Platform\PackIcon\ugtpack-*.png"
+                      LogicalName="UnityGameTranslator.Manager.Core.Resources.%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

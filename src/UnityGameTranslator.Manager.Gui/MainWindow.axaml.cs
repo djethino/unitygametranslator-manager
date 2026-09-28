@@ -341,10 +341,17 @@ public partial class MainWindow : Window
 
             await ScanAsync();
 
+            // A pack double-clicked to open this window, or while it was searching: there are
+            // games to offer now. Later ones arrive through the event.
+            PackInbox.Arrived += OnPackArrived;
+            await OpenArrivedPacksAsync();
+
             // After the scan, never before: the games are what someone opened the tool for, and a
             // question put to GitHub must not delay the list by so much as a frame.
             await LookForToolUpdateAsync();
         };
+
+        Closed += (_, _) => PackInbox.Arrived -= OnPackArrived;
     }
 
     /// <summary>

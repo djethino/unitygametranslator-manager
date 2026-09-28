@@ -51,14 +51,25 @@ internal static class Program
         //
         // Only the window is guarded: asking a question on the command line while the window is
         // open has to keep working, and it does.
+        // A .ugtpack double-clicked in the file explorer (PackFileType): the system passes its path.
+        var pack = PackFileType.PackIn(args);
+
         using var single = AcquireWindowRight();
         if (single is null)
         {
             // The person double-clicked and expects to see the tool. Showing them the copy they
             // already have is the answer; doing nothing at all would read as a launch that failed.
+            // A pack goes to that copy first, or the double-click would bring it forward empty-handed.
+            if (pack is not null) PackHandoff.Send(pack);
             RaiseExistingWindow();
             return 0;
         }
+
+        // Right after the right to run is taken, before anything slow: a pack double-clicked while
+        // this window is still starting must find it listening.
+        using var listening = new CancellationTokenSource();
+        _ = PackHandoff.ListenAsync(PackInbox.Deliver, listening.Token);
+        if (pack is not null) PackInbox.Deliver(pack);
 
         App.OpenRemovalOnStart = removing;
 

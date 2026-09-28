@@ -86,6 +86,20 @@ public interface IPlatform
     bool IsRegistered(string registration);
 
     /// <summary>
+    /// Declares the .ugtpack file type (PackFileType): its icon, and this installation's
+    /// executable as what opens it. Returns the files written INSIDE the installation folder — the
+    /// caller lists them in the receipt so they leave with the tool — or null when the system
+    /// refused. ⚠ Idempotent, like RegisterInstalled.
+    /// </summary>
+    IReadOnlyList<string>? RegisterPackType(ToolInstallation installation);
+
+    /// <summary>
+    /// Takes the declaration back. ⚠ Reads nothing from the receipt: every place it wrote is fixed,
+    /// so a hand-edited receipt cannot point a removal at anything else.
+    /// </summary>
+    void UnregisterPackType();
+
+    /// <summary>
     /// Is the given .NET Desktop Runtime major version present? MelonLoader IL2CPP needs 6.0
     /// and fails at game launch without it, so we check instead of promising.
     /// Returns null when we cannot tell — which is not the same as "no".

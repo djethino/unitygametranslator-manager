@@ -86,6 +86,12 @@ public sealed class SelfInstallWindow : Window
                 "An entry in Windows' installed apps, to uninstall it from there too"));
         }
 
+        if (_plan.RegistersPackType)
+        {
+            written.Children.Add(Path(
+                $"The {PackFileType.Description} file type ({UnityGameTranslator.Common.AssetPacks.Extension}): its icon, and UGT Manager to open it"));
+        }
+
         layout.Children.Add(written);
 
         var choices = new StackPanel { Spacing = 6 };

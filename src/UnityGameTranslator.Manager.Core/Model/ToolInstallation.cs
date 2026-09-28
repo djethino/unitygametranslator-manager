@@ -54,6 +54,13 @@ public sealed class ToolInstallation
     [JsonPropertyName("registration")] public string? Registration { get; set; }
 
     /// <summary>
+    /// The .ugtpack file type is declared to the system (PackFileType). False on an installation
+    /// made before this existed, which is how the installed copy knows to declare it at its next
+    /// start (SelfInstaller.RefreshRegistrationIfStale).
+    /// </summary>
+    [JsonPropertyName("pack_type")] public bool PackType { get; set; }
+
+    /// <summary>
     /// True when the installation folder did not exist before us. Only then may removal delete the
     /// folder itself rather than just the files it holds.
     /// </summary>

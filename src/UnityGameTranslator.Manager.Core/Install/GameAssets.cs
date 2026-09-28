@@ -160,6 +160,25 @@ public static class GameAssets
         };
     }
 
+    /// <summary>
+    /// The manifest of a pack opened before any game is chosen — what names the game to offer —
+    /// or null with the reason, in the words a plan would give.
+    /// </summary>
+    public static PackManifest? ReadManifest(string packPath, out string refusal)
+    {
+        try
+        {
+            using var zip = File.OpenRead(packPath);
+            return AssetPlanner.ReadManifest(zip, ParseManifest, out refusal);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            // The plan's words for the same failure, so the two cannot describe it differently.
+            refusal = "Could not be read: " + e.Message;
+            return null;
+        }
+    }
+
     /// <summary>A manifest, read with this product's JSON into the socle's model — null when it is not JSON.</summary>
     private static PackManifest? ParseManifest(byte[] bytes)
     {

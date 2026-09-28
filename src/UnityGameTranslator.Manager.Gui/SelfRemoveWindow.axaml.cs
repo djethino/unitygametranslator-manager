@@ -93,6 +93,12 @@ public sealed class SelfRemoveWindow : Window
                 11, FontWeight.Normal, "TextMuted"));
         }
 
+        if (plan.PackType)
+        {
+            items.Children.Add(Text($"The {PackFileType.Description} file type ({UnityGameTranslator.Common.AssetPacks.Extension})",
+                11, FontWeight.Normal, "TextMuted"));
+        }
+
         listing.Children.Add(new ScrollViewer
         {
             Content = items,

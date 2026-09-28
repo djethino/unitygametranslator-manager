@@ -182,6 +182,16 @@ internal static class GameAssetsChecks
                 "a pack from a newer tool, or with no manifest, is refused whole",
                 "half-understanding a newer layout writes files in the wrong place");
 
+            // Opened from the file explorer: the manifest alone names the game, and a pack the plan
+            // would refuse is refused before any game is offered, in the same words.
+            var named = GameAssets.ReadManifest(exported, out _);
+            Program.Check(named?.GameName == "Assets game"
+                          && GameAssets.ReadManifest(fake, out var noManifest) is null
+                          && noManifest == refusedWhole.Refused.Single(r => r.Name == "fake.ugtpack").Reason
+                          && GameAssets.ReadManifest(newer, out var tooNew) is null && tooNew.Contains("newer"),
+                "a pack opened on its own names its game, or is refused as the plan would refuse it",
+                "offering a game for a pack the tab then refuses is a way to nowhere");
+
             // ── Somebody else's pack, made to do harm ──────────────────────────────────────────
 
             // A program renamed to a font and to a picture, in a pack and on its own.

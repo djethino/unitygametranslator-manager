@@ -261,6 +261,108 @@ public sealed class WindowsPlatform : IPlatform
         }
     }
 
+    private const string Classes = @"Software\Classes";
+
+    /// <summary>
+    /// The per-user file classes (HKCU\Software\Classes) — the same no-elevation ground as the
+    /// uninstall entry above. Three things: the extension points at our class, the class carries the
+    /// icon (written beside the executable) and the open command, and the extension lists the class
+    /// among what may open it, so "Open with" offers UGT Manager even where somebody chose another
+    /// program by hand — a choice Windows keeps elsewhere, and that this does not override.
+    /// </summary>
+    public IReadOnlyList<string>? RegisterPackType(ToolInstallation installation)
+    {
+        try
+        {
+            var icon = Path.Combine(installation.Directory, PackFileType.WindowsIconFile);
+            File.WriteAllBytes(icon, PackFileType.Resource(PackFileType.WindowsIconFile));
+
+            using (var type = Registry.CurrentUser.CreateSubKey($@"{Classes}\{PackFileType.ProgId}", writable: true))
+            {
+                type.SetValue("", PackFileType.Description);
+
+                using var defaultIcon = type.CreateSubKey("DefaultIcon", writable: true);
+                defaultIcon.SetValue("", icon);
+
+                using var command = type.CreateSubKey(@"shell\open\command", writable: true);
+                command.SetValue("", $"\"{installation.Executable}\" \"%1\"");
+            }
+
+            using (var extension = Registry.CurrentUser.CreateSubKey(
+                       $@"{Classes}\{UnityGameTranslator.Common.AssetPacks.Extension}", writable: true))
+            {
+                extension.SetValue("", PackFileType.ProgId);
+
+                using var openWith = extension.CreateSubKey("OpenWithProgids", writable: true);
+                openWith.SetValue(PackFileType.ProgId, Array.Empty<byte>(), RegistryValueKind.None);
+            }
+
+            AssociationsChanged();
+            return [icon];
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException
+                                      or System.Security.SecurityException)
+        {
+            return null;
+        }
+    }
+
+    public void UnregisterPackType()
+    {
+        try
+        {
+            Registry.CurrentUser.DeleteSubKeyTree($@"{Classes}\{PackFileType.ProgId}", throwOnMissingSubKey: false);
+
+            // The extension's key may carry what other programs put there: only our two entries go,
+            // and the key itself only once nothing else is left in it.
+            var extensionPath = $@"{Classes}\{UnityGameTranslator.Common.AssetPacks.Extension}";
+            using (var extension = Registry.CurrentUser.OpenSubKey(extensionPath, writable: true))
+            {
+                if (extension is not null)
+                {
+                    if (extension.GetValue("") as string == PackFileType.ProgId) extension.DeleteValue("", throwOnMissingValue: false);
+
+                    using (var openWith = extension.OpenSubKey("OpenWithProgids", writable: true))
+                    {
+                        openWith?.DeleteValue(PackFileType.ProgId, throwOnMissingValue: false);
+                        if (openWith is not null && openWith.ValueCount == 0 && openWith.SubKeyCount == 0)
+                        {
+                            openWith.Dispose();
+                            extension.DeleteSubKey("OpenWithProgids", throwOnMissingSubKey: false);
+                        }
+                    }
+                }
+            }
+
+            using (var left = Registry.CurrentUser.OpenSubKey(extensionPath))
+            {
+                if (left is not null && left.ValueCount == 0 && left.SubKeyCount == 0)
+                {
+                    left.Dispose();
+                    Registry.CurrentUser.DeleteSubKey(extensionPath, throwOnMissingSubKey: false);
+                }
+            }
+
+            AssociationsChanged();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException
+                                      or System.Security.SecurityException)
+        {
+            // Not ours to delete after all. Nothing left to do.
+        }
+    }
+
+    /// <summary>
+    /// Tells the shell the file types changed, so the explorer shows the icon now rather than
+    /// after a sign-out.
+    /// </summary>
+    private static void AssociationsChanged() => SHChangeNotify(SHCNE_ASSOCCHANGED, 0, IntPtr.Zero, IntPtr.Zero);
+
+    private const int SHCNE_ASSOCCHANGED = 0x08000000;
+
+    [DllImport("shell32.dll")]
+    private static extern void SHChangeNotify(int eventId, uint flags, IntPtr item1, IntPtr item2);
+
     private static int SizeInKilobytes(ToolInstallation installation)
     {
         try

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The .ugtpack file icon, small sizes (16 to 32 px): no band, no text, which would be a smudge
+     there — the page and a larger logo. Rendered by make-pack-icon.py. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <path d="M112,24 H320 L416,120 V472 Q416,488 400,488 H112 Q96,488 96,472 V40 Q96,24 112,24 Z"
+        fill="#F5F3FF" stroke="#A855F7" stroke-width="28" stroke-linejoin="round"/>
+  <path d="M320,24 V104 Q320,120 336,120 H416 Z"
+        fill="#D8B4FE" stroke="#A855F7" stroke-width="28" stroke-linejoin="round"/>
+
+  <!-- logo.svg without its grid (invisible at this size), scaled 0.72 around (256, 290) -->
+  <g transform="translate(71.68,105.68) scale(0.72)">
+    <circle cx="256" cy="256" r="200" fill="#1F2937" stroke="#A855F7" stroke-width="16"/>
+    <g transform="translate(208.6838,281.75493)">
+      <path fill="#A855F7" stroke="#A855F7" stroke-width="8"
+            d="m -27.2,-94.9 h 138.9 c 23,0 41.7,18.7 41.7,41.7 V 2.3 c 0,23 -18.7,41.7 -41.7,41.7 H -27.2 c -23,0 -41.7,-18.7 -41.7,-41.7 v -55.5 c 0,-23 18.7,-41.7 41.7,-41.7 z"/>
+      <circle fill="#1F2937" cx="0.6" cy="-25.5" r="22.2"/>
+      <circle fill="#1F2937" cx="83.9" cy="-44.9" r="16.7"/>
+      <circle fill="#1F2937" cx="120" cy="-25.5" r="16.7"/>
+    </g>
+  </g>
+</svg>

@@ -353,6 +353,13 @@ public static partial class UnityGameProbe
         return false;
     }
 
+    /// <summary>
+    /// A Windows build: its executable is a .exe — so off Windows it runs through Wine (Proton,
+    /// Lutris, Heroic), and the mod inside it sees a Windows machine, not this one.
+    /// </summary>
+    public static bool IsWindowsBuild(string folder) =>
+        FindExecutable(folder, FindDataDirectory(folder))?.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) == true;
+
     private static string? FindExecutable(string folder, string? dataDir)
     {
         // The executable is named after the data folder: "Foo_Data" -> "Foo.exe".

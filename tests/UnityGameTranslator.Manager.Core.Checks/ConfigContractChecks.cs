@@ -123,6 +123,30 @@ internal static class ConfigContractChecks
                 try { Directory.Delete(gamePath, recursive: true); } catch { /* a temp folder left behind proves nothing */ }
             }
         }
+
+        // 🔴 A key is sealed with the identity of whoever reads it. Off Windows, a Windows build runs
+        // through Wine and its mod reads with Wine's identity: sealed here, the key was unreadable
+        // there, and the mod cleared it (audit 2026-09-28, analyse/audit-os-2026-09-28.md).
+        var windowsGame = Path.Combine(Path.GetTempPath(), "ugt-seal-win-" + Guid.NewGuid().ToString("N"));
+        var nativeGame = Path.Combine(Path.GetTempPath(), "ugt-seal-lin-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(windowsGame, "Game_Data"));
+            File.WriteAllText(Path.Combine(windowsGame, "Game.exe"), "");
+            Directory.CreateDirectory(Path.Combine(nativeGame, "Game_Data"));
+            File.WriteAllText(Path.Combine(nativeGame, "Game.x86_64"), "");
+
+            Program.Check(!GameConfigWriter.SharesThisMachinesIdentity(windowsGame, windowsHost: false)
+                          && GameConfigWriter.SharesThisMachinesIdentity(nativeGame, windowsHost: false)
+                          && GameConfigWriter.SharesThisMachinesIdentity(windowsGame, windowsHost: true),
+                "off Windows, a Windows build's keys are written for Wine's reader, not sealed for this machine",
+                "sealed with the host's identity, the mod under Proton could not read them and cleared them");
+        }
+        finally
+        {
+            try { Directory.Delete(windowsGame, recursive: true); } catch { /* a temp folder left behind proves nothing */ }
+            try { Directory.Delete(nativeGame, recursive: true); } catch { /* a temp folder left behind proves nothing */ }
+        }
     }
 
     /// <summary>

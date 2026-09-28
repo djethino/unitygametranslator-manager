@@ -377,8 +377,12 @@ public sealed class LinuxPlatform : IPlatform
     /// ~/.local/share/fonts): a font found there is one the game never used, and exporting it would
     /// carry a font nobody saw in the game. Widen both together, or neither.
     /// </summary>
+    /// <summary>The socle's one list for Linux — the folders the mod of a native game reads.</summary>
     public IEnumerable<string> FontFolders() =>
-        new[] { "/usr/share/fonts" }.Where(Directory.Exists);
+        UnityGameTranslator.Common.SystemFontFolders
+            .For(UnityGameTranslator.Common.SystemFontFolders.Os.Linux, home: Home,
+                 xdgDataHome: Environment.GetEnvironmentVariable("XDG_DATA_HOME"))
+            .Where(Directory.Exists);
 
     /// <summary>Linux keeps no table the mod reads: fonts are found by file name alone.</summary>
     public IEnumerable<(string Name, string Path)> RegisteredFonts() => [];

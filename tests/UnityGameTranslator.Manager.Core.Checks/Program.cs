@@ -50,6 +50,7 @@ internal static class Program
         GameAssetsChecks.WhatTheTranslationFileKeeps();
         GameAssetsChecks.WhatASystemFontExportCarries();
         PackTargetChecks.WhichGameAPackGoesTo();
+        GameAssetsChecks.WhichFontsAProtonGameSees();
         SetupWayChecks.WhenTheSetupHasBeenAnswered();
         PreferenceFieldsChecks.WhatAGamesAnswersAreFor();
         ForkOriginChecks.WhereTheFileCameFrom();

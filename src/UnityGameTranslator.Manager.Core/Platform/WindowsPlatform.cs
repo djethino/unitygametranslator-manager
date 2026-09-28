@@ -553,13 +553,12 @@ public sealed class WindowsPlatform : IPlatform
     /// </summary>
     public IEnumerable<string> FontFolders()
     {
-        var folders = new[]
-        {
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Fonts"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "Windows", "Fonts"),
-        };
-
-        return folders.Where(Directory.Exists);
+        // The socle's one list for Windows — the folders the mod reads.
+        return UnityGameTranslator.Common.SystemFontFolders
+            .For(UnityGameTranslator.Common.SystemFontFolders.Os.Windows,
+                 windowsDir: Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+                 localAppData: Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData))
+            .Where(Directory.Exists);
     }
 
     /// <summary>

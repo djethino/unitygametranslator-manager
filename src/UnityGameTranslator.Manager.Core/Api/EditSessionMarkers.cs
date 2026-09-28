@@ -124,7 +124,9 @@ public static class EditSessionMarkers
             using var writer = new Utf8JsonWriter(stream);
 
             writer.WriteStartObject();
-            writer.WriteString(EditSessions.MarkerKeyField, Secrets.Protect(modKey));
+            // Sealed for whoever reads it — the game's mod, which under Wine is not this machine
+            // (GameConfigWriter.SealForTheGame).
+            writer.WriteString(EditSessions.MarkerKeyField, GameConfigWriter.SealForTheGame(gamePath, modKey));
             writer.WriteString(EditSessions.MarkerHolderField,
                                EditSessions.Serialize(EditSessions.EditSessionHolder.Manager));
             writer.WriteString(EditSessions.MarkerOpenedField,

@@ -474,6 +474,26 @@ public sealed class GameConfigWriter
         return stored is null ? null : Secrets.Unprotect(stored);
     }
 
+    /// <summary>
+    /// A secret as the game's mod will read it.
+    ///
+    /// 🔴 **Off Windows, a Windows build runs through Wine** (Proton, Lutris, Heroic), and the mod
+    /// inside it seals and reads secrets with the identity Wine gives it — steamuser, C:\users\…,
+    /// Windows — never this machine's. Sealed here, a key was unreadable there, and the mod clears a
+    /// key it cannot read: every key set from this tool for a Proton game was erased at the game's
+    /// first start (audit of 2026-09-28, analyse/audit-os-2026-09-28.md). So such a game gets it
+    /// in the clear, which the mod accepts — as it accepts the clear values older versions left —
+    /// and seals with its own identity at its next start. Clear for that moment only: the at-rest
+    /// sealing is obfuscation, not a boundary (Secrets' own threat model).
+    /// </summary>
+    public static string SealForTheGame(string gamePath, string secret) =>
+        SharesThisMachinesIdentity(gamePath, OperatingSystem.IsWindows()) ? Secrets.Protect(secret)! : secret;
+
+    /// <summary>Whether the mod in this game shares this machine's identity: always on a Windows
+    /// host, and elsewhere only for a native build.</summary>
+    public static bool SharesThisMachinesIdentity(string gamePath, bool windowsHost) =>
+        windowsHost || !UnityGameProbe.IsWindowsBuild(gamePath);
+
     private static JsonNode? At(JsonObject root, string? parent, string key) =>
         parent is null ? root[key] : (root[parent] as JsonObject)?[key];
 
@@ -896,7 +916,7 @@ public sealed class GameConfigWriter
                 if (intent.FillsEmpty && HoldsText(root, intent)) continue;
 
                 var value = intent.Secret && intent.Value is string secret
-                    ? Secrets.Protect(secret)
+                    ? SealForTheGame(gamePath, secret)
                     : intent.Value;
 
                 if (intent.Parent is null) Set(root, applied, intent.Key, value, intent.Label);
@@ -1160,6 +1180,10 @@ public sealed class GameConfigWriter
             JsonValueKind.False => "false",
             _ => node.ToString(),
         };
+
+        // A key sealed by the game's own mod under Wine cannot be read from here, and it IS a key:
+        // "set", like any other — never "not set", which would offer to overwrite it.
+        if (secret && Secrets.IsProtected(raw) && Secrets.Unprotect(raw) is null) return "set";
 
         return secret ? Render(Secrets.Unprotect(raw), secret: true) : raw;
     }

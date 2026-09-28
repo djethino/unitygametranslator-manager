@@ -79,8 +79,36 @@ public static class GameAssets
 {
     // ── What the game holds ──────────────────────────────────────────────────────────────────
 
-    public static GameAssetsState Read(IPlatform platform, string gamePath, LoaderDescriptor descriptor) =>
-        Read(gamePath, descriptor, name => IsInstalled(name, platform.FontFolders(), platform.RegisteredFonts));
+    public static GameAssetsState Read(IPlatform platform, GameInstall game, LoaderDescriptor descriptor)
+    {
+        var (folders, registered) = FontsSeenBy(platform, game);
+        return Read(game.Path, descriptor, name => IsInstalled(name, folders, registered));
+    }
+
+    /// <summary>
+    /// The installed fonts AS THE GAME SEES THEM — its folders, and the system's table of them.
+    ///
+    /// 🔴 A game under Proton sees its Wine prefix's fonts, not this computer's (audit of 2026-09-28,
+    /// analyse/audit-os-2026-09-28.md): read from the host, "Used / Not used" was wrong and an export
+    /// carried files the game never drew. So its folders are the prefix's, by the socle's one list
+    /// for Windows; Wine keeps its font table in its registry file, which is not read — fonts are
+    /// then found by file name, as on Linux.
+    /// </summary>
+    public static (List<string> Folders, Func<IEnumerable<(string Name, string Path)>> Registered)
+        FontsSeenBy(IPlatform platform, GameInstall game)
+    {
+        if (game.RunsUnderProton && game.ProtonPrefix is { } prefix)
+        {
+            var driveC = Path.Combine(prefix, "pfx", "drive_c");
+            var folders = SystemFontFolders.For(SystemFontFolders.Os.Windows,
+                    windowsDir: Path.Combine(driveC, "windows"),
+                    localAppData: Path.Combine(driveC, "users", "steamuser", "AppData", "Local"))
+                .Where(Directory.Exists).ToList();
+            return (folders, () => []);
+        }
+
+        return (platform.FontFolders().ToList(), platform.RegisteredFonts);
+    }
 
     /// <param name="installed">Whether a font of that name is installed on this computer, found as the mod finds it.</param>
     public static GameAssetsState Read(string gamePath, LoaderDescriptor descriptor, Func<string, bool> installed)
@@ -347,8 +375,11 @@ public static class GameAssets
     /// ⚠ Remembered per game until the translation or a font folder changes: the tab draws this on
     /// every redraw, and the system's font folder holds a thousand files.
     /// </summary>
-    public static IReadOnlyList<SystemFontUse> SystemFontsUsed(IPlatform platform, GameInstall game, LoaderDescriptor descriptor) =>
-        SystemFontsUsed(game, descriptor, platform.FontFolders(), platform.RegisteredFonts);
+    public static IReadOnlyList<SystemFontUse> SystemFontsUsed(IPlatform platform, GameInstall game, LoaderDescriptor descriptor)
+    {
+        var (folders, registered) = FontsSeenBy(platform, game);
+        return SystemFontsUsed(game, descriptor, folders, registered);
+    }
 
     /// <param name="fontFolders">Where installed fonts are — the platform's, or a folder a check made.</param>
     /// <param name="registered">The system's font table, asked only when the answer is not remembered.</param>

@@ -65,7 +65,7 @@ public partial class MainWindow
         var descriptor = InstalledDescriptor(report);
         if (descriptor is null) yield break;
 
-        var state = GameAssets.Read(_platform, report.Game.Path, descriptor);
+        var state = GameAssets.Read(_platform, report.Game, descriptor);
 
         // What somebody comes here to do first, first. What is already there follows, then sharing.
         yield return Card(AddAssetsBlock(report));

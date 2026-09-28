@@ -21,6 +21,32 @@ internal static class GameAssetsChecks
         "{\"sprite_name\":\"Title\",\"path\":\"Canvas/Title\",\"original_width\":256,\"original_height\":64,"
         + "\"pivot_x\":0.5,\"pivot_y\":0.5,\"pixels_per_unit\":100,\"file\":\"title.png\"}";
 
+    /// <summary>A game under Proton sees its prefix's fonts, never the host's (audit 2026-09-28).</summary>
+    internal static void WhichFontsAProtonGameSees()
+    {
+        Program.Section("Installed fonts as a game under Proton sees them");
+
+        var prefix = Path.Combine(Path.GetTempPath(), "ugt-proton-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var windowsFonts = Path.Combine(prefix, "pfx", "drive_c", "windows", "Fonts");
+            var userFonts = Path.Combine(prefix, "pfx", "drive_c", "users", "steamuser", "AppData", "Local", "Microsoft", "Windows", "Fonts");
+            Directory.CreateDirectory(windowsFonts);
+            Directory.CreateDirectory(userFonts);
+
+            var game = new GameInstall { Name = "Proton game", Path = prefix, RunsUnderProton = true, ProtonPrefix = prefix };
+            var (folders, registered) = GameAssets.FontsSeenBy(null!, game);
+
+            Program.Check(folders.SequenceEqual(new[] { windowsFonts, userFonts }) && !registered().Any(),
+                "a Proton game's installed fonts are its Wine prefix's, machine-wide and per-user",
+                "read from the host, Used/Not used was wrong and an export carried fonts the game never drew");
+        }
+        finally
+        {
+            try { Directory.Delete(prefix, recursive: true); } catch { /* a temp folder left behind proves nothing */ }
+        }
+    }
+
     internal static void WhatAPackPutsIntoAGame()
     {
         Program.Section("Fonts and images added to a game, and the pack that carries them");

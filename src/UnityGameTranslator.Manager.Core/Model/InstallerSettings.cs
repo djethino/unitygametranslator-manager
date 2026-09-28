@@ -208,7 +208,9 @@ public sealed class InstallerSettings
     /// The in-game hotkey. Part of the settings because the mod's first-run wizard asks for it,
     /// and we can only skip that wizard honestly once every one of its questions is answered.
     /// </summary>
-    [JsonPropertyName("settings_hotkey")] public string SettingsHotkey { get; set; } = "Ctrl+F10";
+    /// ⚠ The socle's default, never a copy of it: this read "Ctrl+F10" while the mod fell back to
+    /// F10 — two defaults for one key.
+    [JsonPropertyName("settings_hotkey")] public string SettingsHotkey { get; set; } = BindableKeys.Default;
 
     /// <summary>
     /// The mod's optional shortcuts (<see cref="ModShortcuts"/>), by config.json key — only the ones

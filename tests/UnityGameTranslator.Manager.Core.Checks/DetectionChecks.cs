@@ -230,3 +230,42 @@ internal static class DetectionChecks
         }
     }
 }
+
+/// <summary>The icon of a native Linux Unity game, which its executable does not carry.</summary>
+internal static class LinuxIconChecks
+{
+    internal static void WhereALinuxGameKeepsItsIcon()
+    {
+        Program.Section("The icon of a native Linux game");
+
+        var root = Path.Combine(Path.GetTempPath(), "ugt-icon-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var resources = Path.Combine(root, "My Game_Data", "Resources");
+            Directory.CreateDirectory(resources);
+
+            // An ELF has no icon; the start file UGT Manager puts in its place is a script.
+            var executable = Path.Combine(root, "My Game.x86_64");
+            File.WriteAllText(executable, "#!/bin/sh\n");
+
+            // The smallest PNG header that states a size: signature, IHDR length and type, 128x96.
+            var png = new byte[] { 0x89, (byte)'P', (byte)'N', (byte)'G', 13, 10, 26, 10,
+                                   0, 0, 0, 13, (byte)'I', (byte)'H', (byte)'D', (byte)'R',
+                                   0, 0, 0, 128, 0, 0, 0, 96, 8, 6, 0, 0, 0 };
+            File.WriteAllBytes(Path.Combine(resources, "UnityPlayer.png"), png);
+
+            Program.Check(ExecutableIconReader.Read(executable) is { IsPng: true, Width: 128, Height: 96 },
+                "a Linux game gets the icon Unity writes beside it",
+                "native Linux games showed no icon in the list while the file was right there (2026-09-28)");
+
+            Directory.Delete(resources, recursive: true);
+            Program.Check(ExecutableIconReader.Read(executable) is null,
+                "no icon file, no icon",
+                "a stand-in repeated down the list would be noise");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+}

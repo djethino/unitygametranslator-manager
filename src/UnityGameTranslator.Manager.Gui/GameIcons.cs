@@ -12,8 +12,8 @@ namespace UnityGameTranslator.Manager.Gui;
 /// Nothing is downloaded and nothing is guessed. The reading is done by parsing the file
 /// (ExecutableIconReader), not by asking the operating system, and that choice is what makes it
 /// work beyond Windows: **most games played on Linux are Windows games running under Proton or
-/// Wine**, and their .exe travels with its icon. The same holds for Wine on macOS. Only a native
-/// Linux build has genuinely nothing to read — an ELF holds no icon at all.
+/// Wine**, and their .exe travels with its icon. The same holds for Wine on macOS. A native Linux
+/// build has none in its ELF; the icon Unity writes beside it is read instead (ExecutableIconReader).
 ///
 /// An earlier version called System.Drawing here. It worked, in twenty fewer lines, and only on
 /// Windows; it also pulled in a platform-restricted package. One path for every system is worth

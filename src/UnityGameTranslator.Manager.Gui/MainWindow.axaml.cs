@@ -2372,7 +2372,7 @@ public partial class MainWindow : Window
         //
         // The row keeps its exact shape when there is no icon — nothing is reserved, nothing is
         // stood in for. A placeholder repeated down the list would be noise pretending to be
-        // information, and on Linux there is never an icon at all.
+        // information, and a game that ships no icon at all shows none.
         if (GameIcons.For(game.ExecutablePath) is { } icon)
         {
             // 🔴 **A Grid, not a horizontal StackPanel — and this was the bug.** A horizontal

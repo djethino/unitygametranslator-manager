@@ -66,6 +66,7 @@ internal static class Program
         DetectionChecks.WhatMakesAFolderAGame();
         DetectionChecks.HowFarBelowAFolderWeLook();
         DetectionChecks.OneFolderThroughTwoDoors();
+        LinuxIconChecks.WhereALinuxGameKeepsItsIcon();
         DetectionChecks.WhatAStoreManifestNames();
         RuntimeLibrariesChecks.WhatAGameLacks();
         LaunchWatchChecks.WhenAStartingGameIsGivenBack();

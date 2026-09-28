@@ -14,9 +14,9 @@ public sealed record ExecutableIcon(byte[] Data, bool IsPng, int Width, int Heig
 /// ⚠ This exists so the icon works where System.Drawing cannot go, and that is not a corner case:
 /// **most games played on Linux are Windows games running under Proton or Wine**, and their .exe
 /// is right there with its icon inside. Same for Wine on macOS — CrossOver, Whisky, Apple's Game
-/// Porting Toolkit. Native Linux builds are the minority, and they are the one case with genuinely
-/// nothing to read: an ELF holds no icon at all, the desktop keeps it in a .desktop file and a
-/// theme.
+/// Porting Toolkit. A native Linux build carries none in its ELF — but Unity writes the game's icon
+/// beside it, <c>&lt;name&gt;_Data/Resources/UnityPlayer.png</c>, and that is read instead
+/// (<see cref="UnityPlayerIcon"/>; seen on a Bazzite VM, 2026-09-28).
 ///
 /// Being pure file reading, it also works on Windows, where it can eventually replace the
 /// System.Drawing path and leave one code path instead of two.
@@ -46,12 +46,35 @@ public static class ExecutableIconReader
             if (!File.Exists(path)) return null;
 
             var bytes = File.ReadAllBytes(path);
-            return Parse(bytes, preferredSize);
+            return Parse(bytes, preferredSize) ?? UnityPlayerIcon(path);
         }
         catch
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// The icon a Unity Linux player keeps next to its data — the game's own, 128 pixels — or null.
+    /// Found by the executable's stem, the way Unity finds its data folder: that also covers a
+    /// game whose executable UGT Manager replaced with a start file (NativeLaunch), same stem.
+    /// </summary>
+    private static ExecutableIcon? UnityPlayerIcon(string executable)
+    {
+        var folder = Path.GetDirectoryName(executable);
+        if (folder is null) return null;
+
+        var png = Path.Combine(folder, Path.GetFileNameWithoutExtension(executable) + "_Data",
+                               "Resources", "UnityPlayer.png");
+        if (!File.Exists(png)) return null;
+
+        var data = File.ReadAllBytes(png);
+
+        // The size is in the IHDR chunk, big-endian, right after the 8-byte signature.
+        if (data.Length < 24 || data[0] != 0x89 || data[1] != (byte)'P') return null;
+        int BigEndian(int at) => (data[at] << 24) | (data[at + 1] << 16) | (data[at + 2] << 8) | data[at + 3];
+
+        return new ExecutableIcon(data, IsPng: true, BigEndian(16), BigEndian(20));
     }
 
     private static ExecutableIcon? Parse(byte[] pe, int preferredSize)

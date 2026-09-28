@@ -769,9 +769,29 @@ public sealed class ToolSettingsWindow : Window
         panel.Children.Add(Note("Without it, game pages cannot show which version would be installed."));
 
         var check = new Button { Content = "Check now", FontSize = 12 };
-        check.HorizontalAlignment = HorizontalAlignment.Left;
         check.Click += async (_, _) => await CheckForUpdateAsync(check);
-        panel.Children.Add(check);
+
+        var checkRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { check } };
+        panel.Children.Add(checkRow);
+
+        // From a downloaded copy, the way into the installed one sits here too (user, 2026-09-28):
+        // that is the copy updates go to. Same door as the Installation card (InstalledCopy).
+        var installer = new SelfInstaller(_platform);
+        if (installer.Installed() is { } installed && !installer.RunningTheInstalledCopy() && !installer.Inspect().NeedsRepair)
+        {
+            var open = new Button { Content = InstalledCopy.Verb(canUpdate: false), FontSize = 12 };
+            var failed = Note("");
+            failed.IsVisible = false;
+            open.Click += (_, _) =>
+            {
+                if (InstalledCopy.Open(installed) is not { } failure) return;
+                Ui.Say(failed, failure, Tone.Error);
+                failed.IsVisible = true;
+            };
+
+            checkRow.Children.Add(open);
+            panel.Children.Add(failed);
+        }
 
         _updatePanel = new StackPanel { Spacing = 8 };
         panel.Children.Add(_updatePanel);

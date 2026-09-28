@@ -475,9 +475,25 @@ internal static class GameAssetsChecks
             using (var zip = ZipFile.OpenRead(copies))
             {
                 var fonts = zip.Entries.Select(e => e.FullName).Where(n => n.StartsWith("fonts/")).OrderBy(n => n, StringComparer.Ordinal).ToList();
+                Program.Check(fonts.SequenceEqual(["fonts/mine.ttf"]),
+                    "unasked, only the Custom fonts go — copies of System fonts in fonts/ stay, like the installed ones",
+                    "the licences of System fonts are the sharer's to check, wherever the file lies (user, 2026-09-28)");
+            }
+
+            var asked = GameAssets.SystemFontsUsed(game, descriptor, [system], () => table);
+            Program.Check(asked.Any(u => u.Reference == "Candara" && u.Includable && u.Path!.StartsWith(Path.Combine(folder, "fonts")))
+                          && asked.Any(u => u.Reference == "Legacy" && u.Includable),
+                "a System font with a copy in fonts/ is still offered, from that copy",
+                "the box is there as soon as the translation uses System fonts, whatever already lies in fonts/");
+
+            var copiesAsked = Path.Combine(root, "copies-asked.ugtpack");
+            GameAssets.Export(game, descriptor, copiesAsked, "checks", asked.Where(u => u.Includable).ToList());
+            using (var zip = ZipFile.OpenRead(copiesAsked))
+            {
+                var fonts = zip.Entries.Select(e => e.FullName).Where(n => n.StartsWith("fonts/")).OrderBy(n => n, StringComparer.Ordinal).ToList();
                 Program.Check(fonts.SequenceEqual(["fonts/Candara.ttf", "fonts/Legacy.ttf", "fonts/comicbd.ttf", "fonts/mine.ttf"]),
-                    "the copies of installed fonts in fonts/ are exported, the retouched game font and the unused one are not",
-                    "a copy serves a player without that font; a file named like a game font is not the one shown");
+                    "asked, the System fonts go, the copies from fonts/ included; the retouched game font and the unused one never",
+                    "a file named like a game font is not the one shown, and one nothing uses is noise");
             }
         }
         finally

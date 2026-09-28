@@ -34,7 +34,7 @@ public enum FontUse
 }
 
 /// <summary>A font this game holds, what its translation shows in its name, and whether an export carries it.</summary>
-/// <param name="Exported">A file some text can be drawn from, on some computer: a custom font, or a copy of an installed one for players without it.</param>
+/// <param name="Exported">Carried by every export: a Custom font the translation uses. A copy of a System font goes only when System fonts are asked for.</param>
 public sealed record GameFont(string Name, long Length, FontUse Use, bool Exported);
 
 /// <summary>An image this game's translation defines, and whether its file is there.</summary>
@@ -318,8 +318,8 @@ public static class GameAssets
     // ── Exporting ────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// The installed fonts this game's translation uses by name — those its fonts/ folder does not
-    /// already provide — each with the file an export would carry, or why it cannot.
+    /// The System fonts this game's translation uses (bare references), each with the file an export
+    /// would carry — its copy in fonts/ when there is one, the installed file otherwise — or why it cannot.
     ///
     /// 🔴 **Found the way the mod finds them**: the system's font table first, then the file names
     /// the socle derives from the name (<see cref="SystemFontNames.Candidates"/>), then the loose
@@ -367,7 +367,15 @@ public static class GameAssets
 
         foreach (var stem in installed)
         {
-            if (local.Any(file => AssetPacks.IsFontFileFor(file, stem))) continue;   // fonts/ provides it
+            // A copy already in fonts/ (a pack laid in, say) is still a System font of the translation:
+            // carried from there, and only when asked like any other (user, 2026-09-28 — the copies
+            // used to leave in every pack, the box unticked and hidden).
+            var copy = local.FirstOrDefault(file => AssetPacks.IsFontFileFor(file, stem));
+            if (copy is not null)
+            {
+                uses.Add(new SystemFontUse(stem, Path.Combine(fontsFolder, copy), null));
+                continue;
+            }
 
             var found = FindInstalledFont(stem, table, folders);
             uses.Add(found switch
@@ -630,11 +638,12 @@ public static class GameAssets
     }
 
     /// <summary>
-    /// Whether an export carries this file: a custom font, or a copy of an installed font — shown on
-    /// a computer without that font. Never one marked as the game's.
+    /// Whether an export always carries this file: a Custom font the translation uses. A copy of a
+    /// System font goes only when the System fonts are asked for (SystemFontsUsed) — their licences
+    /// are the sharer's to check; a file marked as the game's never goes.
     /// </summary>
     private static bool IsExported(string fileName, List<string> references) =>
-        references.Any(r => FontReferences.Order(r)[0] is FontSource.Custom or FontSource.System
+        references.Any(r => FontReferences.Order(r)[0] == FontSource.Custom
                             && AssetPacks.IsFontFileFor(fileName, FontReferences.Name(r)));
 
     /// <summary>Whether a font of this name is installed, found as the mod finds it — remembered while the font folders stay as they are.</summary>

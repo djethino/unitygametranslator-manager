@@ -413,6 +413,19 @@ internal static class ConfigContractChecks
             library.PlaceInto(Path.Combine(own, "BepInEx", "plugins", "UnityGameTranslator"), "French", replace: true);
             Program.Check(InterfaceFile(own)?.Contains("Appliquer") == true,
                 "Replace puts the kept file in place of the game's", "the one act that does, on a game set up here");
+
+            // A file this tool creates says which migrations its values are past; one that exists
+            // keeps its own number (common's ConfigVersion).
+            var fresh = Path.Combine(root, "game-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Path.Combine(fresh, "BepInEx", "plugins", "UnityGameTranslator"));
+            writer.Apply(fresh, descriptor, new InstallerSettings { TranslateModUi = false }, "French",
+                         modUi: ModUiWrite.Replace);
+            Program.Check(Config(fresh)[ConfigVersion.Key]?.GetValue<int>() == ConfigVersion.Current
+                          && Config(fresh)[GameConfigWriter.TranslateModUiKey]?.GetValue<bool>() == false,
+                "a config created here carries the current config_version beside Mod defaults' no",
+                "without it the mod runs its migrations at the first launch and turns that no back into undecided");
+            Program.Check(Config(said)[ConfigVersion.Key] is null,
+                "an existing config keeps its own config_version", "an older one is still the mod's to migrate");
         }
         finally
         {

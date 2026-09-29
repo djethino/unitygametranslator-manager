@@ -1238,13 +1238,19 @@ public sealed class GameConfigWriter
     /// A file we cannot parse is NOT overwritten: it is left exactly where it is and reported.
     /// It may be a config someone hand-edited and broke, and replacing it would destroy the only
     /// copy of settings they still want — including an api_token they would then have to redo.
+    ///
+    /// 🔴 **A new one carries the current config_version** (<see cref="ConfigVersion"/>). Without it
+    /// the mod reads our file as one written before its migrations and runs them over values we
+    /// wrote with today's meaning: Mod defaults' « don't translate UGT Mod's interface » became
+    /// « let the file decide » at the first launch, and the game then differed from Mod defaults.
+    /// An existing file keeps its number — an older one is still the mod's to migrate.
     /// </summary>
     private static JsonObject Load(string path)
     {
-        if (!File.Exists(path)) return new JsonObject();
+        if (!File.Exists(path)) return Fresh();
 
         var text = File.ReadAllText(path);
-        if (string.IsNullOrWhiteSpace(text)) return new JsonObject();
+        if (string.IsNullOrWhiteSpace(text)) return Fresh();
 
         var node = JsonNode.Parse(text, documentOptions: new JsonDocumentOptions
         {
@@ -1257,6 +1263,9 @@ public sealed class GameConfigWriter
                 "This game's config.json is not a JSON object. It was not changed: open it and "
                 + "fix it by hand.");
     }
+
+    /// <summary>A configuration this tool creates — see <see cref="Load"/>.</summary>
+    private static JsonObject Fresh() => new() { [ConfigVersion.Key] = ConfigVersion.Current };
 
     /// <summary>
     /// Sets one key inside a nested object, keeping everything else that object holds.

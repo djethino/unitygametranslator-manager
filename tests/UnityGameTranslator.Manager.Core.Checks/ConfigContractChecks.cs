@@ -171,6 +171,30 @@ internal static class ConfigContractChecks
     }
 
     /// <summary>
+    /// The language chosen for a game on its card goes in with the install, whatever the game
+    /// follows — and a translation it holds still decides (GameLanguages.TargetFor).
+    /// </summary>
+    internal static void TheTargetChosenForAGameIsTheOneWritten()
+    {
+        Program.Section("The language chosen for a game");
+
+        var descriptor = new LoaderDescriptor { Id = "bepinex5", UserDataDir = "BepInEx/plugins/UnityGameTranslator" };
+        var game = new GameInstall { Name = "A game", Path = Path.Combine(Path.GetTempPath(), "ugt-no-game-" + Guid.NewGuid().ToString("N")) };
+        var chosen = new GamePreference { ApplyModDefaults = true, Mod = new GameModOverrides { TargetLanguage = "Swedish" } };
+
+        Program.Check(GameLanguages.TargetFor(new GameReport { Game = game }, descriptor, chosen, "fr") == "Swedish",
+            "a game with no file gets the language chosen for it, not Mod defaults'",
+            "the language is answered on the card, not by Use Mod defaults — the one-click wrote French over it");
+
+        Program.Check(GameLanguages.TargetFor(new GameReport { Game = game }, descriptor, null, "fr") == "French",
+            "with nothing chosen, Mod defaults' language", "the person's own target");
+
+        var published = new OnlineTranslation { Id = 1, TargetLanguage = "German", Uuid = "uuid-1" };
+        Program.Check(GameLanguages.TargetFor(new GameReport { Game = game, MatchingOnline = published }, descriptor, chosen, "fr") == "German",
+            "a published translation the game holds still decides", "its target is what the file is");
+    }
+
+    /// <summary>
     /// The source language reaches a game only as a person declared it for THAT game — never from
     /// Mod defaults, which cannot know it (analyse/manager-reglages-avances.md, part A).
     /// </summary>

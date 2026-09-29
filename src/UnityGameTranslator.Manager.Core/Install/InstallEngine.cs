@@ -355,7 +355,7 @@ public sealed class InstallEngine
             // is what fixes its languages, and nothing further down the chain can see it.
             TargetLanguage = settings is null
                 ? null
-                : GameLanguages.TargetFor(report, loader,
+                : GameLanguages.TargetFor(report, loader, preference,
                     GameLanguages.Resolve(settings.TargetLanguage, _platform.SystemLanguage())),
         };
     }

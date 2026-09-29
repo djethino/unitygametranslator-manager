@@ -134,13 +134,24 @@ public static class GameLanguages
     /// 2. **A local translation nobody has published.** Whatever target the game already names is
     ///    kept — somebody is building that file in that language, and retargeting it mid-work
     ///    would orphan everything they have done.
-    /// 3. **Nothing installed.** The person's own target, resolved. Nothing to preserve, and this
-    ///    is the choice the whole tool is organised around.
+    /// 3. **The language chosen for this game** on its card ("Language for this game"), kept in
+    ///    its preference until a config.json exists to hold it.
+    /// 4. **Otherwise the person's own target**, resolved. Nothing to preserve, and this is the
+    ///    choice the whole tool is organised around.
+    ///
+    /// 🔴 **3 comes before 4 whatever the game follows.** The language is answered on the card, not
+    /// by "Use Mod defaults" — the writer says so (AnsweredOnTheCard) and the source language beside
+    /// it was always read from the game's answer. Handed Mod defaults' target alone, the one-click
+    /// on a game with no configuration wrote Mod defaults' language over the one just picked for it
+    /// (2026-09-29), while the source picked beside it went in.
+    /// ⚠ The preference only holds it while there is no file: an install drops it once written
+    /// (MainWindow.ForgetWrittenAnswers), so it never outlives the config.json as a rival copy.
     /// </summary>
+    /// <param name="perGame">This game's preference, or null when there is none.</param>
     /// <param name="defaultTargetCode">The person's target, already resolved by <see cref="Resolve"/>.</param>
     /// <returns>A language NAME, as the mod stores it. Never null, never "auto".</returns>
     public static string TargetFor(GameReport report, LoaderDescriptor descriptor,
-                                   string defaultTargetCode)
+                                   GamePreference? perGame, string defaultTargetCode)
     {
         // The published entry of the very file installed here — matched on lineage, so it IS this
         // translation rather than another one for the same game.
@@ -154,6 +165,11 @@ public static class GameLanguages
             var (_, target) = LocalTranslationProbe.ReadLanguages(report.Game.Path, descriptor);
             if (target is { Length: > 0 }) return target;
         }
+
+        // "auto" says "follow the system", which is what the person's own target already resolved.
+        if (perGame?.Mod?.TargetLanguage is { Length: > 0 } chosen
+            && !chosen.Equals("auto", StringComparison.OrdinalIgnoreCase))
+            return Languages.NameOf(Languages.Canonical(chosen)) ?? chosen;
 
         return Languages.NameOf(defaultTargetCode);
     }

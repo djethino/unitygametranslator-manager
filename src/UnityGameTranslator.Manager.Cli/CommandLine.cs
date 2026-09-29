@@ -518,7 +518,7 @@ public static class CommandLine
         var settings = ModSettingsResolver.Resolve(defaults, preference, snapshot);
 
         var picked = GameLanguages.Resolve(settings.TargetLanguage, platform.SystemLanguage());
-        var target = GameLanguages.TargetFor(report, descriptor, picked);
+        var target = GameLanguages.TargetFor(report, descriptor, preference, picked);
 
         // ⚠ Said out loud, because otherwise the language setting looks broken. A game already
         // holding a translation keeps that translation's language — its target is what the file IS,

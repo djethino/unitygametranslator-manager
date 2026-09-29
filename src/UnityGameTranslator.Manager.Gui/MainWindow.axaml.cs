@@ -9459,7 +9459,7 @@ public partial class MainWindow : Window
         if (UserDataInventory.DataFolder(report.Game.Path, descriptor) is not { } folder) return null;
 
         return new ModUiLibrary(_platform).ViewOf(folder,
-            TargetFor(report, descriptor, SettingsFor(report, preference)));
+            TargetFor(report, descriptor, SettingsFor(report, preference), preference));
     }
 
     /// <summary>
@@ -9473,7 +9473,7 @@ public partial class MainWindow : Window
         if (UserDataInventory.DataFolder(report.Game.Path, descriptor) is not { } folder) return;
 
         var library = new ModUiLibrary(_platform);
-        var view = library.ViewOf(folder, TargetFor(report, descriptor, SettingsFor(report, preference)));
+        var view = library.ViewOf(folder, TargetFor(report, descriptor, SettingsFor(report, preference), preference));
         if (!view.Replaceable || view.InGame is not { } own || view.Kept is not { } kept) return;
 
         if (_running.IsRunning(report.Game))
@@ -9533,7 +9533,7 @@ public partial class MainWindow : Window
 
         var result = new GameConfigWriter(_platform, new ModUiLibrary(_platform)).Apply(
             report.Game.Path, descriptor, settings,
-            TargetFor(report, descriptor, settings),
+            TargetFor(report, descriptor, settings, preference),
             skipWizard: !LetsWizardAsk(report, preference), perGame: preference,
             modUi: ModUiWriteFor(report, preference));
 
@@ -9595,8 +9595,8 @@ public partial class MainWindow : Window
     /// given a language of its own must not be written with somebody's global answer.
     /// </summary>
     private string TargetFor(GameReport report, LoaderDescriptor descriptor,
-                             InstallerSettings settings) =>
-        GameLanguages.TargetFor(report, descriptor,
+                             InstallerSettings settings, GamePreference? preference) =>
+        GameLanguages.TargetFor(report, descriptor, preference,
             GameLanguages.Resolve(settings.TargetLanguage, _platform.SystemLanguage()));
 
     /// <summary>
@@ -10733,7 +10733,7 @@ public partial class MainWindow : Window
 
         return new GameConfigWriter(_platform, new ModUiLibrary(_platform)).Compare(
             report.Game.Path, descriptor, settings,
-            TargetFor(report, descriptor, settings), preference, ModUiWrite.Replace);
+            TargetFor(report, descriptor, settings, preference), preference, ModUiWrite.Replace);
     }
 
     /// <summary>
@@ -10841,7 +10841,7 @@ public partial class MainWindow : Window
 
         return new GameConfigWriter(_platform, new ModUiLibrary(_platform)).Compare(
             report.Game.Path, descriptor, settings,
-            TargetFor(report, descriptor, settings), preference, ModUiWriteFor(report, preference));
+            TargetFor(report, descriptor, settings, preference), preference, ModUiWriteFor(report, preference));
     }
 
     /// <summary>
@@ -14002,7 +14002,7 @@ public partial class MainWindow : Window
         // This game's OWN settings are a different brick with a different verb: the form applies
         // those (ApplyOwnSettingsAsync).
         var settings = _settings.Current;
-        var target = TargetFor(report, descriptor, settings);
+        var target = TargetFor(report, descriptor, settings, preference);
 
         var result = new GameConfigWriter(_platform, new ModUiLibrary(_platform))
             .Apply(report.Game.Path, descriptor, settings, target,

@@ -39,6 +39,7 @@ internal static class Program
         UserDataChecks.WhichFilesAreTheModsInterface();
         ConfigContractChecks.WhatAGamesConfigSays();
         ConfigContractChecks.WhatThisToolWritesStaysWhatWasAsked();
+        ConfigContractChecks.TheTargetChosenForAGameIsTheOneWritten();
         ConfigContractChecks.TheSourceLanguageIsDeclaredNeverGuessed();
         ConfigContractChecks.ShortcutsFillThenReplace();
         ConfigContractChecks.TheInterfaceFileFollowsTheAct();

@@ -399,10 +399,10 @@ public static class GameAssets
     /// The System fonts this game's translation uses (bare references), each with the file an export
     /// would carry — its copy in fonts/ when there is one, the installed file otherwise — or why it cannot.
     ///
-    /// 🔴 **Found the way the mod finds them**: the system's font table first, then the file names
-    /// the socle derives from the name (<see cref="SystemFontNames.Candidates"/>), then the loose
-    /// match (<see cref="SystemFontNames.Normalize"/>), in the folders the mod searches
-    /// (<see cref="IPlatform.FontFolders"/>). Another rule would export a font the game never showed.
+    /// 🔴 **Found the way the mod finds them**: the system's font table first, then the socle's search
+    /// (<see cref="FontFileNames.FindFile"/>: a file the name names, else the font whose name table
+    /// carries it), in the folders the mod searches (<see cref="IPlatform.FontFolders"/>). Another
+    /// rule would export a font the game never showed.
     ///
     /// ⚠ Remembered per game until the translation or a font folder changes: the tab draws this on
     /// every redraw, and the system's font folder holds a thousand files.
@@ -460,40 +460,9 @@ public static class GameAssets
         // A name is never a location: the translation comes from somebody else.
         if (!AssetPacks.IsSafeFileName(name)) return null;
 
-        var candidates = SystemFontNames.Candidates(name);
-
-        foreach (var dir in folders)
-        {
-            // 2. The file names the name suggests, as the mod tries them.
-            foreach (var candidate in candidates)
-            {
-                foreach (var extension in AssetPacks.FontExtensions)
-                {
-                    var path = Path.Combine(dir, candidate + extension);
-                    if (File.Exists(path)) return path;
-                }
-            }
-
-            // 3. The loose match, over every font file below the folder.
-            var wanted = SystemFontNames.Normalize(name);
-            try
-            {
-                foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
-                {
-                    if (AssetPacks.IsFontFile(file)
-                        && string.Equals(SystemFontNames.Normalize(Path.GetFileNameWithoutExtension(file)), wanted, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return file;
-                    }
-                }
-            }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-            {
-                // A folder we may not walk holds nothing we can carry.
-            }
-        }
-
-        return null;
+        // 2. The socle's search, the mod's own: a file the name names, else the single font whose
+        //    name table carries it — an export carries a file as it is, so never a collection.
+        return FontFileNames.FindFile(name, folders, collections: false, out _);
     }
 
     /// <summary>What an export would carry: the fonts the translation uses, and every defined image whose file is there.</summary>

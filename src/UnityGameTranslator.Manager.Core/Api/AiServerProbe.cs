@@ -363,14 +363,20 @@ public sealed class AiServerProbe
                 var echoed = ModelTestSuite.LooksLikeEchoedInstructions(answer);
                 var translation = echoed ? ModelTestSuite.ExtractTranslation(answer) : answer;
 
+                // The source handed back fails every case: its markers are intact, so the case's
+                // own structural verdict would pass it. Not asked of a refusal — that answer is
+                // the skip marker, never a translation.
+                var untranslated = !test.ExpectsRefusal && ModelTestSuite.CameBackUntranslated(test, translation);
+
                 result = new ModelTestResult(test,
                                              answer,
                                              // No verdict for a case meant to be read: null is not
                                              // a pass and not a failure, and the report says so.
-                                             ModelTestSuite.Judge(test, translation) ?? false,
+                                             (ModelTestSuite.Judge(test, translation) ?? false) && !untranslated,
                                              null)
                 {
                     EchoedInstructions = echoed,
+                    Untranslated = untranslated,
                     Translation = translation,
                     Attempts = attempt.Attempts,
                     Elapsed = attempt.Elapsed,

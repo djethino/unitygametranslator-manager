@@ -2390,6 +2390,9 @@ public sealed class SettingsWindow : Window
                 body.Children.Add(Note(result.Test.Caveat, Tone.Warning));
         }
 
+        if (result.Untranslated)
+            body.Children.Add(Note("Came back untranslated. Counted as a failure.", Tone.Warning));
+
         if (result.EchoedInstructions)
         {
             body.Children.Add(Note("The model repeated the instructions. Only its last line was checked.",

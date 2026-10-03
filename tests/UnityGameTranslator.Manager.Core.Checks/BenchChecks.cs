@@ -80,6 +80,19 @@ internal static class BenchChecks
         })
             Program.Check(Verdict(name, answer) == true, $"passes: {why}", "it shows exactly as the source meant");
 
+        // The source handed back is a failure in every case, whatever the structure says.
+        ModelTest Case(string name) => suite.First(t => t.Name == name);
+        var mid = Case("a coloured phrase in the middle of a sentence");
+        Program.Check(ModelTestSuite.CameBackUntranslated(mid, mid.Source),
+            "the source handed back is untranslated", "its markers are intact, so every structural verdict passes it");
+        Program.Check(ModelTestSuite.CameBackUntranslated(mid, "talk  to <color=#00FF00>THE blacksmith</color> before nightfall"),
+            "and so is the same letters with other spacing and case", "nothing was translated");
+        Program.Check(!ModelTestSuite.CameBackUntranslated(mid, "Parlez au <color=#00FF00>forgeron</color> avant la tombée de la nuit"),
+            "a translation is not", "the letters changed");
+        var markers = Case("nothing but markers");
+        Program.Check(!ModelTestSuite.CameBackUntranslated(markers, markers.Source),
+            "a line of markers only is never untranslated", "there was nothing to translate");
+
         var markup = ModelTestSuite.Build("fr", sourceCode: "en").First(t => t.Name == "markup markers kept");
         Program.Check(markup.Rule.Contains("They come in pairs", StringComparison.Ordinal),
             "the bench's prompt is the game's, pairs of tags included",

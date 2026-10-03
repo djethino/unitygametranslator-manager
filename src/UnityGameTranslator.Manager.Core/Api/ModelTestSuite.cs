@@ -59,9 +59,9 @@ public sealed record ModelTest(
     public bool CanBeAskedAgain => LineTranslation.IsValidated(Source);
 
     /// <summary>
-    /// The source handed back untouched fails this case — true only where that is checked.
-    /// Said so a check that feeds the source back as a perfect answer (BenchChecks) knows this
-    /// is the one place where it is not.
+    /// This case's OWN verdict fails the source handed back (a word that must change, checked by
+    /// name). Said so a check that feeds the source back as a perfect answer (BenchChecks) knows to
+    /// skip it. Every case fails a copy anyway, through <see cref="ModelTestSuite.CameBackUntranslated"/>.
     /// </summary>
     public bool CopyFails { get; init; }
 
@@ -108,6 +108,13 @@ public sealed record ModelTestResult(
     /// in opposite directions, which is why this is reported separately rather than folded in.
     /// </summary>
     public bool EchoedInstructions { get; init; }
+
+    /// <summary>
+    /// The answer is the source handed back, letter for letter (<see cref="ModelTestSuite.CameBackUntranslated"/>).
+    /// A failure whatever the case's own verdict says: its markers are intact, so a structural
+    /// check passes it, and a player would read the game's original language.
+    /// </summary>
+    public bool Untranslated { get; init; }
 
     /// <summary>
     /// The part of the answer that is actually the translation, when the model prefixed it with
@@ -272,6 +279,28 @@ public static class ModelTestSuite
     /// </summary>
     public static bool? Judge(ModelTest test, string translation) =>
         test.Check?.Invoke(Backends.WireForm(test.Source, out _), WireFormAsTheSource(test.Source, translation));
+
+    /// <summary>
+    /// Whether a translation is the source handed back: the same letters in the same order, once
+    /// markers, tags, spacing and punctuation are set aside, case ignored.
+    ///
+    /// 🔴 **Why it is its own rule** (2026-10-03): every verdict here is structural, so an
+    /// untranslated answer — markers intact — passes all of them. A model that answered in the
+    /// source's own language for whole cases was counted as succeeding. Nothing to translate (a
+    /// line of markers only) is never "untranslated".
+    ///
+    /// ⚠ Catches the whole line handed back, not a line half translated: telling which words
+    /// should have changed would mean knowing both languages.
+    /// </summary>
+    public static bool CameBackUntranslated(ModelTest test, string translation)
+    {
+        static string Letters(string text) =>
+            new string(AnyMarker.Replace(Backends.WireForm(text, out _), "").Where(char.IsLetter)
+                                .Select(char.ToLowerInvariant).ToArray());
+
+        var source = Letters(test.Source);
+        return source.Length > 0 && source == Letters(translation ?? "");
+    }
 
     private static readonly Regex AnyTag = new(@"<[^>]+>", RegexOptions.Compiled);
 
@@ -584,14 +613,12 @@ public static class ModelTestSuite
             new("a coloured title after a name", "hard",
                 from.ColouredTitle,
                 rules,
-                // Not the source handed back: the pair and the name pass that too, untranslated.
-                (source, answer) => !string.Equals(answer.Trim(), source.Trim(), StringComparison.Ordinal)
-                               && InOrder(answer, "[!t*0]", "[!t*1]")
+                // The source handed back is failed by CameBackUntranslated, as for every case.
+                (_, answer) => InOrder(answer, "[!t*0]", "[!t*1]")
                                && Inside(answer, "[!t*0]", "[!t*1]") is { Length: > 0 } title
                                && !from.TitleName.Any(name => title.Contains(name, StringComparison.OrdinalIgnoreCase)))
             {
                 Expectation = "the colour stays on the title, wherever it goes, and the name stays out of it",
-                CopyFails = true,
             },
 
             new("a bracketed label in a colour", "hard",

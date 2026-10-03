@@ -1323,6 +1323,9 @@ public static class CommandLine
             if (result.SelfAssessment is { } assessment)
                 Console.WriteLine($"       self   : {assessment}/10 (self-assessment)");
 
+            if (result.Untranslated)
+                Console.WriteLine("       !!     : came back untranslated — counted as a failure.");
+
             if (result.EchoedInstructions)
             {
                 echoed++;

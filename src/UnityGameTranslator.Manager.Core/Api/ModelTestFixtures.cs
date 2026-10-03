@@ -1,7 +1,7 @@
 namespace UnityGameTranslator.Manager.Core.Api;
 
 /// <summary>
-/// The same fifteen cases, written in each language a game may be written in.
+/// The same cases, written in each language a game may be written in.
 ///
 /// One set was not enough, and the reason is structural rather than tidy. With English fixtures
 /// alone, anyone translating INTO English was asked to translate English into English — a job the
@@ -107,6 +107,32 @@ public sealed class Fixtures
     /// <summary>The bracketed word of <see cref="SpeakerLabel"/> as the source writes it: what must not come back.</summary>
     public required string SpeakerLabelWord { get; init; }
 
+    // 🔴 The six below are where games really put their tags — INSIDE a sentence, not at its edges
+    // (added 2026-10-03). Every earlier case had its tag first or last, so a model that reads a
+    // tagged line as separate pieces passed them all: "Talk to [the blacksmith]" came back as
+    // "Parlez à [l'artisan noir]", the verb of "Deal [double damage]" vanished, a whole sentence
+    // was coloured. Word order differs between the sources on purpose (Chinese, Japanese and
+    // Korean put the stunned enemies first), so the tags have to move with their words.
+    // See analyse/balises-ia.md for the measures that showed the gap.
+
+    /// <summary>A coloured phrase, article included, in the middle of a sentence.</summary>
+    public required string MidSentenceSpan { get; init; }
+
+    /// <summary>Two coloured phrases in one sentence, in an order the translation may swap.</summary>
+    public required string TwoSpans { get; init; }
+
+    /// <summary>A colour inside bold, around a key, inside a sentence.</summary>
+    public required string NestedSpan { get; init; }
+
+    /// <summary>An icon (a lone tag) right after the number it stands beside.</summary>
+    public required string InlineIcon { get; init; }
+
+    /// <summary>A number inside a coloured phrase, inside a sentence.</summary>
+    public required string NumberInSpan { get; init; }
+
+    /// <summary>A coloured name the game hard-wrapped: the line break sits inside the colour.</summary>
+    public required string SpanAcrossBreak { get; init; }
+
     /// <summary>
     /// Everything at once: tags, inserted text, four numbers, three line breaks and a blank one.
     ///
@@ -203,6 +229,12 @@ public sealed class Fixtures
             ColouredLabel = "Critical:\n<color=#FFA500>[Attack]</color>Damage doubled",
             SpeakerLabel = "<color=#f3e584>Thomas[Thought]: </color>The chemicals are so strong. I'm choking here.",
             SpeakerLabelWord = "[Thought]",
+            MidSentenceSpan = "Talk to <color=#00FF00>the blacksmith</color> before nightfall",
+            TwoSpans = "Deal <color=#FF4040>double damage</color> to enemies that are <color=#40A0FF>stunned</color>",
+            NestedSpan = "Press <b><color=#FFCC00>E</color></b> to pick up the item",
+            InlineIcon = "Costs [!v*0] <sprite name=\"coin\"> per use",
+            NumberInSpan = "You found <color=#FFCC00>[!v*0] gold coins</color> in the old chest",
+            SpanAcrossBreak = "Bring the <color=#FFCC00>Crown of the\nFallen King</color> back to the temple",
             Paragraph =
                 "<color=#FFCC00>Warning</color>\nThe reactor is running at [!v*0] percent of its rated "
                 + "output. Vent the coolant before the next jump, or the crew will not survive it. "
@@ -240,6 +272,12 @@ public sealed class Fixtures
             ColouredLabel = "Crítico:\n<color=#FFA500>[Ataque]</color>Daño doble",
             SpeakerLabel = "<color=#f3e584>Tomás[Pensamiento]: </color>Los productos químicos son muy fuertes. Me estoy ahogando aquí.",
             SpeakerLabelWord = "[Pensamiento]",
+            MidSentenceSpan = "Habla con <color=#00FF00>el herrero</color> antes del anochecer",
+            TwoSpans = "Inflige <color=#FF4040>el doble de daño</color> a los enemigos <color=#40A0FF>aturdidos</color>",
+            NestedSpan = "Pulsa <b><color=#FFCC00>E</color></b> para recoger el objeto",
+            InlineIcon = "Cuesta [!v*0] <sprite name=\"coin\"> por uso",
+            NumberInSpan = "Encontraste <color=#FFCC00>[!v*0] monedas de oro</color> en el viejo cofre",
+            SpanAcrossBreak = "Lleva la <color=#FFCC00>Corona del\nRey Caído</color> de vuelta al templo",
             Paragraph =
                 "<color=#FFCC00>Aviso</color>\nEl reactor funciona al [!v*0] por ciento de su potencia "
                 + "nominal. Purga el refrigerante antes del próximo salto o la tripulación no "
@@ -276,6 +314,12 @@ public sealed class Fixtures
             ColouredLabel = "Крит:\n<color=#FFA500>[Атака]</color>Двойной урон",
             SpeakerLabel = "<color=#f3e584>Томас[Мысли]: </color>Химикаты такие едкие. Я здесь задыхаюсь.",
             SpeakerLabelWord = "[Мысли]",
+            MidSentenceSpan = "Поговорите с <color=#00FF00>кузнецом</color> до наступления ночи",
+            TwoSpans = "Наносит <color=#FF4040>двойной урон</color> <color=#40A0FF>оглушённым</color> врагам",
+            NestedSpan = "Нажмите <b><color=#FFCC00>E</color></b>, чтобы подобрать предмет",
+            InlineIcon = "Стоит [!v*0] <sprite name=\"coin\"> за использование",
+            NumberInSpan = "Вы нашли <color=#FFCC00>[!v*0] золотых монет</color> в старом сундуке",
+            SpanAcrossBreak = "Верните <color=#FFCC00>Корону\nПавшего короля</color> в храм",
             Paragraph =
                 "<color=#FFCC00>Внимание</color>\nРеактор работает на [!v*0] процентов от номинальной "
                 + "мощности. Стравите охладитель до следующего прыжка, иначе экипаж не выживет. "
@@ -311,6 +355,12 @@ public sealed class Fixtures
             ColouredLabel = "暴击:\n<color=#FFA500>[攻]</color>伤害加倍",
             SpeakerLabel = "<color=#f3e584>托马斯[内心]: </color>化学品的气味太冲了，我快要窒息了。",
             SpeakerLabelWord = "[内心]",
+            MidSentenceSpan = "天黑之前去找<color=#00FF00>铁匠</color>谈谈",
+            TwoSpans = "对<color=#40A0FF>眩晕</color>的敌人造成<color=#FF4040>双倍伤害</color>",
+            NestedSpan = "按<b><color=#FFCC00>E</color></b>拾取物品",
+            InlineIcon = "每次使用消耗 [!v*0] <sprite name=\"coin\">",
+            NumberInSpan = "你在旧箱子里找到了<color=#FFCC00>[!v*0] 枚金币</color>",
+            SpanAcrossBreak = "把<color=#FFCC00>陨落之王的\n王冠</color>带回神殿",
             Paragraph =
                 "<color=#FFCC00>警告</color>\n反应堆正以额定功率的 [!v*0] % 运行。下一次跃迁前请排出冷却剂，"
                 + "否则船员无法生还。维修需要 [!v*1] 信用点和 [!v*2] 个周期，期间无法建造其他任何东西。",
@@ -345,6 +395,12 @@ public sealed class Fixtures
             ColouredLabel = "会心:\n<color=#FFA500>[攻]</color>ダメージ倍増",
             SpeakerLabel = "<color=#f3e584>トーマス[心の声]: </color>薬品の臭いがきつすぎる。息が詰まりそうだ。",
             SpeakerLabelWord = "[心の声]",
+            MidSentenceSpan = "日が暮れる前に<color=#00FF00>鍛冶屋</color>と話せ",
+            TwoSpans = "<color=#40A0FF>気絶</color>した敵に<color=#FF4040>倍のダメージ</color>を与える",
+            NestedSpan = "<b><color=#FFCC00>E</color></b>キーでアイテムを拾う",
+            InlineIcon = "使用するたびに [!v*0] <sprite name=\"coin\"> を消費する",
+            NumberInSpan = "古い宝箱から<color=#FFCC00>金貨 [!v*0] 枚</color>を見つけた",
+            SpanAcrossBreak = "<color=#FFCC00>堕ちた王の\n王冠</color>を神殿に持ち帰れ",
             Paragraph =
                 "<color=#FFCC00>警告</color>\nリアクターは定格出力の [!v*0] パーセントで稼働中です。"
                 + "次のジャンプの前に冷却材を排出してください。さもなければ乗組員は助かりません。"
@@ -381,6 +437,12 @@ public sealed class Fixtures
             ColouredLabel = "치명타:\n<color=#FFA500>[공격]</color>피해 두 배",
             SpeakerLabel = "<color=#f3e584>토마스[생각]: </color>약품 냄새가 너무 독해. 숨이 막힐 것 같아.",
             SpeakerLabelWord = "[생각]",
+            MidSentenceSpan = "해가 지기 전에 <color=#00FF00>대장장이</color>와 이야기하십시오",
+            TwoSpans = "<color=#40A0FF>기절한</color> 적에게 <color=#FF4040>두 배의 피해</color>를 줍니다",
+            NestedSpan = "<b><color=#FFCC00>E</color></b> 키를 눌러 아이템 줍기",
+            InlineIcon = "사용할 때마다 [!v*0] <sprite name=\"coin\"> 소모",
+            NumberInSpan = "낡은 상자에서 <color=#FFCC00>금화 [!v*0]개</color>를 찾았습니다",
+            SpanAcrossBreak = "<color=#FFCC00>몰락한 왕의\n왕관</color>을 신전으로 가져가십시오",
             Paragraph =
                 "<color=#FFCC00>경고</color>\n원자로가 정격 출력의 [!v*0] 퍼센트로 작동 중입니다. "
                 + "다음 도약 전에 냉각수를 배출하십시오. 그렇지 않으면 승무원은 살아남지 못합니다. "
@@ -415,6 +477,12 @@ public sealed class Fixtures
             ColouredLabel = "ضربة حرجة:\n<color=#FFA500>[هجوم]</color>ضرر مضاعف",
             SpeakerLabel = "<color=#f3e584>توماس[تفكير]: </color>المواد الكيميائية قوية جدًا. أكاد أختنق هنا.",
             SpeakerLabelWord = "[تفكير]",
+            MidSentenceSpan = "تحدّث إلى <color=#00FF00>الحدّاد</color> قبل حلول الليل",
+            TwoSpans = "يُلحق <color=#FF4040>ضررًا مضاعفًا</color> بالأعداء <color=#40A0FF>المذهولين</color>",
+            NestedSpan = "اضغط <b><color=#FFCC00>E</color></b> لالتقاط الغرض",
+            InlineIcon = "يكلّف [!v*0] <sprite name=\"coin\"> لكل استخدام",
+            NumberInSpan = "وجدت <color=#FFCC00>[!v*0] قطعة ذهبية</color> في الصندوق القديم",
+            SpanAcrossBreak = "أعد <color=#FFCC00>تاج\nالملك الساقط</color> إلى المعبد",
             Paragraph =
                 "<color=#FFCC00>تحذير</color>\nيعمل المفاعل عند [!v*0] بالمئة من طاقته المقررة. "
                 + "أفرغ سائل التبريد قبل القفزة التالية وإلا فلن ينجو الطاقم. "

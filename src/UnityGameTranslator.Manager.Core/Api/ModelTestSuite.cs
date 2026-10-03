@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Common;
 
@@ -270,7 +271,72 @@ public static class ModelTestSuite
     /// line breaks failed perfect answers (2026-09-26).
     /// </summary>
     public static bool? Judge(ModelTest test, string translation) =>
-        test.Check?.Invoke(Backends.WireForm(test.Source, out _), Backends.WireForm(translation, out _));
+        test.Check?.Invoke(Backends.WireForm(test.Source, out _), WireFormAsTheSource(test.Source, translation));
+
+    private static readonly Regex AnyTag = new(@"<[^>]+>", RegexOptions.Compiled);
+
+    /// <summary>
+    /// A translation in token form, each tag carrying the number it had IN THE SOURCE.
+    ///
+    /// 🔴 **Not <see cref="Backends.WireForm"/> on the translation** (2026-10-03): that numbers tags
+    /// by where they appear, so a translation that moves or splits them is renumbered into a
+    /// perfect order — "<b>Press</b> <color>E</color>" read as one key wrapped twice. A game
+    /// never loses this: the model hands back the source's own tokens. Only the bench, reading the
+    /// restored text, has to put the identity back.
+    ///
+    /// An opening tag takes the first unused source tag written the same way; a closing one, the
+    /// closing that the source pairs with the innermost open tag of its name (Markup.Pairs) — two
+    /// identical "&lt;/color&gt;" are told apart by what they close. A tag the source never had is
+    /// left as a tag, so no check can mistake it for a marker.
+    /// </summary>
+    internal static string WireFormAsTheSource(string source, string translation)
+    {
+        Backends.WireForm(source, out var tags);
+        var pairs = Markup.Pairs(tags);
+        var closing = new Dictionary<int, int>();
+        for (var close = 0; close < pairs.Length; close++)
+            if (pairs[close] >= 0) closing[pairs[close]] = close;
+
+        var used = new HashSet<int>();
+        var open = new List<int>();
+
+        string Token(int index)
+        {
+            used.Add(index);
+            return Markup.PlaceholderPrefix + index + Markup.PlaceholderSuffix;
+        }
+
+        return AnyTag.Replace((translation ?? "").Replace("\n", Backends.LineBreak), match =>
+        {
+            var tag = match.Value;
+
+            if (!Markup.IsClosing(tag))
+            {
+                for (var i = 0; i < tags.Count; i++)
+                {
+                    if (used.Contains(i) || Markup.IsClosing(tags[i]) || tags[i] != tag) continue;
+                    open.Add(i);
+                    return Token(i);
+                }
+                return tag;
+            }
+
+            var name = Markup.NameOf(tag);
+            for (var s = open.Count - 1; s >= 0; s--)
+            {
+                if (Markup.NameOf(tags[open[s]]) != name) continue;
+                var opener = open[s];
+                open.RemoveAt(s);
+                if (closing.TryGetValue(opener, out var close) && !used.Contains(close)) return Token(close);
+                break;
+            }
+
+            // A closing with nothing open for it: the first unused one written the same way.
+            for (var i = 0; i < tags.Count; i++)
+                if (!used.Contains(i) && tags[i] == tag) return Token(i);
+            return tag;
+        });
+    }
 
     /// <summary>
     /// Which language a given run translates FROM, so a report can name it.
@@ -552,6 +618,78 @@ public static class ModelTestSuite
                 CopyFails = true,
             },
 
+            // Tags INSIDE a sentence (2026-10-03) — see Fixtures.MidSentenceSpan for why. Each
+            // verdict is what can be told without knowing the target language; a colour on the
+            // wrong words, or "à le forgeron" for "au forgeron", is for the reader of the answer.
+            new("a coloured phrase in the middle of a sentence", "hard",
+                from.MidSentenceSpan,
+                rules,
+                (_, answer) => InOrder(answer, "[!t*0]", "[!t*1]")
+                               && Inside(answer, "[!t*0]", "[!t*1]").Length > 0
+                               && WordsOutside(answer, ("[!t*0]", "[!t*1]")))
+            {
+                Expectation = "the colour holds the translated phrase, with the rest of the sentence outside it",
+            },
+
+            new("two coloured phrases in one sentence", "hard",
+                from.TwoSpans,
+                rules,
+                // Which phrase comes first is the language's business; that they stay two
+                // separate phrases, each with words in it, is not.
+                (_, answer) => InOrder(answer, "[!t*0]", "[!t*1]") && InOrder(answer, "[!t*2]", "[!t*3]")
+                               && Inside(answer, "[!t*0]", "[!t*1]").Length > 0
+                               && Inside(answer, "[!t*2]", "[!t*3]").Length > 0
+                               && Apart(answer, ("[!t*0]", "[!t*1]"), ("[!t*2]", "[!t*3]"))
+                               && WordsOutside(answer, ("[!t*0]", "[!t*1]"), ("[!t*2]", "[!t*3]")))
+            {
+                Expectation = "both colours come back, each around its own words, neither inside the other",
+            },
+
+            new("nested tags inside a sentence", "hard",
+                from.NestedSpan,
+                rules,
+                // The bold is [!t*0]…[!t*3], the colour [!t*1]…[!t*2]. Which one is outside does
+                // not show on screen; that they still wrap the key TOGETHER does — "<b>Press</b>
+                // <color>E</color>" splits them and bolds the wrong word.
+                (_, answer) => InOrder(answer, "[!t*0]", "[!t*3]") && InOrder(answer, "[!t*1]", "[!t*2]")
+                               && Inside(answer, "[!t*0]", "[!t*3]").Length > 0
+                               && Inside(answer, "[!t*1]", "[!t*2]").Length > 0
+                               && !Apart(answer, ("[!t*0]", "[!t*3]"), ("[!t*1]", "[!t*2]"))
+                               && WordsOutside(answer, ("[!t*0]", "[!t*3]"), ("[!t*1]", "[!t*2]")))
+            {
+                Expectation = "the bold and the colour still wrap the key together, in the translated sentence",
+            },
+
+            new("an icon beside its number", "hard",
+                from.InlineIcon,
+                rules,
+                // An icon is a lone tag: it has no inside, only a place. Drawn away from the number
+                // it illustrates, the coin ends up after the wrong word.
+                (_, answer) => HasExactlyOnce(answer, "[!t*0]") && HasExactlyOnce(answer, "[!v*0]")
+                               && Regex.IsMatch(answer, @"\[!v\*0\]\s*\[!t\*0\]|\[!t\*0\]\s*\[!v\*0\]")
+                               && WordsOutside(answer))
+            {
+                Expectation = "the icon comes back once, right next to the number",
+            },
+
+            new("a number inside a coloured phrase", "hard",
+                from.NumberInSpan,
+                rules,
+                (_, answer) => InOrder(answer, "[!t*0]", "[!v*0]", "[!t*1]")
+                               && WordsOutside(answer, ("[!t*0]", "[!t*1]")))
+            {
+                Expectation = "the number stays inside the colour, with the words it counts",
+            },
+
+            new("a line break inside a colour", "hard",
+                from.SpanAcrossBreak,
+                rules,
+                (_, answer) => InOrder(answer, "[!t*0]", Backends.LineBreak, "[!t*1]")
+                               && WordsOutside(answer, ("[!t*0]", "[!t*1]")))
+            {
+                Expectation = "the line break stays inside the coloured name, the rest of the sentence outside it",
+            },
+
             new("a paragraph, not a label", "stress",
                 from.Paragraph,
                 rules,
@@ -796,6 +934,31 @@ public static class ModelTestSuite
         int from = at + opening.Length;
         int end = text.IndexOf(closing, from, StringComparison.Ordinal);
         return end < 0 ? "" : text.Substring(from, end - from).Trim();
+    }
+
+    private static readonly Regex AnyMarker = new(@"\[![^\]]*\]", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Whether some words remain once these spans (each from its opening token to its closing one)
+    /// and every marker are taken out — a sentence whose colour swallowed all of it fails.
+    /// A letter in any script counts as a word.
+    /// </summary>
+    private static bool WordsOutside(string text, params (string Open, string Close)[] spans)
+    {
+        foreach (var (open, close) in spans)
+        {
+            int at = text.IndexOf(open, StringComparison.Ordinal);
+            int end = at < 0 ? -1 : text.IndexOf(close, at + open.Length, StringComparison.Ordinal);
+            if (end >= 0) text = text.Remove(at, end + close.Length - at);
+        }
+        return AnyMarker.Replace(text, "").Any(char.IsLetter);
+    }
+
+    /// <summary>Whether two spans are separate — one ends before the other opens, in either order.</summary>
+    private static bool Apart(string text, (string Open, string Close) first, (string Open, string Close) second)
+    {
+        int Index(string token) => text.IndexOf(token, StringComparison.Ordinal);
+        return Index(first.Close) < Index(second.Open) || Index(second.Close) < Index(first.Open);
     }
 
     /// <summary>The tokens, sorted by where the source has them.</summary>

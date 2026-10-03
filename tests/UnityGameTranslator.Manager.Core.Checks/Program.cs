@@ -57,6 +57,7 @@ internal static class Program
         NativeLaunchChecks.TheStartFileThroughAGameUpdate();
         WinePrefixChecks.WhatThePrefixHolds();
         SetupWayChecks.WhenTheSetupHasBeenAnswered();
+        HotkeySettleChecks.WhenTheKeyMovesInTheGame();
         PreferenceFieldsChecks.WhatAGamesAnswersAreFor();
         ForkOriginChecks.WhereTheFileCameFrom();
         DownloadOriginsChecks.WhereADownloadMayStart();

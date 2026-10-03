@@ -486,6 +486,11 @@ public static class CommandLine
             : catalog.Loaders.FirstOrDefault(l => l.Id == report.InstalledLoader.Id);
 
         var snapshot = GameConfigWriter.Read(report.Game.Path, descriptor);
+
+        // Settled as the card settles it before reading, on a copy: a report changes nothing.
+        preference = preference.Copy();
+        preference.SettleHotkey(snapshot.InGameHotkey, defaults.SettingsHotkey);
+
         var mine = preference.UsesModDefaults(snapshot);
 
         Console.WriteLine();
@@ -844,13 +849,20 @@ public static class CommandLine
         // one carrying a configuration somebody set up inside the mod — was quietly overwritten the
         // moment it was installed into from a terminal. One binary with two faces has to mean one
         // answer: what `manager install` writes is what the window would have written.
-        var preference = new GamePreferences(platform).Read(report.Game.Path);
+        var preferences = new GamePreferences(platform);
+        var preference = preferences.Read(report.Game.Path);
 
-        var settings = ModSettingsResolver.Resolve(
-            configured, preference,
-            GameConfigWriter.Read(report.Game.Path, report.InstalledLoader is null
-                ? null
-                : catalog.Loaders.FirstOrDefault(l => l.Id == report.InstalledLoader.Id)));
+        var snapshot = GameConfigWriter.Read(report.Game.Path, report.InstalledLoader is null
+            ? null
+            : catalog.Loaders.FirstOrDefault(l => l.Id == report.InstalledLoader.Id));
+
+        // As the card does before reading the preference: a key changed inside the game since the
+        // last write wins over a box ticked before it — otherwise this install would put the old
+        // key back. Saved, because this command writes into the game the same way the window does.
+        if (preference.SettleHotkey(snapshot.InGameHotkey, configured.SettingsHotkey))
+            preferences.Set(report.Game.Path, preference);
+
+        var settings = ModSettingsResolver.Resolve(configured, preference, snapshot);
 
         // ⚠ --beta still wins: it is this run's explicit instruction, and an option typed on the
         // line must not be overruled by something remembered. Without it, the game's own channel

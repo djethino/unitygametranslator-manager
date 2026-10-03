@@ -3701,8 +3701,9 @@ public partial class MainWindow : Window
         // The user may have clicked elsewhere while we were reading.
         if (!ReferenceEquals(_selected, game)) return;
 
-        // Before anything on the card reads the preference — see SettleSetupWay.
+        // Before anything on the card reads the preference — see SettleSetupWay and SettleHotkey.
         SettleSetupWay(game);
+        SettleHotkey(report);
 
         // 🔴 **The row is re-read from the SAME report, here, for every caller.**
         //
@@ -9548,6 +9549,7 @@ public partial class MainWindow : Window
 
         // They are in the file now, so the file answers for them from here on.
         ForgetWrittenAnswers(report);
+        RecordHotkeyWritten(report.Game.Path, descriptor);
 
         // 🔴 **The whole card and its row, not only the block that asked.** These settings decide
         // the Play mark (AI on or off, translations shown), the action bar's OneClick steps and
@@ -12116,6 +12118,40 @@ public partial class MainWindow : Window
         return true;
     }
 
+    /// <summary>
+    /// Gives this game's key decisions back to the game when its key was changed inside it — see
+    /// <see cref="GamePreference.SettleHotkey"/>, where the rule and its reasons live.
+    ///
+    /// ⚠ Called by the card before it reads the preference, which covers both moments a change
+    /// shows up: the card being opened, and the card being redrawn when its game stops.
+    /// </summary>
+    /// <returns>True when the preference changed.</returns>
+    private bool SettleHotkey(GameReport report)
+    {
+        var stored = _preferences.Read(report.Game.Path);
+        if (stored.HotkeyAtLastWrite is null) return false;
+
+        if (!stored.SettleHotkey(GameConfig(report).InGameHotkey, _settings.Current.SettingsHotkey))
+            return false;
+
+        // ⚠ Stored answers only. A key captured on the card and not applied yet is somebody's live
+        // choice in this session, made after whatever happened in the game — it stays.
+        _preferences.Set(report.Game.Path, stored);
+        return true;
+    }
+
+    /// <summary>
+    /// Records the key this game holds right after UGT Manager wrote its config.json — the fact
+    /// <see cref="GamePreference.SettleHotkey"/> reads to tell a key changed in the game from one
+    /// that Mod defaults moved.
+    ///
+    /// ⚠ Read back from the file rather than taken from the write: whether a write touches the key
+    /// is decided in GameConfigWriter.Intended (universal keys only, kept unless asked), and the
+    /// file is the one place that cannot disagree with it.
+    /// </summary>
+    private void RecordHotkeyWritten(string gamePath, LoaderDescriptor descriptor) =>
+        SaveAnswer(gamePath, p => p.HotkeyAtLastWrite = GameConfigWriter.Read(gamePath, descriptor).InGameHotkey);
+
     private void RememberDefaultsWereWritten(GameReport report, InstallPlan plan,
                                              GameConfigSnapshot before)
     {
@@ -12125,6 +12161,10 @@ public partial class MainWindow : Window
 
         // Both install paths come through here, so it is where the answers stop being remembered.
         ForgetWrittenAnswers(report);
+
+        // ⚠ The plan's loader, not the report's: the report was read before this install, and on a
+        // first one it has no loader to find the file with.
+        RecordHotkeyWritten(report.Game.Path, plan.Loader);
 
         var preference = _preferences.Read(report.Game.Path);
         if (preference.ApplyModDefaults is not null) return;
@@ -12536,6 +12576,9 @@ public partial class MainWindow : Window
                     {
                         p.Mod ??= new GameModOverrides();
                         p.Mod.SettingsHotkey = written;
+
+                        // What the game holds now — see GamePreference.SettleHotkey.
+                        p.HotkeyAtLastWrite = written;
                     });
                 }
                 break;
@@ -14014,7 +14057,11 @@ public partial class MainWindow : Window
         // ⚠ Here too: writing Mod defaults puts values into the file over whatever this game
         // answered, so a remembered answer left behind would contradict the file it was just
         // overwritten in — and would win, being read first.
-        if (result.Written) ForgetWrittenAnswers(report);
+        if (result.Written)
+        {
+            ForgetWrittenAnswers(report);
+            RecordHotkeyWritten(report.Game.Path, descriptor);
+        }
 
         await MessageAsync(
             result.Written ? "Applied" : "Nothing was changed",

@@ -114,6 +114,63 @@ public sealed class GamePreference
     [JsonPropertyName("replace_hotkey")] public bool ReplaceHotkey { get; set; }
 
     /// <summary>
+    /// The key this game's config.json held right after UGT Manager last wrote it. A FACT, past
+    /// tense, and never an answer: nothing is ever written from it.
+    ///
+    /// 🔴 **It exists so the per-game key decisions can tell who moved the key** (user, 2026-10-03:
+    /// the key was changed inside the game, the box stayed ticked, and the one-click offered to put
+    /// the old one back). A game whose key differs from Mod defaults' is in one of two situations
+    /// that look identical from the file alone — Mod defaults changed since (the box should offer
+    /// the new key) or somebody changed the key in the game (the game's newer act wins). This is
+    /// what tells them apart; see <see cref="SettleHotkey"/>.
+    /// </summary>
+    [JsonPropertyName("hotkey_at_last_write")] public string? HotkeyAtLastWrite { get; set; }
+
+    /// <summary>
+    /// Drops this game's key decisions when the game's key was changed inside the game since UGT
+    /// Manager last wrote it. True when anything changed, so the caller saves.
+    ///
+    /// 🔴 **Read from the game, never from an event** — the rule of <see cref="SettleAfterSetup"/>:
+    /// the key may have been changed while this program was not running at all.
+    ///
+    /// ⚠ Three readings of a key that is not the one last written, and only the last is a change
+    /// made in the game:
+    /// — the same key as last written: nobody touched it, the decisions stand (and a key Mod
+    ///   defaults has changed since is still offered — that is what the box is for);
+    /// — the key the decisions themselves call for: written by a path that does not record (the
+    ///   command line), so the record catches up and nothing is dropped;
+    /// — anything else: the key was set inside the game, which is the newer act. The box and a key
+    ///   chosen for this game are given back to the file, like <see cref="SettleAfterSetup"/> does.
+    ///
+    /// ⚠ An unreadable or absent key decides nothing: "we could not read it" is not "it changed".
+    /// </summary>
+    /// <param name="inGameKey">The key the game's config.json holds now.</param>
+    /// <param name="defaultsKey">Mod defaults' key — what the box writes when ticked.</param>
+    public bool SettleHotkey(string? inGameKey, string? defaultsKey)
+    {
+        if (HotkeyAtLastWrite is null || inGameKey is null) return false;
+        if (string.Equals(inGameKey, HotkeyAtLastWrite, StringComparison.Ordinal)) return false;
+
+        var decided = ReplaceHotkey ? defaultsKey : Mod?.SettingsHotkey;
+        if (string.Equals(inGameKey, decided, StringComparison.Ordinal))
+        {
+            HotkeyAtLastWrite = inGameKey;
+            return true;
+        }
+
+        ReplaceHotkey = false;
+        HotkeyAtLastWrite = null;
+
+        if (Mod is not null)
+        {
+            Mod.SettingsHotkey = null;
+            if (Mod.IsEmpty) Mod = null;
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// The community translation this game **was set up with**, by site id. A FACT, past tense.
     ///
     /// 🔴 **It used to mean two things, and that shipped a defect.** One field answered both "which
@@ -214,7 +271,7 @@ public sealed class GamePreference
     /// </summary>
     public static readonly IReadOnlyList<string> NotForTheConfig = new[]
     {
-        nameof(Schema), nameof(ApplyModDefaults), nameof(InstalledTranslationId),
+        nameof(Schema), nameof(ApplyModDefaults), nameof(HotkeyAtLastWrite), nameof(InstalledTranslationId),
         nameof(InstallTranslation), nameof(AdoptLoader), nameof(ModuleSource), nameof(ClassLibrarySource),
     };
 
@@ -263,6 +320,10 @@ public sealed class GamePreference
         GameContext = null;
         ReplaceHotkey = false;
 
+        // The key the Setup answered is the game's own now; a record of what we wrote before it
+        // would only make that answer look like a change to settle.
+        HotkeyAtLastWrite = null;
+
         return true;
     }
 
@@ -282,6 +343,7 @@ public sealed class GamePreference
         StartTranslation = StartTranslation,
         GameContext = GameContext,
         ReplaceHotkey = ReplaceHotkey,
+        HotkeyAtLastWrite = HotkeyAtLastWrite,
         InstalledTranslationId = InstalledTranslationId,
         InstallTranslation = InstallTranslation,
         AdoptLoader = AdoptLoader,

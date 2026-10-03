@@ -72,6 +72,7 @@ internal static class Program
         DetectionChecks.WhatAStoreManifestNames();
         RuntimeLibrariesChecks.WhatAGameLacks();
         LaunchWatchChecks.WhenAStartingGameIsGivenBack();
+        RunningGameChecks.HowALinuxGameIsSeenRunning();
         SettingsDraftChecks.WhenADraftIsWaiting();
         RuntimeLibrariesChecks.WhatGoesBesideAGame();
         RuntimeLibrariesChecks.WhichCopiesMayBeUsed();

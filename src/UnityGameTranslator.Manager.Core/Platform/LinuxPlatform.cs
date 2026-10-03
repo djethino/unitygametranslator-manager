@@ -529,28 +529,21 @@ public sealed class LinuxPlatform : IPlatform
         return largest > 0 ? largest : null;
     }
 
+    /// <summary>
+    /// 🔴 Every process, by what it runs from AND what it has mapped (LinuxGameProcess): asking the
+    /// executable alone missed every Proton or Wine game — their executable is Wine's loader — and
+    /// this is the guard that keeps the install and uninstall engines out of an open game. No name
+    /// filter on purpose: here precision beats speed (see RunningGames).
+    ///
+    /// ⚠ Except this process: reading a game's assemblies can map them into the Manager itself,
+    /// which would then be the open game it refuses to write into.
+    /// </summary>
     public bool IsGameRunning(GameInstall game)
     {
         if (string.IsNullOrEmpty(game.Path) || !Directory.Exists("/proc")) return false;
 
-        var root = Path.GetFullPath(game.Path).TrimEnd('/') + "/";
-
-        foreach (var dir in SafeDirectories("/proc"))
-        {
-            var name = Path.GetFileName(dir);
-            if (!int.TryParse(name, out _)) continue;
-
-            try
-            {
-                var exeLink = Path.Combine(dir, "exe");
-                var target = File.ResolveLinkTarget(exeLink, returnFinalTarget: true)?.FullName;
-                if (target is not null && target.StartsWith(root, StringComparison.Ordinal)) return true;
-            }
-            catch
-            {
-                // Other users' processes are unreadable; that is expected.
-            }
-        }
-        return false;
+        var root = Detection.LinuxGameProcess.RootOf(game.Path);
+        var self = Environment.ProcessId;
+        return Detection.LinuxGameProcess.AllProcessIds().Any(pid => pid != self && Detection.LinuxGameProcess.Holds(pid, root));
     }
 }

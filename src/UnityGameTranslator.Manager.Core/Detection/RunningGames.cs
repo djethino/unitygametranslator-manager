@@ -64,16 +64,24 @@ public sealed class RunningGames
         // name could belong to. Two games can carry the same executable name — a repack and an
         // original, say — so the value is a list.
         var byName = new Dictionary<string, List<GameInstall>>(StringComparer.OrdinalIgnoreCase);
+        var onLinux = OperatingSystem.IsLinux();
+
+        void Index(string name, GameInstall game)
+        {
+            if (name.Length == 0) return;
+            if (!byName.TryGetValue(name, out var list)) byName[name] = list = [];
+            if (!list.Contains(game)) list.Add(game);
+        }
 
         foreach (var game in games)
         {
             if (game.ExecutablePath is not { Length: > 0 } executable) continue;
 
-            var name = Path.GetFileNameWithoutExtension(executable);
-            if (name.Length == 0) continue;
+            Index(Path.GetFileNameWithoutExtension(executable), game);
 
-            if (!byName.TryGetValue(name, out var list)) byName[name] = list = [];
-            list.Add(game);
+            // ⚠ Linux keeps 15 bytes of a process name: a long executable name is only ever seen
+            // cut, and neither the full name nor its stem would match (see LinuxGameProcess).
+            if (onLinux) Index(LinuxGameProcess.CommOf(Path.GetFileName(executable)), game);
         }
 
         if (byName.Count == 0) return None;
@@ -101,6 +109,19 @@ public sealed class RunningGames
 
                 // Only now is a handle opened, and only for a process whose name says it might be
                 // one of these games.
+                //
+                // 🔴 Not MainModule on Linux: for a Proton or Wine game it is Wine's loader, outside
+                // the game's folder, and the game was never seen running. /proc answers for both
+                // kinds of game there (LinuxGameProcess).
+                if (onLinux)
+                {
+                    foreach (var game in candidates)
+                    {
+                        if (LinuxGameProcess.Holds(process.Id, LinuxGameProcess.RootOf(game.Path))) running.Add(game.Path);
+                    }
+                    continue;
+                }
+
                 var file = process.MainModule?.FileName;
                 if (file is null) continue;
 

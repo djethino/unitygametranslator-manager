@@ -476,6 +476,16 @@ public sealed class GameInventory
                     ? await _api.SearchBySteamIdAsync(game.SteamAppId, apiToken: _apiToken, ct: ct).ConfigureAwait(false)
                     : await _api.SearchByNameAsync(game.ProductName ?? game.Name, apiToken: _apiToken, ct: ct).ConfigureAwait(false);
 
+            // 🔴 **A Steam id that finds nothing falls back on the name** (T7, user 2026-10-05:
+            // aligned on the site, "on cherche avant tout à trouver le bon"), as the mod does and as
+            // the library sweep's batch does on the site. Never for a game confirmed here: it is
+            // known, and a name search would offer another game's translations under its name.
+            if (report.ConfirmedGame is null && game.SteamAppId is not null && _api.LastError is null
+                && report.OnlineTranslations.Count == 0)
+            {
+                report.OnlineTranslations = await _api.SearchByNameAsync(game.ProductName ?? game.Name, apiToken: _apiToken, ct: ct).ConfigureAwait(false);
+            }
+
             // "No translation exists" and "the search failed" look identical to a user, and
             // only one of them is our problem. Keep them apart.
             report.OnlineSearchError = _api.LastError;

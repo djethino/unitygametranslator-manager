@@ -15,6 +15,8 @@ using UnityGameTranslator.Manager.Core.Settings;
 using UnityGameTranslator.Manager.Core.Update;
 using UnityGameTranslator.Common;
 using static UnityGameTranslator.Manager.Gui.Ui;
+// The socle's class: this window has a method of the same name (the language pair of a card).
+using LanguageRules = UnityGameTranslator.Common.TranslationLanguages;
 
 namespace UnityGameTranslator.Manager.Gui;
 
@@ -10132,7 +10134,13 @@ public partial class MainWindow : Window
         var configured = descriptor is not null && snapshot.Exists;
         var path = report.Game.Path;
 
-        var pinned = report.MatchingOnline?.SourceLanguage is { Length: > 0 } published ? published : null;
+        // 🔴 Settled by the socle's rule, the mod's Options asking the same (user, 2026-10-04):
+        // published, or named while the game's file holds lines. A source still on "auto" stays
+        // free with lines — naming it is how strict detection is turned on before publishing.
+        var (publishedSource, localLines, sourceInForce) = SourceStanding(report);
+        var pinned = LanguageRules.SourceLocked(publishedSource is not null, localLines, sourceInForce)
+            ? sourceInForce
+            : null;
 
         // What the game holds now — "auto" already read as no answer (GameConfigWriter.Read).
         var inGameSource = Languages.Canonical(snapshot.Values.SourceLanguage);
@@ -10167,7 +10175,10 @@ public partial class MainWindow : Window
         var row = (StackPanel)Ui.Row("Source language", picker);
         row.Margin = new Avalonia.Thickness(0, 8, 0, 0);
 
-        if (pinned is not null) ToolTip.SetTip(picker, "Set by the published translation this game holds.");
+        if (pinned is not null)
+            ToolTip.SetTip(picker, publishedSource is not null
+                ? "Set by the published translation this game holds."
+                : "Set by the translation this game holds: it already has lines.");
 
         picker.IsEnabled = pinned is null && MaySetUp(report, picker);
 
@@ -10180,6 +10191,13 @@ public partial class MainWindow : Window
         // an indent of its own made this one brick read as laid out by somebody else.
         sourceCaution.Margin = new Avalonia.Thickness(0, 4, 0, 0);
         sourceCaution.IsVisible = pinned is null;
+
+        // Said while choosing, under the list, when the choice would settle the source for good
+        // (TranslationLanguages.SettlesSource) — and asked again at Apply. The mod's words.
+        var settlesNote = Ui.Note(LanguageRules.SettlesSourceNotice, Tone.Warning);
+        settlesNote.Margin = new Avalonia.Thickness(0, 4, 0, 0);
+        bool Settles() => configured
+            && LanguageRules.SettlesSource(publishedSource is not null, localLines, sourceInForce, draftSource);
 
         // The mod's own words and help (options.json, StrictSourceToggle).
         var strict = new CheckBox
@@ -10230,6 +10248,7 @@ public partial class MainWindow : Window
 
             var count = (SourceDiffers() ? 1 : 0) + (StrictDiffers() ? 1 : 0);
 
+            settlesNote.IsVisible = Settles();
             if (pending is not null) pending.IsVisible = count > 0;
 
             if (pendingLine is not null)
@@ -10301,11 +10320,14 @@ public partial class MainWindow : Window
 
         yield return row;
         yield return sourceCaution;
+        yield return settlesNote;
 
         if (pinned is not null)
         {
             var why = Ui.Note($"Stays on {Languages.NameOf(Languages.Canonical(pinned)) ?? pinned}: "
-                              + "the published translation this game holds is made from it.");
+                              + (publishedSource is not null
+                                  ? "the published translation this game holds is made from it."
+                                  : "the translation this game holds already has lines."));
             why.Margin = new Avalonia.Thickness(0, 4, 0, 0);
             yield return why;
         }
@@ -10338,6 +10360,11 @@ public partial class MainWindow : Window
 
         write.Click += async (_, _) =>
         {
+            if (SourceDiffers() && Settles()
+                && !await ConfirmAsync($"Set the source language of {report.Game.Name}?",
+                                       LanguageRules.SettlesSourceNotice, "Apply"))
+                return;
+
             Busy(true, "Applying the source language...");
 
             var writer = new GameConfigWriter(_platform);
@@ -10378,6 +10405,28 @@ public partial class MainWindow : Window
 
         yield return pending;
         yield return write;
+    }
+
+    /// <summary>
+    /// What decides whether this game's source may still change (TranslationLanguages.SourceLocked):
+    /// the published source, the lines its file holds, and the source in force — the published
+    /// one, else the file's, else the game's config.json. Asked by the source brick and by the
+    /// one-click's confirmation, which both write the source.
+    /// </summary>
+    private (string? Published, int Lines, string? InForce) SourceStanding(GameReport report)
+    {
+        var published = report.MatchingOnline?.SourceLanguage is { Length: > 0 } stated ? stated : null;
+        var lines = report.LocalTranslation?.EntryCount ?? 0;
+        var inForce = LanguageRules.Resolve(published, report.LocalTranslation?.SourceLanguage,
+                                                   GameConfig(report).Values.SourceLanguage);
+        return (published, lines, inForce);
+    }
+
+    /// <summary>Whether writing this source into the game settles it for good (TranslationLanguages.SettlesSource).</summary>
+    private bool SettlesSource(GameReport report, string? chosen)
+    {
+        var (published, lines, inForce) = SourceStanding(report);
+        return LanguageRules.SettlesSource(published is not null, lines, inForce, chosen);
     }
 
     /// <summary>
@@ -11770,6 +11819,16 @@ public partial class MainWindow : Window
 
             if (step.Act is OneClickAct.ApplySettings)
                 foreach (var detail in SettingsDetail(report, preference)) body.Children.Add(detail);
+
+            // The held source written by this step can settle it for good — the source brick's
+            // own Apply asks the same (SourceDecision): one fact, said at both doors.
+            if (step.Act is OneClickAct.ApplyChoices
+                && _pendingChoices.TryGetValue(report.Game.Path, out var heldChoices)
+                && heldChoices.Source is { } heldSource
+                && SettlesSource(report, heldSource))
+            {
+                body.Children.Add(Ui.Note(LanguageRules.SettlesSourceNotice, Tone.Warning));
+            }
 
             // 🔴 **Where each batch comes from, changeable HERE** (user's decision, 2026-09-21): the
             // confirmation is the last moment somebody reads before files are copied from another

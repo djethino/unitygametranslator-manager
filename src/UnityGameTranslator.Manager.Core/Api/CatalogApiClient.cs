@@ -146,8 +146,12 @@ public sealed class CatalogApiClient
     /// <param name="Id">The hit's id IN its source — the card's on "local", IGDB's or RAWG's on those; 0 on a Steam hit, whose id is <paramref name="SteamId"/>.</param>
     /// <param name="Source">Where the site found it: "local" (its own catalogue), "steam", "igdb", "rawg".</param>
     /// <param name="ImageUrl">The cover the site gave for it, or null.</param>
+    /// <param name="Facts">
+    /// What tells it apart from a game of the same title — its ids in each store, its year, who made
+    /// and published it — as one line (Common.GameCandidates.Facts). Empty when nothing is known.
+    /// </param>
     public sealed record GameCandidate(long Id, string? Name, string? SteamId, string? Source,
-                                       int TranslationsCount, string? ImageUrl)
+                                       int TranslationsCount, string? ImageUrl, string Facts = "")
     {
         /// <summary>What a publication sends back as `game_pick` for this hit — Common.GameCandidates.PickOf.</summary>
         public Common.GameCandidates.Pick? Pick => Common.GameCandidates.PickOf(Source, Id, SteamId);
@@ -204,7 +208,10 @@ public sealed class CatalogApiClient
                         : null,
                     Text(game, "source"),
                     game.TryGetProperty("translations_count", out var count) && count.TryGetInt32(out var n) ? n : 0,
-                    Text(game, "image_url")));
+                    Text(game, "image_url"),
+                    Common.GameCandidates.Facts(IdsOf(game),
+                        game.TryGetProperty("year", out var year) && year.TryGetInt32(out var y) ? y : null,
+                        NamesOf(game, "developers"), NamesOf(game, "publishers"))));
             }
 
             return found;
@@ -495,6 +502,29 @@ public sealed class CatalogApiClient
 
         return outcome.Chosen.Select(i => groups[i]).ToList();
     }
+
+    /// <summary>The ids a search hit answers to, by source (`ids`), its own included when the object is absent.</summary>
+    private static Dictionary<string, string> IdsOf(JsonElement game)
+    {
+        var ids = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        if (game.TryGetProperty("ids", out var given) && given.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var id in given.EnumerateObject())
+            {
+                var value = id.Value.ValueKind == JsonValueKind.Number ? id.Value.GetRawText() : id.Value.GetString();
+                if (!string.IsNullOrEmpty(value)) ids[id.Name] = value;
+            }
+        }
+
+        return ids;
+    }
+
+    /// <summary>A list of names (`developers`, `publishers`), empty when absent.</summary>
+    private static List<string> NamesOf(JsonElement game, string key) =>
+        game.TryGetProperty(key, out var names) && names.ValueKind == JsonValueKind.Array
+            ? names.EnumerateArray().Where(n => n.ValueKind == JsonValueKind.String).Select(n => n.GetString()!).ToList()
+            : new List<string>();
 
     /// <summary>One translation row, with the uploader normalised as <see cref="Parse"/> does.</summary>
     private static OnlineTranslation? Read(JsonElement element)

@@ -124,7 +124,13 @@ internal sealed class GamePickerBlock
         _gameSearchStatus = Hint("");
         Controls.Add(_gameSearchStatus);
 
-        _gameResults = new ListBox { MaxHeight = 160 };
+        // Each answer with what tells it apart from a game of the same title — its cover, its ids in
+        // each store, its year, who made it (2026-10-05) — so the person can check before picking.
+        _gameResults = new ListBox
+        {
+            MaxHeight = 240,
+            ItemTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<CandidateRow>((row, _) => RowOf(row)),
+        };
         Controls.Add(_gameResults);
 
         Controls.Add(Hint(GameCandidates.Legend));
@@ -335,6 +341,64 @@ internal sealed class GamePickerBlock
         _gameName.Foreground = _brush("StatusWarning");
         _gameState.Text = detected ? "⚠ confirm below" : "- please search";
         _gameState.Foreground = _brush(detected ? "StatusWarning" : "TextMuted");
+    }
+
+    /// <summary>One answer: its cover, then its name with source and mark, then what tells it apart.</summary>
+    private Control RowOf(CandidateRow row)
+    {
+        var cover = new Image { Width = 30, Height = 42, Stretch = Stretch.UniformToFill, VerticalAlignment = VerticalAlignment.Top };
+        var frame = new Border
+        {
+            Width = 30,
+            Height = 42,
+            CornerRadius = new CornerRadius(3),
+            ClipToBounds = true,
+            Background = _brush("SurfaceInput"),
+            Child = cover,
+        };
+        _ = LoadCoverAsync(cover, row.Candidate.ImageUrl);
+
+        var text = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
+        text.Children.Add(new TextBlock { Text = row.ToString(), TextWrapping = TextWrapping.Wrap, Foreground = _brush("TextPrimary") });
+        if (row.Candidate.Facts.Length > 0)
+            text.Children.Add(new TextBlock { Text = row.Candidate.Facts, FontSize = 11, TextWrapping = TextWrapping.Wrap, Foreground = _brush("TextMuted") });
+
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
+        Grid.SetColumn(frame, 0);
+        Grid.SetColumn(text, 1);
+        grid.Children.Add(frame);
+        grid.Children.Add(text);
+        return grid;
+    }
+
+    /// <summary>Where covers are fetched from: the stores' own image servers, directly.</summary>
+    private static readonly System.Net.Http.HttpClient Covers =
+        UnityGameTranslator.Manager.Core.Net.Http.Create(TimeSpan.FromSeconds(15));
+
+    /// <summary>
+    /// The cover, fetched from where the site says it is, while the list is on screen — kept in
+    /// memory with the row, never written to disk (user, 2026-10-04: "on veut juste les afficher
+    /// temporairement… un moyen d'identification éphémère"). Directly from the store's image server,
+    /// not through the site: a middle hop is the same image twice and bandwidth paid for nothing.
+    ///
+    /// ⚠ HTTPS only. A cover that does not come leaves the empty frame: it is a help to recognise
+    /// the game, and the name and the facts beside it still say which one it is.
+    /// </summary>
+    private static async Task LoadCoverAsync(Image cover, string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url) || !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) return;
+
+        try
+        {
+            var bytes = await Covers.GetByteArrayAsync(url);
+            using var stream = new System.IO.MemoryStream(bytes);
+            cover.Source = Avalonia.Media.Imaging.Bitmap.DecodeToWidth(stream, 60);
+        }
+        catch (Exception ex)
+        {
+            // Said in the log, once per address: the frame stays empty on screen.
+            System.Diagnostics.Trace.WriteLine($"[GamePicker] Cover not shown ({url}): {ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     private TextBlock Hint(string text) => new()

@@ -237,7 +237,7 @@ public sealed class TranslationPublisher
             if (exists && role is "main" or "fork" or "branch")
             {
                 int? branches = root.TryGetProperty("branches_count", out var b)
-                                && b.TryGetInt32(out var count) ? count : null;
+                                && b.ValueKind == JsonValueKind.Number && b.TryGetInt32(out var count) ? count : null;
 
                 var mine = root.TryGetProperty("translation", out var block)
                            && block.ValueKind == JsonValueKind.Object
@@ -648,11 +648,13 @@ public sealed class TranslationPublisher
     private static LineageGame? GameOf(JsonElement root)
     {
         if (!root.TryGetProperty("game", out var game) || game.ValueKind != JsonValueKind.Object) return null;
-        if (!game.TryGetProperty("id", out var id) || !id.TryGetInt64(out var cardId)) return null;
+        // ⚠ The kind first, everywhere here: TryGetInt64 on a JSON null THROWS rather than
+        // answering false, and an IGDB or RAWG id a card does not hold comes as null.
+        if (!game.TryGetProperty("id", out var id) || id.ValueKind != JsonValueKind.Number || !id.TryGetInt64(out var cardId)) return null;
         if (Text(game, "name") is not { } name) return null;
 
         long? Number(string key) =>
-            game.TryGetProperty(key, out var value) && value.TryGetInt64(out var number) ? number : null;
+            game.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var number) ? number : null;
 
         return new LineageGame(cardId, name, Text(game, "steam_id"), Number("igdb_id"), Number("rawg_id"));
     }

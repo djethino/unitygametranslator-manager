@@ -200,17 +200,20 @@ public sealed class CatalogApiClient
                 if (game.ValueKind != JsonValueKind.Object) continue;
 
                 found.Add(new GameCandidate(
-                    game.TryGetProperty("id", out var id) && id.TryGetInt64(out var number) ? number : 0,
+                    game.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.Number && id.TryGetInt64(out var number) ? number : 0,
                     Text(game, "name"),
                     // A number on one source, a string on another: read either way.
                     game.TryGetProperty("steam_id", out var steam)
                         ? steam.ValueKind == JsonValueKind.Number ? steam.GetRawText() : steam.GetString()
                         : null,
                     Text(game, "source"),
-                    game.TryGetProperty("translations_count", out var count) && count.TryGetInt32(out var n) ? n : 0,
+                    game.TryGetProperty("translations_count", out var count) && count.ValueKind == JsonValueKind.Number && count.TryGetInt32(out var n) ? n : 0,
                     Text(game, "image_url"),
                     Common.GameCandidates.Facts(IdsOf(game),
-                        game.TryGetProperty("year", out var year) && year.TryGetInt32(out var y) ? y : null,
+                        // ⚠ The kind first: a year the store does not know comes as null, and
+                        // TryGetInt32 on a null THROWS rather than answering false.
+                        game.TryGetProperty("year", out var year) && year.ValueKind == JsonValueKind.Number
+                            && year.TryGetInt32(out var y) ? y : null,
                         NamesOf(game, "developers"), NamesOf(game, "publishers"))));
             }
 

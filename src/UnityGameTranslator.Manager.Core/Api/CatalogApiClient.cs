@@ -109,6 +109,35 @@ public sealed class CatalogApiClient
     }
 
     /// <summary>
+    /// The translations published for one card of the site — the game its player confirmed
+    /// (`game_choice`, 2026-10-05) — whatever the Steam id or the name read on disk say. Same
+    /// answer, filters and token rule as <see cref="SearchBySteamIdAsync"/>.
+    /// </summary>
+    public async Task<IReadOnlyList<OnlineTranslation>> SearchByCardAsync(
+        long cardId, string? targetLanguage = null, string? sourceLanguage = null,
+        string? apiToken = null, CancellationToken ct = default)
+    {
+        LastError = null;
+        LastStatus = null;
+
+        var url = $"{BuildInfo.ApiBaseUrl}/translations?game={cardId}"
+                + LanguageFilters(targetLanguage, sourceLanguage);
+
+        try
+        {
+            var json = await GetAsync(url, apiToken, ct).ConfigureAwait(false);
+            var results = Parse(json, out var parseError);
+            if (parseError is not null) LastError = parseError;
+            return results;
+        }
+        catch (Exception ex)
+        {
+            LastError = Net.Http.Describe(ex, "UGT Website");
+            return Array.Empty<OnlineTranslation>();
+        }
+    }
+
+    /// <summary>
     /// What the site knows about a game somebody is about to publish under.
     ///
     /// ⚠ Ranked by the caller through <see cref="Common.GameCandidates"/>, never here: the order
@@ -273,7 +302,11 @@ public sealed class CatalogApiClient
     /// resolve a translation that has left the CATALOGUE but is still the one this game runs —
     /// a Main delisted for holding no translated line is out of every listing and still the Main.
     /// </param>
-    public sealed record GameLookup(string Key, string? SteamId, string? Name, string? Uuid);
+    /// <param name="CardId">
+    /// The card its player confirmed (`game_choice`, source `local`): when it exists on the site it
+    /// decides the entry, before the Steam id and the name read on disk.
+    /// </param>
+    public sealed record GameLookup(string Key, string? SteamId, string? Name, string? Uuid, long? CardId = null);
 
     /// <summary>What the site knows about one game we asked about.</summary>
     /// <param name="Translations">
@@ -324,6 +357,8 @@ public sealed class CatalogApiClient
                 parts.Add($"\"name\":{JsonSerializer.Serialize(games[i].Name)}");
             if (!string.IsNullOrWhiteSpace(games[i].Uuid))
                 parts.Add($"\"uuid\":{JsonSerializer.Serialize(games[i].Uuid)}");
+            if (games[i].CardId is { } card)
+                parts.Add($"\"game_id\":{card}");
 
             body.Append(string.Join(",", parts)).Append('}');
         }

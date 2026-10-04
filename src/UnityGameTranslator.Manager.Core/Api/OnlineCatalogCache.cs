@@ -113,10 +113,15 @@ public sealed class OnlineCatalogCache
     /// The uuid of the file installed for a game, when there is one. It lets the server resolve a
     /// translation that has left the catalogue and is still the one that game runs.
     /// </param>
+    /// <param name="cardOf">
+    /// The card the player confirmed for a game (`game_choice`), when there is one: the site then
+    /// answers for that card, whatever the Steam id or the name read on disk say.
+    /// </param>
     public async Task RefreshAsync(IEnumerable<string> keys,
                                    Func<string, IReadOnlyList<OnlineTranslation>, Task> onUpdated,
                                    CancellationToken ct = default,
-                                   Func<string, string?>? lineageOf = null)
+                                   Func<string, string?>? lineageOf = null,
+                                   Func<string, long?>? cardOf = null)
     {
         var pending = keys.Distinct().Where(IsStale).ToList();
         if (pending.Count == 0) return;
@@ -135,7 +140,7 @@ public sealed class OnlineCatalogCache
                 var steam = key.StartsWith("steam:", StringComparison.Ordinal);
 
                 return new CatalogApiClient.GameLookup(
-                    key, steam ? value : null, steam ? null : value, lineageOf?.Invoke(key));
+                    key, steam ? value : null, steam ? null : value, lineageOf?.Invoke(key), cardOf?.Invoke(key));
             }).ToList();
 
             var answers = await _api.ForGamesAsync(lookups, ct: ct).ConfigureAwait(false);

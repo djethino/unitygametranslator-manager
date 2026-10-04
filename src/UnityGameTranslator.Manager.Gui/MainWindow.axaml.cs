@@ -857,12 +857,18 @@ public partial class MainWindow : Window
         // ⚠ Read once, here, off the same reports the rows are built from. Asking per game inside
         // the sweep would parse every translation file again on a background thread.
         var lineages = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        // And the card its player confirmed (`game_choice`), from the same reports: the site then
+        // answers for that card rather than for what the folder says (2026-10-05).
+        var cards = new Dictionary<string, long?>(StringComparer.OrdinalIgnoreCase);
         foreach (var game in _games.Where(g => g.IsModdable))
         {
             var key = OnlineCatalogCache.KeyFor(game);
             if (lineages.ContainsKey(key)) continue;
 
-            lineages[key] = _inventory.BuildReport(game).LocalTranslation?.Uuid;
+            var built = _inventory.BuildReport(game);
+            lineages[key] = built.LocalTranslation?.Uuid;
+            cards[key] = built.ConfirmedGame is { Source: GameCandidates.CatalogueSource } chosen
+                         && long.TryParse(chosen.Id, out var card) ? card : null;
         }
 
         _ = Task.Run(async () =>
@@ -881,7 +887,8 @@ public partial class MainWindow : Window
 
                     Status($"Checking community translations... {progress}/{ids.Count}");
                 });
-            }, token, key => lineages.TryGetValue(key, out var uuid) ? uuid : null);
+            }, token, key => lineages.TryGetValue(key, out var uuid) ? uuid : null,
+               key => cards.TryGetValue(key, out var card) ? card : null);
 
             if (!token.IsCancellationRequested)
                 await Dispatcher.UIThread.InvokeAsync(() => Status("Ready."));

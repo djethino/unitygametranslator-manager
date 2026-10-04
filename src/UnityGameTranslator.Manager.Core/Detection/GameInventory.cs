@@ -464,9 +464,17 @@ public sealed class GameInventory
             // ⚠ By the name Unity wrote, as the online cache asks (OnlineCatalogCache.KeyFor): the
             // display name can be a store manifest's or a repack's folder, which no other machine
             // reads — and the mod asks with this one.
-            report.OnlineTranslations = game.SteamAppId is not null
-                ? await _api.SearchBySteamIdAsync(game.SteamAppId, apiToken: _apiToken, ct: ct).ConfigureAwait(false)
-                : await _api.SearchByNameAsync(game.ProductName ?? game.Name, apiToken: _apiToken, ct: ct).ConfigureAwait(false);
+            // 🔴 **The game its player confirmed comes first** (2026-10-05): a card chosen with
+            // Change, or fixed by a publication, is THE game — the Steam id or the name read on
+            // disk can be another game's, which is why it was confirmed.
+            report.OnlineTranslations =
+                report.ConfirmedGame is { Source: Common.GameCandidates.CatalogueSource } chosen && long.TryParse(chosen.Id, out var card)
+                    ? await _api.SearchByCardAsync(card, apiToken: _apiToken, ct: ct).ConfigureAwait(false)
+                : report.ConfirmedGame is { Source: "steam" } steamChosen
+                    ? await _api.SearchBySteamIdAsync(steamChosen.Id, apiToken: _apiToken, ct: ct).ConfigureAwait(false)
+                : game.SteamAppId is not null
+                    ? await _api.SearchBySteamIdAsync(game.SteamAppId, apiToken: _apiToken, ct: ct).ConfigureAwait(false)
+                    : await _api.SearchByNameAsync(game.ProductName ?? game.Name, apiToken: _apiToken, ct: ct).ConfigureAwait(false);
 
             // "No translation exists" and "the search failed" look identical to a user, and
             // only one of them is our problem. Keep them apart.

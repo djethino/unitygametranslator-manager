@@ -129,7 +129,7 @@ internal sealed class GamePickerBlock
         _gameResults = new ListBox
         {
             MaxHeight = 240,
-            ItemTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<CandidateRow>((row, _) => RowOf(row)),
+            ItemTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<CandidateRow?>((row, _) => RowOf(row)),
         };
         Controls.Add(_gameResults);
 
@@ -222,13 +222,16 @@ internal sealed class GamePickerBlock
             return null;
         }
 
-        _gameSearchButton.IsEnabled = false;
+        // Already asking: the same question, not a second one (Busy holds the button meanwhile).
+        if (!_gameSearchButton.IsEnabled) return null;
+
         Ui.Say(_gameSearchStatus, "Searching…");
         _gameResults.ItemsSource = null;
 
-        var found = await _game.Search(query, steamId);
-
-        _gameSearchButton.IsEnabled = true;
+        // The gear on the button, for as long as the site is asked — the automatic search at
+        // opening included, which nobody pressed and which otherwise showed nothing (2026-10-05).
+        IReadOnlyList<CatalogApiClient.GameCandidate>? found = null;
+        await Busy.While(_gameSearchButton, async () => found = await _game.Search(query, steamId));
 
         if (found is null)
         {
@@ -344,8 +347,13 @@ internal sealed class GamePickerBlock
     }
 
     /// <summary>One answer: its cover, then its name with source and mark, then what tells it apart.</summary>
-    private Control RowOf(CandidateRow row)
+    private Control RowOf(CandidateRow? row)
     {
+        // 🔴 **Called with nothing when the list is emptied** — a new search sets the items to
+        // null and the containers are rebuilt empty. Unchecked, the template threw on the UI
+        // thread and the whole program closed without a word (2026-10-05).
+        if (row is null) return new Panel();
+
         var cover = new Image { Width = 30, Height = 42, Stretch = Stretch.UniformToFill, VerticalAlignment = VerticalAlignment.Top };
         var frame = new Border
         {
@@ -391,8 +399,15 @@ internal sealed class GamePickerBlock
         try
         {
             var bytes = await Covers.GetByteArrayAsync(url);
-            using var stream = new System.IO.MemoryStream(bytes);
-            cover.Source = Avalonia.Media.Imaging.Bitmap.DecodeToWidth(stream, 60);
+
+            // Decoded off the UI thread: a list of covers decoded on it is a window that stutters
+            // while the rows appear. Only the result is handed back to the row.
+            var bitmap = await Task.Run(() =>
+            {
+                using var stream = new System.IO.MemoryStream(bytes);
+                return Avalonia.Media.Imaging.Bitmap.DecodeToWidth(stream, 60);
+            });
+            cover.Source = bitmap;
         }
         catch (Exception ex)
         {

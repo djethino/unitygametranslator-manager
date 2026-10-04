@@ -5227,6 +5227,10 @@ public partial class MainWindow : Window
         var standing = ServerIdentity.For(_settings.Current, report.SiteAccount, BuildInfo.ApiBaseUrl);
         var running = _running.IsRunning(report.Game);
 
+        // The site's game search reaches the stores on its own quota and answers a named caller
+        // only: without an account, the list could not be asked — said on the control, not after.
+        var lookups = ApiTokenForLookups;
+
         var change = new Button
         {
             Content = "Change",
@@ -5234,17 +5238,18 @@ public partial class MainWindow : Window
             Padding = new Avalonia.Thickness(8, 2),
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
             Margin = new Avalonia.Thickness(12, 0, 0, 0),
-            IsEnabled = standing.CanWriteLocally && !running,
+            IsEnabled = standing.CanWriteLocally && !running && lookups is not null,
         };
 
         // No greyed control without words.
         ToolTip.SetTip(change, running ? GameWrites.RunningRefusal
             : !standing.CanWriteLocally ? standing.Reason
+            : lookups is null ? "Login required"
             : report.ConfirmedGame is { } chosen ? $"Confirmed: {chosen.Name}" : "Confirm which game this is");
 
         change.Click += async (_, _) =>
         {
-            var token = ApiTokenForLookups;
+            if (lookups is not { } token) return;
             var api = new CatalogApiClient();
             var adultApi = new CatalogApiClient();
             var chosen = await ChooseGameWindow.AskAsync(this, new GameToConfirm(

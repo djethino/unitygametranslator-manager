@@ -460,9 +460,12 @@ public sealed class GameInventory
         {
             step?.Report("Asking UGT Website...");
 
+            // ⚠ By the name Unity wrote, as the online cache asks (OnlineCatalogCache.KeyFor): the
+            // display name can be a store manifest's or a repack's folder, which no other machine
+            // reads — and the mod asks with this one.
             report.OnlineTranslations = game.SteamAppId is not null
                 ? await _api.SearchBySteamIdAsync(game.SteamAppId, apiToken: _apiToken, ct: ct).ConfigureAwait(false)
-                : await _api.SearchByNameAsync(game.Name, apiToken: _apiToken, ct: ct).ConfigureAwait(false);
+                : await _api.SearchByNameAsync(game.ProductName ?? game.Name, apiToken: _apiToken, ct: ct).ConfigureAwait(false);
 
             // "No translation exists" and "the search failed" look identical to a user, and
             // only one of them is our problem. Keep them apart.

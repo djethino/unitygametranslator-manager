@@ -184,6 +184,13 @@ public sealed class GameInstall
     public string? SteamAppId { get; init; }
 
     /// <summary>
+    /// Where <see cref="SteamAppId"/> was read: "appmanifest" (a Steam library's records) or
+    /// "steam_appid.txt" (the game's own file, which travels with any copy). Sent beside it when
+    /// publishing (`game_read.steam_id_from`), the same words the mod uses. Null without an id.
+    /// </summary>
+    public string? SteamAppIdFrom { get; init; }
+
+    /// <summary>
     /// The id the game's own store knows it by, when that store is not Steam — today, Epic's
     /// AppName from its manifest.
     ///

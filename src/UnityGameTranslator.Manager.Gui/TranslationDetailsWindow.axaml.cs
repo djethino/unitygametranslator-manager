@@ -24,11 +24,16 @@ namespace UnityGameTranslator.Manager.Gui;
 /// The "Adults only" box, ticked where the site offered it — this upload adds the game and nobody
 /// classified it (<see cref="AdultMarks"/>). False everywhere else.
 /// </param>
+/// <param name="GamePick">
+/// The site's answer taken, as it was given (`game_pick`) — the site files the translation under
+/// that game, never under a new search of its title. Null when the game was taken as detected.
+/// </param>
 public readonly record struct TranslationDetails(bool Saved, string Notes, string ResourcesUrl,
                                                  bool Finished, bool AcceptsContributions,
                                                  string? SourceLanguage = null,
                                                  string? GameName = null, string? GameSteamId = null,
-                                                 bool AdultDeclared = false);
+                                                 bool AdultDeclared = false,
+                                                 GameCandidates.Pick? GamePick = null);
 
 /// <summary>
 /// The game a first publication has to be filed under, and how to ask the site about it.
@@ -43,13 +48,13 @@ public readonly record struct TranslationDetails(bool Saved, string Notes, strin
 /// <param name="Search">Asks the site: a name, a Steam id, or both. Null when it could not be asked.</param>
 /// <param name="WhyNot">Why the last search could not be asked, for the sentence under the field.</param>
 /// <param name="Adult">
-/// Asks the site whether the confirmed game is for adults only, with the Steam id and name the
-/// upload will send. Null answer: it could not be asked, and the window shows nothing.
+/// Asks the site whether the confirmed game is for adults only, with the Steam id, name and pick
+/// the upload will send. Null answer: it could not be asked, and the window shows nothing.
 /// </param>
 public sealed record GameToConfirm(string? DetectedName, string? DetectedSteamId,
                                    Func<string?, string?, Task<IReadOnlyList<CatalogApiClient.GameCandidate>?>> Search,
                                    Func<string?> WhyNot,
-                                   Func<string?, string?, Task<CatalogApiClient.GameAdult?>> Adult);
+                                   Func<string?, string?, GameCandidates.Pick?, Task<CatalogApiClient.GameAdult?>> Adult);
 
 /// <summary>
 /// The things said ABOUT a translation rather than in it: what it is, where to find the fonts or
@@ -106,8 +111,14 @@ public sealed class TranslationDetailsWindow : Window
     private readonly TextBlock? _gameSearchStatus;
     private readonly ListBox? _gameResults;
 
-    /// <summary>The game confirmed so far: the site's name and id, or the detected ones.</summary>
-    private (string Name, string? SteamId)? _confirmedGame;
+    /// <summary>
+    /// The game confirmed so far: the site's name and id, or the detected ones — and the site's
+    /// answer it came from, sent back as `game_pick` (null when taken as detected).
+    /// </summary>
+    private (string Name, string? SteamId, GameCandidates.Pick? Pick)? _confirmedGame;
+
+    /// <summary>Under the game: "Different game?" when the one confirmed does not look like the one read here.</summary>
+    private readonly TextBlock? _gameWarning;
 
     // The "Adults only" box under the game, and what the site said about the confirmed one — null
     // until it answered about THAT game. The counter drops an answer that arrives after another
@@ -187,6 +198,17 @@ public sealed class TranslationDetailsWindow : Window
             gameRow.Children.Add(_gameState);
             layout.Children.Add(gameRow);
 
+            // Right under the game it is about: the one moment a wrong pick can still be undone.
+            // A warning, never a block — GameCandidates.DifferentGame says why.
+            _gameWarning = new TextBlock
+            {
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                IsVisible = false,
+                Foreground = this.FindResource("StatusWarning") as IBrush,
+            };
+            layout.Children.Add(_gameWarning);
+
             // Under the game it is about, as in the mod's setup screen. Hidden until the site has
             // answered about the confirmed game — see RefreshAdult for the three states.
             _adult = new CheckBox
@@ -205,7 +227,8 @@ public sealed class TranslationDetailsWindow : Window
                 ColumnDefinitions = new ColumnDefinitions("*,Auto"),
                 ColumnSpacing = 8,
             };
-            _gameSearch = new TextBox { Watermark = "Search for a game…" };
+            // The box takes ids and store page links too (GET games/search) — said where it is typed.
+            _gameSearch = new TextBox { Watermark = "Search by title, Steam ID or Steam link" };
             _gameSearchButton = new Button { Content = "Search" };
             Grid.SetColumn(_gameSearch, 0);
             Grid.SetColumn(_gameSearchButton, 1);
@@ -232,7 +255,8 @@ public sealed class TranslationDetailsWindow : Window
             _gameResults.SelectionChanged += (_, _) =>
             {
                 if (_gameResults.SelectedItem is CandidateRow row)
-                    ConfirmGame((row.Candidate.Name ?? game.DetectedName ?? "", row.Candidate.SteamId ?? game.DetectedSteamId));
+                    ConfirmGame((row.Candidate.Name ?? game.DetectedName ?? "", row.Candidate.SteamId ?? game.DetectedSteamId,
+                                 row.Candidate.Pick));
             };
 
             ShowGame(confirmed: false);
@@ -408,8 +432,8 @@ public sealed class TranslationDetailsWindow : Window
             // does not, or could not be asked — the mod falls back the same way on a network
             // error, and the sentence under the field says which of the two happened.
             ConfirmGame(found is { Count: > 0 }
-                ? (found[0].Name ?? game.DetectedName ?? "", found[0].SteamId ?? game.DetectedSteamId)
-                : (game.DetectedName ?? "", game.DetectedSteamId));
+                ? (found[0].Name ?? game.DetectedName ?? "", found[0].SteamId ?? game.DetectedSteamId, found[0].Pick)
+                : (game.DetectedName ?? "", game.DetectedSteamId, null));
             return;
         }
 
@@ -462,9 +486,11 @@ public sealed class TranslationDetailsWindow : Window
             .ToList();
 
         _gameResults.ItemsSource = rows;
-        Ui.Say(_gameSearchStatus, rows.Count == 0
-            ? "No games found"
-            : rows.Count == 1 ? "Found 1 game" : $"Found {rows.Count} games");
+
+        // An empty list says what to try next — the box takes ids and store links too — in the
+        // words the site's own list uses (GameCandidates.NothingFound).
+        if (rows.Count == 0) Ui.Say(_gameSearchStatus, GameCandidates.NothingFound, Tone.Warning);
+        else Ui.Say(_gameSearchStatus, rows.Count == 1 ? "Found 1 game" : $"Found {rows.Count} games");
 
         return found;
     }
@@ -473,16 +499,26 @@ public sealed class TranslationDetailsWindow : Window
     /// The one way the confirmed game changes — the line, the button and the adult question follow
     /// it, so no path can leave the box answering about the previous game.
     /// </summary>
-    private void ConfirmGame((string Name, string? SteamId) game)
+    private void ConfirmGame((string Name, string? SteamId, GameCandidates.Pick? Pick) game)
     {
         _confirmedGame = game;
         ShowGame(confirmed: true);
+
+        // Said before sending, never refused here: the site decides what is sure (a demo reads its
+        // own Steam id), this only shows what does not look alike.
+        if (_gameWarning is not null && _game is not null)
+        {
+            var warning = GameCandidates.DifferentGame(_game.DetectedSteamId, _game.DetectedName, game.SteamId, game.Name);
+            _gameWarning.Text = warning ?? "";
+            _gameWarning.IsVisible = warning is not null;
+        }
+
         Acceptable();
         _ = AskAboutAdultContentAsync(game);
     }
 
-    /// <summary>Ask the site about the confirmed game, with the name and id the upload will send.</summary>
-    private async Task AskAboutAdultContentAsync((string Name, string? SteamId) game)
+    /// <summary>Ask the site about the confirmed game, with the name, id and pick the upload will send.</summary>
+    private async Task AskAboutAdultContentAsync((string Name, string? SteamId, GameCandidates.Pick? Pick) game)
     {
         if (_game is null) return;
 
@@ -490,7 +526,7 @@ public sealed class TranslationDetailsWindow : Window
         _adultAnswer = null;
         RefreshAdult();
 
-        var answer = await _game.Adult(game.SteamId, game.Name);
+        var answer = await _game.Adult(game.SteamId, game.Name, game.Pick);
         if (asked != _adultAsked) return; // another game was confirmed meanwhile
 
         _adultAnswer = answer;
@@ -678,5 +714,6 @@ public sealed class TranslationDetailsWindow : Window
         window._saved ? window._confirmedGame?.Name : null,
         window._saved ? window._confirmedGame?.SteamId : null,
         window._saved && window._adultAnswer is { } adult && AdultMarks.Open(adult.Adult, adult.Declarable)
-            && window._adult?.IsChecked == true);
+            && window._adult?.IsChecked == true,
+        window._saved ? window._confirmedGame?.Pick : null);
 }

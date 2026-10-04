@@ -60,6 +60,7 @@ internal static class Program
         HotkeySettleChecks.WhenTheKeyMovesInTheGame();
         PreferenceFieldsChecks.WhatAGamesAnswersAreFor();
         ForkOriginChecks.WhereTheFileCameFrom();
+        PublishGameChecks.WhatAPublicationSaysAboutItsGame();
         DownloadOriginsChecks.WhereADownloadMayStart();
         DownloadOriginsChecks.WhereADownloadMayLand();
         RateLimitChecks.WhenGitHubSaysWait();

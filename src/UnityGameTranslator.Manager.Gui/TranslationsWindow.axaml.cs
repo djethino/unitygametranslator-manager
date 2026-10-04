@@ -445,9 +445,10 @@ public sealed class TranslationsWindow : Window
         _searching.IsVisible = true;
         _list.Children.Clear();
 
+        // By the name Unity wrote, as the inventory and the online cache ask — not the display name.
         var found = _report.Game.SteamAppId is { } steamId
             ? await _api.SearchBySteamIdAsync(steamId, target, source, ApiToken())
-            : await _api.SearchByNameAsync(_report.Game.Name, target, source, ApiToken());
+            : await _api.SearchByNameAsync(_report.Game.ProductName ?? _report.Game.Name, target, source, ApiToken());
 
         _searching.IsVisible = false;
 

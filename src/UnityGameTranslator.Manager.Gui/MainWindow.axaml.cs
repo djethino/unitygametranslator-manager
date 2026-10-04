@@ -6722,7 +6722,7 @@ public partial class MainWindow : Window
             ? new GameToConfirm(report.Game.ProductName ?? report.Game.Name, report.Game.SteamAppId,
                                 (query, steamId) => api.SearchGamesAsync(query, steamId, token),
                                 () => api.LastError,
-                                (steamId, name) => adultApi.GameAdultAsync(steamId, name, token))
+                                (steamId, name, pick) => adultApi.GameAdultAsync(steamId, name, pick, token))
             : null;
 
         var edited = await TranslationDetailsWindow.PublishAsync(
@@ -6772,7 +6772,15 @@ public partial class MainWindow : Window
                                               // contribution does not decide this for the Main.
                                               acceptsBranches: branchWork ? null : edited.AcceptsContributions,
                                               company: report.Game.CompanyName,
-                                              adultDeclared: edited.AdultDeclared);
+                                              adultDeclared: edited.AdultDeclared,
+                                              // 🔴 The site's answer taken, as it was given — the
+                                              // site files the translation under THAT game.
+                                              pick: edited.GamePick,
+                                              // What this machine read in the game's files: the
+                                              // key other machines resolve the game by comes from
+                                              // here, never from the title picked.
+                                              read: new GameRead(report.Game.ProductName, report.Game.CompanyName,
+                                                                 report.Game.SteamAppId, report.Game.SteamAppIdFrom));
 
         button.IsEnabled = true;
         ScopeMark.SetLabel(button, verb);

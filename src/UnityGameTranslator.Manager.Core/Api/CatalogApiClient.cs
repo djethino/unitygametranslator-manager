@@ -114,9 +114,15 @@ public sealed class CatalogApiClient
     /// ⚠ Ranked by the caller through <see cref="Common.GameCandidates"/>, never here: the order
     /// is the same decision in every product. This only carries what the server said.
     /// </summary>
+    /// <param name="Id">The hit's id IN its source — the card's on "local", IGDB's or RAWG's on those; 0 on a Steam hit, whose id is <paramref name="SteamId"/>.</param>
     /// <param name="Source">Where the site found it: "local" (its own catalogue), "steam", "igdb", "rawg".</param>
-    public sealed record GameCandidate(int Id, string? Name, string? SteamId, string? Source,
-                                       int TranslationsCount);
+    /// <param name="ImageUrl">The cover the site gave for it, or null.</param>
+    public sealed record GameCandidate(long Id, string? Name, string? SteamId, string? Source,
+                                       int TranslationsCount, string? ImageUrl)
+    {
+        /// <summary>What a publication sends back as `game_pick` for this hit — Common.GameCandidates.PickOf.</summary>
+        public Common.GameCandidates.Pick? Pick => Common.GameCandidates.PickOf(Source, Id, SteamId);
+    }
 
     /// <summary>
     /// The games the site offers for a name or a Steam id — its own catalogue first, then the
@@ -161,14 +167,15 @@ public sealed class CatalogApiClient
                 if (game.ValueKind != JsonValueKind.Object) continue;
 
                 found.Add(new GameCandidate(
-                    game.TryGetProperty("id", out var id) && id.TryGetInt32(out var number) ? number : 0,
+                    game.TryGetProperty("id", out var id) && id.TryGetInt64(out var number) ? number : 0,
                     Text(game, "name"),
                     // A number on one source, a string on another: read either way.
                     game.TryGetProperty("steam_id", out var steam)
                         ? steam.ValueKind == JsonValueKind.Number ? steam.GetRawText() : steam.GetString()
                         : null,
                     Text(game, "source"),
-                    game.TryGetProperty("translations_count", out var count) && count.TryGetInt32(out var n) ? n : 0));
+                    game.TryGetProperty("translations_count", out var count) && count.TryGetInt32(out var n) ? n : 0,
+                    Text(game, "image_url")));
             }
 
             return found;
@@ -199,8 +206,8 @@ public sealed class CatalogApiClient
     /// about another game. Null when it could not be asked — the window then shows nothing rather
     /// than a guess. Same token rule as <see cref="SearchGamesAsync"/>: it costs the stores' quota.
     /// </summary>
-    public async Task<GameAdult?> GameAdultAsync(string? steamId, string? gameName, string apiToken,
-                                                 CancellationToken ct = default)
+    public async Task<GameAdult?> GameAdultAsync(string? steamId, string? gameName, Common.GameCandidates.Pick? pick,
+                                                 string apiToken, CancellationToken ct = default)
     {
         LastError = null;
         LastStatus = null;
@@ -208,6 +215,13 @@ public sealed class CatalogApiClient
         var parts = new List<string>();
         if (!string.IsNullOrWhiteSpace(steamId)) parts.Add("steam_id=" + Uri.EscapeDataString(steamId.Trim()));
         if (!string.IsNullOrWhiteSpace(gameName)) parts.Add("game_name=" + Uri.EscapeDataString(gameName.Trim()));
+
+        // The hit the upload will send: the site resolves it exactly as the upload will.
+        if (pick is not null)
+        {
+            parts.Add("game_pick%5Bsource%5D=" + Uri.EscapeDataString(pick.Source));
+            parts.Add("game_pick%5Bid%5D=" + Uri.EscapeDataString(pick.Id));
+        }
         if (parts.Count == 0) return null;
 
         try

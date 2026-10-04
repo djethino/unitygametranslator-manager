@@ -28,6 +28,22 @@ public enum PublishOutcome
 public sealed record PublishedTranslation(int Id, string? FileHash);
 
 /// <summary>
+/// What this machine READ in the game's own files, sent with a publication as `game_read`
+/// (spec/api-v1, UploadBody) and kept by the site on the translation.
+///
+/// 🔴 **Facts, never the game picked.** The site takes the key other machines resolve the game by
+/// from <see cref="ProductName"/> — the title picked is a display name only — and refuses the upload
+/// when a Steam id read here contradicts the pick (`game_mismatch`).
+/// </summary>
+/// <param name="ProductName">`app.info`'s second line — what Unity calls the game.</param>
+/// <param name="CompanyName">`app.info`'s first line.</param>
+/// <param name="SteamId">A Steam app id found on disk.</param>
+/// <param name="SteamIdFrom">Where: "appmanifest" or "steam_appid.txt".</param>
+/// <param name="Engine">The engine, as stores name it: "Unity".</param>
+public sealed record GameRead(string? ProductName, string? CompanyName, string? SteamId,
+                              string? SteamIdFrom, string? Engine = "Unity");
+
+/// <summary>
 /// Where a file stands in its lineage, as the server sees it, before anything is sent.
 /// </summary>
 /// <param name="MainOwner">
@@ -325,11 +341,13 @@ public sealed class TranslationPublisher
                                          bool? acceptsBranches = null,
                                          string? company = null,
                                          bool adultDeclared = false,
+                                         Common.GameCandidates.Pick? pick = null,
+                                         GameRead? read = null,
                                          CancellationToken ct = default)
     {
         LastError = null;
 
-        if (string.IsNullOrWhiteSpace(steamId) && string.IsNullOrWhiteSpace(gameName))
+        if (string.IsNullOrWhiteSpace(steamId) && string.IsNullOrWhiteSpace(gameName) && pick is null)
         {
             LastError = "This game has neither a Steam id nor a name to publish under.";
             return null;
@@ -357,6 +375,28 @@ public sealed class TranslationPublisher
                 // ⚠ Sent whenever the game states one. An older site ignores an unknown field, so
                 // this costs nothing where it is not understood.
                 if (!string.IsNullOrWhiteSpace(company)) writer.WriteString("game_company", company);
+
+                // 🔴 The hit picked, as it was given — the site files the translation under THAT
+                // game and never searches its title again (analyse/identite-des-jeux-parcours.md).
+                if (pick is not null)
+                {
+                    writer.WriteStartObject("game_pick");
+                    writer.WriteString("source", pick.Source);
+                    writer.WriteString("id", pick.Id);
+                    writer.WriteEndObject();
+                }
+
+                // What this machine read in the game's files — facts, kept on the translation.
+                if (read is not null)
+                {
+                    writer.WriteStartObject("game_read");
+                    WriteIfAny(writer, "product_name", read.ProductName);
+                    WriteIfAny(writer, "company_name", read.CompanyName);
+                    WriteIfAny(writer, "steam_id", read.SteamId);
+                    WriteIfAny(writer, "steam_id_from", read.SteamIdFrom);
+                    WriteIfAny(writer, "engine", read.Engine);
+                    writer.WriteEndObject();
+                }
                 writer.WriteString("source_language", sourceLanguage);
                 writer.WriteString("target_language", targetLanguage);
                 writer.WriteString("content", contentJson);
@@ -527,6 +567,12 @@ public sealed class TranslationPublisher
     /// ⚠ Bounded and taken only from known fields: echoing an arbitrary response body into the
     /// interface would put a remote server in charge of what this window says.
     /// </summary>
+    /// <summary>A field written only when there is something in it — absent is "not read".</summary>
+    private static void WriteIfAny(Utf8JsonWriter writer, string name, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value)) writer.WriteString(name, value.Trim());
+    }
+
     private static string Describe(int status, string? body)
     {
         if (!string.IsNullOrWhiteSpace(body))

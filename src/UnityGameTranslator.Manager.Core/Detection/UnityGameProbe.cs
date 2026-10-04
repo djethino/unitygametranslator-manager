@@ -51,6 +51,8 @@ public static partial class UnityGameProbe
             // detected library carry one, and without it they are searched by name, on a title
             // that may not even be in Latin script.
             SteamAppId = steamAppId ?? ReadSteamAppId(folder),
+            SteamAppIdFrom = steamAppId is not null ? "appmanifest"
+                : ReadSteamAppId(folder) is not null ? "steam_appid.txt" : null,
             DataDirectory = dataDir,
             ExecutablePath = executable,
         };

@@ -51,10 +51,15 @@ public readonly record struct TranslationDetails(bool Saved, string Notes, strin
 /// Asks the site whether the confirmed game is for adults only, with the Steam id, name and pick
 /// the upload will send. Null answer: it could not be asked, and the window shows nothing.
 /// </param>
+/// <param name="Confirmed">
+/// The game already confirmed in this game (`config.json`, `game_choice`) — shown as it is, rather
+/// than searched again. Null when none was yet.
+/// </param>
 public sealed record GameToConfirm(string? DetectedName, string? DetectedSteamId,
                                    Func<string?, string?, Task<IReadOnlyList<CatalogApiClient.GameCandidate>?>> Search,
                                    Func<string?> WhyNot,
-                                   Func<string?, string?, GameCandidates.Pick?, Task<CatalogApiClient.GameAdult?>> Adult);
+                                   Func<string?, string?, GameCandidates.Pick?, Task<CatalogApiClient.GameAdult?>> Adult,
+                                   GameChoice? Confirmed = null);
 
 /// <summary>
 /// The things said ABOUT a translation rather than in it: what it is, where to find the fonts or
@@ -102,31 +107,8 @@ public sealed class TranslationDetailsWindow : Window
     /// <summary>The target the picker is judged against. Null when no language is in play.</summary>
     private readonly string? _target;
 
-    // The game block of a first publication. All null when the game is not in question.
-    private readonly GameToConfirm? _game;
-    private readonly TextBlock? _gameName;
-    private readonly TextBlock? _gameState;
-    private readonly TextBox? _gameSearch;
-    private readonly Button? _gameSearchButton;
-    private readonly TextBlock? _gameSearchStatus;
-    private readonly ListBox? _gameResults;
-
-    /// <summary>
-    /// The game confirmed so far: the site's name and id, or the detected ones — and the site's
-    /// answer it came from, sent back as `game_pick` (null when taken as detected).
-    /// </summary>
-    private (string Name, string? SteamId, GameCandidates.Pick? Pick)? _confirmedGame;
-
-    /// <summary>Under the game: "Different game?" when the one confirmed does not look like the one read here.</summary>
-    private readonly TextBlock? _gameWarning;
-
-    // The "Adults only" box under the game, and what the site said about the confirmed one — null
-    // until it answered about THAT game. The counter drops an answer that arrives after another
-    // game was confirmed. Same box, same place and same words as the mod's (Common.AdultMarks).
-    private readonly CheckBox? _adult;
-    private readonly TextBlock? _adultNote;
-    private CatalogApiClient.GameAdult? _adultAnswer;
-    private int _adultAsked;
+    /// <summary>The game block of a first publication (the same one Change opens). Null when the game is not in question.</summary>
+    private readonly GamePickerBlock? _picker;
 
     private bool _saved;
 
@@ -135,7 +117,6 @@ public sealed class TranslationDetailsWindow : Window
                                      bool finished, bool onABranch, bool acceptsContributions,
                                      string confirm, GameToConfirm? game = null)
     {
-        _game = game;
         Title = languages is null ? "Translation details" : "Publish translation";
         Width = 560;
         SizeToContent = SizeToContent.Height;
@@ -176,90 +157,9 @@ public sealed class TranslationDetailsWindow : Window
         {
             layout.Children.Add(Label("Game"));
 
-            var gameRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-            _gameName = new TextBlock
-            {
-                Text = game.DetectedName ?? "No game detected",
-                FontWeight = FontWeight.SemiBold,
-                TextWrapping = TextWrapping.Wrap,
-                VerticalAlignment = VerticalAlignment.Center,
-                Foreground = this.FindResource("TextPrimary") as IBrush,
-            };
-            _gameState = new TextBlock
-            {
-                FontSize = 11,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(12, 0, 0, 0),
-                Foreground = this.FindResource("StatusWarning") as IBrush,
-            };
-            Grid.SetColumn(_gameName, 0);
-            Grid.SetColumn(_gameState, 1);
-            gameRow.Children.Add(_gameName);
-            gameRow.Children.Add(_gameState);
-            layout.Children.Add(gameRow);
-
-            // Right under the game it is about: the one moment a wrong pick can still be undone.
-            // A warning, never a block — GameCandidates.DifferentGame says why.
-            _gameWarning = new TextBlock
-            {
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                IsVisible = false,
-                Foreground = this.FindResource("StatusWarning") as IBrush,
-            };
-            layout.Children.Add(_gameWarning);
-
-            // Under the game it is about, as in the mod's setup screen. Hidden until the site has
-            // answered about the confirmed game — see RefreshAdult for the three states.
-            _adult = new CheckBox
-            {
-                Content = AdultMarks.Box,
-                IsVisible = false,
-                Foreground = this.FindResource("TextPrimary") as IBrush,
-            };
-            layout.Children.Add(_adult);
-            _adultNote = Hint("");
-            _adultNote.IsVisible = false;
-            layout.Children.Add(_adultNote);
-
-            var searchRow = new Grid
-            {
-                ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-                ColumnSpacing = 8,
-            };
-            // The box takes ids and store page links too (GET games/search) — said where it is typed.
-            _gameSearch = new TextBox { Watermark = "Search by title, Steam ID or Steam link" };
-            _gameSearchButton = new Button { Content = "Search" };
-            Grid.SetColumn(_gameSearch, 0);
-            Grid.SetColumn(_gameSearchButton, 1);
-            searchRow.Children.Add(_gameSearch);
-            searchRow.Children.Add(_gameSearchButton);
-            layout.Children.Add(searchRow);
-
-            _gameSearchStatus = Hint("");
-            layout.Children.Add(_gameSearchStatus);
-
-            _gameResults = new ListBox { MaxHeight = 160 };
-            layout.Children.Add(_gameResults);
-
-            layout.Children.Add(Hint(GameCandidates.Legend));
-
-            _gameSearchButton.Click += async (_, _) => await SearchGamesAsync(_gameSearch.Text, null);
-            _gameSearch.KeyDown += async (_, e) =>
-            {
-                if (e.Key == Avalonia.Input.Key.Enter) await SearchGamesAsync(_gameSearch.Text, null);
-            };
-
-            // 🔴 **Highlighting a row IS choosing it here**, unlike the language picker: the list
-            // is short, the rows are answers, and the mod's screen confirms on a single click too.
-            _gameResults.SelectionChanged += (_, _) =>
-            {
-                if (_gameResults.SelectedItem is CandidateRow row)
-                    ConfirmGame((row.Candidate.Name ?? game.DetectedName ?? "", row.Candidate.SteamId ?? game.DetectedSteamId,
-                                 row.Candidate.Pick));
-            };
-
-            ShowGame(confirmed: false);
+            _picker = new GamePickerBlock(game, askAdult: true, requirePick: false,
+                                          key => this.FindResource(key) as IBrush, () => Acceptable());
+            foreach (var control in _picker.Controls) layout.Children.Add(control);
         }
 
         if (languages is { } ask)
@@ -410,182 +310,8 @@ public sealed class TranslationDetailsWindow : Window
         // Then the site is asked about the game, once the window is on screen: by Steam id when
         // there is one, by the detected name otherwise. Posted so the window opens first — a
         // search that fails must not delay it, and its answer redraws the block when it comes.
-        if (game is not null)
-            Avalonia.Threading.Dispatcher.UIThread.Post(async () => await ConfirmDetectedGameAsync(game));
-    }
-
-    /// <summary>
-    /// What the mod's setup screen does on opening: a Steam id is looked up on the site and its
-    /// answer taken as the game, else the detected name is searched and the person picks.
-    ///
-    /// ⚠ A Steam id the site does not know is not a refusal: the game is taken as detected and the
-    /// server creates it on upload, exactly as the mod does. What is never done is taking a NAME
-    /// as confirmed without the person having seen the site's answers.
-    /// </summary>
-    private async Task ConfirmDetectedGameAsync(GameToConfirm game)
-    {
-        if (!string.IsNullOrWhiteSpace(game.DetectedSteamId))
-        {
-            var found = await SearchGamesAsync(null, game.DetectedSteamId);
-
-            // The site's own name and id when it knows the game; what this machine read when it
-            // does not, or could not be asked — the mod falls back the same way on a network
-            // error, and the sentence under the field says which of the two happened.
-            ConfirmGame(found is { Count: > 0 }
-                ? (found[0].Name ?? game.DetectedName ?? "", found[0].SteamId ?? game.DetectedSteamId, found[0].Pick)
-                : (game.DetectedName ?? "", game.DetectedSteamId, null));
-            return;
-        }
-
-        if (!string.IsNullOrWhiteSpace(game.DetectedName) && _gameSearch is not null)
-        {
-            _gameSearch.Text = game.DetectedName;
-            await SearchGamesAsync(game.DetectedName, null);
-        }
-    }
-
-    /// <summary>Asks the site and fills the list, likeliest first. Returns what it answered.</summary>
-    private async Task<IReadOnlyList<CatalogApiClient.GameCandidate>?> SearchGamesAsync(string? query, string? steamId)
-    {
-        if (_game is null || _gameResults is null || _gameSearchStatus is null || _gameSearchButton is null)
-            return null;
-
-        query = query?.Trim();
-        if (steamId is null && (query is null || query.Length < 2))
-        {
-            Ui.Say(_gameSearchStatus, "Enter at least 2 characters", Tone.Warning);
-            return null;
-        }
-
-        _gameSearchButton.IsEnabled = false;
-        Ui.Say(_gameSearchStatus, "Searching…");
-        _gameResults.ItemsSource = null;
-
-        var found = await _game.Search(query, steamId);
-
-        _gameSearchButton.IsEnabled = true;
-
-        if (found is null)
-        {
-            // The reason, then the consequence — and the consequence is only true on a Steam id
-            // lookup (see ConfirmDetectedGameAsync); a name search that fails leaves the person
-            // to try again, so it says nothing it cannot keep.
-            var why = _game.WhyNot() ?? "UGT Website could not be reached.";
-            Ui.Say(_gameSearchStatus, steamId is not null
-                ? why + " The game is taken as detected."
-                : why, Tone.Warning);
-            return null;
-        }
-
-        // Likeliest first — the socle's score, the same order the mod shows.
-        var rows = found
-            .Select(candidate => new CandidateRow(candidate,
-                GameCandidates.Confidence(candidate.SteamId, candidate.Name, candidate.Source,
-                                          _game.DetectedSteamId, _game.DetectedName)))
-            .OrderByDescending(row => row.Confidence)
-            .ToList();
-
-        _gameResults.ItemsSource = rows;
-
-        // An empty list says what to try next — the box takes ids and store links too — in the
-        // words the site's own list uses (GameCandidates.NothingFound).
-        if (rows.Count == 0) Ui.Say(_gameSearchStatus, GameCandidates.NothingFound, Tone.Warning);
-        else Ui.Say(_gameSearchStatus, rows.Count == 1 ? "Found 1 game" : $"Found {rows.Count} games");
-
-        return found;
-    }
-
-    /// <summary>
-    /// The one way the confirmed game changes — the line, the button and the adult question follow
-    /// it, so no path can leave the box answering about the previous game.
-    /// </summary>
-    private void ConfirmGame((string Name, string? SteamId, GameCandidates.Pick? Pick) game)
-    {
-        _confirmedGame = game;
-        ShowGame(confirmed: true);
-
-        // Said before sending, never refused here: the site decides what is sure (a demo reads its
-        // own Steam id), this only shows what does not look alike.
-        if (_gameWarning is not null && _game is not null)
-        {
-            var warning = GameCandidates.DifferentGame(_game.DetectedSteamId, _game.DetectedName, game.SteamId, game.Name);
-            _gameWarning.Text = warning ?? "";
-            _gameWarning.IsVisible = warning is not null;
-        }
-
-        Acceptable();
-        _ = AskAboutAdultContentAsync(game);
-    }
-
-    /// <summary>Ask the site about the confirmed game, with the name, id and pick the upload will send.</summary>
-    private async Task AskAboutAdultContentAsync((string Name, string? SteamId, GameCandidates.Pick? Pick) game)
-    {
-        if (_game is null) return;
-
-        int asked = ++_adultAsked;
-        _adultAnswer = null;
-        RefreshAdult();
-
-        var answer = await _game.Adult(game.SteamId, game.Name, game.Pick);
-        if (asked != _adultAsked) return; // another game was confirmed meanwhile
-
-        _adultAnswer = answer;
-        RefreshAdult();
-    }
-
-    /// <summary>
-    /// The box, from the site's answer — the mod's three states (Common.AdultMarks): classified,
-    /// shown ticked and locked with who says so; not classified and added by this upload, open with
-    /// what ticking it does; anything else, or no answer, nothing at all.
-    ///
-    /// ⚠ Locked and ticked is deliberate here, and not the "ticked then greyed" this program avoids
-    /// elsewhere: the person is being TOLD a fact about the game, and the sentence under it says who
-    /// decided — it is not a choice somebody else made in their place (decided with the owner,
-    /// 2026-09-23).
-    /// </summary>
-    private void RefreshAdult()
-    {
-        if (_adult is null || _adultNote is null) return;
-
-        var answer = _adultAnswer;
-        bool shown = answer is not null && AdultMarks.Shown(answer.Adult, answer.Declarable);
-
-        _adult.IsVisible = shown;
-        _adultNote.IsVisible = shown;
-        if (!shown) return;
-
-        bool open = AdultMarks.Open(answer!.Adult, answer.Declarable);
-        _adult.IsChecked = answer.Adult;
-        _adult.IsEnabled = open;
-        _adultNote.Text = open ? AdultMarks.WhatItDoes : AdultMarks.Source(answer.Source);
-    }
-
-    /// <summary>The game line: its name, and whether it is confirmed or still to confirm.</summary>
-    private void ShowGame(bool confirmed)
-    {
-        if (_gameName is null || _gameState is null || _game is null) return;
-
-        if (confirmed && _confirmedGame is { } picked)
-        {
-            _gameName.Text = picked.Name;
-            _gameName.Foreground = this.FindResource("StatusSuccess") as IBrush;
-            _gameState.Text = "✓ confirmed";
-            _gameState.Foreground = this.FindResource("StatusSuccess") as IBrush;
-            return;
-        }
-
-        var detected = !string.IsNullOrWhiteSpace(_game.DetectedName);
-        _gameName.Text = detected ? _game.DetectedName : "No game detected";
-        _gameName.Foreground = this.FindResource("StatusWarning") as IBrush;
-        _gameState.Text = detected ? "⚠ confirm below" : "- please search";
-        _gameState.Foreground = this.FindResource(detected ? "StatusWarning" : "TextMuted") as IBrush;
-    }
-
-    /// <summary>One answer from the site, as the list shows it.</summary>
-    private sealed record CandidateRow(CatalogApiClient.GameCandidate Candidate, int Confidence)
-    {
-        public override string ToString() =>
-            GameCandidates.Row(Candidate.Name, Candidate.Source, Confidence);
+        if (_picker is not null)
+            Avalonia.Threading.Dispatcher.UIThread.Post(async () => await _picker.StartAsync());
     }
 
     /// <summary>
@@ -601,8 +327,8 @@ public sealed class TranslationDetailsWindow : Window
         string? complaint = null;
 
         // The game first, as the mod's screen judges it: nothing below it can be sent unfiled.
-        if (_game is not null && _confirmedGame is null)
-            complaint = "Please select a game";
+        if (_picker?.Complaint is { } game)
+            complaint = game;
 
         if (complaint is null && _source is not null && _target is not null)
             complaint = PublishLanguages.Complaint(SourceName(), _target);
@@ -711,9 +437,8 @@ public sealed class TranslationDetailsWindow : Window
         window._finished?.IsChecked == true,
         window._contributions?.IsChecked == true,
         window._saved ? window.SourceName() : null,
-        window._saved ? window._confirmedGame?.Name : null,
-        window._saved ? window._confirmedGame?.SteamId : null,
-        window._saved && window._adultAnswer is { } adult && AdultMarks.Open(adult.Adult, adult.Declarable)
-            && window._adult?.IsChecked == true,
-        window._saved ? window._confirmedGame?.Pick : null);
+        window._saved ? window._picker?.Confirmed?.Name : null,
+        window._saved ? window._picker?.Confirmed?.SteamId : null,
+        window._saved && window._picker?.AdultDeclared == true,
+        window._saved ? window._picker?.Confirmed?.Pick : null);
 }

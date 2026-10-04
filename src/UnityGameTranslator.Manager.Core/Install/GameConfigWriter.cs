@@ -1037,6 +1037,54 @@ public sealed class GameConfigWriter
         }
     }
 
+    /// <summary>The game the player confirmed for this installation (common GameChoices, spec/config).</summary>
+    public const string GameChoiceKey = "game_choice";
+
+    /// <summary>
+    /// The game the player confirmed for this installation, or null when none was yet — or when the
+    /// value is not one a publication could send (`game_pick`): an unknown source, an id that is
+    /// not a number. Never throws, like <see cref="Read"/>.
+    ///
+    /// ⚠ Never what the mod DETECTED: that is read again at each launch and kept apart, so a
+    /// detection never writes over a choice made by hand.
+    /// </summary>
+    public static GameChoice? ReadGameChoice(string gamePath, LoaderDescriptor? descriptor)
+    {
+        if (descriptor is null) return null;
+
+        var path = ConfigPath(gamePath, descriptor);
+        if (path is null || !File.Exists(path)) return null;
+
+        try
+        {
+            if (Load(path)[GameChoiceKey] is not JsonObject choice) return null;
+
+            var source = choice["source"]?.GetValue<string>();
+            var id = choice["id"]?.GetValue<string>();
+            var name = choice["name"]?.GetValue<string>();
+
+            return source is "local" or "steam" or "igdb" or "rawg"
+                   && !string.IsNullOrEmpty(id) && id.All(char.IsAsciiDigit)
+                   && !string.IsNullOrWhiteSpace(name)
+                ? new GameChoice(source, id, name)
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Writes the game the player confirmed — and nothing else. Called on the acts that confirm
+    /// one: Change, Switch game, a publication (the game picked), taking a translation from the
+    /// site when nothing was confirmed yet (GameChoices.Adopt). Never on a move made on the site.
+    /// </summary>
+    public ConfigWriteResult WriteGameChoice(string gamePath, LoaderDescriptor descriptor, GameChoice choice) =>
+        ApplyOne(gamePath, descriptor, GameChoiceKey,
+            new JsonObject { ["source"] = choice.Source, ["id"] = choice.Id, ["name"] = choice.Name },
+            "game");
+
     /// <summary>
     /// The key a difference is filed under, spelled as the file has it: "sync.merge_strategy" for
     /// a nested one, the bare name otherwise. One composition, so a screen and this class cannot
@@ -1312,6 +1360,8 @@ public sealed class GameConfigWriter
 
         root[key] = value switch
         {
+            // A structured value written whole (game_choice).
+            JsonNode node => node,
             bool flag => JsonValue.Create(flag),
             string text => JsonValue.Create(text),
             _ => JsonValue.Create(value.ToString()),

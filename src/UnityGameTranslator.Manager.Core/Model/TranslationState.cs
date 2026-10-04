@@ -272,6 +272,28 @@ public sealed class OnlineTranslation
 
         return $"{langs} by {Author ?? "unknown"} ({string.Join(", ", details)})";
     }
+
+    /// <summary>The game this translation is filed under on the site, as the listing names it.</summary>
+    [JsonPropertyName("game")] public OnlineGame? Game { get; set; }
+
+    /// <summary>
+    /// That game in the socle's terms — what the game confirmed here is compared with
+    /// (common GameChoices). Null when the listing did not name it.
+    /// </summary>
+    public LineageGame? LineageGame =>
+        Game is { Id: > 0, Name: { Length: > 0 } name } game
+            ? new LineageGame(game.Id, name, game.SteamId, game.IgdbId, game.RawgId)
+            : null;
+}
+
+/// <summary>A listed translation's game (`game` in every listing row).</summary>
+public sealed class OnlineGame
+{
+    [JsonPropertyName("id")] public long Id { get; set; }
+    [JsonPropertyName("name")] public string? Name { get; set; }
+    [JsonPropertyName("steam_id")] public string? SteamId { get; set; }
+    [JsonPropertyName("igdb_id")] public long? IgdbId { get; set; }
+    [JsonPropertyName("rawg_id")] public long? RawgId { get; set; }
 }
 
 /// <summary>
@@ -545,6 +567,20 @@ public sealed class GameReport
     public required GameInstall Game { get; init; }
     public DetectedLoader? InstalledLoader { get; set; }
     public LocalTranslation? LocalTranslation { get; set; }
+
+    /// <summary>
+    /// The game the player confirmed for this installation (`config.json`, `game_choice`), or null
+    /// when none was yet. Compared with the game the installed translation is filed under on the
+    /// site (<see cref="GameDiffersOnTheSite"/>).
+    /// </summary>
+    public GameChoice? ConfirmedGame { get; set; }
+
+    /// <summary>
+    /// The line under the game's name when the site files the installed translation under another
+    /// game than the one confirmed here — or null. A move made on the site is never followed in
+    /// silence (common GameChoices); the line offers Switch game.
+    /// </summary>
+    public string? GameDiffersOnTheSite => GameChoices.Banner(ConfirmedGame, MatchingOnline?.LineageGame);
 
     /// <summary>
     /// The text systems UGT Mod recorded this game SHOWING (texts-seen.json). Null when nothing is

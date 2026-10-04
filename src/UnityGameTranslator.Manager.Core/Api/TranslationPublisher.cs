@@ -106,8 +106,16 @@ public sealed record LineageStanding(PublishOutcome Outcome, string? MainOwner,
                                      int? RowId = null, bool? AcceptsBranches = null,
                                      bool BranchFrozen = false,
                                      bool? MainMissing = null, bool? MainAbandoned = null,
-                                     string? SourceLanguage = null, string? TargetLanguage = null)
+                                     string? SourceLanguage = null, string? TargetLanguage = null,
+                                     LineageGame? Game = null, bool? GameSwitchPending = null)
 {
+    /// <summary>
+    /// The wall a contribution meets when the lineage is filed under another game than the one
+    /// confirmed in this game (its Main moved) — the socle's rule (Uploads.GameWall), or null.
+    /// </summary>
+    public string? GameWall(GameChoice? confirmed) =>
+        Uploads.GameWall(Act, OnABranch, confirmed, Game)?.Whole;
+
     /// <summary>Whether this account has a row here at all — the thing details can be edited on.</summary>
     public bool HasARowOfItsOwn => Outcome == PublishOutcome.UpdateMine;
 
@@ -263,7 +271,12 @@ public sealed class TranslationPublisher
                     // The pair this row was published under. A branch's is its Main's — the
                     // server made it inherit — so reading our own row answers for both.
                     SourceLanguage: has ? Text(mine, "source_language") : null,
-                    TargetLanguage: has ? Text(mine, "target_language") : null);
+                    TargetLanguage: has ? Text(mine, "target_language") : null,
+
+                    // The game the lineage is filed under, and whether this branch is held since
+                    // its Main moved. Null on a server that predates them.
+                    Game: GameOf(root),
+                    GameSwitchPending: Flag(root, "game_switch_pending"));
             }
 
             // Somebody else's lineage: we would be contributing to it — if they take contributions.
@@ -281,7 +294,8 @@ public sealed class TranslationPublisher
                                            // A contribution inherits the Main's pair on arrival,
                                            // so this is what the sender is told, before sending.
                                            SourceLanguage: Text(main, "source_language"),
-                                           TargetLanguage: Text(main, "target_language"));
+                                           TargetLanguage: Text(main, "target_language"),
+                                           Game: GameOf(root));
 
             // Exists without either shape: unknown to us, and inventing a reading would be worse
             // than saying so.
@@ -629,4 +643,17 @@ public sealed class TranslationPublisher
                 _ => (bool?) null,
             }
             : null;
+
+    /// <summary>The lineage's game (`game`), or null when the server did not say.</summary>
+    private static LineageGame? GameOf(JsonElement root)
+    {
+        if (!root.TryGetProperty("game", out var game) || game.ValueKind != JsonValueKind.Object) return null;
+        if (!game.TryGetProperty("id", out var id) || !id.TryGetInt64(out var cardId)) return null;
+        if (Text(game, "name") is not { } name) return null;
+
+        long? Number(string key) =>
+            game.TryGetProperty(key, out var value) && value.TryGetInt64(out var number) ? number : null;
+
+        return new LineageGame(cardId, name, Text(game, "steam_id"), Number("igdb_id"), Number("rawg_id"));
+    }
 }

@@ -5091,7 +5091,19 @@ public partial class MainWindow : Window
             });
         }
 
-        text.Children.Add(title);
+        // The name, and beside it the one act that says which game this is (GameIdentityAct): the
+        // eye checks the name before anything else on the card, so that is where it is corrected.
+        var titleLine = new DockPanel();
+        if (GameIdentityAct(report) is { } identityAct)
+        {
+            DockPanel.SetDock(identityAct, Dock.Right);
+            titleLine.Children.Add(identityAct);
+        }
+        titleLine.Children.Add(title);
+        text.Children.Add(titleLine);
+
+        // Right under the name, when the site files this game's translation under another game.
+        if (GameDiffersBanner(report) is { } differs) text.Children.Add(differs);
 
         text.Children.Add(FolderRow(game.Path, "the game"));
 
@@ -5165,6 +5177,166 @@ public partial class MainWindow : Window
         }
 
         return grid;
+    }
+
+    /// <summary>
+    /// Beside the game's name: the act that says which game this is (user, 2026-10-05) — or null.
+    ///
+    /// · no translation of the site installed → <b>Change</b>: the publication's own game block
+    ///   (<see cref="ChooseGameWindow"/>); what it confirms is kept in the game (`game_choice`),
+    ///   sent by the first publication and searched with by Community;
+    /// · a translation of the site installed → the site decides its game: a link to its page for
+    ///   the owner of the Main, nothing for anybody else (a branch follows its Main, a download is
+    ///   not ours to file);
+    /// · offline, or no mod in this game (nowhere to keep it) → nothing.
+    ///
+    /// ⚠ Greyed with the reason on a game signed in as another account, or while it runs: the
+    /// Manager writes nothing into those (CLAUDE.md, "never writes into a game signed in as
+    /// somebody else").
+    /// </summary>
+    private Control? GameIdentityAct(GameReport report)
+    {
+        if (!_settings.Current.OnlineMode) return null;
+
+        if (report.MatchingOnline is { } published)
+        {
+            if (report.MyPosition is not { IsMain: true }) return null;
+
+            var site = new Button
+            {
+                Content = "Change on website",
+                FontSize = 11,
+                Padding = new Avalonia.Thickness(8, 2),
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                Margin = new Avalonia.Thickness(12, 0, 0, 0),
+            };
+            ToolTip.SetTip(site, "The website moves the translation and its contributions to another game.");
+            site.Click += (_, _) => OpenUrl($"{BuildInfo.WebsiteBaseUrl}/translations/{published.Id}/edit");
+            return site;
+        }
+
+        if (InstalledDescriptor(report) is not { } descriptor) return null;
+
+        var standing = ServerIdentity.For(_settings.Current, report.SiteAccount, BuildInfo.ApiBaseUrl);
+        var running = _running.IsRunning(report.Game);
+
+        var change = new Button
+        {
+            Content = "Change",
+            FontSize = 11,
+            Padding = new Avalonia.Thickness(8, 2),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Margin = new Avalonia.Thickness(12, 0, 0, 0),
+            IsEnabled = standing.CanWriteLocally && !running,
+        };
+
+        // No greyed control without words.
+        ToolTip.SetTip(change, running ? GameWrites.RunningRefusal
+            : !standing.CanWriteLocally ? standing.Reason
+            : report.ConfirmedGame is { } chosen ? $"Confirmed: {chosen.Name}" : "Confirm which game this is");
+
+        change.Click += async (_, _) =>
+        {
+            var token = ApiTokenForLookups;
+            var api = new CatalogApiClient();
+            var adultApi = new CatalogApiClient();
+            var chosen = await ChooseGameWindow.AskAsync(this, new GameToConfirm(
+                report.Game.ProductName ?? report.Game.Name, report.Game.SteamAppId,
+                (query, steamId) => api.SearchGamesAsync(query, steamId, token),
+                () => api.LastError,
+                (steamId, name, pick) => adultApi.GameAdultAsync(steamId, name, pick, token),
+                report.ConfirmedGame));
+
+            if (chosen is null) return;
+
+            var written = new GameConfigWriter(_platform).WriteGameChoice(report.Game.Path, descriptor, chosen);
+            if (!written.Written)
+            {
+                await ConfirmationWindow.TellAsync(this, "The game could not be saved", written.Failure ?? "");
+                return;
+            }
+
+            // An act on the card shown: redrawn in place (manager-ui.md §3).
+            await ShowSelectedAsync();
+        };
+
+        return change;
+    }
+
+    /// <summary>
+    /// The line under the game's name when the site files its translation under another game than
+    /// the one confirmed here — one sentence, one act (user, 2026-10-05).
+    ///
+    /// 🔴 **A move made on the site is never followed in silence**: the line stays until Switch
+    /// game is confirmed, and nothing else changes meanwhile. Small and quiet on purpose — a remark
+    /// under the title, never a second title: smaller text than the name, the button on the same
+    /// row, the warning tone of this program's banners (OtherCopyBanner) at a smaller size.
+    /// </summary>
+    private Control? GameDiffersBanner(GameReport report)
+    {
+        if (report.GameDiffersOnTheSite is not { } said || report.MatchingOnline?.LineageGame is not { } siteGame)
+            return null;
+
+        var descriptor = InstalledDescriptor(report);
+        var standing = ServerIdentity.For(_settings.Current, report.SiteAccount, BuildInfo.ApiBaseUrl);
+        var running = _running.IsRunning(report.Game);
+
+        var switchGame = new Button
+        {
+            Content = GameChoices.SwitchVerb,
+            FontSize = 11,
+            Padding = new Avalonia.Thickness(8, 2),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Margin = new Avalonia.Thickness(10, 0, 0, 0),
+            IsEnabled = descriptor is not null && standing.CanWriteLocally && !running,
+        };
+
+        if (!switchGame.IsEnabled)
+            ToolTip.SetTip(switchGame, running ? GameWrites.RunningRefusal : standing.Reason);
+
+        switchGame.Click += async (_, _) =>
+        {
+            if (descriptor is null) return;
+
+            if (!await ConfirmationWindow.AskAsync(this, GameChoices.ConfirmTitle,
+                    GameChoices.ConfirmBody(siteGame.Name), GameChoices.ConfirmVerb))
+                return;
+
+            var written = new GameConfigWriter(_platform).WriteGameChoice(report.Game.Path, descriptor, GameChoices.Of(siteGame));
+            if (!written.Written)
+            {
+                await ConfirmationWindow.TellAsync(this, "The game could not be saved", written.Failure ?? "");
+                return;
+            }
+
+            await ShowSelectedAsync();
+        };
+
+        var line = new TextBlock
+        {
+            Text = said,
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Foreground = Brush("TextPrimary"),
+        };
+
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        Grid.SetColumn(line, 0);
+        Grid.SetColumn(switchGame, 1);
+        row.Children.Add(line);
+        row.Children.Add(switchGame);
+
+        return new Border
+        {
+            Background = Brush(Tones.BannerBackground(Tone.Warning)),
+            BorderBrush = Brush(Tones.Edge(Tone.Warning)),
+            BorderThickness = new Avalonia.Thickness(1),
+            CornerRadius = new Avalonia.CornerRadius(6),
+            Padding = new Avalonia.Thickness(10, 5),
+            Margin = new Avalonia.Thickness(0, 4, 0, 2),
+            Child = row,
+        };
     }
 
     /// <summary>
@@ -6670,6 +6842,17 @@ public partial class MainWindow : Window
             return;
         }
 
+        // 🔴 **A branch follows its Main's game** (user, 2026-10-05): when the lineage is filed
+        // under another game than the one confirmed in this game, the update waits for Switch game
+        // — the site would refuse it (`game_changed`). The socle's wall, said before the work is
+        // sent; the line under the game's name on the card offers the switch.
+        var confirmedGame = GameConfigWriter.ReadGameChoice(report.Game.Path, descriptor);
+        if (lineage.GameWall(confirmedGame) is { } gameWall)
+        {
+            await ConfirmationWindow.TellAsync(this, "Switch game first", gameWall);
+            return;
+        }
+
         // 🔴 **Whether it is finished is the author's own word**, and it is asked here because it
         // belongs to the same act. The site has offered it from the start and the mod now does;
         // this window was the only one of the three that could not say it.
@@ -6722,7 +6905,9 @@ public partial class MainWindow : Window
             ? new GameToConfirm(report.Game.ProductName ?? report.Game.Name, report.Game.SteamAppId,
                                 (query, steamId) => api.SearchGamesAsync(query, steamId, token),
                                 () => api.LastError,
-                                (steamId, name, pick) => adultApi.GameAdultAsync(steamId, name, pick, token))
+                                (steamId, name, pick) => adultApi.GameAdultAsync(steamId, name, pick, token),
+                                // The game confirmed with Change before publishing: shown as it is.
+                                confirmedGame)
             : null;
 
         var edited = await TranslationDetailsWindow.PublishAsync(
@@ -6774,8 +6959,10 @@ public partial class MainWindow : Window
                                               company: report.Game.CompanyName,
                                               adultDeclared: edited.AdultDeclared,
                                               // 🔴 The site's answer taken, as it was given — the
-                                              // site files the translation under THAT game.
-                                              pick: edited.GamePick,
+                                              // site files the translation under THAT game. On an
+                                              // update, the game confirmed in this game: the site
+                                              // holds a branch to its Main's game with it.
+                                              pick: edited.GamePick ?? confirmedGame?.AsPick(),
                                               // What this machine read in the game's files: the
                                               // key other machines resolve the game by comes from
                                               // here, never from the title picked.
@@ -6806,6 +6993,16 @@ public partial class MainWindow : Window
         // on prompting without a source for every line it translates in this game, and strict
         // source language would have nothing to enforce, until a launch signed in fetched it back.
         if (ask.SourceIsAsked) WriteSourceLanguage(report, descriptor, source);
+
+        // 🔴 **The game is fixed by the publication** (user, 2026-10-05: "la publication, ça répond
+        // normalement à toutes tes questions"): the game picked on a first one becomes this game's
+        // confirmed game; on an update with nothing confirmed yet, the lineage's game is taken as it
+        // stands (GameChoices.Adopt). A choice already confirmed is never replaced here.
+        var fixedGame = edited.GamePick is { } picked && !string.IsNullOrWhiteSpace(edited.GameName)
+            ? new GameChoice(picked.Source, picked.Id, edited.GameName!)
+            : GameChoices.Adopt(confirmedGame, lineage.Game);
+        if (fixedGame is not null && fixedGame != confirmedGame)
+            new GameConfigWriter(_platform).WriteGameChoice(report.Game.Path, descriptor, fixedGame);
 
         var sent = branchWork
             ? "Your contribution is updated. It is waiting for the Main's owner to review it."
@@ -12413,6 +12610,14 @@ public partial class MainWindow : Window
         // game, which is what the field states. Choosing one is a separate, pending answer — see
         // _pendingTranslation.
         SaveAnswer(report.Game.Path, stored => stored.InstalledTranslationId = translation.Id);
+
+        // 🔴 **Taking a translation from the site fixes the game when nothing did yet** (user,
+        // 2026-10-05: "si un jeu est téléchargé, il a été publié"): it is filed under a game, and
+        // choosing it for this one says that is the game. A game already confirmed here is never
+        // replaced — a difference is asked about on the card (GameChoices.Adopt).
+        var confirmed = GameConfigWriter.ReadGameChoice(report.Game.Path, loader);
+        if (confirmed is null && GameChoices.Adopt(null, translation.LineageGame) is { } taken)
+            new GameConfigWriter(_platform).WriteGameChoice(report.Game.Path, loader, taken);
 
         // The intention has been carried out, so it stops being pending. Cleared on success only:
         // a failed install leaves the choice standing, which is what somebody would expect.

@@ -195,6 +195,47 @@ internal static class ConfigContractChecks
     }
 
     /// <summary>
+    /// The game confirmed for an installation (`game_choice`, common GameChoices) is written alone,
+    /// read back as it was written, and anything a publication could not send reads as nothing.
+    /// </summary>
+    internal static void TheConfirmedGameRoundTrips()
+    {
+        Program.Section("config.json: the game confirmed here");
+
+        var descriptor = new LoaderDescriptor { Id = "bepinex5", UserDataDir = "BepInEx/plugins/UnityGameTranslator" };
+        var gamePath = Path.Combine(Path.GetTempPath(), "ugt-config-game-" + Guid.NewGuid().ToString("N"));
+        var folder = Path.Combine(gamePath, "BepInEx", "plugins", "UnityGameTranslator");
+        var file = Path.Combine(folder, LocalTranslationProbe.ConfigFileName);
+
+        try
+        {
+            Directory.CreateDirectory(folder);
+            File.WriteAllText(file, "{\"target_language\":\"French\",\"game_choice\":null}");
+
+            Program.Check(GameConfigWriter.ReadGameChoice(gamePath, descriptor) is null,
+                "nothing confirmed reads as nothing", "the fresh file the mod writes says null");
+
+            var written = new GameConfigWriter(null).WriteGameChoice(gamePath, descriptor,
+                new GameChoice("steam", "500", "Lost Echo"));
+            var back = GameConfigWriter.ReadGameChoice(gamePath, descriptor);
+
+            Program.Check(written.Written && back is { Source: "steam", Id: "500", Name: "Lost Echo" },
+                "the game confirmed reads back as it was written", "Change, Switch game and a publication write it");
+
+            Program.Check(JsonNode.Parse(File.ReadAllText(file))![GameConfigWriter.TargetLanguageKey]?.GetValue<string>() == "French",
+                "writing it leaves every other setting as the game has it", "one key, one act");
+
+            File.WriteAllText(file, "{\"game_choice\":{\"source\":\"itch\",\"id\":\"7\",\"name\":\"X\"}}");
+            Program.Check(GameConfigWriter.ReadGameChoice(gamePath, descriptor) is null,
+                "a choice a publication could not send reads as nothing", "an unknown source is not a game_pick");
+        }
+        finally
+        {
+            try { Directory.Delete(gamePath, recursive: true); } catch { /* a temp folder left behind proves nothing */ }
+        }
+    }
+
+    /// <summary>
     /// The source language reaches a game only as a person declared it for THAT game — never from
     /// Mod defaults, which cannot know it (analyse/manager-reglages-avances.md, part A).
     /// </summary>

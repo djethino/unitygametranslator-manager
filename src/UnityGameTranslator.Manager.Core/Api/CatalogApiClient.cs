@@ -198,7 +198,12 @@ public sealed class CatalogApiClient
     /// <param name="Known">A card already answers: the upload lands on it and creates nothing.</param>
     /// <param name="Source">Who says so — steam, igdb, contributor, admin — or null.</param>
     /// <param name="Declarable">The box is offered: the upload adds the game and nobody classified it.</param>
-    public sealed record GameAdult(bool Known, bool Adult, string? Source, bool Declarable);
+    /// <param name="Identified">
+    /// False when no card answers and no store describes the game: the upload would be refused, so
+    /// the screen says it before sending (GameChoices.NotIdentified). Null on a site that predates
+    /// the field — not asked, never "no".
+    /// </param>
+    public sealed record GameAdult(bool Known, bool Adult, string? Source, bool Declarable, bool? Identified = null);
 
     /// <summary>
     /// Ask the site about the game a first publication names, with the SAME two fields the upload
@@ -239,7 +244,8 @@ public sealed class CatalogApiClient
                 Flag(root, "known") == true,
                 Flag(root, "adult") == true,
                 Text(root, "source"),
-                Flag(root, "declarable") == true);
+                Flag(root, "declarable") == true,
+                Flag(root, "identified"));
         }
         catch (Exception ex)
         {

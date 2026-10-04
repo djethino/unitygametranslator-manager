@@ -358,6 +358,7 @@ public sealed class GameInventory
 
             report.TextsSeen = TextSystemsProbe.ReadSeen(game.Path, descriptor);
             report.SiteAccount = LocalTranslationProbe.ReadSiteAccount(game.Path, descriptor);
+            report.ConfirmedGame = Install.GameConfigWriter.ReadGameChoice(game.Path, descriptor);
             report.DismissedNotices = LocalTranslationProbe.ReadDismissedNotices(game.Path, descriptor);
             report.LoaderStanding = ReadLoaderStanding(report);
             report.PluginStanding = HeldPluginStanding(report);

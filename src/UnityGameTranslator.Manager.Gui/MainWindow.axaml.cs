@@ -453,13 +453,6 @@ public partial class MainWindow : Window
 
         switch (result.State)
         {
-            // This file already holds it: the overview's banner offers Update installed copy, from
-            // this file, and a second door here would download what is on disk (InstalledCopy).
-            case SelfUpdateState.Available when result.Offer is not null
-                                                && InstalledCopy.HoldsOffer(new SelfInstaller(_platform), result.Offer):
-                UpdateSlot.Content = null;
-                break;
-
             // Which copy is behind — this one, the installed one, or both — is named (InstalledCopy).
             case SelfUpdateState.Available when result.Offer is not null:
             case SelfUpdateState.UpToDate:

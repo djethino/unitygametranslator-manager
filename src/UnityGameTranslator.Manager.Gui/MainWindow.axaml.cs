@@ -4062,7 +4062,7 @@ public partial class MainWindow : Window
                     TextWrapping = TextWrapping.Wrap,
                     Foreground = Brush("TextSecondary"),
                 }
-                : TranslationLanguages(report, after: "· " + detail));
+                : WithSiteLink(TranslationLanguages(report, after: "· " + detail), report));
 
             // What it is made of, whose it is, and what can be done with it — the three questions
             // this tab exists for, and none of them was answered here.
@@ -6017,8 +6017,8 @@ public partial class MainWindow : Window
                     FontSize = 12,
                     Foreground = Brush("TextSecondary"),
                 }
-                : TranslationLanguages(report, before: "On this computer:",
-                                               after: $"· {count}{unsynced}"));
+                : WithSiteLink(TranslationLanguages(report, before: "On this computer:",
+                                                            after: $"· {count}{unsynced}"), report));
 
             // What the file is actually made of, drawn by the same bar as every community entry.
             //
@@ -7269,6 +7269,39 @@ public partial class MainWindow : Window
     /// </summary>
     /// <param name="before">What the pair is, when the card needs saying — "On this machine:".</param>
     /// <param name="after">The size of the file, in the words the card around it already uses.</param>
+    /// <summary>
+    /// A translation's line with "View on website" at its right end (2026-10-05) — the mod's card
+    /// carries the same button on the same line. Only for a file the site knows: the account's own
+    /// row in the lineage, else the published one this file matches.
+    ///
+    /// ⚠ The site picks the page by who is signed in in the BROWSER — My translations on its row for
+    /// its author, its page for anybody else (website TranslationController::open): the account
+    /// here may not be the browser's, so the page is not chosen here.
+    /// </summary>
+    private Control WithSiteLink(Control line, GameReport report)
+    {
+        int? siteId = report.MyPosition is { SiteId: > 0 } mine ? mine.SiteId : report.MatchingOnline?.Id;
+        if (siteId is not > 0) return line;
+
+        var site = new Button
+        {
+            Content = "View on website",
+            FontSize = 11,
+            Padding = new Avalonia.Thickness(8, 2),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Avalonia.Thickness(12, 0, 0, 0),
+        };
+        ToolTip.SetTip(site, "Opens this translation on the website: in My translations when it is yours, otherwise its page.");
+        site.Click += (_, _) => OpenUrl($"{BuildInfo.WebsiteBaseUrl}/translations/{siteId}");
+
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        Grid.SetColumn(line, 0);
+        Grid.SetColumn(site, 1);
+        row.Children.Add(line);
+        row.Children.Add(site);
+        return row;
+    }
+
     private Control TranslationLanguages(GameReport report, string? before = null,
                                          string? after = null)
     {

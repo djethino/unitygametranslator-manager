@@ -60,10 +60,24 @@ public static class TranslationBadges
     /// on the site (Common.GameChoices.IdentityBadge, the mod's title wears the same). Null when
     /// there is nothing to say.
     /// </summary>
-    public static Control? GameIdentity(bool hasName, bool confirmed, bool onTheSite)
+    /// <remarks>On the card's title only — not on the list's rows (user, 2026-10-05: "ça fait trop chargé").</remarks>
+    public static Avalonia.Controls.Documents.Inline? GameIdentity(bool hasName, bool confirmed, bool onTheSite)
     {
-        // The strip's own chip, the size the mod draws it on its title too.
-        return GameChoices.IdentityBadge(hasName, confirmed, onTheSite) is { } badge ? Chip(badge) : null;
+        if (GameChoices.IdentityBadge(hasName, confirmed, onTheSite) is not { } badge) return null;
+
+        // The strip's own chip, the size the mod draws on its title too.
+        var chip = Chip(badge);
+        chip.Margin = new Avalonia.Thickness(6, 0, 0, 0);
+
+        // 🔴 Raised like an exponent by a RENDER transform, inside the line: aligned to the line's
+        // top instead, the chip left the text's line box and the title cut its upper half off
+        // (2026-10-05). A render transform moves pixels only — the line keeps its height.
+        chip.RenderTransform = new Avalonia.Media.TranslateTransform(0, -6);
+
+        return new Avalonia.Controls.Documents.InlineUIContainer(chip)
+        {
+            BaselineAlignment = Avalonia.Media.BaselineAlignment.Center,
+        };
     }
 
     private static Control Strip(System.Collections.Generic.List<Badge> badges)

@@ -1002,7 +1002,6 @@ public partial class MainWindow : Window
         _mine.Clear();
         _accounts.Clear();
         _confirmedNames.Clear();
-        _onTheSite.Clear();
 
         // Where the time goes, per step — see UiStalls. A freeze here was measured once and fixed
         // (2026-09-19), then came back unnoticed (2026-09-27): the breakdown stays.
@@ -1020,19 +1019,18 @@ public partial class MainWindow : Window
         // recording below touches the window's collections. A pass went from ~400 ms to what the
         // slowest few games cost, and the start of the tool runs five of them.
         var games = _games.ToArray();
-        var read = new (GameSituationInfo Situation, bool Mine, (string? User, string? Server) Account, PlayState Play, string? Confirmed, bool OnTheSite)[games.Length];
+        var read = new (GameSituationInfo Situation, bool Mine, (string? User, string? Server) Account, PlayState Play, string? Confirmed)[games.Length];
         Parallel.For(0, games.Length, i => read[i] = ReadSituation(games[i]));
 
         for (var i = 0; i < games.Length; i++)
         {
-            var (situation, mine, account, play, confirmed, onTheSite) = read[i];
+            var (situation, mine, account, play, confirmed) = read[i];
             var path = games[i].Path;
             _situations[path] = situation;
             _playStates[path] = play;
             if (mine) _mine.Add(path);
             if (account.User is not null) _accounts[path] = account;
             if (confirmed is not null) _confirmedNames[path] = confirmed;
-            if (onTheSite) _onTheSite.Add(path);
         }
 
         UiStalls.Note(clock.ElapsedMilliseconds,
@@ -1058,7 +1056,7 @@ public partial class MainWindow : Window
     /// down where doing so is safe. Reaching into that set from here was a race with a full
     /// recompute — rare, and the kind that corrupts a collection rather than failing cleanly.
     /// </summary>
-    private (GameSituationInfo Situation, bool Mine, (string? User, string? Server) Account, PlayState Play, string? Confirmed, bool OnTheSite)
+    private (GameSituationInfo Situation, bool Mine, (string? User, string? Server) Account, PlayState Play, string? Confirmed)
         ReadSituation(GameInstall game)
     {
         // 🔴 **The same report the card is built from — there is no longer a second builder.**
@@ -1098,8 +1096,7 @@ public partial class MainWindow : Window
         System.Threading.Interlocked.Add(ref _readPlay, (long)((t3 - t2) * ms));
 
         // All RETURNED rather than recorded, for the reason given above this method.
-        return (situation, report.MyPosition is not null, report.SiteAccount, play, report.ConfirmedGame?.Name,
-                OnTheSite(report));
+        return (situation, report.MyPosition is not null, report.SiteAccount, play, report.ConfirmedGame?.Name);
     }
 
     /// <summary>
@@ -1997,7 +1994,7 @@ public partial class MainWindow : Window
         // row says nothing new.
         if (SettleSetupWay(game)) redraw = true;
 
-        var (now, mine, account, play, confirmed, onTheSite) = await Task.Run(() => ReadSituation(game));
+        var (now, mine, account, play, confirmed) = await Task.Run(() => ReadSituation(game));
 
         _situations[game.Path] = now;
         _playStates[game.Path] = play;
@@ -2009,8 +2006,6 @@ public partial class MainWindow : Window
         else _accounts.Remove(game.Path);
         if (confirmed is not null) _confirmedNames[game.Path] = confirmed;
         else _confirmedNames.Remove(game.Path);
-        if (onTheSite) _onTheSite.Add(game.Path);
-        else _onTheSite.Remove(game.Path);
         _watchedStamps[game.Path] = TranslationFileStamp(game);
 
         var facts = FactsFor(game);
@@ -2091,8 +2086,7 @@ public partial class MainWindow : Window
         (string? User, string? Server) Account,
         ServerStandingKind Standing,
         PlayState? Play = null,
-        string? Confirmed = null,
-        bool OnTheSite = false);
+        string? Confirmed = null);
 
     /// <summary>
     /// The game each installation's player confirmed, by path — its name is the game's name
@@ -2100,10 +2094,6 @@ public partial class MainWindow : Window
     /// a changé ?"), the detected one beside it on the card when they differ.
     /// </summary>
     private readonly Dictionary<string, string> _confirmedNames = new(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>The games whose translation is on the site (<see cref="OnTheSite"/>): their title wears no identity chip.</summary>
-    private readonly HashSet<string> _onTheSite = new(StringComparer.OrdinalIgnoreCase);
-
     /// <summary>The name a game is shown under: the one confirmed for it, else the one detected.</summary>
     private string ShownName(GameInstall game) =>
         _confirmedNames.TryGetValue(game.Path, out var confirmed) ? confirmed : game.Name;
@@ -2195,8 +2185,7 @@ public partial class MainWindow : Window
             account,
             ServerIdentity.For(_settings.Current, account, BuildInfo.ApiBaseUrl).Kind,
             _playStates.TryGetValue(game.Path, out var play) ? play : null,
-            _confirmedNames.TryGetValue(game.Path, out var confirmed) ? confirmed : null,
-            _onTheSite.Contains(game.Path));
+            _confirmedNames.TryGetValue(game.Path, out var confirmed) ? confirmed : null);
     }
 
     /// <summary>
@@ -2328,25 +2317,14 @@ public partial class MainWindow : Window
     {
         var title = new TextBlock
         {
+            // The game confirmed for it, when there is one: what the person chose is its name.
+            // ⚠ No Detected/Confirmed chip here — on the card only (user, 2026-10-05: "ne le met
+            // pas dans la liste des jeux, ça fait trop chargé").
+            Text = facts.Confirmed ?? game.Name,
             FontWeight = FontWeight.SemiBold,
             TextTrimming = TextTrimming.CharacterEllipsis,
             Foreground = Brush("TextPrimary"),
         };
-
-        // The game confirmed for it, when there is one: what the person chose is its name.
-        title.Inlines?.Add(new Avalonia.Controls.Documents.Run(facts.Confirmed ?? game.Name));
-
-        // Raised beside the name, as on the card: Detected or Confirmed until a translation of it
-        // is on the site (Common.GameChoices.IdentityBadge).
-        if (TranslationBadges.GameIdentity(hasName: true, confirmed: facts.Confirmed is not null,
-                                           onTheSite: facts.OnTheSite) is { } identity)
-        {
-            identity.Margin = new Avalonia.Thickness(6, 0, 0, 0);
-            title.Inlines?.Add(new Avalonia.Controls.Documents.InlineUIContainer(identity)
-            {
-                BaselineAlignment = BaselineAlignment.Top,
-            });
-        }
 
         // Off Windows, a mark before the name says how the game runs (user, 2026-09-28): Linux
         // for a native build, Windows for one that goes through Proton or Wine — which decides
@@ -3805,8 +3783,6 @@ public partial class MainWindow : Window
         else _accounts.Remove(game.Path);
         if (report.ConfirmedGame is { } confirmedGame) _confirmedNames[game.Path] = confirmedGame.Name;
         else _confirmedNames.Remove(game.Path);
-        if (OnTheSite(report)) _onTheSite.Add(game.Path);
-        else _onTheSite.Remove(game.Path);
 
         if (report.MyPosition is not null) _mine.Add(game.Path); else _mine.Remove(game.Path);
 
@@ -5151,11 +5127,7 @@ public partial class MainWindow : Window
         if (TranslationBadges.GameIdentity(hasName: true, confirmed: report.ConfirmedGame is not null,
                                            onTheSite: OnTheSite(report)) is { } identity)
         {
-            identity.Margin = new Avalonia.Thickness(6, 0, 0, 0);
-            title.Inlines?.Add(new Avalonia.Controls.Documents.InlineUIContainer(identity)
-            {
-                BaselineAlignment = BaselineAlignment.Top,
-            });
+            title.Inlines?.Add(identity);
         }
 
         if (_running.IsRunning(game))

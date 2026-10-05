@@ -152,13 +152,15 @@ public sealed class CatalogApiClient
     /// <param name="Id">The hit's id IN its source — the card's on "local", IGDB's or RAWG's on those; 0 on a Steam hit, whose id is <paramref name="SteamId"/>.</param>
     /// <param name="Source">Where the site found it: "local" (its own catalogue), "steam", "igdb", "rawg".</param>
     /// <param name="ImageUrl">The cover the site gave for it, or null.</param>
+    /// <param name="OtherNames">A card's names in the other stores (`other_names`), shown after its title in brackets.</param>
     /// <param name="Facts">
     /// What tells it apart from a game of the same title — its ids in each store, its year, who made
     /// and published it — as one line (Common.GameCandidates.Facts). Empty when nothing is known.
     /// </param>
     public sealed record GameCandidate(long Id, string? Name, string? SteamId, string? Source,
                                        int TranslationsCount, string? ImageUrl, string Facts = "",
-                                       IReadOnlyDictionary<string, string>? Ids = null)
+                                       IReadOnlyDictionary<string, string>? Ids = null,
+                                       IReadOnlyList<string>? OtherNames = null)
     {
         /// <summary>Whether this answer IS the game already confirmed, by any id it gathers (Common.GameChoices.Holds).</summary>
         public bool Holds(Common.GameChoice? held) =>
@@ -233,7 +235,9 @@ public sealed class CatalogApiClient
                         game.TryGetProperty("year", out var year) && year.ValueKind == JsonValueKind.Number
                             && year.TryGetInt32(out var y) ? y : null,
                         NamesOf(game, "developers"), NamesOf(game, "publishers")),
-                    ids));
+                    ids,
+                    // A card's names in the other stores: why it answered a search for one.
+                    NamesOf(game, "other_names")));
             }
 
             return found;

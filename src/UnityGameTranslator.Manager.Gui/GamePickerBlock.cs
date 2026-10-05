@@ -476,6 +476,6 @@ internal sealed class GamePickerBlock
     private sealed record CandidateRow(CatalogApiClient.GameCandidate Candidate, int Confidence)
     {
         public override string ToString() =>
-            GameCandidates.Row(Candidate.Name, Candidate.Source, Confidence);
+            GameCandidates.Row(Candidate.Name, Candidate.Source, Confidence, Candidate.OtherNames?.ToList());
     }
 }

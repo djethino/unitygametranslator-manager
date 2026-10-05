@@ -151,8 +151,13 @@ public sealed class CatalogApiClient
     /// and published it — as one line (Common.GameCandidates.Facts). Empty when nothing is known.
     /// </param>
     public sealed record GameCandidate(long Id, string? Name, string? SteamId, string? Source,
-                                       int TranslationsCount, string? ImageUrl, string Facts = "")
+                                       int TranslationsCount, string? ImageUrl, string Facts = "",
+                                       IReadOnlyDictionary<string, string>? Ids = null)
     {
+        /// <summary>Whether this answer IS the game already confirmed, by any id it gathers (Common.GameChoices.Holds).</summary>
+        public bool Holds(Common.GameChoice? held) =>
+            Pick is { } pick && Common.GameChoices.Holds(held, pick.Source, pick.Id, Ids);
+
         /// <summary>What a publication sends back as `game_pick` for this hit — Common.GameCandidates.PickOf.</summary>
         public Common.GameCandidates.Pick? Pick => Common.GameCandidates.PickOf(Source, Id, SteamId);
     }
@@ -199,6 +204,7 @@ public sealed class CatalogApiClient
             {
                 if (game.ValueKind != JsonValueKind.Object) continue;
 
+                var ids = IdsOf(game);
                 found.Add(new GameCandidate(
                     game.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.Number && id.TryGetInt64(out var number) ? number : 0,
                     Text(game, "name"),
@@ -209,12 +215,13 @@ public sealed class CatalogApiClient
                     Text(game, "source"),
                     game.TryGetProperty("translations_count", out var count) && count.ValueKind == JsonValueKind.Number && count.TryGetInt32(out var n) ? n : 0,
                     Text(game, "image_url"),
-                    Common.GameCandidates.Facts(IdsOf(game),
+                    Common.GameCandidates.Facts(ids,
                         // ⚠ The kind first: a year the store does not know comes as null, and
                         // TryGetInt32 on a null THROWS rather than answering false.
                         game.TryGetProperty("year", out var year) && year.ValueKind == JsonValueKind.Number
                             && year.TryGetInt32(out var y) ? y : null,
-                        NamesOf(game, "developers"), NamesOf(game, "publishers"))));
+                        NamesOf(game, "developers"), NamesOf(game, "publishers")),
+                    ids));
             }
 
             return found;

@@ -145,9 +145,10 @@ internal sealed class GamePickerBlock
         // short, the rows are answers, and the mod's screen confirms on a single click too.
         _gameResults.SelectionChanged += (_, _) =>
         {
+            if (_showingConfirmed) return;
             if (_gameResults.SelectedItem is CandidateRow row)
                 ConfirmGame((row.Candidate.Name ?? game.DetectedName ?? "", row.Candidate.SteamId ?? game.DetectedSteamId,
-                             row.Candidate.Pick));
+                             row.Candidate.Pick), row.Candidate.Ids);
         };
 
         ShowGame(confirmed: false);
@@ -161,6 +162,19 @@ internal sealed class GamePickerBlock
     /// answer it came from, sent back as `game_pick` (null when taken as detected).
     /// </summary>
     public (string Name, string? SteamId, GameCandidates.Pick? Pick)? Confirmed { get; private set; }
+
+    /// <summary>Every id the answer confirmed gathers (by source), when it came from the list.</summary>
+    private IReadOnlyDictionary<string, string>? _confirmedIds;
+
+    /// <summary>Raised while the list highlights the game already confirmed — a display, not a pick.</summary>
+    private bool _showingConfirmed;
+
+    /// <summary>
+    /// Whether what is confirmed IS <paramref name="held"/> — by any id of the answer, not only its
+    /// source (Common.GameChoices.Holds): the same game clicked on another of its rows is nothing to apply.
+    /// </summary>
+    public bool Holds(GameChoice? held) =>
+        Confirmed?.Pick is { } pick && GameChoices.Holds(held, pick.Source, pick.Id, _confirmedIds);
 
     /// <summary>The "Adults only" box, ticked where the site offered it — false everywhere else.</summary>
     public bool AdultDeclared =>
@@ -199,7 +213,8 @@ internal sealed class GamePickerBlock
             var found = await SearchGamesAsync(null, _game.DetectedSteamId);
 
             if (found is { Count: > 0 })
-                ConfirmGame((found[0].Name ?? _game.DetectedName ?? "", found[0].SteamId ?? _game.DetectedSteamId, found[0].Pick));
+                ConfirmGame((found[0].Name ?? _game.DetectedName ?? "", found[0].SteamId ?? _game.DetectedSteamId, found[0].Pick),
+                            found[0].Ids);
             else if (!_requirePick)
                 ConfirmGame((_game.DetectedName ?? "", _game.DetectedSteamId, null));
             return;
@@ -255,6 +270,16 @@ internal sealed class GamePickerBlock
 
         _gameResults.ItemsSource = rows;
 
+        // The game confirmed so far, highlighted when this answer lists it — by any of its ids — so
+        // the list shows what Apply would keep. Shown, not chosen again: nothing to re-confirm.
+        if (Confirmed is { Pick: { } held } confirmed
+            && rows.FirstOrDefault(row => row.Candidate.Holds(new GameChoice(held.Source, held.Id, confirmed.Name))) is { } shown)
+        {
+            _showingConfirmed = true;
+            _gameResults.SelectedItem = shown;
+            _showingConfirmed = false;
+        }
+
         // An empty list says what to try next — the box takes ids and store links too — in the
         // words the site's own list uses (GameCandidates.NothingFound).
         if (rows.Count == 0) Ui.Say(_gameSearchStatus, GameCandidates.NothingFound, Tone.Warning);
@@ -267,9 +292,11 @@ internal sealed class GamePickerBlock
     /// The one way the confirmed game changes — the line, the button and the adult question follow
     /// it, so no path can leave the box answering about the previous game.
     /// </summary>
-    private void ConfirmGame((string Name, string? SteamId, GameCandidates.Pick? Pick) game)
+    private void ConfirmGame((string Name, string? SteamId, GameCandidates.Pick? Pick) game,
+                             IReadOnlyDictionary<string, string>? ids = null)
     {
         Confirmed = game;
+        _confirmedIds = ids;
         ShowGame(confirmed: true);
 
         // Said before sending, never refused here: the site decides what is sure (a demo reads its

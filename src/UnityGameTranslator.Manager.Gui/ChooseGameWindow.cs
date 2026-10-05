@@ -109,9 +109,9 @@ internal sealed class ChooseGameWindow : Window
         _complaint.Text = complaint ?? "";
         _complaint.IsVisible = complaint is not null;
 
-        var pick = _picker.Confirmed?.Pick;
-        bool differs = complaint is null && pick is not null
-                       && !(_current is { } held && held.Source == pick.Source && held.Id == pick.Id);
+        // By the game, not by the row's source: the game already confirmed, clicked again on
+        // another of its rows, is nothing to apply (Common.GameChoices.Holds).
+        bool differs = complaint is null && _picker.Confirmed?.Pick is not null && !_picker.Holds(_current);
 
         _select.Content = differs ? "Apply (1)" : "Apply";
         _select.IsEnabled = differs;

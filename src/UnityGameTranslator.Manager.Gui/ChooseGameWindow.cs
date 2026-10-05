@@ -14,18 +14,25 @@ namespace UnityGameTranslator.Manager.Gui;
 /// first publication sends it, and Community searches with it when the detection finds nothing.
 /// Only an answer of the site's list is a choice — a game nobody can identify is none.
 ///
-/// ⚠ Nothing is written until Select: a choice not validated does not survive closing
-/// (.claude/rules/manager-ui.md §1).
+/// 🔴 **Validated by Apply (1), like every other choice in this program** (manager-ui.md §1, and
+/// the user's words of 2026-10-05: "pourquoi ce n'est pas sur apply comme tout le reste ?"). It
+/// was "Select" and wrote at once — a third way of validating, beside Apply (N) and the quick
+/// actions. Apply stays greyed and without a count while the game picked is the one already
+/// confirmed; closing the window keeps nothing.
 /// </summary>
 internal sealed class ChooseGameWindow : Window
 {
     private readonly GamePickerBlock _picker;
+
+    /// <summary>The game already confirmed in this game: picking it again is nothing to apply.</summary>
+    private readonly GameChoice? _current;
     private readonly Button _select;
     private readonly TextBlock _complaint;
     private bool _chosen;
 
     private ChooseGameWindow(GameToConfirm game)
     {
+        _current = game.Confirmed;
         Title = "Game";
         Width = 520;
         SizeToContent = SizeToContent.Height;
@@ -76,7 +83,7 @@ internal sealed class ChooseGameWindow : Window
         cancel.Click += (_, _) => Close();
         buttons.Children.Add(cancel);
 
-        _select = new Button { Content = "Select", Classes = { "primary" } };
+        _select = new Button { Content = "Apply", Classes = { "primary" } };
         _select.Click += (_, _) =>
         {
             if (!Judge()) return;
@@ -92,14 +99,23 @@ internal sealed class ChooseGameWindow : Window
         Avalonia.Threading.Dispatcher.UIThread.Post(async () => await _picker.StartAsync());
     }
 
-    /// <summary>Whether the confirmed game can be kept, saying why when it cannot.</summary>
+    /// <summary>
+    /// Whether there is something to apply — a game picked, which can be kept, and not the one
+    /// already confirmed — saying why when it cannot be kept.
+    /// </summary>
     private bool Judge()
     {
         var complaint = _picker.Complaint;
         _complaint.Text = complaint ?? "";
         _complaint.IsVisible = complaint is not null;
-        _select.IsEnabled = complaint is null;
-        return complaint is null;
+
+        var pick = _picker.Confirmed?.Pick;
+        bool differs = complaint is null && pick is not null
+                       && !(_current is { } held && held.Source == pick.Source && held.Id == pick.Id);
+
+        _select.Content = differs ? "Apply (1)" : "Apply";
+        _select.IsEnabled = differs;
+        return differs;
     }
 
     /// <summary>The game chosen, or null when the window was closed without choosing.</summary>

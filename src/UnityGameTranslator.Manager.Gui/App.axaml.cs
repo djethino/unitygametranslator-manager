@@ -27,6 +27,9 @@ public partial class App : Application
         // {DynamicResource} resolves when its style is applied, so anything posted after the first
         // window exists would reach only what is built next.
         ThemeResources.Apply(this);
+
+        // Every box of one line, before any window exists to hold one.
+        SingleLinePaste.Install();
     }
 
     public override void OnFrameworkInitializationCompleted()

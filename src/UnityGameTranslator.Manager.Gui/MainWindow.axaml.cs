@@ -6975,8 +6975,11 @@ public partial class MainWindow : Window
         // ⚠ Its own client: the two questions can be in flight together, and LastError is the
         // search's sentence under its field — the adult question must not overwrite it.
         var adultApi = new CatalogApiClient();
+        // The name the card shows, as Change does: the Unity product name can be a short internal
+        // one ("wtl") that no store knows. It still travels, apart, as what was read on disk
+        // (`game_read.product_name`) — the key other machines resolve with.
         var game = ask.SourceIsAsked
-            ? new GameToConfirm(report.Game.ProductName ?? report.Game.Name, report.Game.SteamAppId,
+            ? new GameToConfirm(report.Game.Name, report.Game.SteamAppId,
                                 (query, steamId) => api.SearchGamesAsync(query, steamId, token),
                                 () => api.LastError,
                                 (steamId, name, pick) => adultApi.GameAdultAsync(steamId, name, pick, token),

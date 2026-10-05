@@ -270,9 +270,12 @@ internal sealed class GamePickerBlock
         }
 
         // An empty list says what to try next — the box takes ids and store links too — in the
-        // words the site's own list uses (GameCandidates.NothingFound).
-        if (rows.Count == 0) Ui.Say(_gameSearchStatus, GameCandidates.NothingFound, Tone.Warning);
-        else Ui.Say(_gameSearchStatus, rows.Count == 1 ? "Found 1 game" : $"Found {rows.Count} games");
+        // words the site's own list uses (GameCandidates.NothingFound). Without an account the list
+        // is the site's games alone, and both sentences say so (GameCandidates.CatalogueOnly).
+        bool stores = _game.AskedStores?.Invoke() ?? true;
+        if (rows.Count == 0) Ui.Say(_gameSearchStatus, GameCandidates.NothingFoundFor(stores), Tone.Warning);
+        else Ui.Say(_gameSearchStatus, (rows.Count == 1 ? "Found 1 game" : $"Found {rows.Count} games")
+                                       + (stores ? "" : ". " + GameCandidates.CatalogueOnly));
 
         return found;
     }

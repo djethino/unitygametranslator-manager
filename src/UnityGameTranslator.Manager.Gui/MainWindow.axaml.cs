@@ -5285,8 +5285,10 @@ public partial class MainWindow : Window
         var standing = ServerIdentity.For(_settings.Current, report.SiteAccount, BuildInfo.ApiBaseUrl);
         var running = _running.IsRunning(report.Game);
 
-        // The site's game search reaches the stores on its own quota and answers a named caller
-        // only: without an account, the list could not be asked — said on the control, not after.
+        // With or without an account (2026-10-05): without one the site's game search lists its own
+        // games — the ones that have translations — so a game detected wrong can still be pointed at
+        // the translations others published for it. The stores are for an account, and the list
+        // says so (GameCandidates.CatalogueOnly).
         var lookups = ApiTokenForLookups;
 
         var change = new Button
@@ -5296,18 +5298,16 @@ public partial class MainWindow : Window
             Padding = new Avalonia.Thickness(8, 2),
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
             Margin = new Avalonia.Thickness(12, 0, 0, 0),
-            IsEnabled = standing.CanWriteLocally && !running && lookups is not null,
+            IsEnabled = standing.CanWriteLocally && !running,
         };
 
         // No greyed control without words.
         ToolTip.SetTip(change, running ? GameWrites.RunningRefusal
             : !standing.CanWriteLocally ? standing.Reason
-            : lookups is null ? "Login required"
             : report.ConfirmedGame is { } chosen ? $"Confirmed: {chosen.Name}" : "Confirm which game this is");
 
         change.Click += async (_, _) =>
         {
-            if (lookups is not { } token) return;
             var api = new CatalogApiClient();
             var adultApi = new CatalogApiClient();
             // The name the card shows, not the Unity product name: the product name is often a
@@ -5316,10 +5316,14 @@ public partial class MainWindow : Window
             // nothing is sent with it; what Apply keeps is an answer of the list.
             var chosen = await ChooseGameWindow.AskAsync(this, new GameToConfirm(
                 report.Game.Name, report.Game.SteamAppId,
-                (query, steamId) => api.SearchGamesAsync(query, steamId, token),
+                (query, steamId) => api.SearchGamesAsync(query, steamId, lookups),
                 () => api.LastError,
-                (steamId, name, pick) => adultApi.GameAdultAsync(steamId, name, pick, token),
-                report.ConfirmedGame));
+                // Not asked by Change (askAdult: false); null — "could not be asked" — without an account.
+                (steamId, name, pick) => lookups is { } token
+                    ? adultApi.GameAdultAsync(steamId, name, pick, token)
+                    : Task.FromResult<CatalogApiClient.GameAdult?>(null),
+                report.ConfirmedGame,
+                () => api.LastSearchAskedStores));
 
             if (chosen is null) return;
 

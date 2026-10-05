@@ -45,6 +45,12 @@ public sealed class CatalogApiClient
     public string? LastError { get; private set; }
 
     /// <summary>
+    /// Whether the last <see cref="SearchGamesAsync"/> searched the stores — false when it was asked
+    /// without an account, and its list is the site's catalogue alone.
+    /// </summary>
+    public bool LastSearchAskedStores { get; private set; } = true;
+
+    /// <summary>
     /// What the server ANSWERED, when it answered at all.
     ///
     /// 🔴 **Written because nothing in this tool could tell a refusal from an outage.** Every call
@@ -169,17 +175,18 @@ public sealed class CatalogApiClient
     /// ⚠ Null when the question could not be asked, which is not an empty answer: a caller falls
     /// back on what this machine detected, and says so, rather than on "no such game".
     ///
-    /// 🔴 <paramref name="apiToken"/> is REQUIRED by the route, unlike the translation searches
-    /// above: it reaches the store and game databases on the site's own quota, so the site only
-    /// answers a named caller. Sent without one it answered 401, which this tool reported as "the
-    /// site could not be reached".
+    /// 🔴 <paramref name="apiToken"/> decides which list (2026-10-05): with one, the catalogue and
+    /// the stores; without one, the site's catalogue ALONE — the games that have translations —
+    /// since the stores cost the site's own quota and are only needed to publish a game the site
+    /// does not know. <see cref="LastSearchAskedStores"/> says which list came back.
     /// </summary>
     public async Task<IReadOnlyList<GameCandidate>?> SearchGamesAsync(string? query, string? steamId,
-                                                                      string apiToken,
+                                                                      string? apiToken,
                                                                       CancellationToken ct = default)
     {
         LastError = null;
         LastStatus = null;
+        LastSearchAskedStores = true;
 
         var parts = new List<string>();
         if (!string.IsNullOrWhiteSpace(query)) parts.Add("q=" + Uri.EscapeDataString(query.Trim()));
@@ -193,6 +200,11 @@ public sealed class CatalogApiClient
             var json = await GetAsync(url, apiToken, ct).ConfigureAwait(false);
 
             using var document = JsonDocument.Parse(json);
+
+            // Absent from an older site, which answered an account only — and asked the stores.
+            LastSearchAskedStores = !(document.RootElement.TryGetProperty("stores", out var stores)
+                                      && stores.ValueKind == JsonValueKind.False);
+
             if (!document.RootElement.TryGetProperty("games", out var games)
                 || games.ValueKind != JsonValueKind.Array)
             {

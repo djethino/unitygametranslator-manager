@@ -55,11 +55,16 @@ public readonly record struct TranslationDetails(bool Saved, string Notes, strin
 /// The game already confirmed in this game (`config.json`, `game_choice`) — shown as it is, rather
 /// than searched again. Null when none was yet.
 /// </param>
+/// <param name="AskedStores">
+/// Whether the last search reached the stores — false without an account, whose list is the site's
+/// catalogue alone (GameCandidates.CatalogueOnly). Null: it always does.
+/// </param>
 public sealed record GameToConfirm(string? DetectedName, string? DetectedSteamId,
                                    Func<string?, string?, Task<IReadOnlyList<CatalogApiClient.GameCandidate>?>> Search,
                                    Func<string?> WhyNot,
                                    Func<string?, string?, GameCandidates.Pick?, Task<CatalogApiClient.GameAdult?>> Adult,
-                                   GameChoice? Confirmed = null);
+                                   GameChoice? Confirmed = null,
+                                   Func<bool>? AskedStores = null);
 
 /// <summary>
 /// The things said ABOUT a translation rather than in it: what it is, where to find the fonts or

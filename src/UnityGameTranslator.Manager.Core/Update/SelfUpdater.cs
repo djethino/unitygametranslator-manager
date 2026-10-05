@@ -41,8 +41,13 @@ public sealed record SelfUpdateOffer(
 /// The check failed because GitHub refused a network that asked too often — nothing to fix, a time
 /// to wait for (Net/GitHubRateLimit). Shown without the firewall and proxy advice.
 /// </param>
+/// <param name="Latest">
+/// The latest version on the channel when the answer is "up to date" — up to date is said of the
+/// copy an update replaces (<see cref="SelfUpdater.Target"/>), and a downloaded copy running beside
+/// an installed one can be out of date while that one is not. Null when nothing was published.
+/// </param>
 public sealed record SelfUpdateCheck(SelfUpdateState State, SelfUpdateOffer? Offer, string? Message,
-                                     bool RateLimited = false);
+                                     bool RateLimited = false, string? Latest = null);
 
 public sealed record SelfUpdateResult(string ExecutablePath, string PreviousCopy, string Version,
                                       bool IntoInstalledCopy);
@@ -293,8 +298,14 @@ public sealed class SelfUpdater
 
         if (!Versions.IsNewer(current, release.Version))
         {
+            // The installed copy being current says nothing of the file running: said when it is
+            // behind, or the reader takes "up to date" for the window in front of them.
+            var behind = target is { IsInstalledCopy: true } && Versions.IsNewer(CurrentVersion, release.Version)
+                ? $" This copy ({CurrentVersion}) is out of date."
+                : "";
             return new SelfUpdateCheck(SelfUpdateState.UpToDate, null,
-                $"{which} is the latest on the {Describe(channel)} channel.");
+                $"{which} is the latest on the {Describe(channel)} channel.{behind}",
+                Latest: release.Version);
         }
 
         var assetName = AssetNameFor(release.Version);

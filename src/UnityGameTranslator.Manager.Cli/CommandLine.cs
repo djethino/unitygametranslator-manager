@@ -1658,6 +1658,11 @@ public static class CommandLine
         Console.WriteLine($"From     : {SelfUpdater.RunningAppImage ?? SelfUpdater.RunningExecutable ?? "unknown"}");
         Console.WriteLine($"Channel  : {(channel == ReleaseChannel.Beta ? "beta" : "stable")}");
 
+        // What an update replaces when it is not the file running (SelfUpdater.Target): without
+        // it, "Running 0.5.0 / Available 0.5.0" read as an update offered to itself.
+        if (new SelfUpdater(platform).Target() is { IsInstalledCopy: true } replaced)
+            Console.WriteLine($"Installed: {replaced.Version} ({replaced.Executable}) — the copy an update replaces");
+
         // Silent for a normal build. A build pointed elsewhere otherwise reports a network failure
         // that reads exactly like a firewall, whoever is looking at it.
         if (SelfUpdater.UnusualReleaseHost is { } host)

@@ -778,19 +778,13 @@ public sealed class ToolSettingsWindow : Window
         // 🔴 And the same look and place: first in its row, in the primary colour, exactly as in the
         // Installation card — one button, one grammar, wherever it appears.
         var installer = new SelfInstaller(_platform);
+        // ⚠ The SAME button as the Installation card, Update included when this file is newer: it
+        // only offered Open here, so a downloaded copy holding the published version was offered
+        // that version as a download instead (InstalledCopy.HoldsOffer).
         if (installer.Installed() is { } installed && !installer.RunningTheInstalledCopy() && !installer.Inspect().NeedsRepair)
         {
-            var open = new Button { Content = InstalledCopy.Verb(canUpdate: false), FontSize = 12, Classes = { "primary" } };
             var failed = Note("");
-            failed.IsVisible = false;
-            open.Click += (_, _) =>
-            {
-                if (InstalledCopy.Open(installed) is not { } failure) return;
-                Ui.Say(failed, failure, Tone.Error);
-                failed.IsVisible = true;
-            };
-
-            checkRow.Children.Insert(0, open);
+            checkRow.Children.Insert(0, InstalledCopyButton(installer, installed, failed));
             panel.Children.Add(failed);
         }
 
@@ -802,6 +796,37 @@ public sealed class ToolSettingsWindow : Window
         if (_known is not null) ShowResult(_known);
 
         return Card("Updates", null, panel);
+    }
+
+    /// <summary>
+    /// Open installed copy, or Update installed copy when this file is newer — the one button the
+    /// Updates and Installation cards both hold, built once so the two cannot drift apart.
+    /// <paramref name="said"/> is where a failure is written; hidden until then.
+    /// </summary>
+    private Button InstalledCopyButton(SelfInstaller installer, ToolInstallation installed, TextBlock said)
+    {
+        var canUpdate = InstalledCopy.CanUpdateFromHere(installer, installed);
+        var across = new Button { Content = InstalledCopy.Verb(canUpdate), FontSize = 12, Classes = { "primary" } };
+        said.IsVisible = false;
+
+        across.Click += async (_, _) =>
+        {
+            across.IsEnabled = false;
+            var failure = canUpdate
+                ? await InstalledCopy.UpdateFromHereAsync(this, installer)
+                : InstalledCopy.Open(installed);
+
+            if (failure is not null)
+            {
+                Ui.Say(said, failure, Tone.Error);
+                said.IsVisible = true;
+            }
+
+            across.IsEnabled = true;
+            if (failure is null) Rebuild();
+        };
+
+        return across;
     }
 
     /// <summary>
@@ -817,13 +842,28 @@ public sealed class ToolSettingsWindow : Window
 
         switch (result.State)
         {
+            // Already in this file: the fact, and the way out is Update installed copy, first in
+            // this card's row — no download button beside it (InstalledCopy.HoldsOffer).
+            case SelfUpdateState.Available when result.Offer is { } held
+                                                && InstalledCopy.HoldsOffer(new SelfInstaller(_platform), held):
+                _updatePanel.Children.Clear();
+                _updatePanel.Children.Add(Note(
+                    $"{held.NewVersion} is the latest version. The installed copy is {held.CurrentVersion}.",
+                    Tone.Warning));
+                break;
+
             case SelfUpdateState.Available when result.Offer is not null:
                 ShowOffer(result.Offer);
                 break;
 
             case SelfUpdateState.UpToDate:
                 _updatePanel.Children.Clear();
-                _updatePanel.Children.Add(Note(result.Message ?? "UGT Manager is up to date.", Tone.Success));
+                // Up to date is said of the installed copy; this file can still be behind it, and
+                // the message then says so — not in green.
+                var behind = result.Latest is { } latest
+                             && UnityGameTranslator.Common.Versions.IsNewer(SelfUpdater.CurrentVersion, latest);
+                _updatePanel.Children.Add(Note(result.Message ?? "UGT Manager is up to date.",
+                    behind ? Tone.Warning : Tone.Success));
                 break;
 
             default:
@@ -1085,28 +1125,8 @@ public sealed class ToolSettingsWindow : Window
         // same two acts as the overview's banner, through the same door (InstalledCopy).
         if (!state.NeedsRepair && !installer.RunningTheInstalledCopy())
         {
-            var canUpdate = InstalledCopy.CanUpdateFromHere(installer, installed);
-            var across = new Button { Content = InstalledCopy.Verb(canUpdate), FontSize = 12, Classes = { "primary" } };
-            var said = failed = Note("");
-            said.IsVisible = false;
-            across.Click += async (_, _) =>
-            {
-                across.IsEnabled = false;
-                var failure = canUpdate
-                    ? await InstalledCopy.UpdateFromHereAsync(this, installer)
-                    : InstalledCopy.Open(installed);
-
-                if (failure is not null)
-                {
-                    Ui.Say(said, failure, Tone.Error);
-                    said.IsVisible = true;
-                }
-
-                across.IsEnabled = true;
-                if (failure is null) Rebuild();
-            };
-
-            buttons.Children.Add(across);
+            failed = Note("");
+            buttons.Children.Add(InstalledCopyButton(installer, installed, failed));
         }
 
         buttons.Children.Add(remove);

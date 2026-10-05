@@ -26,7 +26,7 @@ namespace UnityGameTranslator.Manager.Gui;
 /// </param>
 /// <param name="GamePick">
 /// The site's answer taken, as it was given (`game_pick`) — the site files the translation under
-/// that game, never under a new search of its title. Null when the game was taken as detected.
+/// that game, never under a new search of its title. Null only when no game was asked (an update).
 /// </param>
 public readonly record struct TranslationDetails(bool Saved, string Notes, string ResourcesUrl,
                                                  bool Finished, bool AcceptsContributions,
@@ -157,7 +157,7 @@ public sealed class TranslationDetailsWindow : Window
         {
             layout.Children.Add(Label("Game"));
 
-            _picker = new GamePickerBlock(game, askAdult: true, requirePick: false, keptByApply: false,
+            _picker = new GamePickerBlock(game, askAdult: true,
                                           key => this.FindResource(key) as IBrush, () => Acceptable());
             foreach (var control in _picker.Controls) layout.Children.Add(control);
         }

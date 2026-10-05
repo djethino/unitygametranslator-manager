@@ -24,8 +24,6 @@ internal sealed class GamePickerBlock
     private readonly GameToConfirm _game;
     private readonly Func<string, IBrush?> _brush;
     private readonly Action _changed;
-    private readonly bool _requirePick;
-    private readonly bool _keptByApply;
 
     private readonly TextBlock _gameName;
     private readonly TextBlock _gameState;
@@ -45,27 +43,21 @@ internal sealed class GamePickerBlock
     private CatalogApiClient.GameAdult? _adultAnswer;
     private int _adultAsked;
 
+    /// <summary>
+    /// 🔴 **One behaviour, wherever it is held** (user, 2026-10-05: "la validation doit demander un
+    /// click même pour le publier... cohérent avec le change. on met en avant celui qui a le steamid
+    /// ou le nom exacte mais on laisse clicker"). Nothing is picked on the person's behalf: the
+    /// answers are listed, the likeliest first and marked ★, and only a row clicked — or the game
+    /// already confirmed in this game — can be kept or published. It stops somebody clicking OK
+    /// without reading. A game "taken as detected" is no longer sent at all.
+    /// </summary>
     /// <param name="askAdult">A publication asks the "Adults only" question; choosing a game alone does not.</param>
-    /// <param name="requirePick">
-    /// Only an answer of the site's list is accepted — never the game "taken as detected". True
-    /// where the choice is what is kept (Change): a game nobody can identify is no choice.
-    /// </param>
-    /// <param name="keptByApply">
-    /// The choice is kept by the window's Apply (Change): nothing is picked on the person's behalf
-    /// at opening, and the game line says Detected or Confirmed against what is saved — never
-    /// "confirmed" for a pick Apply has not written (user, 2026-10-05: "j'ai rien fait et j'ai
-    /// apply (1) et confirmed en même temps, j'ai juste ouvert"). False on a publication, where the
-    /// game found by the Steam id is taken as the one to send.
-    /// </param>
     /// <param name="changed">Called whenever what can be sent changes, so the window re-judges its button.</param>
-    public GamePickerBlock(GameToConfirm game, bool askAdult, bool requirePick, bool keptByApply,
-                           Func<string, IBrush?> brush, Action changed)
+    public GamePickerBlock(GameToConfirm game, bool askAdult, Func<string, IBrush?> brush, Action changed)
     {
         _game = game;
         _brush = brush;
         _changed = changed;
-        _requirePick = requirePick;
-        _keptByApply = keptByApply;
 
         var gameRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         _gameName = new TextBlock
@@ -160,15 +152,15 @@ internal sealed class GamePickerBlock
                              row.Candidate.Pick), row.Candidate.Ids);
         };
 
-        ShowGame(confirmed: false);
+        ShowGame();
     }
 
     /// <summary>The block's controls, in reading order, for the window to lay out.</summary>
     public List<Control> Controls { get; } = new();
 
     /// <summary>
-    /// The game confirmed so far: the site's name and id, or the detected ones — and the site's
-    /// answer it came from, sent back as `game_pick` (null when taken as detected).
+    /// The game picked so far — a row clicked, or the game already confirmed in this game — with the
+    /// site's answer it came from, sent back as `game_pick`. Only a pick can be sent (<see cref="Complaint"/>).
     /// </summary>
     public (string Name, string? SteamId, GameCandidates.Pick? Pick)? Confirmed { get; private set; }
 
@@ -195,19 +187,18 @@ internal sealed class GamePickerBlock
     /// would refuse (`game_not_found`), so it is said before the click.
     /// </summary>
     public string? Complaint =>
-        Confirmed is null || (_requirePick && Confirmed.Value.Pick is null) ? "Please select a game"
+        Confirmed is not { Pick: not null } ? "Please select a game"
         : _adultAnswer?.Identified == false ? GameChoices.NotIdentified
         : null;
 
     /// <summary>
-    /// What the mod's setup screen does on opening — after a game already confirmed in this game,
-    /// which is shown as it is: a Steam id is looked up on the site and its answer taken as the
-    /// game, else the detected name is searched and the person picks.
+    /// What the mod's setup screen does on opening, the same in Change and in a publication: the
+    /// game already confirmed in this game, shown as it is; otherwise the site's answers for the
+    /// Steam id, else for the name, listed with the likeliest first — and nothing picked.
     ///
-    /// ⚠ A Steam id the site answers nothing for is taken as detected only where that is allowed
-    /// (not <c>requirePick</c>); the site then decides at upload, and refuses a game nothing
-    /// identifies — said beforehand from its answer (<see cref="Complaint"/>). What is never done
-    /// is taking a NAME as confirmed without the person having seen the site's answers.
+    /// 🔴 Never a game "taken as detected", never the first answer taken on the person's behalf
+    /// (user, 2026-10-05). A Steam id the site answers nothing for is followed by the name, so the
+    /// list still has something to click.
     /// </summary>
     public async Task StartAsync()
     {
@@ -220,17 +211,7 @@ internal sealed class GamePickerBlock
         if (!string.IsNullOrWhiteSpace(_game.DetectedSteamId))
         {
             var found = await SearchGamesAsync(null, _game.DetectedSteamId);
-
-            // Listed, ★ on the likeliest — and left to the person: what Apply keeps is what they
-            // clicked, never what this window guessed on its own.
-            if (_keptByApply) return;
-
-            if (found is { Count: > 0 })
-                ConfirmGame((found[0].Name ?? _game.DetectedName ?? "", found[0].SteamId ?? _game.DetectedSteamId, found[0].Pick),
-                            found[0].Ids);
-            else if (!_requirePick)
-                ConfirmGame((_game.DetectedName ?? "", _game.DetectedSteamId, null));
-            return;
+            if (found is { Count: > 0 } || string.IsNullOrWhiteSpace(_game.DetectedName)) return;
         }
 
         if (!string.IsNullOrWhiteSpace(_game.DetectedName))
@@ -263,13 +244,8 @@ internal sealed class GamePickerBlock
 
         if (found is null)
         {
-            // The reason, then the consequence — and the consequence is only true on a Steam id
-            // lookup where taking the detected game is allowed; a name search that fails leaves
-            // the person to try again, so it says nothing it cannot keep.
-            var why = _game.WhyNot() ?? "UGT Website could not be reached.";
-            Ui.Say(_gameSearchStatus, steamId is not null && !_requirePick
-                ? why + " The game is taken as detected."
-                : why, Tone.Warning);
+            // The reason, and nothing taken in its place: the person searches again.
+            Ui.Say(_gameSearchStatus, _game.WhyNot() ?? "UGT Website could not be reached.", Tone.Warning);
             return null;
         }
 
@@ -310,7 +286,7 @@ internal sealed class GamePickerBlock
     {
         Confirmed = game;
         _confirmedIds = ids;
-        ShowGame(confirmed: true);
+        ShowGame();
 
         // Said before sending, never refused here: the site decides what is sure (a demo reads its
         // own Steam id), this only shows what does not look alike.
@@ -367,38 +343,13 @@ internal sealed class GamePickerBlock
         _adultNote.Text = open ? AdultMarks.WhatItDoes : AdultMarks.Source(answer.Source);
     }
 
-    /// <summary>The game line: its name, and whether it is confirmed or still to confirm.</summary>
-    private void ShowGame(bool confirmed)
-    {
-        if (_keptByApply)
-        {
-            ShowAgainstSaved();
-            return;
-        }
-
-        if (confirmed && Confirmed is { } picked)
-        {
-            _gameName.Text = picked.Name;
-            _gameName.Foreground = _brush("StatusSuccess");
-            _gameState.Text = "✓ confirmed";
-            _gameState.Foreground = _brush("StatusSuccess");
-            return;
-        }
-
-        var detected = !string.IsNullOrWhiteSpace(_game.DetectedName);
-        _gameName.Text = detected ? _game.DetectedName : "No game detected";
-        _gameName.Foreground = _brush("StatusWarning");
-        _gameState.Text = detected ? "⚠ confirm below" : "- please search";
-        _gameState.Foreground = _brush(detected ? "StatusWarning" : "TextMuted");
-    }
-
     /// <summary>
-    /// The game line where Apply keeps the choice: the game Apply would keep, and its state
-    /// against what is SAVED, in the words of the title's chip (Common.GameChoices.IdentityBadge) —
-    /// Confirmed only for the game written in this game, Detected while nothing is. A pick waiting
-    /// for Apply carries no state: Apply (1) says it.
+    /// The game line: the game the window's act would keep or send, and its state against what is
+    /// SAVED, in the words of the title's chip (Common.GameChoices.IdentityBadge) — Confirmed only
+    /// for the game written in this game, Detected while nothing is. A row clicked and not yet
+    /// applied or published carries no state: the button beside it says it.
     /// </summary>
-    private void ShowAgainstSaved()
+    private void ShowGame()
     {
         var held = _game.Confirmed;
         bool pending = Confirmed is { } picked && !Holds(held);

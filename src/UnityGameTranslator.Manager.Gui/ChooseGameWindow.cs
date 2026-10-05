@@ -59,7 +59,7 @@ internal sealed class ChooseGameWindow : Window
             Foreground = this.FindResource("TextSecondary") as IBrush,
         });
 
-        _picker = new GamePickerBlock(game, askAdult: false, requirePick: true, keptByApply: true,
+        _picker = new GamePickerBlock(game, askAdult: false,
                                       key => this.FindResource(key) as IBrush, () => Judge());
         foreach (var control in _picker.Controls) layout.Children.Add(control);
 

@@ -157,7 +157,7 @@ public sealed class TranslationDetailsWindow : Window
         {
             layout.Children.Add(Label("Game"));
 
-            _picker = new GamePickerBlock(game, askAdult: true, requirePick: false,
+            _picker = new GamePickerBlock(game, askAdult: true, requirePick: false, keptByApply: false,
                                           key => this.FindResource(key) as IBrush, () => Acceptable());
             foreach (var control in _picker.Controls) layout.Children.Add(control);
         }

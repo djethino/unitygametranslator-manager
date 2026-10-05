@@ -34,7 +34,7 @@ public static class TranslationBadges
         _ => "TextPrimary",
     };
 
-    private static Control Chip(Badge badge)
+    private static Border Chip(Badge badge)
     {
         var chip = new Border
         {
@@ -53,6 +53,17 @@ public static class TranslationBadges
 
         ToolTip.SetTip(chip, badge.Tip);
         return chip;
+    }
+
+    /// <summary>
+    /// The chip raised beside a game's title — Detected or Confirmed until a translation of it is
+    /// on the site (Common.GameChoices.IdentityBadge, the mod's title wears the same). Null when
+    /// there is nothing to say.
+    /// </summary>
+    public static Control? GameIdentity(bool hasName, bool confirmed, bool onTheSite)
+    {
+        // The strip's own chip, the size the mod draws it on its title too.
+        return GameChoices.IdentityBadge(hasName, confirmed, onTheSite) is { } badge ? Chip(badge) : null;
     }
 
     private static Control Strip(System.Collections.Generic.List<Badge> badges)

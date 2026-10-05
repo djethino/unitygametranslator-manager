@@ -25,6 +25,7 @@ internal sealed class GamePickerBlock
     private readonly Func<string, IBrush?> _brush;
     private readonly Action _changed;
     private readonly bool _requirePick;
+    private readonly bool _keptByApply;
 
     private readonly TextBlock _gameName;
     private readonly TextBlock _gameState;
@@ -49,14 +50,22 @@ internal sealed class GamePickerBlock
     /// Only an answer of the site's list is accepted — never the game "taken as detected". True
     /// where the choice is what is kept (Change): a game nobody can identify is no choice.
     /// </param>
+    /// <param name="keptByApply">
+    /// The choice is kept by the window's Apply (Change): nothing is picked on the person's behalf
+    /// at opening, and the game line says Detected or Confirmed against what is saved — never
+    /// "confirmed" for a pick Apply has not written (user, 2026-10-05: "j'ai rien fait et j'ai
+    /// apply (1) et confirmed en même temps, j'ai juste ouvert"). False on a publication, where the
+    /// game found by the Steam id is taken as the one to send.
+    /// </param>
     /// <param name="changed">Called whenever what can be sent changes, so the window re-judges its button.</param>
-    public GamePickerBlock(GameToConfirm game, bool askAdult, bool requirePick,
+    public GamePickerBlock(GameToConfirm game, bool askAdult, bool requirePick, bool keptByApply,
                            Func<string, IBrush?> brush, Action changed)
     {
         _game = game;
         _brush = brush;
         _changed = changed;
         _requirePick = requirePick;
+        _keptByApply = keptByApply;
 
         var gameRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         _gameName = new TextBlock
@@ -212,6 +221,10 @@ internal sealed class GamePickerBlock
         {
             var found = await SearchGamesAsync(null, _game.DetectedSteamId);
 
+            // Listed, ★ on the likeliest — and left to the person: what Apply keeps is what they
+            // clicked, never what this window guessed on its own.
+            if (_keptByApply) return;
+
             if (found is { Count: > 0 })
                 ConfirmGame((found[0].Name ?? _game.DetectedName ?? "", found[0].SteamId ?? _game.DetectedSteamId, found[0].Pick),
                             found[0].Ids);
@@ -357,6 +370,12 @@ internal sealed class GamePickerBlock
     /// <summary>The game line: its name, and whether it is confirmed or still to confirm.</summary>
     private void ShowGame(bool confirmed)
     {
+        if (_keptByApply)
+        {
+            ShowAgainstSaved();
+            return;
+        }
+
         if (confirmed && Confirmed is { } picked)
         {
             _gameName.Text = picked.Name;
@@ -371,6 +390,36 @@ internal sealed class GamePickerBlock
         _gameName.Foreground = _brush("StatusWarning");
         _gameState.Text = detected ? "⚠ confirm below" : "- please search";
         _gameState.Foreground = _brush(detected ? "StatusWarning" : "TextMuted");
+    }
+
+    /// <summary>
+    /// The game line where Apply keeps the choice: the game Apply would keep, and its state
+    /// against what is SAVED, in the words of the title's chip (Common.GameChoices.IdentityBadge) —
+    /// Confirmed only for the game written in this game, Detected while nothing is. A pick waiting
+    /// for Apply carries no state: Apply (1) says it.
+    /// </summary>
+    private void ShowAgainstSaved()
+    {
+        var held = _game.Confirmed;
+        bool pending = Confirmed is { } picked && !Holds(held);
+
+        if (pending)
+        {
+            _gameName.Text = Confirmed!.Value.Name;
+            _gameName.Foreground = _brush("TextPrimary");
+            _gameState.Text = "";
+            return;
+        }
+
+        var name = held?.Name ?? _game.DetectedName;
+        _gameName.Text = string.IsNullOrWhiteSpace(name) ? "No game detected" : name;
+        _gameName.Foreground = _brush("TextPrimary");
+
+        // Not on the site from here: this window is only offered while the game is not fixed by it.
+        var chip = GameChoices.IdentityBadge(!string.IsNullOrWhiteSpace(name), held is not null, onTheSite: false);
+        _gameState.Text = chip?.Text ?? "";
+        _gameState.Foreground = _brush(chip is { } c ? TranslationBadges.ToneKey(c.Tone) : "TextMuted");
+        if (chip is { } tip) ToolTip.SetTip(_gameState, tip.Tip);
     }
 
     /// <summary>One answer: its cover, then its name with source and mark, then what tells it apart.</summary>

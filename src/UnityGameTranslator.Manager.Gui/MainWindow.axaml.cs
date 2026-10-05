@@ -5306,8 +5306,12 @@ public partial class MainWindow : Window
             if (lookups is not { } token) return;
             var api = new CatalogApiClient();
             var adultApi = new CatalogApiClient();
+            // The name the card shows, not the Unity product name: the product name is often a
+            // short internal one ("wtl" for a title the card shows in full) and searched the
+            // stores for nothing (2026-10-05). Here it is only a query and the window's line —
+            // nothing is sent with it; what Apply keeps is an answer of the list.
             var chosen = await ChooseGameWindow.AskAsync(this, new GameToConfirm(
-                report.Game.ProductName ?? report.Game.Name, report.Game.SteamAppId,
+                report.Game.Name, report.Game.SteamAppId,
                 (query, steamId) => api.SearchGamesAsync(query, steamId, token),
                 () => api.LastError,
                 (steamId, name, pick) => adultApi.GameAdultAsync(steamId, name, pick, token),

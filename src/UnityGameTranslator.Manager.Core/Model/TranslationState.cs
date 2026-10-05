@@ -576,6 +576,14 @@ public sealed class GameReport
     public GameChoice? ConfirmedGame { get; set; }
 
     /// <summary>
+    /// The name this game was looked up by on the site describes several games (namesakes, or
+    /// loose matches none of which is exact — Common.GameNames). Only ever set by a NAME search: a
+    /// Steam id or a confirmed game is exact. The card then asks for the game to be confirmed
+    /// (Common.GameChoices.Namesakes).
+    /// </summary>
+    public bool NameAmbiguous { get; set; }
+
+    /// <summary>
     /// The line under the game's name when the site files the installed translation under another
     /// game than the one confirmed here — or null. A move made on the site is never followed in
     /// silence (common GameChoices); the line offers Switch game.

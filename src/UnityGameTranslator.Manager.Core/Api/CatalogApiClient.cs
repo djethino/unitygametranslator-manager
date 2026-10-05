@@ -605,9 +605,18 @@ public sealed class CatalogApiClient
         var url = $"{BuildInfo.ApiBaseUrl}/translations?q={Uri.EscapeDataString(name)}"
                 + LanguageFilters(targetLanguage, sourceLanguage);
 
+        LastNameAmbiguous = false;
+
         try
         {
             var json = await GetAsync(url, apiToken, ct).ConfigureAwait(false);
+
+            // 🔴 **Per game, as the mod reads it** (ApiReaders.ReadSearchByName): a loose name
+            // touches several games, and only the group asked about is this game's — the socle
+            // decides which (GameNames.Which). Read flat, this mixed every game the name touched
+            // into one card. The flat list stays for a site older than the groups.
+            if (ByGame(json, name) is { } grouped) return grouped;
+
             var results = Parse(json, out var parseError);
             if (parseError is not null) LastError = parseError;
             return results;
@@ -617,6 +626,42 @@ public sealed class CatalogApiClient
             LastError = Net.Http.Describe(ex, "UGT Website");
             return Array.Empty<OnlineTranslation>();
         }
+    }
+
+    /// <summary>
+    /// Whether the last name search described several games — namesakes, or loose matches none of
+    /// which is exact (Common.GameNames.Match.Ambiguous). False after any other search.
+    /// </summary>
+    public bool LastNameAmbiguous { get; private set; }
+
+    /// <summary>The translations of the game a name search was about, from the answer's groups; null without groups.</summary>
+    private List<OnlineTranslation>? ByGame(string json, string asked)
+    {
+        using var document = JsonDocument.Parse(json);
+        if (!document.RootElement.TryGetProperty("games", out var games) || games.ValueKind != JsonValueKind.Array)
+            return null;
+
+        var groups = games.EnumerateArray().ToList();
+        var which = UnityGameTranslator.Common.GameNames.Which(
+            groups.Select(group => group.TryGetProperty("game", out var game)
+                                   && game.TryGetProperty("name", out var found)
+                                   && found.ValueKind == JsonValueKind.String
+                ? found.GetString() ?? ""
+                : "").ToList(),
+            asked);
+        LastNameAmbiguous = which.Ambiguous;
+
+        var translations = new List<OnlineTranslation>();
+        foreach (var index in which.Chosen)
+        {
+            if (!groups[index].TryGetProperty("translations", out var rows) || rows.ValueKind != JsonValueKind.Array) continue;
+            foreach (var row in rows.EnumerateArray())
+            {
+                if (Read(row) is { } translation) translations.Add(translation);
+            }
+        }
+
+        return translations;
     }
 
     /// <summary>

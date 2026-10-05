@@ -5166,6 +5166,10 @@ public partial class MainWindow : Window
         // Right under the name, when the site files this game's translation under another game.
         if (GameDiffersBanner(report) is { } differs) text.Children.Add(differs);
 
+        // A detected name several games carry: confirm which one (Change is on the title line).
+        if (GameChoices.Namesakes(report.ConfirmedGame, game.Name, report.NameAmbiguous) is { } namesakes)
+            text.Children.Add(WarningBanner(namesakes, act: null));
+
         text.Children.Add(FolderRow(game.Path, "the game"));
 
         // The mod's folders, once there is a mod. Resolved from the catalog because a detected
@@ -5386,6 +5390,15 @@ public partial class MainWindow : Window
             await ShowSelectedAsync();
         };
 
+        return WarningBanner(said, switchGame);
+    }
+
+    /// <summary>
+    /// The small warning band under a game's title — one line, and its act on the same row when it
+    /// has one. Shared by the game-identity notices so they read alike.
+    /// </summary>
+    private Control WarningBanner(string said, Control? act)
+    {
         var line = new TextBlock
         {
             Text = said,
@@ -5397,9 +5410,12 @@ public partial class MainWindow : Window
 
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         Grid.SetColumn(line, 0);
-        Grid.SetColumn(switchGame, 1);
         row.Children.Add(line);
-        row.Children.Add(switchGame);
+        if (act is not null)
+        {
+            Grid.SetColumn(act, 1);
+            row.Children.Add(act);
+        }
 
         return new Border
         {

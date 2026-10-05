@@ -431,16 +431,18 @@ public sealed class GameInventory
     /// shown name is the title a card is created under (user, 2026-10-05: "pourquoi utiliser ça
     /// alors qu'on a le bon ?").
     /// </summary>
-    private async Task<IReadOnlyList<OnlineTranslation>> SearchByNamesAsync(GameInstall game, CancellationToken ct)
+    private async Task<IReadOnlyList<OnlineTranslation>> SearchByNamesAsync(GameReport report, GameInstall game, CancellationToken ct)
     {
         var first = game.ProductName ?? game.Name;
         var found = await _api!.SearchByNameAsync(first, apiToken: _apiToken, ct: ct).ConfigureAwait(false);
+        report.NameAmbiguous = _api.LastNameAmbiguous;
 
-        if (found.Count == 0 && _api.LastError is null
+        if (found.Count == 0 && !report.NameAmbiguous && _api.LastError is null
             && !string.IsNullOrWhiteSpace(game.Name)
             && !string.Equals(game.Name, first, StringComparison.OrdinalIgnoreCase))
         {
             found = await _api.SearchByNameAsync(game.Name, apiToken: _apiToken, ct: ct).ConfigureAwait(false);
+            report.NameAmbiguous = _api.LastNameAmbiguous;
         }
 
         return found;
@@ -496,7 +498,7 @@ public sealed class GameInventory
                     ? await _api.SearchBySteamIdAsync(steamChosen.Id, apiToken: _apiToken, ct: ct).ConfigureAwait(false)
                 : game.SteamAppId is not null
                     ? await _api.SearchBySteamIdAsync(game.SteamAppId, apiToken: _apiToken, ct: ct).ConfigureAwait(false)
-                    : await SearchByNamesAsync(game, ct).ConfigureAwait(false);
+                    : await SearchByNamesAsync(report, game, ct).ConfigureAwait(false);
 
             // 🔴 **A Steam id that finds nothing falls back on the name** (T7, user 2026-10-05:
             // aligned on the site, "on cherche avant tout à trouver le bon"), as the mod does and as
@@ -505,7 +507,7 @@ public sealed class GameInventory
             if (report.ConfirmedGame is null && game.SteamAppId is not null && _api.LastError is null
                 && report.OnlineTranslations.Count == 0)
             {
-                report.OnlineTranslations = await SearchByNamesAsync(game, ct).ConfigureAwait(false);
+                report.OnlineTranslations = await SearchByNamesAsync(report, game, ct).ConfigureAwait(false);
             }
 
             // "No translation exists" and "the search failed" look identical to a user, and

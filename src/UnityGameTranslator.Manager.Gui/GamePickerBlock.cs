@@ -384,7 +384,16 @@ internal sealed class GamePickerBlock
         // thread and the whole program closed without a word (2026-10-05).
         if (row is null) return new Panel();
 
-        var cover = new Image { Width = 30, Height = 42, Stretch = Stretch.UniformToFill, VerticalAlignment = VerticalAlignment.Top };
+        // The picture, and behind it a blurred copy that only shows for a wide one — the frame of
+        // the site's lists (`<x-game-cover>`), by the socle's rule (GameCandidates.FillsFrame).
+        var backdrop = new Image
+        {
+            Stretch = Stretch.UniformToFill,
+            IsVisible = false,
+            Opacity = 0.75,
+            Effect = new BlurEffect { Radius = 6 },
+        };
+        var cover = new Image { Stretch = Stretch.UniformToFill };
         var frame = new Border
         {
             Width = 30,
@@ -392,9 +401,9 @@ internal sealed class GamePickerBlock
             CornerRadius = new CornerRadius(3),
             ClipToBounds = true,
             Background = _brush("SurfaceInput"),
-            Child = cover,
+            Child = new Panel { Children = { backdrop, cover } },
         };
-        _ = LoadCoverAsync(cover, row.Candidate.ImageUrl);
+        _ = LoadCoverAsync(cover, backdrop, row.Candidate.ImageUrl);
 
         var text = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
         text.Children.Add(new TextBlock { Text = row.ToString(), TextWrapping = TextWrapping.Wrap, Foreground = _brush("TextPrimary") });
@@ -421,8 +430,12 @@ internal sealed class GamePickerBlock
     ///
     /// ⚠ HTTPS only. A cover that does not come leaves the empty frame: it is a help to recognise
     /// the game, and the name and the facts beside it still say which one it is.
+    ///
+    /// 🔴 **Its shape decides how it is shown** (GameCandidates.FillsFrame, user 2026-10-06): taller
+    /// than wide fills the frame; wider — a store header, a screenshot — is shown whole, over its
+    /// own blurred copy. Cropped, a header kept its middle third.
     /// </summary>
-    private static async Task LoadCoverAsync(Image cover, string? url)
+    private static async Task LoadCoverAsync(Image cover, Image backdrop, string? url)
     {
         if (string.IsNullOrWhiteSpace(url) || !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) return;
 
@@ -437,7 +450,12 @@ internal sealed class GamePickerBlock
                 using var stream = new System.IO.MemoryStream(bytes);
                 return Avalonia.Media.Imaging.Bitmap.DecodeToWidth(stream, 60);
             });
+
+            bool fills = GameCandidates.FillsFrame(bitmap.PixelSize.Width, bitmap.PixelSize.Height);
+            cover.Stretch = fills ? Stretch.UniformToFill : Stretch.Uniform;
             cover.Source = bitmap;
+            backdrop.Source = fills ? null : bitmap;
+            backdrop.IsVisible = !fills;
         }
         catch (Exception ex)
         {

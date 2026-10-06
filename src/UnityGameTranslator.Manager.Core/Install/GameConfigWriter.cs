@@ -1062,11 +1062,16 @@ public sealed class GameConfigWriter
             var source = choice["source"]?.GetValue<string>();
             var id = choice["id"]?.GetValue<string>();
             var name = choice["name"]?.GetValue<string>();
+            // Display only, absent from a file written before 2026-10-06.
+            var otherNames = choice["other_names"] is JsonArray names
+                ? names.Select(n => n?.GetValueKind() == System.Text.Json.JsonValueKind.String ? n.GetValue<string>() : null)
+                       .Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n!).ToList()
+                : null;
 
             return source is "local" or "steam" or "igdb" or "rawg"
                    && !string.IsNullOrEmpty(id) && id.All(char.IsAsciiDigit)
                    && !string.IsNullOrWhiteSpace(name)
-                ? new GameChoice(source, id, name)
+                ? new GameChoice(source, id, name, otherNames)
                 : null;
         }
         catch
@@ -1080,10 +1085,16 @@ public sealed class GameConfigWriter
     /// one: Change, Switch game, a publication (the game picked), taking a translation from the
     /// site when nothing was confirmed yet (GameChoices.Adopt). Never on a move made on the site.
     /// </summary>
-    public ConfigWriteResult WriteGameChoice(string gamePath, LoaderDescriptor descriptor, GameChoice choice) =>
-        ApplyOne(gamePath, descriptor, GameChoiceKey,
-            new JsonObject { ["source"] = choice.Source, ["id"] = choice.Id, ["name"] = choice.Name },
-            "game");
+    public ConfigWriteResult WriteGameChoice(string gamePath, LoaderDescriptor descriptor, GameChoice choice)
+    {
+        var written = new JsonObject { ["source"] = choice.Source, ["id"] = choice.Id, ["name"] = choice.Name };
+
+        // The game's names in the other stores — display only, written when known (spec/config).
+        if (choice.OtherNames.Count > 0)
+            written["other_names"] = new JsonArray(choice.OtherNames.Select(n => (JsonNode?)JsonValue.Create(n)).ToArray());
+
+        return ApplyOne(gamePath, descriptor, GameChoiceKey, written, "game");
+    }
 
     /// <summary>
     /// The key a difference is filed under, spelled as the file has it: "sync.merge_strategy" for

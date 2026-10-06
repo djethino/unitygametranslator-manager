@@ -125,7 +125,7 @@ internal sealed class ChooseGameWindow : Window
         await window.ShowDialog(owner);
 
         return window._chosen && window._picker.Confirmed is { Pick: { } pick } confirmed
-            ? new GameChoice(pick.Source, pick.Id, confirmed.Name)
+            ? new GameChoice(pick.Source, pick.Id, confirmed.Name, confirmed.OtherNames)
             : null;
     }
 }

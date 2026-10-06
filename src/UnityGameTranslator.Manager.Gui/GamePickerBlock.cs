@@ -149,7 +149,7 @@ internal sealed class GamePickerBlock
             if (_showingConfirmed) return;
             if (_gameResults.SelectedItem is CandidateRow row)
                 ConfirmGame((row.Candidate.Name ?? game.DetectedName ?? "", row.Candidate.SteamId ?? game.DetectedSteamId,
-                             row.Candidate.Pick), row.Candidate.Ids);
+                             row.Candidate.Pick, row.Candidate.OtherNames), row.Candidate.Ids);
         };
 
         ShowGame();
@@ -162,7 +162,7 @@ internal sealed class GamePickerBlock
     /// The game picked so far — a row clicked, or the game already confirmed in this game — with the
     /// site's answer it came from, sent back as `game_pick`. Only a pick can be sent (<see cref="Complaint"/>).
     /// </summary>
-    public (string Name, string? SteamId, GameCandidates.Pick? Pick)? Confirmed { get; private set; }
+    public (string Name, string? SteamId, GameCandidates.Pick? Pick, IReadOnlyList<string>? OtherNames)? Confirmed { get; private set; }
 
     /// <summary>Every id the answer confirmed gathers (by source), when it came from the list.</summary>
     private IReadOnlyDictionary<string, string>? _confirmedIds;
@@ -204,7 +204,7 @@ internal sealed class GamePickerBlock
     {
         if (_game.Confirmed is { } chosen)
         {
-            ConfirmGame((chosen.Name, chosen.Source == "steam" ? chosen.Id : null, chosen.AsPick()));
+            ConfirmGame((chosen.Name, chosen.Source == "steam" ? chosen.Id : null, chosen.AsPick(), chosen.OtherNames));
             return;
         }
 
@@ -284,7 +284,7 @@ internal sealed class GamePickerBlock
     /// The one way the confirmed game changes — the line, the button and the adult question follow
     /// it, so no path can leave the box answering about the previous game.
     /// </summary>
-    private void ConfirmGame((string Name, string? SteamId, GameCandidates.Pick? Pick) game,
+    private void ConfirmGame((string Name, string? SteamId, GameCandidates.Pick? Pick, IReadOnlyList<string>? OtherNames) game,
                              IReadOnlyDictionary<string, string>? ids = null)
     {
         Confirmed = game;
@@ -305,7 +305,7 @@ internal sealed class GamePickerBlock
     /// Ask the site about the confirmed game, with the name, id and pick the upload will send —
     /// whether it is for adults only, and whether anything identifies it.
     /// </summary>
-    private async Task AskTheSiteAsync((string Name, string? SteamId, GameCandidates.Pick? Pick) game)
+    private async Task AskTheSiteAsync((string Name, string? SteamId, GameCandidates.Pick? Pick, IReadOnlyList<string>? OtherNames) game)
     {
         int asked = ++_adultAsked;
         _adultAnswer = null;
@@ -359,13 +359,13 @@ internal sealed class GamePickerBlock
 
         if (pending)
         {
-            _gameName.Text = Confirmed!.Value.Name;
+            _gameName.Text = GameCandidates.TitleWithOtherNames(Confirmed!.Value.Name, Confirmed.Value.OtherNames);
             _gameName.Foreground = _brush("TextPrimary");
             _gameState.Text = "";
             return;
         }
 
-        var name = held?.Name ?? _game.DetectedName;
+        var name = held?.Title ?? _game.DetectedName;
         _gameName.Text = string.IsNullOrWhiteSpace(name) ? "No game detected" : name;
         _gameName.Foreground = _brush("TextPrimary");
 

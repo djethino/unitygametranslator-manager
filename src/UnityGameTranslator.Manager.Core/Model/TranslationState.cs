@@ -282,7 +282,7 @@ public sealed class OnlineTranslation
     /// </summary>
     public LineageGame? LineageGame =>
         Game is { Id: > 0, Name: { Length: > 0 } name } game
-            ? new LineageGame(game.Id, name, game.SteamId, game.IgdbId, game.RawgId)
+            ? new LineageGame(game.Id, name, game.SteamId, game.IgdbId, game.RawgId, game.OtherNames)
             : null;
 }
 
@@ -294,6 +294,9 @@ public sealed class OnlineGame
     [JsonPropertyName("steam_id")] public string? SteamId { get; set; }
     [JsonPropertyName("igdb_id")] public long? IgdbId { get; set; }
     [JsonPropertyName("rawg_id")] public long? RawgId { get; set; }
+
+    /// <summary>Additive: the card's names in the other stores, shown with its title.</summary>
+    [JsonPropertyName("other_names")] public List<string>? OtherNames { get; set; }
 }
 
 /// <summary>

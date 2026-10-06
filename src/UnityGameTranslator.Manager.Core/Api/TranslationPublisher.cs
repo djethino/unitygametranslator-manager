@@ -656,6 +656,11 @@ public sealed class TranslationPublisher
         long? Number(string key) =>
             game.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var number) ? number : null;
 
-        return new LineageGame(cardId, name, Text(game, "steam_id"), Number("igdb_id"), Number("rawg_id"));
+        // Additive: the card's names in the other stores, shown with its title.
+        var otherNames = game.TryGetProperty("other_names", out var names) && names.ValueKind == JsonValueKind.Array
+            ? names.EnumerateArray().Where(n => n.ValueKind == JsonValueKind.String).Select(n => n.GetString()!).ToList()
+            : null;
+
+        return new LineageGame(cardId, name, Text(game, "steam_id"), Number("igdb_id"), Number("rawg_id"), otherNames);
     }
 }

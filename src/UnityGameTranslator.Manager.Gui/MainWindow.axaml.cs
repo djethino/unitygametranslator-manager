@@ -1098,7 +1098,8 @@ public partial class MainWindow : Window
         System.Threading.Interlocked.Add(ref _readPlay, (long)((t3 - t2) * ms));
 
         // All RETURNED rather than recorded, for the reason given above this method.
-        return (situation, report.MyPosition is not null, report.SiteAccount, play, report.ConfirmedGame?.Name);
+        // The title as every product shows it, with its names in the other stores (GameChoice.Title).
+        return (situation, report.MyPosition is not null, report.SiteAccount, play, report.ConfirmedGame?.Title);
     }
 
     /// <summary>
@@ -3783,7 +3784,7 @@ public partial class MainWindow : Window
         // a card already showing the current one.
         if (report.SiteAccount.User is not null) _accounts[game.Path] = report.SiteAccount;
         else _accounts.Remove(game.Path);
-        if (report.ConfirmedGame is { } confirmedGame) _confirmedNames[game.Path] = confirmedGame.Name;
+        if (report.ConfirmedGame is { } confirmedGame) _confirmedNames[game.Path] = confirmedGame.Title;
         else _confirmedNames.Remove(game.Path);
 
         if (report.MyPosition is not null) _mine.Add(game.Path); else _mine.Remove(game.Path);
@@ -5122,7 +5123,7 @@ public partial class MainWindow : Window
         };
 
         // The game confirmed for it, when there is one — the name the person chose.
-        title.Inlines?.Add(new Avalonia.Controls.Documents.Run(report.ConfirmedGame?.Name ?? game.Name));
+        title.Inlines?.Add(new Avalonia.Controls.Documents.Run(report.ConfirmedGame?.Title ?? game.Name));
 
         // Raised beside the name until a translation of it is on the site: Detected (yellow) or
         // Confirmed (green) — the socle's chip, the mod's title wears the same.
@@ -5381,7 +5382,7 @@ public partial class MainWindow : Window
             if (descriptor is null) return;
 
             if (!await ConfirmationWindow.AskAsync(this, GameChoices.ConfirmTitle,
-                    GameChoices.ConfirmBody(siteGame.Name), GameChoices.ConfirmVerb))
+                    GameChoices.ConfirmBody(siteGame.Title), GameChoices.ConfirmVerb))
                 return;
 
             var written = new GameConfigWriter(_platform).WriteGameChoice(report.Game.Path, descriptor, GameChoices.Of(siteGame));
@@ -7100,6 +7101,8 @@ public partial class MainWindow : Window
         var fixedGame = edited.GamePick is { } picked && !string.IsNullOrWhiteSpace(edited.GameName)
             ? new GameChoice(picked.Source, picked.Id, edited.GameName!)
             : GameChoices.Adopt(confirmedGame, lineage.Game);
+        // The same game with the names the site now gives it — display only (GameChoices.WithNamesOf).
+        fixedGame = GameChoices.WithNamesOf(fixedGame, lineage.Game) ?? fixedGame;
         if (fixedGame is not null && fixedGame != confirmedGame)
             new GameConfigWriter(_platform).WriteGameChoice(report.Game.Path, descriptor, fixedGame);
 
@@ -12750,6 +12753,9 @@ public partial class MainWindow : Window
         var confirmed = GameConfigWriter.ReadGameChoice(report.Game.Path, loader);
         if (confirmed is null && GameChoices.Adopt(null, translation.LineageGame) is { } taken)
             new GameConfigWriter(_platform).WriteGameChoice(report.Game.Path, loader, taken);
+        // The same game, with the names the site now gives it — display only, never a move.
+        else if (GameChoices.WithNamesOf(confirmed, translation.LineageGame) is { } renamed)
+            new GameConfigWriter(_platform).WriteGameChoice(report.Game.Path, loader, renamed);
 
         // The intention has been carried out, so it stops being pending. Cleared on success only:
         // a failed install leaves the choice standing, which is what somebody would expect.

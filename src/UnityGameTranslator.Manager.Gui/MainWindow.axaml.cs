@@ -5283,7 +5283,10 @@ public partial class MainWindow : Window
             return site;
         }
 
-        if (InstalledDescriptor(report) is not { } descriptor) return null;
+        // ⚠ UGT Mod itself, not only a loader (2026-10-06): a game modded by other means carries
+        // BepInEx or MelonLoader without UGT, and Change wrote UGT's config.json into it — a choice
+        // kept for a mod that is not there.
+        if (report.InstalledPluginVersion is null || InstalledDescriptor(report) is not { } descriptor) return null;
 
         var standing = ServerIdentity.For(_settings.Current, report.SiteAccount, BuildInfo.ApiBaseUrl);
         var running = _running.IsRunning(report.Game);

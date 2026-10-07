@@ -22,6 +22,12 @@ public sealed class SettingsStore
     private readonly string _path;
     private readonly IPlatform _platform;
 
+    /// <summary>
+    /// The file could not be opened at launch and is most likely intact: this run started from
+    /// defaults and must not write over it (Reading.OwnFile.LeftInPlace).
+    /// </summary>
+    private bool _leftInPlace;
+
     public SettingsStore(IPlatform platform)
     {
         _platform = platform;
@@ -51,7 +57,7 @@ public sealed class SettingsStore
             }
             catch (Exception ex) when (Reading.Failed(ex))
             {
-                Reading.SetAside(_path, ex, "SettingsStore.Load");
+                _leftInPlace = Reading.Unreadable(_path, ex, "SettingsStore.Load") == Reading.OwnFile.LeftInPlace;
             }
         }
 
@@ -133,6 +139,14 @@ public sealed class SettingsStore
     {
         Current = settings;
         ApplyNetworkSettings(settings);
+
+        // Kept for this run, never written over the file it could not read (the window says so).
+        if (_leftInPlace)
+        {
+            Journal.Note("SettingsStore.Save", $"{InstallerSettings.FileName} not written: it could not be read at launch");
+            return;
+        }
+
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);

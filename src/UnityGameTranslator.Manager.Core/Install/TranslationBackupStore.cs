@@ -582,40 +582,54 @@ public static class TranslationBackupStore
     ///
     /// 🔴 The current state is kept FIRST. Restoring is the one act here that replaces work, and
     /// somebody who picks the wrong row has to be able to walk back out of it.
+    ///
+    /// ⚠ Answers WHY, not only whether (2026-10-07): the window had one sentence for every failure
+    /// ("the backup folder may have been changed by another program"), which sent somebody whose
+    /// current translation could not be backed up to close and reopen a window for nothing.
     /// </summary>
-    public static bool Restore(IPlatform? platform, string gamePath, LoaderDescriptor descriptor, string id)
+    /// <returns>Null when restored; otherwise why, and whether the game's files were partly written.</returns>
+    public static Refusal? Restore(IPlatform? platform, string gamePath, LoaderDescriptor descriptor, string id)
     {
-        if (GameWrites.WhyNotNow(platform, gamePath) is not null) return false;
+        if (GameWrites.WhyNotNow(platform, gamePath) is { } running) return new Refusal(running);
+
+        // What the failure sentence may claim: whether a copy into the game had begun, and whether
+        // the state before it is in the list to go back to.
+        var copying = false;
+        var before = TakeResult.NothingToBackUp;
 
         try
         {
             var data = UserDataInventory.FolderFor(gamePath, descriptor);
-            if (data is null) return false;
+            if (data is null) return new Refusal(BackupGone);
 
             var target = Target(gamePath, descriptor);
 
             // The way back out is the point of keeping the current state first: without it, no
             // restore (2026-10-07 — its answer was ignored, and a failed copy restored anyway).
-            if (TakeAutomatic(gamePath, descriptor, BackupReason.Restored) == TakeResult.Failed) return false;
+            before = TakeAutomatic(gamePath, descriptor, BackupReason.Restored);
+            if (before == TakeResult.Failed) return new Refusal(CurrentNotBackedUp);
 
             if (id.StartsWith(LegacyPrefix, StringComparison.Ordinal))
             {
                 var legacy = Path.Combine(data, id[LegacyPrefix.Length..]
                                                 .Replace('/', Path.DirectorySeparatorChar));
-                if (!File.Exists(legacy)) return false;
+                if (!File.Exists(legacy)) return new Refusal(BackupGone);
+
+                copying = true;
 
                 File.Copy(legacy, target, overwrite: true);
 
                 // ⚠ No ancestor came with it, so the stale one goes rather than staying to
                 // describe an agreement that never happened.
                 DropAncestor(data);
-                return true;
+                return null;
             }
 
             var directory = Path.Combine(data, Backups.FolderName, id);
             var source = Path.Combine(directory, TranslationFile);
-            if (!File.Exists(source)) return false;
+            if (!File.Exists(source)) return new Refusal(BackupGone);
 
+            copying = true;
             File.Copy(source, target, overwrite: true);
 
             var ancestorSource = Path.Combine(directory, AncestorFile);
@@ -625,14 +639,35 @@ public static class TranslationBackupStore
             else DropAncestor(data);
 
             RestoreAssets(directory, data);
-            return true;
+            return null;
         }
         catch (Exception ex) when (Reading.Failed(ex))
         {
             Faults.Say("TranslationBackupStore.Restore", ex, id);
-            return false;
+            if (!copying) return new Refusal(Said("Nothing was changed. The backup could not be read."));
+
+            // ⚠ Not "nothing was changed": the translation may already be in place and the
+            // ancestor or a font not.
+            return new Refusal(
+                Said("The backup could not be fully copied into the game.")
+                + (before == TakeResult.Taken ? " The translation as it was before is in this list." : ""),
+                PartlyWritten: true);
         }
     }
+
+    private static string Said(string fact) => $"{fact} {Journal.DetailsIn}".TrimEnd();
+
+    /// <summary>Why one of this store's acts did not happen, and whether it wrote part of itself first.</summary>
+    public sealed record Refusal(string Why, bool PartlyWritten = false);
+
+    /// <summary>The backup asked for is no longer where the list found it.</summary>
+    public const string BackupGone =
+        "Nothing was changed. The backup folder may have been changed by another program. "
+        + "Close this window and open it again.";
+
+    /// <summary>The copy of the current state, taken first so a restore can be undone, failed.</summary>
+    public static string CurrentNotBackedUp =>
+        Said("Nothing was changed. The current translation could not be backed up first.");
 
     private static void DropAncestor(string dataFolder)
     {

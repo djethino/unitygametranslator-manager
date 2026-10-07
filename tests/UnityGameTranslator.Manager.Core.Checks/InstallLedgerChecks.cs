@@ -1,3 +1,4 @@
+using UnityGameTranslator.Manager.Core.Diagnostics;
 using UnityGameTranslator.Manager.Core.Install;
 using UnityGameTranslator.Manager.Core.Model;
 
@@ -104,6 +105,67 @@ internal static class InstallLedgerChecks
 
             Program.Check(!threw && unwritable.For(GamePath) is null,
                 "a memory that cannot be written is not an error", "an install must not fail over a note");
+        }
+        finally
+        {
+            try { Directory.Delete(folder, recursive: true); } catch { /* a temp folder, not a result */ }
+        }
+    }
+
+    /// <summary>
+    /// What happens to one of this tool's own files that cannot be read (Reading.Unreadable) —
+    /// replayed on the ledger, the store that reads its file at every use.
+    ///
+    /// 🔴 The defect behind it (2026-10-07): each store read a damaged file as empty and its next
+    /// save wrote over it; then a first fix set aside a file that was merely LOCKED, and reused one
+    /// name so a second incident overwrote the first copy.
+    /// </summary>
+    internal static void WhatAnUnreadableMemoryBecomes()
+    {
+        Program.Section("What an unreadable file of this tool becomes");
+
+        var folder = Path.Combine(Path.GetTempPath(), "ugt-unreadable-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        var file = Path.Combine(folder, InstallLedger.FileName);
+
+        try
+        {
+            var ledger = new InstallLedger(folder);
+
+            // Damaged content: moved aside, and the next note starts a fresh file.
+            File.WriteAllText(file, "{ not json");
+            ledger.Remember(Receipt());
+            var asides = Directory.GetFiles(folder, InstallLedger.FileName + ".*.unreadable");
+            Program.Check(asides.Length == 1 && File.ReadAllText(asides[0]) == "{ not json",
+                "a damaged file is set aside whole", "what can still be repaired by hand is kept");
+            Program.Check(ledger.For(GamePath) is not null,
+                "and the tool goes on with a fresh one", "an install never fails over a note");
+
+            // A second incident does not overwrite the first copy.
+            File.WriteAllText(file, "{ damaged again");
+            ledger.Remember(Receipt());
+            Program.Check(Directory.GetFiles(folder, InstallLedger.FileName + ".*.unreadable").Length == 2,
+                "a second damaged file gets its own copy", "the name is dated, never reused");
+            Program.Check(Reading.OwnFileTroubles.Count(t => t.Name == InstallLedger.FileName && t.SetAsideAs is not null) == 2,
+                "both are told to the window", "nothing only in the journal");
+
+            // Locked: most likely intact. Left in place, and nothing writes over it for this run —
+            // even once the lock is gone.
+            File.Delete(file);
+            ledger.Remember(Receipt(plugin: "0.13.0"));
+            var intact = File.ReadAllText(file);
+
+            using (new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                Program.Check(ledger.For(GamePath) is null,
+                    "a locked file reads as no memory", "never as a failure");
+            }
+
+            ledger.RememberRemoval(GamePath);
+            Program.Check(File.ReadAllText(file) == intact && Reading.IsLeftInPlace(file),
+                "a file that could not be opened is left exactly as it was", "not set aside, not overwritten this run");
+            Program.Check(Directory.GetFiles(folder, InstallLedger.FileName + ".*.unreadable").Length == 2,
+                "and is not mistaken for a damaged one", "a lock is not damage");
         }
         finally
         {

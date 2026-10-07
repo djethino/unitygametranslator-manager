@@ -40,6 +40,9 @@ public abstract class PerGameStore<T> where T : class
 
     private Dictionary<string, T> Entries => _loaded ??= Load();
 
+    /// <summary>The file could not be opened and is most likely intact: never written this run.</summary>
+    private bool _leftInPlace;
+
     protected PerGameStore(IPlatform platform, string fileName) =>
         _path = Path.Combine(platform.UserDataDirectory, fileName);
 
@@ -99,8 +102,9 @@ public abstract class PerGameStore<T> where T : class
         catch (Exception ex) when (Reading.Failed(ex))
         {
             // Losing these means asking again, which is recoverable; refusing to start is not. But
-            // the file is set aside, not overwritten by the next save: what was answered is kept.
-            Reading.SetAside(_path, ex, $"{GetType().Name}.Load");
+            // the file is set aside or left alone, never overwritten by the next save: what was
+            // answered is kept.
+            _leftInPlace = Reading.Unreadable(_path, ex, $"{GetType().Name}.Load") == Reading.OwnFile.LeftInPlace;
             return new Dictionary<string, T>();
         }
 
@@ -111,6 +115,13 @@ public abstract class PerGameStore<T> where T : class
 
     private void Save()
     {
+        // Kept for this run, never written over the file it could not read (the window says so).
+        if (_leftInPlace)
+        {
+            Journal.Note($"{GetType().Name}.Save", $"{Path.GetFileName(_path)} not written: it could not be read");
+            return;
+        }
+
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);

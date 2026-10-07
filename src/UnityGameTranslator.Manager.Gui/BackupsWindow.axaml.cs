@@ -682,12 +682,13 @@ public sealed class BackupsWindow : Window
             await Busy.While(restore, () =>
                 ActAsync(() =>
                 {
-                    if (!TranslationBackupStore.Restore(_platform, _game.Path, _descriptor, entry.Id)) return false;
+                    if (TranslationBackupStore.Restore(_platform, _game.Path, _descriptor, entry.Id) is { } refused)
+                        return refused;
 
                     // The restored file may be in another language than the one the game was
                     // pointed at: the setting follows the file, as the mod settles it at load.
                     new GameConfigWriter(_platform).FollowTheTranslation(_game.Path, _descriptor);
-                    return true;
+                    return null;
                 }, "Restore failed"));
         };
 
@@ -786,10 +787,10 @@ public sealed class BackupsWindow : Window
     /// button worked at all. Restore is the one that mattered most: believing a file was put back
     /// when it was not is how the next act is taken on the wrong file.
     ///
-    /// ⚠ Touched only on success: it is what tells the caller the game has to be re-read, and a
-    /// write that did not happen has nothing to re-read.
-    /// </summary>
-    /// <summary>
+    /// ⚠ Touched on success, and on a failure that may have written part of it (a restore that
+    /// stopped halfway): it is what tells the caller the game has to be re-read. A failure that
+    /// says "Nothing was changed" has nothing to re-read.
+    ///
     /// Performs one of this window's writes and redraws what it changed.
     ///
     /// 🔴 **The write runs OFF the UI thread, and that is a correction rather than a refinement.**
@@ -802,21 +803,20 @@ public sealed class BackupsWindow : Window
     /// ⚠ What runs over there touches no control: TranslationBackupStore is files and nothing else.
     /// The redraw is back here, after the await, on the thread that owns the window.
     /// </summary>
-    private async Task ActAsync(Func<bool> write, string couldNot)
+    private Task ActAsync(Func<bool> write, string couldNot) =>
+        ActAsync(() => write() ? null : new TranslationBackupStore.Refusal(TranslationBackupStore.BackupGone), couldNot);
+
+    /// <param name="write">Null when done; otherwise why, shown under <paramref name="couldNot"/>.</param>
+    private async Task ActAsync(Func<TranslationBackupStore.Refusal?> write, string couldNot)
     {
         if (await RefusedBecauseRunningAsync()) return;
 
-        var done = await Task.Run(write);
-        if (done) Touched = true;
+        var refused = await Task.Run(write);
+        if (refused is null || refused.PartlyWritten) Touched = true;
 
         Redraw();
 
-        if (!done)
-        {
-            await ConfirmationWindow.TellAsync(this, couldNot,
-                "Nothing was changed. The backup folder may have been changed by another program. "
-                + "Close this window and open it again.");
-        }
+        if (refused is not null) await ConfirmationWindow.TellAsync(this, couldNot, refused.Why);
     }
 
     /// <summary>

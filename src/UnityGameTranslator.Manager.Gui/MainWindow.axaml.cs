@@ -353,8 +353,22 @@ public partial class MainWindow : Window
             await LookForToolUpdateAsync();
         };
 
-        Closed += (_, _) => PackInbox.Arrived -= OnPackArrived;
+        // Some of this program's files are read on first use, after the strip was drawn: a file found
+        // unreadable then is told at once, not at the next visit to the overview.
+        Reading.OwnFileTroubled += OnOwnFileTroubled;
+
+        Closed += (_, _) =>
+        {
+            PackInbox.Arrived -= OnPackArrived;
+            Reading.OwnFileTroubled -= OnOwnFileTroubled;
+        };
     }
+
+    private void OnOwnFileTroubled() =>
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (OverviewTop.IsVisible) BuildOverviewTop();
+        });
 
     /// <summary>
     /// Puts a mark on each toolbar button.
@@ -2924,12 +2938,41 @@ public partial class MainWindow : Window
         // Ordered by how much each one is asking of the person, and the last is not asking at all:
         // where the tool lives, then what goes into the games, then an invitation, then a plain
         // fact about a folder. ⚠ The middle two never appear together — see WhatGoesIntoGames.
+        // First of all, what this program lost track of: until it is read, the rest may be showing
+        // defaults in place of what somebody had set.
+        if (UnreadableFilesBanner() is { } unreadable) OverviewTop.Children.Add(unreadable);
         if (PortableBanner() is { } portable) OverviewTop.Children.Add(portable);
         if (WhatGoesIntoGames() is { } defaults) OverviewTop.Children.Add(defaults);
 
         OverviewTop.Children.Add(DataFolderRow());
 
         OverviewTop.IsVisible = true;
+    }
+
+    /// <summary>
+    /// This program's own files that could not be read during this run (Reading.Unreadable), each
+    /// with what became of it — or null when there are none.
+    ///
+    /// 🔴 Written 2026-10-07: they were only in the journal, so somebody whose settings came back
+    /// empty saw them gone with nothing said. The file names are written out because they are what
+    /// that person will look for in the folder the button opens.
+    /// </summary>
+    private Control? UnreadableFilesBanner()
+    {
+        var troubles = Reading.OwnFileTroubles;
+        if (troubles.Count == 0) return null;
+
+        var lines = troubles.Select(t => t.SetAsideAs is { } aside
+            ? $"{t.Name}: damaged. Moved to {aside}, and UGT Manager started without it."
+            : $"{t.Name}: could not be opened. Left as it is, and not changed until UGT Manager is restarted.");
+
+        return Banner(
+            troubles.Count == 1 ? "A UGT Manager file could not be read" : "Some UGT Manager files could not be read",
+            string.Join(Environment.NewLine, lines),
+            "Open folder",
+            () => { Shell.OpenFolder(_platform.UserDataDirectory); return Task.CompletedTask; },
+            // Amber: settings may show defaults in place of what was chosen, and nothing is lost yet.
+            tone: Tone.Warning);
     }
 
     /// <summary>

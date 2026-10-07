@@ -48,13 +48,20 @@ public static class GameWrites
             // Every failure refuses — that is the rule above, so this catch takes them all. But it
             // said "This game is running" over a question that could not be answered: the refusal
             // now says what is actually known, and the journal why.
+            //
+            // ⚠ Not reached by the ordinary refusals of the system (a process that will not say
+            // where it runs from, an unreadable /proc): each platform takes those itself. What is
+            // left is a malformed game path or a defect here — so the sentence asks nobody to close
+            // a game that is almost certainly not open; it points at the journal.
             Faults.Say("GameWrites.WhyNotNow", ex, game.Name);
             return UnknownRefusal;
         }
     }
 
-    public const string UnknownRefusal =
-        "Could not tell whether this game is running. Close it if it is, then try again.";
+    // ⚠ No "Nothing was changed." here: like RunningRefusal, the screens that show it put that
+    // in their own title.
+    public static string UnknownRefusal =>
+        $"The Manager could not check whether this game is running. {Journal.DetailsIn}".TrimEnd();
 
     /// <summary>The same answer for a writer that only knows the game's folder.</summary>
     public static string? WhyNotNow(IPlatform? platform, string gamePath) =>

@@ -94,8 +94,15 @@ public sealed class InstallLedger
     }
 
     /// <summary>Everything remembered, keyed by game path in lower case.</summary>
-    public Dictionary<string, Entry> Read()
+    public Dictionary<string, Entry> Read() => Read(out _);
+
+    /// <param name="leftInPlace">
+    /// True when the file is there and could not be opened: most likely intact, so nothing may be
+    /// written over it (Reading.OwnFile.LeftInPlace).
+    /// </param>
+    private Dictionary<string, Entry> Read(out bool leftInPlace)
     {
+        leftInPlace = false;
         try
         {
             var path = Path;
@@ -104,12 +111,13 @@ public sealed class InstallLedger
             return JsonSerializer.Deserialize<Dictionary<string, Entry>>(File.ReadAllText(path), JsonOptions)
                    ?? new Dictionary<string, Entry>(StringComparer.OrdinalIgnoreCase);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
+        catch (Exception e) when (Reading.Failed(e))
         {
             // ⚠ A memory nobody can read is an empty memory, never a failed operation. This file
             // exists to answer questions afterwards; an install must not fail because of it. It is
-            // set aside rather than overwritten by the next note: it is the record of past acts.
-            Reading.SetAside(Path, e, "InstallLedger.Read");
+            // set aside or left alone rather than overwritten by the next note: it is the record of
+            // past acts.
+            leftInPlace = Reading.Unreadable(Path, e, "InstallLedger.Read") == Reading.OwnFile.LeftInPlace;
             return new Dictionary<string, Entry>(StringComparer.OrdinalIgnoreCase);
         }
     }
@@ -165,7 +173,16 @@ public sealed class InstallLedger
     {
         try
         {
-            var all = Read();
+            // ⚠ The registry too, not only this read: this file is read at every use, and one that
+            // could not be opened earlier in this run stays untouched until the next launch, as the
+            // window said — even if it opens now.
+            var all = Read(out var leftInPlace);
+            if (leftInPlace || Reading.IsLeftInPlace(Path))
+            {
+                Journal.Note("InstallLedger.Write", $"{FileName} not written: it could not be read");
+                return;
+            }
+
             var key = Key(gamePath);
 
             if (!all.TryGetValue(key, out var entry))

@@ -51,6 +51,7 @@ internal static class Program
         MomentsContractChecks.WhatTheFileSaysAfterEachMoment();
         TextsSeenContractChecks.WhatAGameShowed();
         InstallLedgerChecks.WhatTheToolRemembersDoing();
+        InstallLedgerChecks.WhatAnUnreadableMemoryBecomes();
         ProbeMemoryChecks.WhatARememberedReadAnswers();
         GameAssetsChecks.WhatAPackPutsIntoAGame();
         GameAssetsChecks.WhatTheTranslationFileKeeps();

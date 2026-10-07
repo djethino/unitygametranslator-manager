@@ -65,14 +65,24 @@ public sealed class CustomFolders
         catch (Exception ex) when (Reading.Failed(ex))
         {
             // Refusing to start over a corrupt list would be worse than starting without it — but
-            // the list is set aside rather than overwritten by the next save.
-            Reading.SetAside(_path, ex, "CustomFolders.Load");
+            // the list is set aside or left alone rather than overwritten by the next save.
+            _leftInPlace = Reading.Unreadable(_path, ex, "CustomFolders.Load") == Reading.OwnFile.LeftInPlace;
             _folders = new List<string>();
         }
     }
 
+    /// <summary>The file could not be opened and is most likely intact: never written this run.</summary>
+    private bool _leftInPlace;
+
     private void Save()
     {
+        // Kept for this run, never written over the file it could not read (the window says so).
+        if (_leftInPlace)
+        {
+            Journal.Note("CustomFolders.Save", $"{FileName} not written: it could not be read at launch");
+            return;
+        }
+
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);

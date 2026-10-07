@@ -49,6 +49,13 @@ public static class Journal
     }
 
     /// <summary>
+    /// "Details in manager.log." — the end of a sentence telling somebody a failure was written down,
+    /// naming this run's file (the window's or the command line's); empty when there is no file, so
+    /// a message never points at one that is not there.
+    /// </summary>
+    public static string DetailsIn => FilePath is { } path ? $"Details in {Path.GetFileName(path)}." : "";
+
+    /// <summary>
     /// Starts this run's journal and makes it the sink of <see cref="Faults"/>. Called once, first
     /// thing, by the entry point. <paramref name="platform"/> is null on a system this tool has no
     /// adapter for: the lines then go to the terminal (command line) and the system's trace only.

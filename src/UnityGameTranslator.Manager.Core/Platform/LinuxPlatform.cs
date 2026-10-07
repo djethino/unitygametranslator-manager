@@ -416,39 +416,11 @@ public sealed class LinuxPlatform : IPlatform
     }
 
     /// <summary>
-    /// Runs one of the desktop's own tools to the end. False when the system does not have it —
-    /// see RegisterPackType for why that is not an error.
+    /// Runs one of the desktop's own tools to the end, through <see cref="Commands.Run"/> (both
+    /// outputs read together — reading one to the end first could hold the tool on the other).
+    /// False when the system does not have it — see RegisterPackType for why that is not an error.
     /// </summary>
-    private static bool RunTool(string tool, params string[] arguments)
-    {
-        try
-        {
-            var start = new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = tool,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            };
-            foreach (var argument in arguments) start.ArgumentList.Add(argument);
-
-            using var process = System.Diagnostics.Process.Start(start);
-            if (process is null) return false;
-
-            // Read before waiting: a full pipe would otherwise hold the tool, and us with it.
-            process.StandardOutput.ReadToEnd();
-            process.StandardError.ReadToEnd();
-            process.WaitForExit();
-            return process.ExitCode == 0;
-        }
-        catch (System.ComponentModel.Win32Exception ex)
-        {
-            // The system does not have this tool: not an error (see RegisterPackType). Noted.
-            Journal.Note("LinuxPlatform.RunTool", $"{tool}: {ex.Message}");
-            return false;
-        }
-    }
+    private static bool RunTool(string tool, params string[] arguments) => Commands.Run(tool, arguments);
 
     /// <summary>
     /// The .NET *Desktop* runtime is a Windows-only product. For a Proton game the runtime that

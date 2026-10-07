@@ -19,14 +19,16 @@ namespace UnityGameTranslator.Manager.Gui;
 /// ⚠ A reporting cadence, not a wait (CLAUDE.md, "Un seuil de JOURNALISATION n'est pas une
 /// attente"): nothing is deferred by it.
 ///
-/// File: <c>ui-stalls.log</c> in the tool's data folder, kept small.
+/// File: <c>ui-stalls.log</c> in the tool's data folder, one per launch, the launch before kept as
+/// <c>ui-stalls.previous.log</c> (Journal.KeepPrevious). ⚠ It was capped at 256 KB and deleted
+/// whole past that (until 2026-10-07): a size picked here, and the stall being looked for went
+/// with the rest the day the cap was crossed.
 /// </summary>
 public static class UiStalls
 {
     private const int BeatMs = 50;
     private const int StallMs = 250;     // a blocked window a person notices
     private const int SlowSectionMs = 60;
-    private const long MaxBytes = 256 * 1024;
 
     private static string? _path;
     private static string? _doing;
@@ -38,8 +40,9 @@ public static class UiStalls
         try
         {
             Directory.CreateDirectory(dataDirectory);
-            _path = Path.Combine(dataDirectory, "ui-stalls.log");
-            if (File.Exists(_path) && new FileInfo(_path).Length > MaxBytes) File.Delete(_path);
+            var path = Path.Combine(dataDirectory, "ui-stalls.log");
+            Journal.KeepPrevious(path);
+            _path = path;
             Write($"--- started {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         }
         catch (Exception e) when (Reading.WriteFailed(e))

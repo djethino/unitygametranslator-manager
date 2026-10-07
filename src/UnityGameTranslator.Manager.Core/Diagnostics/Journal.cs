@@ -63,15 +63,13 @@ public static class Journal
         }
 
         var folder = platform.UserDataDirectory;
-        var name = face == Face.Window ? "manager" : "manager-cli";
-        var path = Path.Combine(folder, name + ".log");
-        var previous = Path.Combine(folder, name + ".previous.log");
+        var path = Path.Combine(folder, (face == Face.Window ? "manager" : "manager-cli") + ".log");
 
         Exception? refused = null;
         try
         {
             Directory.CreateDirectory(folder);
-            if (File.Exists(path)) File.Move(path, previous, overwrite: true);
+            KeepPrevious(path);
             File.WriteAllText(path,
                 $"UnityGameTranslator Manager {BuildInfo.Version} ({(face == Face.Window ? "window" : "command line")}) — "
                 + $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC\n{Environment.OSVersion}\n\n");
@@ -91,6 +89,23 @@ public static class Journal
         // Said through the sink just attached: on the command line it reaches the terminal; in the
         // window, the system's trace — the only place left when the file itself is what failed.
         if (refused is not null) Faults.Say("Journal.Open", refused, Sanitize.Path(path));
+    }
+
+    /// <summary>
+    /// A log of this program's, started afresh for this launch: the last one is moved to
+    /// <c>&lt;name&gt;.previous.log</c> (replacing the one before it).
+    ///
+    /// ⚠ Rotated by an EVENT, the launch — never by a size picked here (no constant cap: what is
+    /// kept is "this run and the one before", which is what a report needs). Shared by every log
+    /// of the tool (this journal, the window's UiStalls) so they cannot keep history two ways.
+    /// Throws what moving a file throws: the caller decides what a log that cannot start costs.
+    /// </summary>
+    public static void KeepPrevious(string path)
+    {
+        if (!File.Exists(path)) return;
+        var previous = Path.Combine(Path.GetDirectoryName(path)!,
+                                    Path.GetFileNameWithoutExtension(path) + ".previous" + Path.GetExtension(path));
+        File.Move(path, previous, overwrite: true);
     }
 
     /// <summary>

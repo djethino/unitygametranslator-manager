@@ -192,7 +192,9 @@ public sealed class OllamaProbe
         {
             // Tried without elevation on purpose: some systems allow it through polkit, and where
             // they do this simply works. Where they do not, the command goes on screen.
-            if (!TryRun("systemctl", new[] { "start", "ollama" }))
+            // Ten seconds: without polkit's consent systemctl waits for an authentication agent
+            // that never comes, and the command on screen is then the answer (Commands.Run).
+            if (!Commands.Run("systemctl", new[] { "start", "ollama" }, TimeSpan.FromSeconds(10)))
             {
                 return new OllamaStartOutcome(false,
                     Command: "sudo systemctl start ollama",
@@ -246,33 +248,5 @@ public sealed class OllamaProbe
 
         return new OllamaStartOutcome(false,
             Failure: "Ollama started but does not answer yet. Wait a moment, then click Find local AI.");
-    }
-
-    /// <summary>Runs a command and reports whether it succeeded. Never elevated.</summary>
-    private static bool TryRun(string fileName, IEnumerable<string> arguments)
-    {
-        try
-        {
-            var start = new ProcessStartInfo
-            {
-                FileName = fileName,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardError = true,
-                RedirectStandardOutput = true,
-            };
-            foreach (var argument in arguments) start.ArgumentList.Add(argument);
-
-            using var process = Process.Start(start);
-            if (process is null) return false;
-
-            return process.WaitForExit(10_000) && process.ExitCode == 0;
-        }
-        catch (System.ComponentModel.Win32Exception ex)
-        {
-            // The command is not on this system: an ordinary answer to "can it be run", noted.
-            Journal.Note("OllamaProbe.TryRun", $"{fileName}: {ex.Message}");
-            return false;
-        }
     }
 }

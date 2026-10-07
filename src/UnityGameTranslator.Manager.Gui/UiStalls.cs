@@ -42,10 +42,11 @@ public static class UiStalls
             if (File.Exists(_path) && new FileInfo(_path).Length > MaxBytes) File.Delete(_path);
             Write($"--- started {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         }
-        catch (Exception e)
+        catch (Exception e) when (Reading.WriteFailed(e))
         {
-            // A diagnostic that cannot write is not a reason to refuse to start: said on the console.
-            Console.Error.WriteLine($"[UiStalls] cannot write the log: {e.Message}");
+            // A diagnostic that cannot write is not a reason to refuse to start. Said through the
+            // journal: the window has no console, so the line this wrote there reached nobody.
+            Faults.Say("UiStalls.Start", e, Sanitize.Path(dataDirectory));
             _path = null;
             return;
         }
@@ -99,6 +100,6 @@ public static class UiStalls
     {
         if (_path is null) return;
         try { File.AppendAllText(_path, line + Environment.NewLine); }
-        catch (Exception e) { Console.Error.WriteLine($"[UiStalls] {e.Message}"); }
+        catch (Exception e) when (Reading.WriteFailed(e)) { Faults.Say("UiStalls.Write", e); }
     }
 }

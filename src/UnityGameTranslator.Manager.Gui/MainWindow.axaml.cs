@@ -10608,7 +10608,8 @@ public partial class MainWindow : Window
         // The mod's own help for the switch (options.json, StrictSourceToggle): what it does.
         ToolTip.SetTip(strict,
             "Skip texts that are not in the source language, so foreign or already-translated text is "
-            + "left alone. AI translation only.");
+            + "left alone. Text in another writing system is skipped with every method. The AI model "
+            + "also checks the rest.");
 
         strict.IsEnabled = MaySetUp(report, strict);
 

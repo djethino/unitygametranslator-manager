@@ -1,7 +1,9 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Avalonia;
+using UnityGameTranslator.Common;
 using UnityGameTranslator.Manager.Cli;
+using UnityGameTranslator.Manager.Core.Diagnostics;
 using UnityGameTranslator.Manager.Core.Install;
 using UnityGameTranslator.Manager.Core.Platform;
 using UnityGameTranslator.Manager.Core.Update;
@@ -23,19 +25,24 @@ internal static class Program
         // First, before anything can fail: a crash leaves something a person can attach to a report.
         WriteCrashesDown();
 
-        // Reaching this line is the proof an update worked: the new binary started. Until it does,
-        // the version it replaced is still sitting beside it under its own name, which is the only
-        // way back a tool without a signing certificate can honestly offer.
-        SelfUpdater.ClearPreviousVersions();
-
         // Where Windows' own "Uninstall" button lands (the UninstallString we register). It opens
         // the removal window rather than removing anything: pressing uninstall in a list of
         // installed apps is a request to be asked, not an instruction to be obeyed silently. It is
         // intercepted before the command line, which would otherwise see the leading dashes and
         // answer "unknown command" into a console nobody asked for.
         var removing = args.Any(a => a.Equals("--remove", StringComparison.OrdinalIgnoreCase));
+        var commandLine = !removing && CommandLine.Handles(args);
 
-        if (!removing && CommandLine.Handles(args))
+        // Then the journal, before the first thing that can be caught: every failure said after this
+        // line has somewhere to go (Diagnostics/Journal).
+        Journal.Open(PlatformOrNull(), commandLine ? Journal.Face.CommandLine : Journal.Face.Window);
+
+        // Reaching this line is the proof an update worked: the new binary started. Until it does,
+        // the version it replaced is still sitting beside it under its own name, which is the only
+        // way back a tool without a signing certificate can honestly offer.
+        SelfUpdater.ClearPreviousVersions();
+
+        if (commandLine)
         {
             SpeakToTheTerminal();
             return CommandLine.RunAsync(args).GetAwaiter().GetResult();
@@ -110,13 +117,19 @@ internal static class Program
                 File.WriteAllText(Path.Combine(folder, "crash.txt"),
                                   UnityGameTranslator.Manager.Core.Diagnostics.Sanitize.Text(report));
             }
-            catch
+            catch (Exception ex)
             {
-                // Writing the report failed while the process is already dying: there is no one
-                // left to tell. Windows' own event log still holds the exception.
+                // Writing the report failed while the process is already dying. The journal is a
+                // second file, opened per line: it may still take what crash.txt could not. Windows'
+                // own event log holds the exception either way.
+                Faults.Say("Program.crash report", ex, e.ExceptionObject?.ToString());
             }
         };
     }
+
+    /// <summary>This system's adapter, or null on one this tool has none for.</summary>
+    private static IPlatform? PlatformOrNull() =>
+        PlatformFactory.IsSupported ? PlatformFactory.Create() : null;
 
     private static void RefreshSystemEntry()
     {
@@ -124,23 +137,20 @@ internal static class Program
         {
             new SelfInstaller(PlatformFactory.Create()).RefreshRegistrationIfStale();
         }
-        catch
+        catch (Exception ex)
         {
-            // Nothing here is worth failing a launch over.
+            // Nothing here is worth failing a launch over — and not worth hiding either: an entry
+            // left stale tells the system's "installed apps" list something untrue.
+            Faults.Say("Program.RefreshSystemEntry", ex);
         }
     }
 
     private static SingleInstance? AcquireWindowRight()
     {
-        try
-        {
-            return SingleInstance.TryAcquire(PlatformFactory.Create());
-        }
-        catch (PlatformNotSupportedException)
-        {
-            // A system we have no adapter for. Whatever complains about that, it will not be this.
-            return SingleInstance.Unguarded();
-        }
+        // A system we have no adapter for: no lock to take. Whatever complains about that, it will
+        // not be this.
+        if (!PlatformFactory.IsSupported) return SingleInstance.Unguarded();
+        return SingleInstance.TryAcquire(PlatformFactory.Create());
     }
 
     /// <summary>
@@ -167,9 +177,12 @@ internal static class Program
         catch (ArgumentException)
         {
             // It ended between the lock failing and now. Nothing to raise, and nothing wrong.
+            Journal.Note("Program.RaiseExistingWindow", "the running copy ended before it could be raised");
         }
         catch (InvalidOperationException)
         {
+            // Same moment, seen from the Process object: it exited while being asked about.
+            Journal.Note("Program.RaiseExistingWindow", "the running copy exited while it was being raised");
         }
     }
 
@@ -276,14 +289,17 @@ internal static class Program
         catch (DllNotFoundException)
         {
             // Wine, or a Windows without the usual console host: nothing to attach to.
+            Journal.Note("Program.SpeakToTheTerminal", "no console host to attach to (kernel32 console API absent)");
         }
         catch (EntryPointNotFoundException)
         {
+            Journal.Note("Program.SpeakToTheTerminal", "no console host to attach to (AttachConsole absent)");
         }
-        catch (IOException)
+        catch (IOException ex)
         {
             // A standard handle that cannot be opened. The command still runs; it just has nowhere
-            // to speak, which is better than refusing to run at all.
+            // to speak, which is better than refusing to run at all — and the journal says why.
+            Faults.Say("Program.SpeakToTheTerminal", ex);
         }
     }
 

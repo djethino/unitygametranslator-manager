@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using UnityGameTranslator.Common;
 using UnityGameTranslator.Manager.Core.Detection;
+using UnityGameTranslator.Manager.Core.Diagnostics;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
 
@@ -123,10 +124,11 @@ public static class TranslationBackupStore
             // the mod does, because either product may be the first to open an old backup folder.
             if (!entry.LanguagesKnown) LearnLanguages(directory, about, json, entry);
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
             // A description we cannot read costs the row its details, never its existence: the
             // translation beside it is still restorable, and that is the part that matters.
+            Faults.Say("TranslationBackupStore.Describe", ex, Path.GetFileName(directory));
         }
 
         return entry;
@@ -168,9 +170,10 @@ public static class TranslationBackupStore
                 if (File.Exists(file)) Add(file, File.GetLastWriteTime(file));
             }
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
-            // A folder we cannot read lists nothing, and says so by being empty.
+            // A folder we cannot read lists nothing — and the journal says why it is empty.
+            Faults.Say("TranslationBackupStore.Legacy", ex, Sanitize.Path(dataFolder));
         }
 
         return found;
@@ -196,8 +199,10 @@ public static class TranslationBackupStore
                 ? json["_uuid"]?.GetValue<string>()
                 : null;
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
+            // The row then names no lineage.
+            Faults.Say("TranslationBackupStore.UuidIn", ex, Sanitize.Path(path));
             return null;
         }
     }
@@ -206,9 +211,9 @@ public static class TranslationBackupStore
     /// Reads what a copy translates out of the copy itself, and writes it into its description so
     /// nobody has to look again.
     ///
-    /// ⚠ Silent on failure, and the mark is written even when nothing was found: this fills in a
+    /// ⚠ Never stops the row, and the mark is written even when nothing was found: this fills in a
     /// decoration, and what it must not do is come back on the next draw. A copy whose file cannot
-    /// be read is still restorable, which is what the row is for.
+    /// be read is still restorable, which is what the row is for. A failure is said, once.
     /// </summary>
     private static void LearnLanguages(string directory, string aboutPath, JsonObject about,
                                        BackupEntry entry)
@@ -231,9 +236,10 @@ public static class TranslationBackupStore
 
             File.WriteAllText(aboutPath, about.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
-            // Nothing to say: the row keeps its other facts, and the copy is still restorable.
+            // The row keeps its other facts, and the copy is still restorable.
+            Faults.Say("TranslationBackupStore.LearnLanguages", ex, Path.GetFileName(directory));
         }
     }
 
@@ -253,19 +259,37 @@ public static class TranslationBackupStore
                    json["_target_language"]?.GetValue<string>())
                 : (null, null);
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
+            Faults.Say("TranslationBackupStore.LanguagesIn", ex, Sanitize.Path(path));
             return (null, null);
         }
     }
 
     // ── Taking a copy ─────────────────────────────────────────────────────
 
+    /// <summary>What became of a backup asked for — the three answers <c>null</c> used to merge.</summary>
+    public enum TakeResult
+    {
+        /// <summary>The copy is on disk.</summary>
+        Taken,
+        /// <summary>Nothing worth a copy: no translation file, or one holding no line.</summary>
+        NothingToBackUp,
+        /// <summary>It should have been taken and was not; the cause is in the journal.</summary>
+        Failed,
+    }
+
     /// <summary>
     /// The copy an ACTION takes, before something replaces the translation wholesale.
     ///
     /// 🔴 Called from inside the write, never beside it. Nine call sites across two products each
     /// had to remember, and one forgot — see the note in <see cref="Backups"/>.
+    ///
+    /// 🔴 **And it says what happened** (2026-10-07). It answered nothing, and its failure was
+    /// swallowed: the uninstall then told the person "the translation was backed up one last time"
+    /// whatever had happened, and deleted it. A replacing act may still go on without its copy —
+    /// that was decided, and stands — but now in the journal's knowledge; the removal reads the
+    /// answer and refuses (UninstallEngine.RemoveUserData).
     /// </summary>
     /// <param name="withAssets">
     /// ⚠ False everywhere but one caller. An ordinary replacement leaves the fonts and images in
@@ -273,14 +297,15 @@ public static class TranslationBackupStore
     /// exception: it deletes them in the same breath, and a backup of a translation whose fonts
     /// are gone restores a translation that cannot be read.
     /// </param>
-    public static void TakeAutomatic(string gamePath, LoaderDescriptor descriptor,
-                                     BackupReason reason, string? by = null,
-                                     bool withAssets = false)
+    public static TakeResult TakeAutomatic(string gamePath, LoaderDescriptor descriptor,
+                                           BackupReason reason, string? by = null,
+                                           bool withAssets = false)
     {
-        if (reason == BackupReason.Saved) return;
+        if (reason == BackupReason.Saved) return TakeResult.NothingToBackUp;
 
-        Take(gamePath, descriptor, reason, by, label: null, withAssets: withAssets);
+        var taken = Take(gamePath, descriptor, reason, by, label: null, withAssets: withAssets, out _);
         Prune(gamePath, descriptor);
+        return taken;
     }
 
     /// <summary>
@@ -305,32 +330,36 @@ public static class TranslationBackupStore
         if (Backups.WhyCannotSave(List(gamePath, descriptor), lines) is not null) return null;
 
         return Take(gamePath, descriptor, BackupReason.Saved, by: null, label: null,
-                    withAssets: true);
+                    withAssets: true, out var id) == TakeResult.Taken ? id : null;
     }
 
-    private static string? Take(string gamePath, LoaderDescriptor descriptor, BackupReason reason,
-                                string? by, string? label, bool withAssets)
+    private static TakeResult Take(string gamePath, LoaderDescriptor descriptor, BackupReason reason,
+                                   string? by, string? label, bool withAssets, out string? id)
     {
+        id = null;
+
+        // No folder for this loader: no translation can be there either.
+        var root = Root(gamePath, descriptor);
+        if (root is null) return TakeResult.NothingToBackUp;
+
+        var source = Target(gamePath, descriptor);
+        if (!File.Exists(source)) return TakeResult.NothingToBackUp;   // nothing written yet is not a failure
+
+        // 🔴 **And neither is an empty one, which is worse than nothing.** Here as well as in
+        // SaveCopy because the automatic family is where it does the damage: five empty backups
+        // rotate the real ones out, and the act behind each of them was the act somebody wanted
+        // protecting. Measured on the file about to be copied, so a translation too damaged to
+        // count still gets its backup — that is the one most worth having.
+        if (!Backups.HasAnythingToBackUp(LocalTranslationProbe.Read(gamePath, descriptor)?.EntryCount ?? 0))
+            return TakeResult.NothingToBackUp;
+
+        string? directory = null;
         try
         {
-            var root = Root(gamePath, descriptor);
-            if (root is null) return null;
-
-            var source = Target(gamePath, descriptor);
-            if (!File.Exists(source)) return null;   // nothing written yet is not a failure
-
-            // 🔴 **And neither is an empty one, which is worse than nothing.** Here as well as in
-            // SaveCopy because the automatic family is where it does the damage: five empty backups
-            // rotate the real ones out, and the act behind each of them was the act somebody wanted
-            // protecting. Measured on the file about to be copied, so a translation too damaged to
-            // count still gets its backup — that is the one most worth having.
-            if (!Backups.HasAnythingToBackUp(LocalTranslationProbe.Read(gamePath, descriptor)?.EntryCount ?? 0))
-                return null;
-
             Directory.CreateDirectory(root);
 
-            var id = UniqueId(root, reason);
-            var directory = Path.Combine(root, id);
+            var newId = UniqueId(root, reason);
+            directory = Path.Combine(root, newId);
             Directory.CreateDirectory(directory);
 
             File.Copy(source, Path.Combine(directory, TranslationFile), overwrite: true);
@@ -347,12 +376,25 @@ public static class TranslationBackupStore
 
             WriteAbout(directory, source, reason, by, label, withAssets);
 
-            return id;
+            id = newId;
+            return TakeResult.Taken;
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // A copy that cannot be written must never stop the act it was protecting.
-            return null;
+            // A full disk, a folder the game holds, a permission. Said, and answered as Failed: the
+            // caller decides whether its act may go on without the copy.
+            Faults.Say("TranslationBackupStore.Take", ex, $"{reason} backup of {Sanitize.Path(source)}");
+
+            // A half-written copy would list as a row that restores a broken translation.
+            if (directory is not null && Directory.Exists(directory))
+            {
+                try { Directory.Delete(directory, recursive: true); }
+                catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException)
+                {
+                    Faults.Say("TranslationBackupStore.Take cleanup", cleanup, Sanitize.Path(directory));
+                }
+            }
+            return TakeResult.Failed;
         }
     }
 
@@ -388,9 +430,11 @@ public static class TranslationBackupStore
                 Directory.CreateDirectory(Path.GetDirectoryName(to)!);
                 File.Copy(from, to, overwrite: true);
             }
-            catch
+            catch (Exception ex) when (Reading.Failed(ex))
             {
-                // One asset lost costs that asset; the translation is what exists nowhere else.
+                // One asset lost costs that asset; the translation is what exists nowhere else —
+                // and which asset the backup lacks is said.
+                Faults.Say("TranslationBackupStore.CopyAssets", ex, relative);
             }
         }
     }
@@ -420,9 +464,11 @@ public static class TranslationBackupStore
                 names.Add(file);
             }
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
-            // A translation we cannot parse carries no assets we can name.
+            // A translation we cannot parse carries no assets we can name: the copy goes without
+            // its images, and that is said.
+            Faults.Say("TranslationBackupStore.ImagesInUse", ex, Sanitize.Path(translationPath));
         }
 
         return names;
@@ -447,9 +493,10 @@ public static class TranslationBackupStore
                 if (AssetPacks.IsFontFile(file)) names.Add(Path.GetFileName(file));
             }
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
-            // Unreadable folder, no fonts named.
+            // Unreadable folder, no fonts named: the copy goes without its fonts — said.
+            Faults.Say("TranslationBackupStore.FontsInUse", ex, Sanitize.Path(dataFolder));
         }
 
         return names;
@@ -500,9 +547,10 @@ public static class TranslationBackupStore
             File.WriteAllText(Path.Combine(directory, Backups.AboutFileName),
                               about.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
             // A row without its details is still a row that restores.
+            Faults.Say("TranslationBackupStore.WriteAbout", ex, Path.GetFileName(directory));
         }
     }
 
@@ -520,9 +568,11 @@ public static class TranslationBackupStore
             foreach (var id in Backups.AutomaticToDrop(List(gamePath, descriptor)))
                 Delete(null, gamePath, descriptor, id);
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
-            // Tidying, never a reason to fail the act that triggered it.
+            // Tidying, never a reason to fail the act that triggered it — said, since the oldest
+            // copies then pile up.
+            Faults.Say("TranslationBackupStore.Prune", ex);
         }
     }
 
@@ -544,7 +594,10 @@ public static class TranslationBackupStore
             if (data is null) return false;
 
             var target = Target(gamePath, descriptor);
-            TakeAutomatic(gamePath, descriptor, BackupReason.Restored);
+
+            // The way back out is the point of keeping the current state first: without it, no
+            // restore (2026-10-07 — its answer was ignored, and a failed copy restored anyway).
+            if (TakeAutomatic(gamePath, descriptor, BackupReason.Restored) == TakeResult.Failed) return false;
 
             if (id.StartsWith(LegacyPrefix, StringComparison.Ordinal))
             {
@@ -575,8 +628,9 @@ public static class TranslationBackupStore
             RestoreAssets(directory, data);
             return true;
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
+            Faults.Say("TranslationBackupStore.Restore", ex, id);
             return false;
         }
     }
@@ -588,9 +642,11 @@ public static class TranslationBackupStore
             var ancestor = Path.Combine(dataFolder, LocalTranslationProbe.AncestorFileName);
             if (File.Exists(ancestor)) File.Delete(ancestor);
         }
-        catch
+        catch (Exception ex) when (Reading.WriteFailed(ex))
         {
-            // Leaving it is worse than losing it, but neither is worth failing the restore over.
+            // Leaving it is worse than losing it, but neither is worth failing the restore over —
+            // the next merge compares against it, so it is said.
+            Faults.Say("TranslationBackupStore.DropAncestor", ex);
         }
     }
 
@@ -609,9 +665,11 @@ public static class TranslationBackupStore
                 foreach (var file in Directory.EnumerateFiles(source))
                     File.Copy(file, Path.Combine(target, Path.GetFileName(file)), overwrite: true);
             }
-            catch
+            catch (Exception ex) when (Reading.Failed(ex))
             {
-                // One folder that cannot be put back does not undo the translation that was.
+                // One folder that cannot be put back does not undo the translation that was — but
+                // the fonts or images it lacks are said.
+                Faults.Say("TranslationBackupStore.RestoreAssets", ex, folder);
             }
         }
     }
@@ -659,8 +717,9 @@ public static class TranslationBackupStore
             Directory.Delete(directory, recursive: true);
             return true;
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
+            Faults.Say("TranslationBackupStore.Delete", ex, id);
             return false;
         }
     }
@@ -715,8 +774,9 @@ public static class TranslationBackupStore
             Retouch(destination, about => about["kept"] = true);
             return true;
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
+            Faults.Say("TranslationBackupStore.Keep", ex, id);
             return false;
         }
     }
@@ -741,8 +801,9 @@ public static class TranslationBackupStore
 
             return true;
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
+            Faults.Say("TranslationBackupStore.Rename", ex, id);
             return false;
         }
     }

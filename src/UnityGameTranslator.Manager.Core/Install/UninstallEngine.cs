@@ -1,6 +1,7 @@
 using UnityGameTranslator.Common;
 using UnityGameTranslator.Manager.Core.Api;
 using UnityGameTranslator.Manager.Core.Detection;
+using UnityGameTranslator.Manager.Core.Diagnostics;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
 
@@ -319,9 +320,10 @@ public sealed class UninstallEngine
 
                 if (FileOperations.TryRemoveEmptyDirectory(root)) removed.Add(relative + "/");
             }
-            catch
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                // Tidying, never a reason to fail an uninstall.
+                // Tidying, never a reason to fail an uninstall — said, since the folder stays.
+                Faults.Say("UninstallEngine.SweepOurEmptyFolders", ex, relative);
             }
         }
     }
@@ -342,9 +344,10 @@ public sealed class UninstallEngine
 
             FileOperations.TryRemoveEmptyDirectory(root);
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Tidying, never a reason to fail an uninstall.
+            // Tidying, never a reason to fail an uninstall — said, since the folder stays.
+            Faults.Say("UninstallEngine.SweepEmptyBackups", ex);
         }
     }
 
@@ -706,15 +709,10 @@ public sealed class UninstallEngine
 
         foreach (var dir in Enumerable.Reverse(dirsCreated))
         {
-            try
-            {
-                if (FileOperations.TryRemoveEmptyDirectory(files.ResolveInsideGame(dir)))
-                    removed.Add(dir + "/");
-            }
-            catch
-            {
-                // A directory we cannot remove is a directory someone else is using.
-            }
+            // A path the guard refuses is one this never deletes; one that cannot be removed is said
+            // by TryRemoveEmptyDirectory itself — a directory someone else is using.
+            if (files.TryResolveInsideGame(dir, out var full) && FileOperations.TryRemoveEmptyDirectory(full))
+                removed.Add(dir + "/");
         }
     }
 
@@ -737,9 +735,11 @@ public sealed class UninstallEngine
                             .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
                             .ToList();
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // A folder we cannot read is a folder we cannot offer to restore from.
+            // A folder we cannot read is a folder we cannot offer to restore from — and the offer
+            // missing from the screen is explained here.
+            Faults.Say("UninstallEngine.BackedUpFiles", ex);
             return Array.Empty<string>();
         }
     }
@@ -763,14 +763,8 @@ public sealed class UninstallEngine
         var missing = new List<string>();
         foreach (var relative in BackedUpFiles(game))
         {
-            try
-            {
-                if (!File.Exists(files.ResolveInsideGame(relative))) missing.Add(relative);
-            }
-            catch
-            {
-                // A path we cannot resolve is one we would not write to either.
-            }
+            // A path the guard refuses is one we would not write to either.
+            if (files.TryResolveInsideGame(relative, out var full) && !File.Exists(full)) missing.Add(relative);
         }
 
         return missing;
@@ -793,17 +787,27 @@ public sealed class UninstallEngine
             return new RestoreOutcome(false, running, Array.Empty<string>());
 
         var files = new FileOperations(game.Path);
-        var restored = RestoreBackups(game, files);
+        var notRestored = new List<string>();
+        var restored = RestoreBackups(game, files, notRestored);
+
+        // 🔴 The files that could not be put back are said (2026-10-07): the count alone read as a
+        // complete restore while some of the game's own files were still sitting in the backup.
+        var stuck = notRestored.Count == 0
+            ? ""
+            : $" {Composition.Amount(notRestored.Count, "file", "files")} could not be put back and stay in "
+              + $"{FileOperations.BackupDirectory}: {string.Join(", ", notRestored)}.";
 
         return new RestoreOutcome(
             restored.Count > 0,
-            restored.Count == 0
+            restored.Count == 0 && notRestored.Count == 0
                 ? "Nothing to restore: UGT Manager did not replace any file of this game."
-                : $"Restored {Composition.Amount(restored.Count, "file", "files")} this game had before.",
+                : $"Restored {Composition.Amount(restored.Count, "file", "files")} this game had before.{stuck}",
             restored);
     }
 
-    private List<string> RestoreBackups(GameInstall game, FileOperations files)
+    /// <param name="notRestored">Receives each backed-up file that could not be moved back — the
+    /// cause of each is in the journal.</param>
+    private List<string> RestoreBackups(GameInstall game, FileOperations files, List<string> notRestored)
     {
         var restored = new List<string>();
 
@@ -822,9 +826,13 @@ public sealed class UninstallEngine
                 File.Move(backup, target);
                 restored.Add(relative);
             }
-            catch
+            // InvalidOperationException: ResolveInsideGame refusing a path that would leave the game.
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
             {
-                // Leaving a backup in place is safe; losing the original is not.
+                // Leaving a backup in place is safe; losing the original is not — but it is said,
+                // to the journal and to the caller, who names the file on screen.
+                Faults.Say("UninstallEngine.RestoreBackups", ex, relative);
+                notRestored.Add(relative);
             }
         }
 
@@ -842,9 +850,10 @@ public sealed class UninstallEngine
 
             FileOperations.TryRemoveEmptyDirectory(backupRoot);
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Tidying. Never a reason to report a failed uninstall.
+            // Tidying. Never a reason to report a failed restore — and never unsaid.
+            Faults.Say("UninstallEngine.RestoreBackups tidy", ex);
         }
 
         return restored;
@@ -911,9 +920,11 @@ public sealed class UninstallEngine
                 removed.Add(Path.GetRelativePath(game.Path, path)
                                 .Replace(Path.DirectorySeparatorChar, '/'));
             }
-            catch
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                // A log still held open by a crashed game is not a failed uninstall.
+                // A log still held open by a crashed game is not a failed uninstall — but what
+                // stayed behind is said.
+                Faults.Say("UninstallEngine.loader leftovers", ex, name);
             }
         }
 
@@ -937,21 +948,6 @@ public sealed class UninstallEngine
         File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint);
 
     /// <summary>
-    /// Copies settings and translations out before deleting them. A translation can be months of
-    /// work, and someone uninstalling a mod is not necessarily throwing that away.
-    /// </summary>
-    /// <summary>
-    /// Copies the chosen data aside, then removes it. Returns where the copy went, or null.
-    ///
-    /// ⚠ The copy happens FIRST and the removal only follows a copy that worked. A translation is
-    /// the one irreplaceable thing in a game folder, and an uninstall that half-succeeded must
-    /// leave it recoverable rather than merely reported.
-    ///
-    /// ⚠ Works from what was TICKED, not from a list of names. Four names were hard-coded here, so
-    /// fonts, replacement images and dated backups survived every "remove my data" — the folder
-    /// stayed half full and nothing said which half.
-    /// </summary>
-    /// <summary>
     /// End a browser session open on this game before its translation is removed.
     ///
     /// ⚠ Only one we can prove is ours to end. A marker whose key does not decrypt belongs to
@@ -973,12 +969,14 @@ public sealed class UninstallEngine
 
         try
         {
-            new EditSessionClient().CloseAsync(marker.ModKey!).Wait(TimeSpan.FromSeconds(5));
+            if (!new EditSessionClient().CloseAsync(marker.ModKey!).Wait(TimeSpan.FromSeconds(5)))
+                Journal.Note("UninstallEngine.EndAnyEditSession", "UGT Website did not answer within five seconds; the session expires on its own");
         }
-        catch
+        catch (AggregateException ex)
         {
-            // Unreachable site, or slower than five seconds. The session then expires on its own;
-            // stopping an uninstall over it would be a worse answer than letting it lapse.
+            // Unreachable site. The session then expires on its own; stopping an uninstall over it
+            // would be a worse answer than letting it lapse — said, all the same.
+            Faults.Say("UninstallEngine.EndAnyEditSession", ex.GetBaseException());
         }
     }
 
@@ -1036,9 +1034,21 @@ public sealed class UninstallEngine
             && chosen.Any(r => r.Equals(LocalTranslationProbe.TranslationFileName,
                                         StringComparison.OrdinalIgnoreCase)))
         {
-            TranslationBackupStore.TakeAutomatic(game.Path, descriptor, BackupReason.Removed,
-                                                 withAssets: true);
-            lastBackupTaken = true;
+            var backup = TranslationBackupStore.TakeAutomatic(game.Path, descriptor, BackupReason.Removed,
+                                                              withAssets: true);
+
+            // 🔴 **A removal does not go on without the copy that protects it** (2026-10-07). The
+            // answer was ignored and "backed up one last time" was announced whatever happened —
+            // then the translation was deleted. Nothing of the selection goes: the fonts and images
+            // are only worth deleting together with the translation that names them. Same rule as
+            // RestoreBackups below: leaving a file in place is safe, losing the only copy is not.
+            if (backup == TranslationBackupStore.TakeResult.Failed)
+            {
+                kept.Add($"UGT Mod's folder, {Composition.Amount(chosen.Count, "file", "files")}. "
+                         + "Not deleted: the translation could not be backed up first.");
+                return false;
+            }
+            lastBackupTaken = backup == TranslationBackupStore.TakeResult.Taken;
         }
 
         foreach (var relative in chosen)

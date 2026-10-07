@@ -1,4 +1,6 @@
 using System.Security.Cryptography;
+using UnityGameTranslator.Common;
+using UnityGameTranslator.Manager.Core.Diagnostics;
 using UnityGameTranslator.Manager.Core.Model;
 
 namespace UnityGameTranslator.Manager.Core.Install;
@@ -158,9 +160,10 @@ public sealed class FileOperations
             var root = Path.Combine(gameRoot, BackupDirectory);
             if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Housekeeping.
+            // Housekeeping — said, since what stays is a hidden copy of a loader inside the game.
+            Faults.Say("FileOperations.DropBackups", ex, Sanitize.Path(gameRoot));
         }
     }
 
@@ -183,10 +186,12 @@ public sealed class FileOperations
                     File.Delete(target);
                 }
             }
-            catch
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
             {
                 // A rollback that cannot finish must still try the remaining files: stopping at
-                // the first failure would leave more behind, not less.
+                // the first failure would leave more behind, not less. But each file left behind
+                // is a game half-changed, and that is said.
+                Faults.Say("FileOperations.Rollback", ex, file.Path);
             }
         }
 
@@ -212,8 +217,10 @@ public sealed class FileOperations
             Directory.Delete(path);
             return true;
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            // Filled or locked between the look and the delete: kept, and said.
+            Faults.Say("FileOperations.TryRemoveEmptyDirectory", ex, Sanitize.Path(path));
             return false;
         }
     }

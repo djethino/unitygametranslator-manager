@@ -5,6 +5,13 @@ namespace UnityGameTranslator.Manager.Core.Platform;
 public static class PlatformFactory
 {
     /// <summary>
+    /// Whether <see cref="Create"/> has an adapter for the running OS — asked before, rather than
+    /// learned from its refusal, by the callers that have something else to do on such a system.
+    /// </summary>
+    public static bool IsSupported =>
+        RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
+
+    /// <summary>
     /// Resolves the adapter for the running OS.
     ///
     /// macOS deliberately throws rather than falling back to the Linux adapter: its Steam paths,

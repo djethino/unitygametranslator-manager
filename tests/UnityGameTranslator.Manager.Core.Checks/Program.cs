@@ -20,8 +20,12 @@ internal static class Program
 {
     private static int _failures;
 
-    private static int Main()
+    private static int Main(string[] args)
     {
+        // `dotnet run -- silent-list [file]`: where the silent catches of the Manager are.
+        if (args.Length >= 1 && args[0] == "silent-list")
+            return SilentCatchChecks.List(args.Length >= 2 ? args[1] : null);
+
         SituationChecks.SituationsAGameCanBeIn();
         SituationChecks.SomethingHereThatCannotRun();
         SituationChecks.WhatASecondLineSays();
@@ -94,6 +98,7 @@ internal static class Program
         EngineModulesChecks.HowUnitysPackageIsRead();
         UninstallChecks.WhereTheLoaderTreeIs();
         BenchChecks.APerfectAnswerPassesEveryCase();
+        SilentCatchChecks.NothingSwallowed();
 
         Console.WriteLine();
         if (_failures == 0)

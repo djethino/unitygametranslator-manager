@@ -2061,8 +2061,10 @@ public partial class MainWindow : Window
 
             return File.Exists(path) ? File.GetLastWriteTimeUtc(path) : default;
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
+            // No date: this game sorts as untouched — noted.
+            Journal.Note("MainWindow translation date", $"{Sanitize.Path(game.Path)}: not read ({ex.GetType().Name})");
             return default;
         }
     }
@@ -4859,9 +4861,9 @@ public partial class MainWindow : Window
     /// <summary>
     /// Asks each publisher what it currently offers, in the background, and redraws what changed.
     ///
-    /// ⚠ Silent on failure: not knowing a version is the state every screen already handles, and a
-    /// notice about a background lookup nobody asked for would be noise on the one screen somebody
-    /// opened to look at their games.
+    /// ⚠ Silent ON SCREEN on failure: not knowing a version is the state every screen already
+    /// handles, and a notice about a background lookup nobody asked for would be noise on the one
+    /// screen somebody opened to look at their games. The journal hears it.
     ///
     /// ⚠ Skipped entirely when online mode is off — that setting is a promise that no call is
     /// made, not a preference about speed.
@@ -4878,8 +4880,11 @@ public partial class MainWindow : Window
                 .WarmAsync(_catalog, _settings.Current.BepInEx6Channel)
                 .ConfigureAwait(true);
         }
-        catch
+        // The boundary of a background lookup nobody awaits: whatever it raised would otherwise
+        // vanish with the task.
+        catch (Exception ex)
         {
+            Faults.Say("MainWindow.WarmLoaderBuildsAsync", ex);
             return;
         }
 
@@ -4921,10 +4926,12 @@ public partial class MainWindow : Window
                     ? ReleaseChannel.Beta
                     : ReleaseChannel.Stable).ConfigureAwait(true);
         }
-        catch
+        // Same boundary as WarmLoaderBuildsAsync.
+        catch (Exception ex)
         {
             // A blocked request leaves Known() null, which every reader already treats as "not
             // known yet" rather than "up to date" — the distinction PluginReleases exists to keep.
+            Faults.Say("MainWindow.WarmPluginReleaseAsync", ex);
             return;
         }
 
@@ -6489,7 +6496,11 @@ public partial class MainWindow : Window
         if (stop is null) return;
 
         try { await stop.CancelAsync(); }
-        catch (ObjectDisposedException) { /* the follower finished first and cleaned up */ }
+        catch (ObjectDisposedException)
+        {
+            // The follower finished first and cleaned up: the stop asked for has already happened.
+            Journal.Note("MainWindow.StopLocalEditorAsync", "the follower had already ended");
+        }
     }
 
     /// <summary>

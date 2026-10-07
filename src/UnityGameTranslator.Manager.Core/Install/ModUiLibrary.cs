@@ -123,8 +123,10 @@ public sealed class ModUiLibrary
         {
             return File.ReadAllBytes(game).AsSpan().SequenceEqual(File.ReadAllBytes(_path));
         }
-        catch (IOException)
+        catch (Exception ex) when (Reading.WriteFailed(ex))
         {
+            // "Not the same" offers a replacement that may not be needed — said.
+            Faults.Say("ModUiLibrary.SameAs", ex, Sanitize.Path(game));
             return false;
         }
     }

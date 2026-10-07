@@ -226,6 +226,8 @@ public static class GameAssets
         }
         catch (Exception e) when (e is JsonException or ArgumentException or InvalidOperationException)
         {
+            // The pack is refused as "not a pack" by the caller; the parser's own words are here.
+            Faults.Say("GameAssets.ParseManifest", e);
             return null;
         }
     }
@@ -366,6 +368,7 @@ public static class GameAssets
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
         {
             // A drive that cannot be measured is not refused: the write itself will say if it fails.
+            Journal.Note("GameAssets.FreeSpace", $"{Sanitize.Path(folder)}: free space unknown ({e.GetType().Name})");
             return null;
         }
     }
@@ -582,6 +585,9 @@ public static class GameAssets
         }
         catch (Exception e) when (e is JsonException or ArgumentException)
         {
+            // Damaged, and therefore never written over (above); the screen says "damaged", the
+            // journal what the parser met.
+            Faults.Say("GameAssets.ReadTranslation", e, Sanitize.Path(path));
             return new(true, true, null);
         }
     }

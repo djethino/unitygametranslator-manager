@@ -81,4 +81,10 @@
     <ProjectReference Include="..\UnityGameTranslator.Manager.Cli\UnityGameTranslator.Manager.Cli.csproj" />
   </ItemGroup>
 
+  <!-- How a caught failure is said — the same two imports as Manager.Core (see its project file). -->
+  <ItemGroup>
+    <Using Include="UnityGameTranslator.Manager.Core.Diagnostics" />
+    <Using Include="UnityGameTranslator.Common.Faults" Alias="Faults" />
+  </ItemGroup>
+
 </Project>

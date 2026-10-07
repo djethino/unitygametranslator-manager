@@ -122,7 +122,7 @@ public static class UnitySignature
             return new Result(Verdict.Tampered, name, "the file does not match its signature");
 
         try { signer.CheckSignature(verifySignatureOnly: true); }
-        catch (CryptographicException) { return new Result(Verdict.Tampered, name, "the signature does not verify"); }
+        catch (CryptographicException e) { return new Result(Verdict.Tampered, name, $"the signature does not verify ({e.Message})"); }
 
         if (signer.Certificate is not { } certificate)
             return new Result(Verdict.Unreadable, null, "the signer's certificate is not included");
@@ -274,8 +274,11 @@ public static class UnitySignature
             };
             return true;
         }
-        catch (AsnContentException)
+        catch (AsnContentException e)
         {
+            // Answered "Unreadable: the signed digest could not be read" by the caller; the ASN.1
+            // reader's own words are noted.
+            Journal.Note("UnitySignature.TryReadDigest", e.Message);
             return false;
         }
     }
@@ -309,8 +312,11 @@ public static class UnitySignature
 
             var verified = true;
             try { counter.CheckSignature(verifySignatureOnly: true); }
-            catch (CryptographicException)
+            catch (CryptographicException e)
             {
+                // .NET refuses the older services' countersignatures (see LegacyCounterSignatureHolds):
+                // the legacy check answers instead. Noted, with what .NET said.
+                Journal.Note("UnitySignature countersignature", $".NET refused it ({e.Message}); legacy check used");
                 verified = i < rawCounterSigners.Count && LegacyCounterSignatureHolds(signer, counter, rawCounterSigners[i]);
             }
 
@@ -346,8 +352,11 @@ public static class UnitySignature
             if (token.ContentInfo.ContentType.Value != "1.2.840.113549.1.9.16.1.4" || token.SignerInfos.Count != 1) return null;
             token.CheckSignature(verifySignatureOnly: true);
         }
-        catch (CryptographicException)
+        catch (CryptographicException e)
         {
+            // A timestamp that does not hold is one not counted: the next one, or the
+            // countersignature, may still prove the time. Noted.
+            Journal.Note("UnitySignature.Rfc3161Time", e.Message);
             return null;
         }
 
@@ -403,8 +412,9 @@ public static class UnitySignature
             info.ReadEncodedValue();
             signature = info.ReadOctetString();
         }
-        catch (AsnContentException)
+        catch (AsnContentException e)
         {
+            Journal.Note("UnitySignature.LegacyCounterSignatureHolds", e.Message);
             return false;
         }
 

@@ -93,9 +93,11 @@ public sealed class AboutWindow : Window
                 new Uri("avares://UnityGameTranslatorManager/Assets/asymptomatik-games-mark.png"));
             Icon = new WindowIcon(new Bitmap(iconStream));
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
-            // Falls back to the application icon.
+            // Falls back to the application icon. An embedded asset that does not load is a build
+            // defect, so it is said.
+            Faults.Say("AboutWindow icon", ex);
         }
 
         var layout = new StackPanel { Spacing = 18, Margin = new Thickness(24) };
@@ -172,9 +174,10 @@ public sealed class AboutWindow : Window
                 VerticalAlignment = VerticalAlignment.Top,
             });
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
-            // A missing icon must not stop the window from opening.
+            // A missing icon must not stop the window from opening — said, as a build defect.
+            Faults.Say("AboutWindow header icon", ex);
         }
 
         var titles = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
@@ -234,9 +237,10 @@ public sealed class AboutWindow : Window
                 HorizontalAlignment = HorizontalAlignment.Center,
             };
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
-            // A missing logo falls back to the name, never to an empty white strip.
+            // A missing logo falls back to the name, never to an empty white strip — and is said.
+            Faults.Say("AboutWindow publisher logo", ex);
             band.Child = new TextBlock
             {
                 Text = "ASymptOmatik Games",

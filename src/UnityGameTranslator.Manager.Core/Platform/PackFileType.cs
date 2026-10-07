@@ -107,7 +107,8 @@ public static class PackFileType
             }
             catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException)
             {
-                // Not a path at all: it is not a pack either.
+                // Not a path at all: it is not a pack either. Noted.
+                Journal.Note("PackFileType.PackIn", $"an argument ending in {AssetPacks.Extension} was not a path ({e.GetType().Name})");
             }
         }
 

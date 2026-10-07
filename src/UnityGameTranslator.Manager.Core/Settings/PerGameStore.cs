@@ -1,7 +1,5 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using UnityGameTranslator.Common;
-using UnityGameTranslator.Manager.Core.Diagnostics;
 using UnityGameTranslator.Manager.Core.Platform;
 
 namespace UnityGameTranslator.Manager.Core.Settings;

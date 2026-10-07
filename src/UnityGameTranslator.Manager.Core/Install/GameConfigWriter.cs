@@ -266,13 +266,22 @@ public sealed class GameConfigWriter
 
             return string.IsNullOrWhiteSpace(text) ? null : text;
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
-            // Same silence as Compare: a config we cannot read is reported by the install path,
-            // which refuses to touch it. Saying it twice, less accurately, helps nobody.
+            // Same silence ON SCREEN as Compare: a config we cannot read is reported by the install
+            // path, which refuses to touch it. Saying it twice, less accurately, helps nobody — so
+            // the journal hears it under one name for every reader of this file (ConfigReadFailed).
+            ConfigReadFailed(ex, path);
             return null;
         }
     }
+
+    /// <summary>
+    /// A game's config.json that one of this class's readers could not read. One place for all of
+    /// them: the same damaged file met by five readers is one fault, said once and counted.
+    /// </summary>
+    private static void ConfigReadFailed(Exception ex, string path) =>
+        Faults.Say("GameConfigWriter config read", ex, Sanitize.Path(path));
 
     /// <summary>
     /// Everything this game holds under a key we own, read back into the terms this tool reasons in.
@@ -367,8 +376,9 @@ public sealed class GameConfigWriter
                 Flag(root, null, AutoTranslateKey),
                 Flag(root, null, TranslationsShownKey));
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
+            ConfigReadFailed(ex, path);
             return GameConfigSnapshot.Unknown;
         }
     }
@@ -413,8 +423,9 @@ public sealed class GameConfigWriter
                 GameContext: Text(root, null, GameContextKey),
                 StrictSourceLanguage: Flag(root, null, StrictSourceKey) ?? fallback.StrictSourceLanguage);
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
+            ConfigReadFailed(ex, path);
             return GameAiSettings.Unknown;
         }
     }
@@ -1074,8 +1085,9 @@ public sealed class GameConfigWriter
                 ? new GameChoice(source, id, name, otherNames)
                 : null;
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
+            ConfigReadFailed(ex, path);
             return null;
         }
     }
@@ -1135,11 +1147,12 @@ public sealed class GameConfigWriter
         {
             root = Load(path);
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
             // A config we cannot read is reported by the install path, which refuses to touch it.
             // Repeating it here as a list of differences would be a second, less accurate way of
-            // saying the same thing.
+            // saying the same thing — on screen. The journal hears it under the one shared name.
+            ConfigReadFailed(ex, path);
             return Array.Empty<ConfigDifference>();
         }
 

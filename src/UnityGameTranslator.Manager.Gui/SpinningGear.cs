@@ -201,10 +201,11 @@ public sealed class SpinningGear : StackPanel
             return new Bitmap(AssetLoader.Open(
                 new Uri("avares://UnityGameTranslatorManager/Assets/gear.png")));
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
             // A missing asset must not take a window down. The label alone still answers the
-            // question the gear is here for.
+            // question the gear is here for. A build defect, so it is said.
+            Faults.Say("SpinningGear asset", ex);
             return null;
         }
     }

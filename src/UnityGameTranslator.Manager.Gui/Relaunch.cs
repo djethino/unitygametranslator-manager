@@ -76,9 +76,12 @@ internal static class Relaunch
         catch (ArgumentException)
         {
             // Already gone: nothing to wait for.
+            Journal.Note("Relaunch", "the copy before had already ended");
         }
         catch (InvalidOperationException)
         {
+            // Same moment, seen from the Process object: it exited while being asked about.
+            Journal.Note("Relaunch", "the copy before exited while being waited for");
         }
     }
 }

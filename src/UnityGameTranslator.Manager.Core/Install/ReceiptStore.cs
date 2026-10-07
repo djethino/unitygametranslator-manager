@@ -36,10 +36,12 @@ public sealed class ReceiptStore
         {
             return JsonSerializer.Deserialize<Receipt>(File.ReadAllText(path), JsonOptions);
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
             // A corrupt receipt is worse than none: acting on it could delete the wrong files.
-            // Reporting "not installed by us" makes the tool refuse to remove anything.
+            // Reporting "not installed by us" makes the tool refuse to remove anything — and the
+            // journal says it was there and unreadable, which the screen cannot tell from absent.
+            Faults.Say("ReceiptStore.Read", ex, Sanitize.Path(path));
             return null;
         }
     }
@@ -63,10 +65,11 @@ public sealed class ReceiptStore
             var path = PathFor(gameRoot);
             if (File.Exists(path)) File.Delete(path);
         }
-        catch
+        catch (Exception ex) when (Reading.WriteFailed(ex))
         {
             // Leaving a stale receipt is harmless: it only ever authorises removing files whose
-            // hash still matches, and those are gone.
+            // hash still matches, and those are gone. Said all the same.
+            Faults.Say("ReceiptStore.Delete", ex, Sanitize.Path(gameRoot));
         }
     }
 }

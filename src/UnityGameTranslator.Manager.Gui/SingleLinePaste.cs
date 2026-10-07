@@ -49,6 +49,7 @@ public static class SingleLinePaste
         catch (TimeoutException)
         {
             // What Avalonia's own paste does with a clipboard that does not answer: nothing pasted.
+            Journal.Note("SingleLinePaste", "the clipboard did not answer");
             return;
         }
 

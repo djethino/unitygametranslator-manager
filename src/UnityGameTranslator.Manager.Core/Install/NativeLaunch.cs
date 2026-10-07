@@ -165,6 +165,8 @@ public static class NativeLaunch
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
+            // Not known to be a Linux executable: no start file is put in front of it — said.
+            Faults.Say("NativeLaunch.IsElf", e, Sanitize.Path(path));
             return false;
         }
     }
@@ -178,6 +180,8 @@ public static class NativeLaunch
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
+            // Not known to be ours: read as a game update having replaced it — said.
+            Faults.Say("NativeLaunch.IsOurStartFile", e, Sanitize.Path(path));
             return false;
         }
     }

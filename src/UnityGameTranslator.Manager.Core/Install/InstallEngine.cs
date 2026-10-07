@@ -1,6 +1,4 @@
-﻿using UnityGameTranslator.Common;
-using UnityGameTranslator.Manager.Core.Detection;
-using UnityGameTranslator.Manager.Core.Diagnostics;
+﻿using UnityGameTranslator.Manager.Core.Detection;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
 using UnityGameTranslator.Manager.Core.Settings;

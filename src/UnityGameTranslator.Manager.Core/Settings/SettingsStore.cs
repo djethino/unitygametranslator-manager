@@ -1,5 +1,4 @@
 using System.Text.Json;
-using UnityGameTranslator.Manager.Core.Diagnostics;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
 using UnityGameTranslator.Common;

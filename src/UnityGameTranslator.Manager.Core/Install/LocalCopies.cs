@@ -50,7 +50,13 @@ public static class LocalCopies
     private static bool ReadNetwork()
     {
         try { return System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable(); }
-        catch (System.Net.NetworkInformation.NetworkInformationException) { return true; }
+        catch (System.Net.NetworkInformation.NetworkInformationException ex)
+        {
+            // Unknown is read as "available": the requests then say for themselves whether they
+            // reach anything. Noted.
+            Journal.Note("LocalCopies", $"network state unknown ({ex.Message}); taken as available");
+            return true;
+        }
     }
 
     /// <summary>Said with the first download from Unity — the tool is a third party to Unity.</summary>

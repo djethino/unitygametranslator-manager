@@ -40,6 +40,8 @@ public static class PackHandoff
         }
         catch (Exception e) when (e is TimeoutException or IOException or UnauthorizedAccessException)
         {
+            // The pack then opens in no window — the double-click looks lost: said.
+            Faults.Say("PackHandoff.Send", e);
             return false;
         }
     }
@@ -52,25 +54,43 @@ public static class PackHandoff
     {
         while (!cancel.IsCancellationRequested)
         {
+            // 🔴 Made apart from the reading (2026-10-07). Inside the same catch, a pipe that could
+            // not be CREATED (its name held by another process) was taken for a sender gone
+            // mid-line, and the loop came straight back to the same refusal — a core spun at full
+            // speed, without a word. Not being able to listen ends the listening, and says why.
+            NamedPipeServerStream server;
             try
             {
-                await using var server = new NamedPipeServerStream(PipeName, PipeDirection.In, 1,
+                server = new NamedPipeServerStream(PipeName, PipeDirection.In, 1,
                     PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
-
-                await server.WaitForConnectionAsync(cancel).ConfigureAwait(false);
-
-                using var reader = new StreamReader(server);
-                var line = await reader.ReadLineAsync(cancel).ConfigureAwait(false);
-
-                if (line is not null && PackFileType.PackIn([line]) is { } pack) received(pack);
             }
-            catch (OperationCanceledException)
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
+                Faults.Say("PackHandoff.ListenAsync pipe", e, "packs double-clicked from now on open in a new window");
                 return;
             }
-            catch (IOException)
+
+            await using (server)
             {
-                // A sender that went away mid-line. The next one gets a fresh pipe.
+                try
+                {
+                    await server.WaitForConnectionAsync(cancel).ConfigureAwait(false);
+
+                    using var reader = new StreamReader(server);
+                    var line = await reader.ReadLineAsync(cancel).ConfigureAwait(false);
+
+                    if (line is not null && PackFileType.PackIn([line]) is { } pack) received(pack);
+                }
+                catch (OperationCanceledException) when (cancel.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (IOException)
+                {
+                    // A sender that went away mid-line. The next one gets a fresh pipe — the loop
+                    // waits for its connection, it does not spin.
+                    Journal.Note("PackHandoff.ListenAsync", "a sender went away before finishing its line");
+                }
             }
         }
     }

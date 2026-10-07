@@ -91,8 +91,10 @@ public sealed class SelfInstaller
 
             return installation;
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
+            // Read as "running portable": the installed copy is then not offered — said.
+            Faults.Say("SelfInstaller.Installed", ex, Sanitize.Path(ReceiptPath));
             return null;
         }
     }
@@ -675,9 +677,10 @@ public sealed class SelfInstaller
             // The file system's rule for case, not Windows' everywhere — see ArchiveFetcher.
             return Path.GetFullPath(file).StartsWith(root, ArchiveFetcher.PathComparison);
         }
-        catch
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
         {
             // A path the system will not even resolve is not one to delete on the strength of.
+            Journal.Note("SelfInstaller.Inside", $"{Sanitize.Path(file)}: not a resolvable path ({ex.GetType().Name})");
             return false;
         }
     }
@@ -801,9 +804,11 @@ public sealed class SelfInstaller
                 | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
                 | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
         }
-        catch
+        catch (Exception ex) when (Reading.WriteFailed(ex) || ex is PlatformNotSupportedException)
         {
-            // A filesystem without Unix modes.
+            // A filesystem without Unix modes — or one that refused: the installed copy may then
+            // not start, which is exactly what a report would need to know.
+            Faults.Say("SelfInstaller.MakeExecutable", ex, Sanitize.Path(path));
         }
     }
 }

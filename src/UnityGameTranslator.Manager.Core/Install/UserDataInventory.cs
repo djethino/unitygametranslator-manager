@@ -260,24 +260,21 @@ public static class UserDataInventory
             items.OrderBy(i => i.RelativePath, StringComparer.OrdinalIgnoreCase).ToList()));
     }
 
-    private static IEnumerable<string> Enumerate(string folder)
-    {
-        try
-        {
-            return Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories);
-        }
-        catch
-        {
-            // A folder we cannot walk is reported as empty rather than as an error: the uninstall
-            // screen still works, it simply offers nothing to tick.
-            return Array.Empty<string>();
-        }
-    }
+    // A folder we cannot walk offers nothing to tick rather than an error: the uninstall screen
+    // still works. ⚠ The walk itself is Reading.FilesUnder: the lazy AllDirectories enumeration
+    // this used threw from the caller's loop at the first unreadable subfolder, past its own catch.
+    private static IEnumerable<string> Enumerate(string folder) =>
+        Reading.FilesUnder(folder, "UserDataInventory.Enumerate");
 
     private static long Size(string path)
     {
         try { return new FileInfo(path).Length; }
-        catch { return 0; }
+        catch (Exception ex) when (Reading.Failed(ex))
+        {
+            // A line that only gives a sense of scale shows nothing rather than a wrong figure.
+            Journal.Note("UserDataInventory.Size", $"{Sanitize.Path(path)}: size unknown ({ex.GetType().Name})");
+            return 0;
+        }
     }
 
     /// <summary>Bytes as somebody reads them, for a line that only exists to give a sense of scale.</summary>

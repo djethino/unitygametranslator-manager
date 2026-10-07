@@ -37,7 +37,11 @@ public sealed class LinuxPlatform : IPlatform
 
         string? text = null;
         try { if (File.Exists(file)) text = File.ReadAllText(file); }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // ~/Desktop is used instead — which may be a folder this desktop never shows: said.
+            Faults.Say("LinuxPlatform.DesktopDirectory", e, Sanitize.Path(file));
+        }
 
         return DesktopFrom(text, Home);
     }
@@ -89,7 +93,11 @@ public sealed class LinuxPlatform : IPlatform
 
             IEnumerable<string> mounts;
             try { mounts = Directory.EnumerateDirectories(mountRoot); }
-            catch { continue; }
+            catch (Exception ex) when (Reading.Failed(ex))
+            {
+                Journal.Note("LinuxPlatform.SteamRoots", $"{mountRoot}: not searched ({ex.GetType().Name})");
+                continue;
+            }
 
             foreach (var mount in mounts)
             {
@@ -106,7 +114,12 @@ public sealed class LinuxPlatform : IPlatform
     private static IEnumerable<string> SafeDirectories(string path)
     {
         try { return Directory.EnumerateDirectories(path); }
-        catch { return Array.Empty<string>(); }
+        catch (Exception ex) when (Reading.Failed(ex))
+        {
+            // Another account's media folder, most often: ordinary, noted.
+            Journal.Note("LinuxPlatform.SafeDirectories", $"{Sanitize.Path(path)}: not searched ({ex.GetType().Name})");
+            return Array.Empty<string>();
+        }
     }
 
     public IEnumerable<GameRootHint> ExtraGameRoots()
@@ -219,8 +232,10 @@ public sealed class LinuxPlatform : IPlatform
 
             return [path, AppIconFile];
         }
-        catch
+        catch (Exception ex) when (Reading.WriteFailed(ex))
         {
+            // The caller says which part did not happen; the why is here.
+            Faults.Say("LinuxPlatform.CreateLauncher", ex, Sanitize.Path(path));
             return [];
         }
     }
@@ -320,6 +335,8 @@ public sealed class LinuxPlatform : IPlatform
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
+            // Null is "not registered" to the caller; which file refused is said here.
+            Faults.Say("LinuxPlatform.RegisterPackType", e);
             return null;
         }
     }
@@ -337,7 +354,8 @@ public sealed class LinuxPlatform : IPlatform
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
-                // Left where it was; nothing else depends on it once the databases forget it.
+                // Left where it was; nothing else depends on it once the databases forget it — said.
+                Faults.Say("LinuxPlatform.UnregisterPackType", e, Sanitize.Path(file));
             }
         }
 
@@ -355,7 +373,9 @@ public sealed class LinuxPlatform : IPlatform
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
-                // A line pointing at nothing is ignored by every desktop; not worth failing over.
+                // A line pointing at nothing is ignored by every desktop; not worth failing over —
+                // said all the same.
+                Faults.Say("LinuxPlatform mimeapps.list", e, Sanitize.Path(list));
             }
         }
 
@@ -389,6 +409,8 @@ public sealed class LinuxPlatform : IPlatform
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
+            // Absent is what is offered again; that it could not be read is said.
+            Faults.Say("LinuxPlatform.PackTypeStateFor", e);
             return PackTypeState.Absent;
         }
     }
@@ -420,8 +442,10 @@ public sealed class LinuxPlatform : IPlatform
             process.WaitForExit();
             return process.ExitCode == 0;
         }
-        catch (System.ComponentModel.Win32Exception)
+        catch (System.ComponentModel.Win32Exception ex)
         {
+            // The system does not have this tool: not an error (see RegisterPackType). Noted.
+            Journal.Note("LinuxPlatform.RunTool", $"{tool}: {ex.Message}");
             return false;
         }
     }
@@ -453,18 +477,11 @@ public sealed class LinuxPlatform : IPlatform
     }
 
     /// <summary>
-    /// Read from sysfs, which covers AMD and Intel without running anything, then from nvidia-smi.
-    ///
-    /// sysfs first on purpose: a Steam Deck is AMD, and asking the kernel costs nothing where
-    /// spawning a process may not even be possible. nvidia-smi is the fallback because NVIDIA
-    /// does not expose the total through sysfs.
+    /// The socle's one list for Linux — exactly the folders the mod of a native game reads.
+    /// ⚠ Not fontconfig's other places (~/.fonts, ~/.local/share/fonts): a font found there is one
+    /// the game never used, and exporting it would carry a font nobody saw in the game. Widen both
+    /// together, or neither.
     /// </summary>
-    /// <summary>
-    /// Exactly the folder the mod searches on Linux. ⚠ Not fontconfig's other places (~/.fonts,
-    /// ~/.local/share/fonts): a font found there is one the game never used, and exporting it would
-    /// carry a font nobody saw in the game. Widen both together, or neither.
-    /// </summary>
-    /// <summary>The socle's one list for Linux — the folders the mod of a native game reads.</summary>
     public IEnumerable<string> FontFolders() =>
         UnityGameTranslator.Common.SystemFontFolders
             .For(UnityGameTranslator.Common.SystemFontFolders.Os.Linux, home: Home,
@@ -474,6 +491,13 @@ public sealed class LinuxPlatform : IPlatform
     /// <summary>Linux keeps no table the mod reads: fonts are found by file name alone.</summary>
     public IEnumerable<(string Name, string Path)> RegisteredFonts() => [];
 
+    /// <summary>
+    /// Read from sysfs, which covers AMD and Intel without running anything, then from nvidia-smi.
+    ///
+    /// sysfs first on purpose: a Steam Deck is AMD, and asking the kernel costs nothing where
+    /// spawning a process may not even be possible. nvidia-smi is the fallback because NVIDIA
+    /// does not expose the total through sysfs.
+    /// </summary>
     public long? VideoMemoryBytes()
     {
         long largest = 0;
@@ -489,9 +513,10 @@ public sealed class LinuxPlatform : IPlatform
                     largest = bytes;
             }
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
-            // No sysfs entry, or no permission: fall through to nvidia-smi.
+            // No sysfs entry, or no permission: fall through to nvidia-smi. Noted.
+            Journal.Note("LinuxPlatform.VideoMemoryBytes", $"sysfs not read ({ex.GetType().Name})");
         }
 
         if (largest > 0) return largest;
@@ -521,9 +546,10 @@ public sealed class LinuxPlatform : IPlatform
                     largest = mib * 1024 * 1024;
             }
         }
-        catch
+        catch (System.ComponentModel.Win32Exception ex)
         {
-            // No NVIDIA driver installed. Not knowing is a valid answer here.
+            // No NVIDIA driver installed. Not knowing is a valid answer here — noted.
+            Journal.Note("LinuxPlatform.VideoMemoryBytes", $"nvidia-smi: {ex.Message}");
         }
 
         return largest > 0 ? largest : null;

@@ -69,8 +69,10 @@ public sealed class SingleInstance : IDisposable
             Directory.CreateDirectory(platform.RuntimeStateDirectory);
             path = LockPathIn(platform.RuntimeStateDirectory);
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
+            // Failing open (see above) — and said, since two windows may then share one settings file.
+            Faults.Say("SingleInstance.TryAcquire folder", ex);
             return Unguarded();
         }
 
@@ -96,12 +98,15 @@ public sealed class SingleInstance : IDisposable
         }
         catch (IOException)
         {
+            // The ordinary answer when a window is already open: the lock is held.
+            Journal.Note("SingleInstance", "another window holds the lock");
             HolderProcessId = ReadHolder(path);
             return null;
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException ex)
         {
-            // Not ours to lock. Better two windows than none.
+            // Not ours to lock. Better two windows than none — said.
+            Faults.Say("SingleInstance.TryAcquire lock", ex);
             return Unguarded();
         }
     }
@@ -120,14 +125,21 @@ public sealed class SingleInstance : IDisposable
                 ? id
                 : null;
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
+            // The other window cannot be brought forward without its id: noted.
+            Journal.Note("SingleInstance.ReadHolder", $"holder unknown ({ex.GetType().Name})");
             return null;
         }
     }
 
     public void Dispose()
     {
-        try { _held?.Dispose(); } catch { /* the process is ending anyway */ }
+        try { _held?.Dispose(); }
+        catch (IOException ex)
+        {
+            // The process is ending anyway; a lock file that could not be flushed is noted.
+            Journal.Note("SingleInstance.Dispose", ex.Message);
+        }
     }
 }

@@ -1,7 +1,6 @@
 using UnityGameTranslator.Common;
 using UnityGameTranslator.Manager.Core.Api;
 using UnityGameTranslator.Manager.Core.Detection;
-using UnityGameTranslator.Manager.Core.Diagnostics;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
 
@@ -814,7 +813,9 @@ public sealed class UninstallEngine
         var backupRoot = Path.Combine(game.Path, FileOperations.BackupDirectory);
         if (!Directory.Exists(backupRoot)) return restored;
 
-        foreach (var backup in Directory.EnumerateFiles(backupRoot, "*", SearchOption.AllDirectories))
+        // Folder by folder: a subfolder that cannot be read is said and skipped, where the lazy
+        // AllDirectories walk threw out of this loop and stopped the restore at that point.
+        foreach (var backup in Reading.FilesUnder(backupRoot, "UninstallEngine.RestoreBackups walk"))
         {
             var relative = Path.GetRelativePath(backupRoot, backup).Replace('\\', '/');
             try

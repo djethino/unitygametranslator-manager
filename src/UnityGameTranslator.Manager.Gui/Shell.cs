@@ -23,9 +23,11 @@ public static class Shell
             if (!Directory.Exists(path)) return;
             Open(path);
         }
-        catch
+        // Win32Exception: no program to open it with; InvalidOperationException: the shell refused.
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
-            // Nothing to say: the path is on screen, and it can be pasted.
+            // Nothing to say on screen: the path is there, and it can be pasted. Noted.
+            Journal.Note("Shell.OpenFolder", $"no file manager opened it ({ex.Message})");
         }
     }
 
@@ -52,9 +54,11 @@ public static class Shell
         {
             Open(parsed.AbsoluteUri);
         }
-        catch
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
-            // No browser we may start. A convenience that fails is not a failure to report.
+            // No browser we may start. A convenience that fails is not a failure to report on
+            // screen — noted.
+            Journal.Note("Shell.OpenUrl", $"no browser opened it ({ex.Message})");
         }
     }
 

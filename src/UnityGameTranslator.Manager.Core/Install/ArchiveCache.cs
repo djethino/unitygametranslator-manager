@@ -61,6 +61,7 @@ public sealed class ArchiveCache
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             // Unreadable: said as not downloaded — the install then finds out, and downloads.
+            Faults.Say("ArchiveCache.Holds", e, key.Name);
             return false;
         }
     }
@@ -110,9 +111,11 @@ public sealed class ArchiveCache
 
             return archive;
         }
-        catch
+        catch (Exception e) when (Reading.Failed(e))
         {
-            // A cache that cannot be read is a cache miss. Nothing here is worth failing an install.
+            // A cache that cannot be read is a cache miss. Nothing here is worth failing an install
+            // — and the download that follows is explained here.
+            Faults.Say("ArchiveCache.TryPath", e, key.Name);
             return null;
         }
     }
@@ -132,9 +135,10 @@ public sealed class ArchiveCache
             File.Copy(archivePath, Path.Combine(folder, "archive" + extension), overwrite: true);
             File.WriteAllLines(Path.Combine(folder, EntryFileName), new[] { key.Version, sha256 });
         }
-        catch
+        catch (Exception e) when (Reading.WriteFailed(e))
         {
-            // Storing is an optimisation. An install that worked must not fail over a copy.
+            // Storing is an optimisation. An install that worked must not fail over a copy — said.
+            Faults.Say("ArchiveCache.Store", e, key.Name);
         }
     }
 
@@ -150,9 +154,10 @@ public sealed class ArchiveCache
         {
             if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
         }
-        catch
+        catch (Exception e) when (Reading.WriteFailed(e))
         {
-            // Left behind at worst, and the next Store overwrites the files it cares about.
+            // Left behind at worst, and the next Store overwrites the files it cares about — said.
+            Faults.Say("ArchiveCache.Drop", e, Sanitize.Path(folder));
         }
     }
 

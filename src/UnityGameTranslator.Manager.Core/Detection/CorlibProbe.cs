@@ -1,7 +1,5 @@
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
-using UnityGameTranslator.Common;
-using UnityGameTranslator.Manager.Core.Diagnostics;
 
 namespace UnityGameTranslator.Manager.Core.Detection;
 

@@ -182,10 +182,15 @@ public sealed class GitHubReleaseClient
         {
             json = await _http.GetStringAsync(url, ct).ConfigureAwait(false);
         }
-        catch (HttpRequestException)
+        catch (HttpRequestException ex)
         {
             // 404 is the ordinary answer for "no release published", and anything else here is a
-            // reason to let the list try rather than to fail the whole lookup.
+            // reason to let the list try rather than to fail the whole lookup. The first is noted,
+            // the second said.
+            if (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+                Journal.Note("GitHubReleaseClient", $"{_releasesApi}: no published release");
+            else
+                Faults.Say("GitHubReleaseClient.GetPublishedLatestAsync", ex, _releasesApi);
             return null;
         }
 
@@ -212,8 +217,8 @@ public sealed class GitHubReleaseClient
         if (sha is null)
         {
             throw new InvalidOperationException(
-                $"Release {release.TagName} has no .sha256 checksum for {assetName}, so it cannot " +
-                "be verified. Nothing was installed.");
+                $"Release {release.TagName} has no readable .sha256 checksum for {assetName}, so it " +
+                "cannot be verified. Nothing was installed.");
         }
 
         return (url, sha);
@@ -236,8 +241,11 @@ public sealed class GitHubReleaseClient
 
             return hash is { Length: 64 } ? hash.ToLowerInvariant() : null;
         }
-        catch
+        catch (Exception ex) when (Reading.RequestFailed(ex, ct))
         {
+            // Answered as "no checksum": the caller then refuses to install anything unverified.
+            // That the file exists and could not be READ is said here.
+            Faults.Say("GitHubReleaseClient.ReadChecksumAsync", ex, assetName);
             return null;
         }
     }

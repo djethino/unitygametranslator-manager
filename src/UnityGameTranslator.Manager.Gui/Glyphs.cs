@@ -225,9 +225,11 @@ public static class Glyphs
                 VerticalAlignment = VerticalAlignment.Center,
             };
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
-            // A missing asset must not take a button with it; the label alone still works.
+            // A missing asset must not take a button with it; the label alone still works. An
+            // embedded asset that does not load is a build defect: said.
+            Faults.Say("Glyphs.Site", ex);
             return new Panel { Width = 0 };
         }
     }

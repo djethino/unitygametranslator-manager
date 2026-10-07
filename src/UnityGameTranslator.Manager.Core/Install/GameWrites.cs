@@ -43,11 +43,18 @@ public static class GameWrites
         {
             return platform.IsGameRunning(game) ? RunningRefusal : null;
         }
-        catch
+        catch (Exception ex)
         {
-            return RunningRefusal;
+            // Every failure refuses — that is the rule above, so this catch takes them all. But it
+            // said "This game is running" over a question that could not be answered: the refusal
+            // now says what is actually known, and the journal why.
+            Faults.Say("GameWrites.WhyNotNow", ex, game.Name);
+            return UnknownRefusal;
         }
     }
+
+    public const string UnknownRefusal =
+        "Could not tell whether this game is running. Close it if it is, then try again.";
 
     /// <summary>The same answer for a writer that only knows the game's folder.</summary>
     public static string? WhyNotNow(IPlatform? platform, string gamePath) =>

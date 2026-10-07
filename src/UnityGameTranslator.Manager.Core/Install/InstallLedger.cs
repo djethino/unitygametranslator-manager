@@ -107,7 +107,9 @@ public sealed class InstallLedger
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
         {
             // ⚠ A memory nobody can read is an empty memory, never a failed operation. This file
-            // exists to answer questions afterwards; an install must not fail because of it.
+            // exists to answer questions afterwards; an install must not fail because of it. It is
+            // set aside rather than overwritten by the next note: it is the record of past acts.
+            Reading.SetAside(Path, e, "InstallLedger.Read");
             return new Dictionary<string, Entry>(StringComparer.OrdinalIgnoreCase);
         }
     }
@@ -186,7 +188,8 @@ public sealed class InstallLedger
         {
             // 🔴 Never fails the caller. An install that worked must not report failure because a
             // note about it could not be filed — the game folder is correct either way, and the
-            // receipt inside it is what any later action reads.
+            // receipt inside it is what any later action reads. Said.
+            Faults.Say("InstallLedger.Write", e, Sanitize.Path(Path));
         }
     }
 

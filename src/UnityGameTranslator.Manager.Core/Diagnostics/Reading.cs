@@ -43,6 +43,38 @@ public static class Reading
         e is IOException or UnauthorizedAccessException;
 
     /// <summary>
+    /// Every file below <paramref name="root"/>, folder by folder, lazily; a folder that may not be
+    /// read is said (under <paramref name="place"/>) and skipped, and its neighbours are still read.
+    ///
+    /// ⚠ Not <c>Directory.EnumerateFiles(…, AllDirectories)</c> inside a try: that enumeration is
+    /// lazy, so an unreadable subfolder throws from the CALLER's loop, past the try meant to catch
+    /// it — the same defect common's FontFileNames had (2026-10-07). Nor
+    /// <c>EnumerationOptions.IgnoreInaccessible</c>, which skips them without a word.
+    /// </summary>
+    public static IEnumerable<string> FilesUnder(string root, string place)
+    {
+        var folders = new Stack<string>();
+        folders.Push(root);
+        while (folders.Count > 0)
+        {
+            var folder = folders.Pop();
+            string[] files, children;
+            try
+            {
+                files = Directory.GetFiles(folder);
+                children = Directory.GetDirectories(folder);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                Faults.Say(place, e, $"{Sanitize.Path(folder)} skipped");
+                continue;
+            }
+            foreach (var file in files) yield return file;
+            for (var i = children.Length - 1; i >= 0; i--) folders.Push(children[i]);
+        }
+    }
+
+    /// <summary>
     /// A file of this program's own that could not be read: said, and moved aside as
     /// <c>&lt;name&gt;.unreadable</c> before the caller starts afresh.
     ///

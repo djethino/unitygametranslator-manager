@@ -71,11 +71,10 @@ public static class Http
         //
         // ⚠ Nothing changes today — the site does not compress JSON — and that is the point: the
         // day it does, this tool follows instead of failing.
+        // (No try: on the desktop runtimes this tool ships for, HttpClientHandler takes both
+        // methods — only a browser runtime refuses them.)
         if (handler is not null)
-        {
-            try { handler.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate; }
-            catch { /* a handler that refuses it still works, uncompressed */ }
-        }
+            handler.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate;
 
         // 🔴 **The machine header is added when the request LEAVES, never when the client is made.**
         //
@@ -183,20 +182,11 @@ public static class Http
     /// uses the system proxy, which is what `new HttpClient()` did here before. The only reason
     /// this exists is that decompression has to be set on a handler, and "default" mode had none.
     /// </remarks>
-    private static HttpMessageHandler DefaultHandler()
-    {
-        try
+    private static HttpMessageHandler DefaultHandler() =>
+        new HttpClientHandler
         {
-            return new HttpClientHandler
-            {
-                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
-            };
-        }
-        catch
-        {
-            return new HttpClientHandler();
-        }
-    }
+            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+        };
 
     /// <summary>
     /// Null for "default", which leaves HttpClient to its own defaults — the behaviour of every
@@ -207,9 +197,7 @@ public static class Http
         var mode = (Proxy.Mode ?? "default").Trim().ToLowerInvariant();
         if (mode == "default") return null;
 
-        HttpClientHandler handler;
-        try { handler = new HttpClientHandler(); }
-        catch { return null; }
+        var handler = new HttpClientHandler();
 
         try
         {
@@ -246,11 +234,14 @@ public static class Http
                     return null;
             }
         }
-        catch
+        // UriFormatException (a FormatException): the proxy address typed does not parse.
+        catch (Exception ex) when (ex is FormatException or ArgumentException)
         {
             // A malformed proxy URL must not stop the tool from running; it falls back to the
             // default route and the failure surfaces as a normal connection error, with the
-            // proxy named in the explanation.
+            // proxy named in the explanation — and the address that did not parse is said here.
+            handler.Dispose();
+            Faults.Say("Http proxy address", ex, Sanitize.Url(Proxy.Url));
             return null;
         }
     }

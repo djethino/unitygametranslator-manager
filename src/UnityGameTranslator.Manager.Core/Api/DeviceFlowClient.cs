@@ -1,6 +1,5 @@
 using System.Text.Json;
 using UnityGameTranslator.Common;
-using UnityGameTranslator.Manager.Core.Diagnostics;
 using UnityGameTranslator.Manager.Core.Net;
 
 namespace UnityGameTranslator.Manager.Core.Api;

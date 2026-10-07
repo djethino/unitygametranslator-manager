@@ -71,8 +71,10 @@ public static class MachineIdentity
 
             return drawn;
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
+            // Costs the grouping of this machine's accesses on the site, never the tool — said.
+            Faults.Say("MachineIdentity.ReadOrCreate", ex, Sanitize.Path(path));
             return null;
         }
     }

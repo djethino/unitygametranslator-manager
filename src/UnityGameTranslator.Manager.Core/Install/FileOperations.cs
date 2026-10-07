@@ -1,6 +1,4 @@
 using System.Security.Cryptography;
-using UnityGameTranslator.Common;
-using UnityGameTranslator.Manager.Core.Diagnostics;
 using UnityGameTranslator.Manager.Core.Model;
 
 namespace UnityGameTranslator.Manager.Core.Install;

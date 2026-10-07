@@ -70,10 +70,13 @@ public static class GameIcons
 
             return bitmap;
         }
-        catch
+        // Decoding bytes out of somebody else's executable: the image library may refuse them in
+        // more ways than a list could name, so everything is taken here — and noted, never fatal.
+        catch (Exception ex)
         {
             // A packed executable, a file being written, a format we do not decode — none of it is
-            // worth a message. A game without an icon simply shows none.
+            // worth a message on screen. A game without an icon simply shows none.
+            Journal.Note("GameIcons", $"{Sanitize.Path(path)}: icon not drawn ({ex.GetType().Name})");
             return null;
         }
     }

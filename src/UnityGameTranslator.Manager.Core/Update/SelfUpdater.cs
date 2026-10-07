@@ -237,12 +237,10 @@ public sealed class SelfUpdater
             File.Delete(probe);
             return null;
         }
-        catch (UnauthorizedAccessException)
+        catch (Exception ex) when (Reading.WriteFailed(ex))
         {
-            return ReadOnlyFolder(folder);
-        }
-        catch (IOException)
-        {
+            // The answer on screen is "read-only"; what the system actually said is noted.
+            Journal.Note("SelfUpdater write probe", $"{Sanitize.Path(folder)}: {ex.GetType().Name}: {ex.Message}");
             return ReadOnlyFolder(folder);
         }
     }
@@ -425,7 +423,9 @@ public sealed class SelfUpdater
         MakeExecutable(executable);
         RefreshCompanionFiles(fetched.ExtractedPath, folder);
 
-        try { Directory.Delete(staging, recursive: true); } catch { /* staging is disposable */ }
+        // Staging is disposable — a folder left behind is said, not a failed update.
+        try { Directory.Delete(staging, recursive: true); }
+        catch (Exception ex) when (Reading.WriteFailed(ex)) { Faults.Say("SelfUpdater staging", ex, Sanitize.Path(staging)); }
 
         // The installed copy's receipt, the system's list of apps and the .ugtpack association say
         // the new version now — not at its next start, which may be a long way off.
@@ -464,15 +464,17 @@ public sealed class SelfUpdater
                     File.Delete(file);
                     cleared++;
                 }
-                catch
+                catch (Exception ex) when (Reading.WriteFailed(ex))
                 {
-                    // Still locked, or not ours to delete. It will be tried again next time.
+                    // Still locked, or not ours to delete. It will be tried again at the next start.
+                    Journal.Note("SelfUpdater.ClearPreviousVersions", $"{Path.GetFileName(file)} left for now ({ex.GetType().Name})");
                 }
             }
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
-            // An unreadable folder is not a reason to refuse to start.
+            // An unreadable folder is not a reason to refuse to start — said.
+            Faults.Say("SelfUpdater.ClearPreviousVersions", ex, Sanitize.Path(folder));
         }
 
         return cleared;
@@ -552,9 +554,11 @@ public sealed class SelfUpdater
                 | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
                 | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
         }
-        catch
+        catch (Exception ex) when (Reading.WriteFailed(ex) || ex is PlatformNotSupportedException)
         {
-            // A filesystem without Unix modes. The bit came from the archive in that case.
+            // A filesystem without Unix modes: the bit came from the archive in that case. Said,
+            // since "a tool that will not start" (above) is what it would explain.
+            Faults.Say("SelfUpdater.MakeExecutable", ex, Sanitize.Path(path));
         }
     }
 
@@ -576,8 +580,9 @@ public sealed class SelfUpdater
             var target = Path.Combine(destination, name);
             if (!File.Exists(target)) continue;
 
+            // A notice file that could not be refreshed is not worth failing an update — said.
             try { File.Copy(source, target, overwrite: true); }
-            catch { /* a notice file that could not be refreshed is not worth failing an update */ }
+            catch (Exception ex) when (Reading.WriteFailed(ex)) { Faults.Say("SelfUpdater.RefreshCompanionFiles", ex, name); }
         }
     }
 

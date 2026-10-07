@@ -1,6 +1,5 @@
 ﻿using System.Diagnostics;
 using UnityGameTranslator.Manager.Core.Api;
-using UnityGameTranslator.Manager.Core.Diagnostics;
 using UnityGameTranslator.Manager.Core.Platform;
 using UnityGameTranslator.Common;
 

@@ -1,9 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Avalonia;
-using UnityGameTranslator.Common;
 using UnityGameTranslator.Manager.Cli;
-using UnityGameTranslator.Manager.Core.Diagnostics;
 using UnityGameTranslator.Manager.Core.Install;
 using UnityGameTranslator.Manager.Core.Platform;
 using UnityGameTranslator.Manager.Core.Update;

@@ -98,9 +98,11 @@ public sealed class WindowsPlatform : IPlatform
                         using var game = games.OpenSubKey(id);
                         path = game?.GetValue("path") as string;
                     }
-                    catch
+                    catch (Exception ex) when (RegistryFailed(ex))
                     {
-                        // A single unreadable key must not stop the enumeration.
+                        // A single unreadable key must not stop the enumeration — its game is
+                        // missing from the list, and that is said.
+                        Faults.Say("WindowsPlatform.GogRoots", ex, id);
                     }
                     if (!string.IsNullOrEmpty(path) && Directory.Exists(path)) yield return path;
                 }
@@ -111,6 +113,10 @@ public sealed class WindowsPlatform : IPlatform
             }
         }
     }
+
+    /// <summary>What reading or writing the registry may meet: a key we may not open, or one gone.</summary>
+    private static bool RegistryFailed(Exception e) =>
+        e is System.Security.SecurityException or UnauthorizedAccessException or IOException;
 
     public string UserDataDirectory => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -173,10 +179,15 @@ public sealed class WindowsPlatform : IPlatform
 
             return File.Exists(path) ? [path] : [];
         }
-        catch
+        // COMException: a locked shell or a policy; TargetInvocationException: the shell object's own
+        // refusal, through the late binding.
+        catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException
+                                       or System.Reflection.TargetInvocationException
+                                   || Reading.WriteFailed(ex))
         {
             // A locked shell, a policy, a folder we may not write to. The tool is installed and
-            // runnable either way; the caller says which part did not happen.
+            // runnable either way; the caller says which part did not happen — the journal why.
+            Faults.Say("WindowsPlatform.CreateLauncher", ex, kind.ToString());
             return [];
         }
     }
@@ -222,8 +233,10 @@ public sealed class WindowsPlatform : IPlatform
 
             return $@"HKCU\{parent}\{name}";
         }
-        catch
+        catch (Exception ex) when (RegistryFailed(ex))
         {
+            // Not in Windows' list of installed apps: the caller says so, the journal why.
+            Faults.Say("WindowsPlatform.RegisterInstalled", ex);
             return null;
         }
     }
@@ -238,10 +251,11 @@ public sealed class WindowsPlatform : IPlatform
             using var key = Registry.CurrentUser.OpenSubKey(registration[prefix.Length..]);
             return key is not null;
         }
-        catch
+        catch (Exception ex) when (RegistryFailed(ex))
         {
             // Unreadable is not the same as absent, and claiming an installation is broken on the
             // strength of a permissions error would send somebody repairing what is not wrong.
+            Journal.Note("WindowsPlatform.IsRegistered", $"unreadable, taken as present ({ex.GetType().Name})");
             return true;
         }
     }
@@ -255,9 +269,11 @@ public sealed class WindowsPlatform : IPlatform
         {
             Registry.CurrentUser.DeleteSubKeyTree(registration[prefix.Length..], throwOnMissingSubKey: false);
         }
-        catch
+        catch (Exception ex) when (RegistryFailed(ex))
         {
-            // Already gone, or not ours to delete. Either way there is nothing left to do.
+            // Already gone, or not ours to delete. Either way there is nothing left to do — but an
+            // entry left in Windows' list is said.
+            Faults.Say("WindowsPlatform.UnregisterInstalled", ex);
         }
     }
 
@@ -300,9 +316,10 @@ public sealed class WindowsPlatform : IPlatform
             AssociationsChanged();
             return [icon];
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException
-                                      or System.Security.SecurityException)
+        catch (Exception e) when (RegistryFailed(e))
         {
+            // Null is "not registered" to the caller; the key that refused is said here.
+            Faults.Say("WindowsPlatform.RegisterPackType", e);
             return null;
         }
     }
@@ -346,10 +363,10 @@ public sealed class WindowsPlatform : IPlatform
             ForgetExplorerTraces();
             AssociationsChanged();
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException
-                                      or System.Security.SecurityException)
+        catch (Exception e) when (RegistryFailed(e))
         {
-            // Not ours to delete after all. Nothing left to do.
+            // Not ours to delete after all. Nothing left to do — but what stays is said.
+            Faults.Say("WindowsPlatform.UnregisterPackType", e);
         }
     }
 
@@ -409,9 +426,10 @@ public sealed class WindowsPlatform : IPlatform
                 ? PackTypeState.OverriddenByUser
                 : PackTypeState.Ours;
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException
-                                      or System.Security.SecurityException)
+        catch (Exception e) when (RegistryFailed(e))
         {
+            // Absent is what is offered again; that it could not be read is said.
+            Faults.Say("WindowsPlatform.PackTypeStateFor", e);
             return PackTypeState.Absent;
         }
     }
@@ -437,8 +455,10 @@ public sealed class WindowsPlatform : IPlatform
 
             return (int)Math.Min(total / 1024, int.MaxValue);
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
+            // Windows' list then shows no size: noted.
+            Journal.Note("WindowsPlatform.SizeInKilobytes", $"size unknown ({ex.GetType().Name})");
             return 0;
         }
     }
@@ -501,9 +521,11 @@ public sealed class WindowsPlatform : IPlatform
                 if (file is null) continue;
                 if (file.StartsWith(root, StringComparison.OrdinalIgnoreCase)) return true;
             }
-            catch
+            catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
             {
-                // Access denied on system processes is expected and irrelevant here.
+                // Access denied on system processes is expected and irrelevant here — one line for
+                // all of them.
+                Journal.Note("WindowsPlatform.IsGameRunning", $"some processes could not be asked where they run from ({ex.GetType().Name})");
             }
             finally
             {
@@ -534,23 +556,15 @@ public sealed class WindowsPlatform : IPlatform
             var locale = buffer.ToString().Trim();
             return locale.Length >= 2 ? locale : null;
         }
-        catch
+        // The kernel32 entry absent (Wine, an unusual Windows): the language is then asked of the
+        // person.
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
         {
+            Journal.Note("WindowsPlatform.SystemLanguage", ex.GetType().Name);
             return null;
         }
     }
 
-    /// <summary>
-    /// Read from the display adapter keys in the registry.
-    ///
-    /// qwMemorySize rather than WMI's Win32_VideoController.AdapterRAM: the WMI value is a 32-bit
-    /// field and caps at 4 GB, so every card above that reports 4 GB — which would push someone
-    /// with a 16 GB card towards a tiny model for no reason.
-    ///
-    /// The largest adapter wins. Laptops routinely expose both an integrated chip sharing system
-    /// memory and a discrete card; the integrated one comes first in the enumeration and is not
-    /// the one that will run the model.
-    /// </summary>
     public IEnumerable<string> FontFolders()
     {
         // The socle's one list for Windows — the folders the mod reads.
@@ -585,15 +599,28 @@ public sealed class WindowsPlatform : IPlatform
                     found.Add((UnityGameTranslator.Common.SystemFontNames.RegisteredName(name), path));
                 }
             }
-            catch (Exception e) when (e is System.Security.SecurityException or UnauthorizedAccessException or IOException)
+            catch (Exception e) when (RegistryFailed(e))
             {
-                // A table we may not read is a table we do not have: the file names are searched next.
+                // A table we may not read is a table we do not have: the file names are searched
+                // next. Noted.
+                Journal.Note("WindowsPlatform.RegisteredFonts", $"{hive.Name}: not read ({e.GetType().Name})");
             }
         }
 
         return found;
     }
 
+    /// <summary>
+    /// Read from the display adapter keys in the registry.
+    ///
+    /// qwMemorySize rather than WMI's Win32_VideoController.AdapterRAM: the WMI value is a 32-bit
+    /// field and caps at 4 GB, so every card above that reports 4 GB — which would push someone
+    /// with a 16 GB card towards a tiny model for no reason.
+    ///
+    /// The largest adapter wins. Laptops routinely expose both an integrated chip sharing system
+    /// memory and a discrete card; the integrated one comes first in the enumeration and is not
+    /// the one that will run the model.
+    /// </summary>
     public long? VideoMemoryBytes()
     {
         try
@@ -625,8 +652,10 @@ public sealed class WindowsPlatform : IPlatform
 
             return largest > 0 ? largest : null;
         }
-        catch
+        catch (Exception ex) when (RegistryFailed(ex))
         {
+            // Unknown video memory: no model is recommended by size. Noted.
+            Journal.Note("WindowsPlatform.VideoMemoryBytes", $"adapters not read ({ex.GetType().Name})");
             return null;
         }
     }
@@ -642,8 +671,9 @@ public sealed class WindowsPlatform : IPlatform
             using var key = baseKey.OpenSubKey(subKey);
             return key?.GetValue(name) as string;
         }
-        catch
+        catch (Exception ex) when (RegistryFailed(ex))
         {
+            Journal.Note("WindowsPlatform.ReadRegistry", $@"{hive}\{subKey}\{name}: not read ({ex.GetType().Name})");
             return null;
         }
     }

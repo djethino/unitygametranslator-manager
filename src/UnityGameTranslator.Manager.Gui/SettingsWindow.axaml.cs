@@ -2141,7 +2141,8 @@ public sealed class SettingsWindow : Window
                 });
             });
         }
-        catch (OperationCanceledException)
+        // Only the stop the person asked for: any other cancellation is not "you stopped".
+        catch (OperationCanceledException) when (_suiteStop?.IsCancellationRequested == true)
         {
             _testOutput.Children.Add(Note("Stopped. The results above are from before you stopped.",
                                           Tone.Info));

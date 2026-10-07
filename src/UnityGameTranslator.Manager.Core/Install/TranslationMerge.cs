@@ -217,8 +217,11 @@ public sealed class TranslationMerge
                 AllowTrailingCommas = true,
             }) as JsonObject;
         }
-        catch
+        catch (JsonException ex)
         {
+            // A side that does not parse takes no part in the merge — which changes its result, so
+            // it is said.
+            Faults.Say("TranslationMerge.Parse", ex);
             return null;
         }
     }

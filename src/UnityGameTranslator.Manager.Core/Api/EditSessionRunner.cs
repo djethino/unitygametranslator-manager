@@ -434,7 +434,7 @@ public sealed class EditSessionRunner
                 }
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             // Asked to stop: the caller closes the session.
         }
@@ -489,7 +489,11 @@ public sealed class EditSessionRunner
         {
             _retranslator = null;
             try { await retranslator.DrainAsync().ConfigureAwait(false); }
-            catch (OperationCanceledException) { /* cancelled with the follow: the expected end */ }
+            catch (OperationCanceledException)
+            {
+                // Cancelled with the follow: the expected end of an answer still on its way.
+                Journal.Note("EditSessionRunner.CloseAsync", "answers still on their way were cancelled with the session");
+            }
         }
 
         // 🔴 **Drained before it is deleted.** Ending a session used to throw away whatever had
@@ -502,8 +506,14 @@ public sealed class EditSessionRunner
         //
         // Failure here is not allowed to prevent the close — a session left open on the site is a
         // slot held until it expires, for everybody.
+        // ApplyAsync reports its own refusals through LastError; what it THROWS did not reach it,
+        // and is put there now — the browser's last saves are what is at stake.
         try { await ApplyAsync(session.ModKey, ct).ConfigureAwait(false); }
-        catch { /* reported through LastError by ApplyAsync; the close must still happen */ }
+        catch (Exception ex) when (Reading.RequestFailed(ex, ct) || Reading.Failed(ex))
+        {
+            LastError = ex.Message;
+            Faults.Say("EditSessionRunner.CloseAsync apply", ex);
+        }
 
         await _client.CloseAsync(session.ModKey, ct).ConfigureAwait(false);
 

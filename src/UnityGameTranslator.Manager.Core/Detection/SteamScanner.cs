@@ -60,7 +60,13 @@ public sealed class SteamScanner
         {
             IEnumerable<string> manifests;
             try { manifests = Directory.EnumerateFiles(library, "appmanifest_*.acf"); }
-            catch { continue; }
+            catch (Exception ex) when (Reading.Failed(ex))
+            {
+                // The other libraries are still read; the games of this one are missing from the
+                // list, and that is said.
+                Faults.Say("SteamScanner library", ex, Sanitize.Path(library));
+                continue;
+            }
 
             foreach (var manifestPath in manifests)
             {

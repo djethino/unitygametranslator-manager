@@ -37,7 +37,12 @@ public sealed class StoreScanner
     {
         IEnumerable<string> files;
         try { files = Directory.EnumerateFiles(manifestDir, "*.item"); }
-        catch { yield break; }
+        catch (Exception ex) when (Reading.Failed(ex))
+        {
+            // No Epic game can be listed from here: said.
+            Faults.Say("StoreScanners Epic manifests", ex, Sanitize.Path(manifestDir));
+            yield break;
+        }
 
         foreach (var file in files)
         {
@@ -56,9 +61,12 @@ public sealed class StoreScanner
                 // what lets the game be started through Epic, which some titles insist on.
                 if (rootElement.TryGetProperty("AppName", out var an)) appName = an.GetString();
             }
-            catch
+            catch (Exception ex) when (Reading.Failed(ex))
             {
-                continue; // one malformed manifest must not stop the scan
+                // One malformed manifest must not stop the scan — but its game is missing from the
+                // list, and that is said.
+                Faults.Say("StoreScanners Epic manifest", ex, Sanitize.Path(file));
+                continue;
             }
 
             if (string.IsNullOrWhiteSpace(location) || !Directory.Exists(location)) continue;

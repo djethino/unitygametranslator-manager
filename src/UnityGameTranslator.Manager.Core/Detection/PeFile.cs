@@ -40,8 +40,11 @@ public static class PeFile
                 _ => GameArchitecture.Unknown,
             };
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
+            // "Unknown" asks the person instead of guessing — the right answer, and the cause of
+            // the question is here.
+            Faults.Say("PeFile.ReadArchitecture", ex, Sanitize.Path(path));
             return GameArchitecture.Unknown;
         }
     }
@@ -58,8 +61,9 @@ public static class PeFile
             var version = info.FileVersion;
             return string.IsNullOrWhiteSpace(version) ? null : version.Trim();
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
+            Faults.Say("PeFile.ReadFileVersion", ex, Sanitize.Path(path));
             return null;
         }
     }
@@ -97,8 +101,9 @@ public static class PeFile
 
             return string.IsNullOrWhiteSpace(version) ? null : version;
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
+            Faults.Say("PeFile.ReadProductVersion", ex, Sanitize.Path(path));
             return null;
         }
     }

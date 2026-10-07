@@ -180,9 +180,11 @@ public sealed class MergePreviewClient
                     return message.Length > 300 ? message[..300] + "…" : message;
                 }
             }
-            catch
+            catch (JsonException)
             {
-                // Not JSON, or not shaped as expected: the status code says enough.
+                // Not JSON: the status code says enough. Only the parse can throw — every shape is
+                // asked before it is read.
+                Journal.Note("MergePreviewClient", $"an error body for {status} was not JSON");
             }
         }
 

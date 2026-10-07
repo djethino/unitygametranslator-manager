@@ -151,10 +151,11 @@ public static class LoaderProbe
                     if (!IsOurs(Path.GetFileName(dir))) found.Add(Relative(dir) + "/");
                 }
             }
-            catch
+            catch (Exception ex) when (Reading.Failed(ex))
             {
                 // Unreadable folder: reporting "nothing there" would be a lie in the dangerous
-                // direction, so report one unnamed neighbour and stay conservative.
+                // direction, so report one unnamed neighbour and stay conservative — and say why.
+                Faults.Say("LoaderProbe neighbours", ex, Relative(root));
                 found.Add(Relative(root) + "/ (could not be read)");
             }
         }

@@ -314,7 +314,8 @@ public static class EngineModules
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
-                // An executable that cannot be opened says nothing about its system.
+                // An executable that cannot be opened says nothing about its system — said.
+                Faults.Say("EngineModules executable", e, Sanitize.Path(executable));
             }
         }
 

@@ -54,7 +54,10 @@ public static class CommandLine
         // Game names are routinely Chinese, Japanese or Cyrillic. A console left on the legacy
         // code page turns them into mojibake, which makes the tool look broken on exactly the
         // games that most need translating.
-        try { Console.OutputEncoding = System.Text.Encoding.UTF8; } catch { /* redirected output */ }
+        // A process with no console at all refuses the change (IOException); the redirected case is
+        // handled just below, and that is the only one with somewhere to write.
+        try { Console.OutputEncoding = System.Text.Encoding.UTF8; }
+        catch (IOException) { Journal.Note("CommandLine", "no console to set to UTF-8"); }
 
         // 🔴 **And that line alone is not enough, which cost a real defect.** Console.OutputEncoding
         // does not reach a REDIRECTED stream: `diagnose > report.txt` went out in the ANSI code

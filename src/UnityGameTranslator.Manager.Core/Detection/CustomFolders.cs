@@ -1,4 +1,6 @@
 using System.Text.Json;
+using UnityGameTranslator.Common;
+using UnityGameTranslator.Manager.Core.Diagnostics;
 using UnityGameTranslator.Manager.Core.Platform;
 
 namespace UnityGameTranslator.Manager.Core.Detection;
@@ -62,10 +64,11 @@ public sealed class CustomFolders
             if (!File.Exists(_path)) return;
             _folders = JsonSerializer.Deserialize<List<string>>(File.ReadAllText(_path)) ?? new();
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
-            // A corrupt list means we lose the user's folders, which is annoying but harmless;
-            // refusing to start over it would not be.
+            // Refusing to start over a corrupt list would be worse than starting without it — but
+            // the list is set aside rather than overwritten by the next save.
+            Reading.SetAside(_path, ex, "CustomFolders.Load");
             _folders = new List<string>();
         }
     }
@@ -77,9 +80,11 @@ public sealed class CustomFolders
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
             File.WriteAllText(_path, JsonSerializer.Serialize(_folders, JsonOptions));
         }
-        catch
+        catch (Exception ex) when (Reading.WriteFailed(ex))
         {
-            // Failing to persist must not lose the folder for this session.
+            // Failing to persist must not lose the folder for this session — but it will be gone
+            // at the next launch, and that is said.
+            Faults.Say("CustomFolders.Save", ex, Sanitize.Path(_path));
         }
     }
 }

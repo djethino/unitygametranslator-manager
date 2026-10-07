@@ -181,11 +181,12 @@ public static class ModdabilityProbe
                 if (match is not null) return Describe(Path.GetFileName(match));
             }
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
             // An unreadable folder is not evidence of safety, but it is not evidence of an
             // anti-cheat either. The caller will fail later on the write attempt, with a clearer
-            // message than anything we could invent here.
+            // message than anything we could invent here — and this says the check did not run.
+            Faults.Say("ModdabilityProbe.FindAntiCheat", ex, Sanitize.Path(gamePath));
         }
         return null;
     }

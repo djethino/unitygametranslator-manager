@@ -115,7 +115,12 @@ public static partial class UnityGameProbe
 
         IEnumerable<string> children;
         try { children = Directory.EnumerateDirectories(root); }
-        catch { yield break; }
+        catch (Exception ex) when (Reading.Failed(ex))
+        {
+            // A folder of the system's or another account's, met on the way down: ordinary, noted.
+            Journal.Note("UnityGameProbe.FindGameFolders", $"{Sanitize.Path(root)}: not searched ({ex.GetType().Name})");
+            yield break;
+        }
 
         foreach (var child in children)
         {
@@ -263,8 +268,10 @@ public static partial class UnityGameProbe
             return (company.Length is > 1 and < 120 ? company : null,
                     product.Length is > 1 and < 120 ? product : null);
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
+            // The folder name names the game instead — said.
+            Faults.Say("UnityGameProbe.ReadAppInfo", ex, Sanitize.Path(dataDir));
             return (null, null);
         }
     }
@@ -291,8 +298,9 @@ public static partial class UnityGameProbe
 
             return value;
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
+            Faults.Say("UnityGameProbe.ReadSteamAppId", ex, Sanitize.Path(folder));
             return null;
         }
     }
@@ -324,9 +332,11 @@ public static partial class UnityGameProbe
                 if (HoldsEngine(dir)) return dir;
             }
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
-            // Unreadable folder: treated as "not a Unity game here".
+            // Unreadable folder: treated as "not a Unity game here" — noted, since a game could
+            // be missing from the list because of it.
+            Journal.Note("UnityGameProbe.FindDataDirectory", $"{Sanitize.Path(folder)}: not readable ({ex.GetType().Name})");
         }
         return null;
     }
@@ -388,9 +398,11 @@ public static partial class UnityGameProbe
                 return exe;
             }
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
-            // Ignored: absence of an executable is a valid outcome.
+            // Absence of an executable is a valid outcome; a folder that cannot be listed is not
+            // the same thing, and is said.
+            Faults.Say("UnityGameProbe.FindExecutable", ex, Sanitize.Path(folder));
         }
         return null;
     }
@@ -505,9 +517,11 @@ public static partial class UnityGameProbe
                 start = end + 1;
             }
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
-            // Encrypted or unusual asset files simply yield no version.
+            // Encrypted or unusual asset files simply yield no version (the scan above answers
+            // null for those); a file that cannot be READ is a different matter, and said.
+            Faults.Say("UnityGameProbe.ReadVersionFromSerializedFile", ex, Sanitize.Path(path));
         }
         return null;
     }

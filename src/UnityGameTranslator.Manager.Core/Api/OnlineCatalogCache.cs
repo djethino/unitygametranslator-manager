@@ -258,9 +258,11 @@ public sealed class OnlineCatalogCache
                 if (loaded is not null) return new(loaded);
             }
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
-            // A damaged cache costs one refresh, nothing more.
+            // A damaged cache costs one refresh, nothing more — a cache, not anybody's work, so it
+            // is rebuilt rather than set aside. Said.
+            Faults.Say("OnlineCatalogCache.Load", ex, Sanitize.Path(_path));
         }
         return new();
     }
@@ -274,9 +276,10 @@ public sealed class OnlineCatalogCache
             File.WriteAllText(temp, JsonSerializer.Serialize(_entries, JsonOptions));
             File.Move(temp, _path, overwrite: true);
         }
-        catch
+        catch (Exception ex) when (Reading.WriteFailed(ex))
         {
-            // Not persisting only means asking again next time.
+            // Not persisting only means asking again next time — said.
+            Faults.Say("OnlineCatalogCache.Save", ex, Sanitize.Path(_path));
         }
     }
 }

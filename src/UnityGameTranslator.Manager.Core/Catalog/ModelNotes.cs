@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using UnityGameTranslator.Common;
 using UnityGameTranslator.Manager.Core.Platform;
 using UnityGameTranslator.Manager.Core.Net;
 
@@ -239,9 +240,11 @@ public sealed class ModelNotesProvider
                     TryWriteCache(json);
                     return _loaded = document;
                 }
-                catch
+                catch (Exception ex) when (Reading.RequestFailed(ex, ct))
                 {
-                    // Next source, then the cache. A note nobody sees is not worth a message.
+                    // Next source, then the cache. Not a message on screen — a note nobody sees
+                    // is not worth one — but noted.
+                    Journal.Note("ModelNotes.GetAsync", $"{Sanitize.Url(url)}: {Connectivity.Summarize(ex)}");
                 }
             }
         }
@@ -251,9 +254,10 @@ public sealed class ModelNotesProvider
             if (File.Exists(CachePath))
                 return _loaded = Deserialize(File.ReadAllText(CachePath));
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
-            // Unreadable cache: same as no cache.
+            // Unreadable cache: same as no cache — said.
+            Faults.Say("ModelNotes cache", ex, Sanitize.Path(CachePath));
         }
 
         return null;
@@ -447,8 +451,9 @@ public sealed class ModelNotesProvider
             var document = JsonSerializer.Deserialize<ModelNotesDocument>(json, JsonOptions);
             return document is { Models.Count: > 0 } ? document : null;
         }
-        catch
+        catch (JsonException ex)
         {
+            Faults.Say("ModelNotes.Deserialize", ex);
             return null;
         }
     }
@@ -460,9 +465,10 @@ public sealed class ModelNotesProvider
             Directory.CreateDirectory(_platform.UserDataDirectory);
             File.WriteAllText(CachePath, json);
         }
-        catch
+        catch (Exception ex) when (Reading.WriteFailed(ex))
         {
-            // A read-only disk must not break a fetch that already succeeded.
+            // A read-only disk must not break a fetch that already succeeded — said.
+            Faults.Say("ModelNotes.TryWriteCache", ex, Sanitize.Path(CachePath));
         }
     }
 }

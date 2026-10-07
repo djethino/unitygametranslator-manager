@@ -45,9 +45,11 @@ public static class VdfParser
         {
             return Parse(File.ReadAllText(path, Encoding.UTF8));
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
-            // A single unreadable manifest must not abort the whole library scan.
+            // A single unreadable manifest must not abort the whole library scan — its game is
+            // missing from the list, and that is said.
+            Faults.Say("VdfParser.ParseFile", ex, Sanitize.Path(path));
             return null;
         }
     }
@@ -61,8 +63,11 @@ public static class VdfParser
             ParseInto(text, ref pos, root, depth: 0);
             return root;
         }
-        catch
+        // The two ways a malformed file ends the walk: nesting past MaxDepth, or a token cut by
+        // the end of the text (an index past it). Skipped, as the class promises — and said.
+        catch (Exception ex) when (ex is InvalidDataException or IndexOutOfRangeException)
         {
+            Faults.Say("VdfParser.Parse", ex, $"malformed at character {pos}");
             return null;
         }
     }

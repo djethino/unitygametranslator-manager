@@ -25,7 +25,11 @@ public static class UnityEditors
 
             IEnumerable<string> editors;
             try { editors = Directory.EnumerateDirectories(hub).ToList(); }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { continue; }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                Faults.Say("UnityEditors.Installed", e, Sanitize.Path(hub));
+                continue;
+            }
 
             foreach (var editor in editors)
             {
@@ -55,6 +59,7 @@ public static class UnityEditors
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
+            Faults.Say("UnityEditors.PlaybackEngine", e, Sanitize.Path(engines));
             return null;
         }
     }
@@ -79,7 +84,8 @@ public static class UnityEditors
         {
             // The Hub's own file, in a state this tool did not produce: its moved folder is then
             // not searched. Nothing is refused on that — the default folder still is, and the card
-            // lists what was found.
+            // lists what was found. Said.
+            Faults.Say("UnityEditors Hub settings", e, Sanitize.Path(settings));
         }
 
         if (!string.IsNullOrWhiteSpace(secondary)) yield return secondary;

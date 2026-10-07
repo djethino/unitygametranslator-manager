@@ -1,4 +1,6 @@
-﻿using UnityGameTranslator.Manager.Core.Detection;
+﻿using UnityGameTranslator.Common;
+using UnityGameTranslator.Manager.Core.Detection;
+using UnityGameTranslator.Manager.Core.Diagnostics;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
 using UnityGameTranslator.Manager.Core.Settings;
@@ -798,6 +800,8 @@ public sealed class InstallEngine
         if (repo is not null && loader.GitHub is { } source && !string.IsNullOrWhiteSpace(asset.Name))
         {
             var digests = await _assets.GetDigestsAsync(repo, source.Tag, ct).ConfigureAwait(false);
+            if (digests is null)
+                return new ResolvedDownload(url, null, IntegrityLevel.Unasked, asset.Bytes);
             if (digests.TryGetValue(asset.Name, out var digest))
                 return new ResolvedDownload(url, digest, IntegrityLevel.Published, asset.Bytes);
         }
@@ -918,7 +922,8 @@ public sealed class InstallEngine
 
     private static void TryDeleteDirectory(string path)
     {
+        // Staging cleanup is best effort — and a staging folder left behind is said.
         try { if (Directory.Exists(path)) Directory.Delete(path, recursive: true); }
-        catch { /* staging cleanup is best effort */ }
+        catch (Exception ex) when (Reading.WriteFailed(ex)) { Faults.Say("InstallEngine.TryDeleteDirectory", ex, Sanitize.Path(path)); }
     }
 }

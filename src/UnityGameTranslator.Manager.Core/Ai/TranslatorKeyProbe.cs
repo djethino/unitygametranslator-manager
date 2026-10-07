@@ -1,4 +1,5 @@
 using System.Text.Json;
+using UnityGameTranslator.Manager.Core.Diagnostics;
 using UnityGameTranslator.Manager.Core.Net;
 
 namespace UnityGameTranslator.Manager.Core.Ai;
@@ -116,8 +117,11 @@ public sealed class TranslatorKeyProbe
 
             return read(response.StatusCode, body);
         }
-        catch (TaskCanceledException)
+        // Only the client's own timeout: a cancellation the caller asked for is not "no answer",
+        // and goes on to the code that asked.
+        catch (TaskCanceledException) when (!ct.IsCancellationRequested)
         {
+            Journal.Note("TranslatorKeyProbe", $"{Sanitize.Url(url)}: no answer after {Patience.TotalSeconds:0} s");
             return new KeyCheck(false, $"No answer after {Patience.TotalSeconds:0} seconds. The key was not tested.");
         }
         catch (HttpRequestException ex)
@@ -150,6 +154,7 @@ public sealed class TranslatorKeyProbe
         catch (JsonException)
         {
             // Answered, and accepted the key. What it said about the allowance is a bonus.
+            Journal.Note("TranslatorKeyProbe", "DeepL's usage answer was not JSON; the allowance is not shown");
         }
 
         return "The key works.";
@@ -171,6 +176,8 @@ public sealed class TranslatorKeyProbe
         }
         catch (JsonException)
         {
+            // Accepted all the same: the count is the bonus, not the proof.
+            Journal.Note("TranslatorKeyProbe", "Google's language list was not JSON; the count is not shown");
         }
 
         return "The key works.";

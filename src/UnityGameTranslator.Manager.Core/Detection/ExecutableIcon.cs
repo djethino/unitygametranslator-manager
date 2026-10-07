@@ -37,7 +37,7 @@ public static class ExecutableIconReader
     /// The best icon in the file at or below <paramref name="preferredSize"/>, or null.
     ///
     /// Never throws: a packed executable, a truncated file or a format we do not read all mean the
-    /// same thing to the caller — no icon — and none of them is worth a message.
+    /// same thing to the caller — no icon — and none of them is worth a message on screen. Noted.
     /// </summary>
     public static ExecutableIcon? Read(string path, int preferredSize = 64)
     {
@@ -48,8 +48,11 @@ public static class ExecutableIconReader
             var bytes = File.ReadAllBytes(path);
             return Parse(bytes, preferredSize) ?? UnityPlayerIcon(path);
         }
-        catch
+        // IndexOutOfRangeException: a resource table pointing past the end of a truncated or
+        // packed file.
+        catch (Exception ex) when (Reading.Failed(ex) || ex is IndexOutOfRangeException)
         {
+            Journal.Note("ExecutableIcon.Read", $"{Sanitize.Path(path)}: no icon ({ex.GetType().Name})");
             return null;
         }
     }

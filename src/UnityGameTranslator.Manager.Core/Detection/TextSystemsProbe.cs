@@ -40,7 +40,12 @@ public static class TextSystemsProbe
         if (!File.Exists(path)) return null;
 
         try { return Parse(File.ReadAllText(path)); }
-        catch (Exception) { return null; }
+        catch (Exception ex) when (Reading.Failed(ex))
+        {
+            // Said the same way on screen as "nothing recorded" (see above) — and differently here.
+            Faults.Say("TextSystemsProbe.ReadSeen", ex, Sanitize.Path(path));
+            return null;
+        }
     }
 
     /// <summary>
@@ -206,10 +211,16 @@ public static class TextSystemsProbe
                 }
             }
         }
-        catch (BadImageFormatException) { }
-        catch (InvalidOperationException) { }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
+        // Not a .NET assembly after all (a native library sharing the folder), or metadata the
+        // reader refuses: the answer this method gives for such a file — nothing — noted.
+        catch (Exception ex) when (ex is BadImageFormatException or InvalidOperationException)
+        {
+            Journal.Note("TextSystemsProbe.DefinedIn", $"{Path.GetFileName(file)}: not read as .NET ({ex.GetType().Name})");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Faults.Say("TextSystemsProbe.DefinedIn", ex, Sanitize.Path(file));
+        }
         return hits;
     }
 
@@ -242,8 +253,11 @@ public static class TextSystemsProbe
                 window[^carried..].CopyTo(buffer);
             }
         }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // What was found before the read failed is still answered; the rest is unknown — said.
+            Faults.Say("TextSystemsProbe.SearchNames", ex, Sanitize.Path(file));
+        }
 
         return Il2CppNames.Where(s => s.Names.All(present.Contains)).Select(s => s.System);
     }

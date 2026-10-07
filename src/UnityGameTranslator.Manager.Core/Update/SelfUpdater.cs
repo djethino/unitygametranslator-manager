@@ -518,7 +518,9 @@ public sealed class SelfUpdater
         var digests = await _assets
             .GetDigestsAsync(BuildInfo.ToolRepo, release.TagName, ct)
             .ConfigureAwait(false);
-        digests.TryGetValue(assetName, out var published);
+        // GitHub not answering leaves the sidecar alone to decide (and the journal says why).
+        string? published = null;
+        digests?.TryGetValue(assetName, out published);
 
         if (sidecar is not null && published is not null
             && !string.Equals(sidecar, published, StringComparison.OrdinalIgnoreCase))

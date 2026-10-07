@@ -1,5 +1,7 @@
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
+using UnityGameTranslator.Common;
+using UnityGameTranslator.Manager.Core.Diagnostics;
 
 namespace UnityGameTranslator.Manager.Core.Detection;
 
@@ -99,8 +101,11 @@ public static class CorlibProbe
 
             return new Result(broken);
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex) || ex is BadImageFormatException)
         {
+            // "Fine" by decision (see above) — and said, since an install that then fails on this
+            // game has its explanation here.
+            Faults.Say("CorlibProbe.Check", ex, Sanitize.Path(corlib));
             return Result.Fine;
         }
     }

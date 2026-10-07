@@ -1,5 +1,7 @@
 using System.Formats.Tar;
 using System.IO.Compression;
+using UnityGameTranslator.Common;
+using UnityGameTranslator.Manager.Core.Diagnostics;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Net;
 
@@ -259,6 +261,8 @@ public sealed class ArchiveFetcher
 
     private static void TryDelete(string path)
     {
-        try { if (File.Exists(path)) File.Delete(path); } catch { /* staging cleanup is best effort */ }
+        // Staging cleanup is best effort — and a file left in the staging folder is said.
+        try { if (File.Exists(path)) File.Delete(path); }
+        catch (Exception ex) when (Reading.WriteFailed(ex)) { Faults.Say("ArchiveFetcher.TryDelete", ex, Sanitize.Path(path)); }
     }
 }

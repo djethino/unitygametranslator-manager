@@ -1,4 +1,6 @@
 using System.Text.Json;
+using UnityGameTranslator.Common;
+using UnityGameTranslator.Manager.Core.Diagnostics;
 using UnityGameTranslator.Manager.Core.Net;
 
 namespace UnityGameTranslator.Manager.Core.Api;
@@ -38,8 +40,15 @@ public sealed class DeviceFlowClient
     public DeviceFlowClient(HttpClient? http = null) =>
         _http = http ?? Http.Create(TimeSpan.FromSeconds(20));
 
-    /// <summary>Asks for a code. Null when the site could not be reached.</summary>
-    public async Task<DeviceFlowStart?> BeginAsync(CancellationToken ct = default)
+    /// <summary>
+    /// Asks for a code. <c>Start</c> is null when none came back, and <c>Why</c> then says what
+    /// happened, in the words the screen shows.
+    ///
+    /// 🔴 It answered only null (2026-10-07), and the screen guessed "a firewall or proxy may be
+    /// blocking" — also for a site that had answered with an error, the one case where the person's
+    /// firewall is certainly not the cause.
+    /// </summary>
+    public async Task<(DeviceFlowStart? Start, string? Why)> BeginAsync(CancellationToken ct = default)
     {
         try
         {
@@ -47,7 +56,8 @@ public sealed class DeviceFlowClient
                 .PostAsync($"{BuildInfo.ApiBaseUrl}/auth/device", null, ct)
                 .ConfigureAwait(false);
 
-            if (!response.IsSuccessStatusCode) return null;
+            if (!response.IsSuccessStatusCode)
+                return (null, $"UGT Website answered {(int)response.StatusCode}. Nothing was changed. Try again.");
 
             var json = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             using var document = JsonDocument.Parse(json);
@@ -55,19 +65,22 @@ public sealed class DeviceFlowClient
 
             var deviceCode = root.TryGetProperty("device_code", out var d) ? d.GetString() : null;
             var userCode = root.TryGetProperty("user_code", out var u) ? u.GetString() : null;
-            if (deviceCode is null || userCode is null) return null;
+            if (deviceCode is null || userCode is null)
+                return (null, "UGT Website's answer carried no sign-in code. Nothing was changed. Try again.");
 
             var uri = root.TryGetProperty("verification_uri", out var v) ? v.GetString() : null;
             var expires = root.TryGetProperty("expires_in", out var e) && e.TryGetInt32(out var seconds)
                 ? seconds
                 : 900;
 
-            return new DeviceFlowStart(deviceCode, userCode,
-                uri ?? BuildInfo.WebsiteBaseUrl + "/link", expires);
+            return (new DeviceFlowStart(deviceCode, userCode,
+                uri ?? BuildInfo.WebsiteBaseUrl + "/link", expires), null);
         }
-        catch
+        // A cancellation the caller asked for goes on; a timeout is the site not answering.
+        catch (Exception ex) when (Reading.RequestFailed(ex, ct))
         {
-            return null;
+            Faults.Say("DeviceFlowClient.BeginAsync", ex);
+            return (null, Http.Describe(ex, "UGT Website"));
         }
     }
 
@@ -129,12 +142,14 @@ public sealed class DeviceFlowClient
             return new DeviceFlowResult(false, null, null,
                 "The connection closed before sign-in finished. Nothing was changed.");
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
+            // The person stopped waiting: nothing to report.
             return new DeviceFlowResult(false, null, null, null);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (Reading.RequestFailed(ex, ct))
         {
+            Faults.Say("DeviceFlowClient.WaitAsync", ex);
             return new DeviceFlowResult(false, null, null, Http.Describe(ex, "UGT Website"));
         }
     }
@@ -173,8 +188,9 @@ public sealed class DeviceFlowClient
 
                     return new DeviceFlowResult(true, token, name, null);
                 }
-                catch
+                catch (Exception ex) when (ex is JsonException or InvalidOperationException)
                 {
+                    Faults.Say("DeviceFlowClient authorized event", ex);
                     return new DeviceFlowResult(false, null, null,
                         "UGT Website's answer could not be read.");
                 }
@@ -219,8 +235,10 @@ public sealed class DeviceFlowClient
             return response.IsSuccessStatusCode
                 || response.StatusCode == System.Net.HttpStatusCode.NotFound;
         }
-        catch
+        catch (Exception ex) when (Reading.RequestFailed(ex, ct))
         {
+            // The caller signs out locally regardless and says so; the why is here.
+            Faults.Say("DeviceFlowClient.RevokeAsync", ex);
             return false;
         }
     }
@@ -261,10 +279,11 @@ public sealed class DeviceFlowClient
                 ? code.GetString()
                 : null;
         }
-        catch
+        catch (Exception ex) when (Reading.RequestFailed(ex, ct))
         {
             // An unreachable site is an ordinary answer here: the row simply shows no code rather
-            // than a code that might be wrong.
+            // than a code that might be wrong. Noted, not a fault.
+            Journal.Note("DeviceFlowClient.AccessCodeAsync", $"no access code: {Connectivity.Summarize(ex)}");
             return null;
         }
     }

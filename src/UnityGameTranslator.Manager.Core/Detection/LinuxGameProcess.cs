@@ -61,7 +61,9 @@ public static class LinuxGameProcess
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            // Another user's process, or one that ended between the listing and the question.
+            // Another user's process, or one that ended between the listing and the question —
+            // the ordinary state of most of /proc, noted once.
+            Journal.Note("LinuxGameProcess", $"a process could not be asked about its executable ({e.GetType().Name})");
         }
 
         try
@@ -70,6 +72,7 @@ public static class LinuxGameProcess
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
+            Journal.Note("LinuxGameProcess", $"a process could not be asked about its mapped files ({e.GetType().Name})");
             return false;
         }
     }
@@ -105,6 +108,8 @@ public static class LinuxGameProcess
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
+            // No /proc to read: no game can be seen running, and the screen then says none is.
+            Faults.Say("LinuxGameProcess /proc", e);
             yield break;
         }
 

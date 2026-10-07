@@ -1,4 +1,5 @@
 using System.Text.Json;
+using UnityGameTranslator.Common;
 using UnityGameTranslator.Manager.Core.Net;
 
 namespace UnityGameTranslator.Manager.Core.Install;
@@ -14,6 +15,12 @@ public enum IntegrityLevel
 
     /// <summary>No hash available anywhere. HTTPS is all we have.</summary>
     None,
+
+    /// <summary>
+    /// GitHub could not be asked (its limit of 60 calls an hour, an outage): whether it publishes a
+    /// hash is unknown. HTTPS is all we have — and the screen says why, rather than "none".
+    /// </summary>
+    Unasked,
 }
 
 /// <param name="Bytes">
@@ -26,6 +33,7 @@ public sealed record ResolvedDownload(string Url, string? Sha256, IntegrityLevel
     {
         IntegrityLevel.Pinned => "checksum pinned in the catalog",
         IntegrityLevel.Published => "checksum published by GitHub",
+        IntegrityLevel.Unasked => "GitHub did not answer, so no checksum could be read — HTTPS only",
         _ => "no checksum available — HTTPS only",
     };
 }
@@ -61,10 +69,15 @@ public sealed class GitHubAssets
     }
 
     /// <summary>
-    /// Digests for every asset of a release, keyed by file name. Returns an empty map when the
-    /// release cannot be read — a missing checksum is not a reason to fail a lookup.
+    /// Digests for every asset of a release, keyed by file name — empty when the release publishes
+    /// none, and **null when GitHub could not be asked**.
+    ///
+    /// 🔴 The two used to be one empty map (2026-10-07): a rate limit read as "this release has no
+    /// checksum", the install went on unverified saying exactly that, and Ollama's offer claimed the
+    /// publisher had none. And the empty answer was cached, so the question was never asked again in
+    /// that session. Now a failure is said, kept apart, and not remembered — the next lookup asks.
     /// </summary>
-    public async Task<IReadOnlyDictionary<string, string>> GetDigestsAsync(
+    public async Task<IReadOnlyDictionary<string, string>?> GetDigestsAsync(
         string repo, string tag, CancellationToken ct = default)
     {
         var key = $"{repo}@{tag}";
@@ -94,9 +107,13 @@ public sealed class GitHubAssets
                 }
             }
         }
-        catch
+        // A cancellation the caller asked for goes on; a timeout (also a TaskCanceledException) is
+        // GitHub not answering.
+        catch (Exception ex) when (ex is HttpRequestException or JsonException
+                                   || (ex is TaskCanceledException && !ct.IsCancellationRequested))
         {
-            // Rate limiting or an outage means we fall back to "no checksum", not to a failure.
+            Faults.Say("GitHubAssets.GetDigestsAsync", ex, key);
+            return null;
         }
 
         _cache[key] = digests;

@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using UnityGameTranslator.Manager.Core.Api;
+using UnityGameTranslator.Manager.Core.Diagnostics;
 using UnityGameTranslator.Manager.Core.Platform;
 using UnityGameTranslator.Common;
 
@@ -97,17 +98,12 @@ public sealed class OllamaProbe
         var path = Environment.GetEnvironmentVariable("PATH");
         if (string.IsNullOrEmpty(path)) return null;
 
+        // A malformed PATH entry is simply not found: on .NET, Path.Combine no longer checks the
+        // characters and File.Exists answers false for a path it cannot read — neither throws.
         foreach (var directory in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
         {
-            try
-            {
-                var candidate = Path.Combine(directory.Trim(), BinaryName);
-                if (File.Exists(candidate)) return candidate;
-            }
-            catch
-            {
-                // A malformed PATH entry is not a reason to stop looking at the others.
-            }
+            var candidate = Path.Combine(directory.Trim(), BinaryName);
+            if (File.Exists(candidate)) return candidate;
         }
 
         return null;
@@ -273,8 +269,10 @@ public sealed class OllamaProbe
 
             return process.WaitForExit(10_000) && process.ExitCode == 0;
         }
-        catch
+        catch (System.ComponentModel.Win32Exception ex)
         {
+            // The command is not on this system: an ordinary answer to "can it be run", noted.
+            Journal.Note("OllamaProbe.TryRun", $"{fileName}: {ex.Message}");
             return false;
         }
     }

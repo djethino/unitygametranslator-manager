@@ -33,6 +33,15 @@
                       LogicalName="UnityGameTranslator.Manager.Core.Resources.%(Filename)%(Extension)" />
   </ItemGroup>
 
+  <!-- How a caught failure is said, everywhere in this library (2026-10-07): Faults (common) for a
+       failure, Journal.Note for a recognised case, Reading's filters for what a catch around a
+       file or a request may take. Global so that saying it is never one import away — the catches
+       that said nothing had that excuse too. -->
+  <ItemGroup>
+    <Using Include="UnityGameTranslator.Manager.Core.Diagnostics" />
+    <Using Include="UnityGameTranslator.Common.Faults" Alias="Faults" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- Authenticode verification of Unity's engine modules before one is copied into a game
          (Install/UnitySignature.cs). Microsoft's own, MIT; not part of the shared framework. -->

@@ -72,9 +72,11 @@ public sealed class CatalogProvider
                     }
                     lastError = $"{source}: malformed catalog";
                 }
-                catch (Exception ex)
+                // The next source is tried; the screen gets the short form, the journal the cause.
+                catch (Exception ex) when (Reading.RequestFailed(ex, ct))
                 {
                     lastError = $"{source}: {ex.GetType().Name}";
+                    Faults.Say("CatalogProvider " + source, ex, Sanitize.Url(url));
                 }
             }
         }
@@ -87,9 +89,10 @@ public sealed class CatalogProvider
                 if (document is not null) return new CatalogResult(document, CatalogSource.Cache, lastError);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (Reading.Failed(ex))
         {
             lastError = $"cache: {ex.GetType().Name}";
+            Faults.Say("CatalogProvider cache", ex, Sanitize.Path(CachePath));
         }
 
         var embedded = LoadEmbedded();
@@ -121,8 +124,10 @@ public sealed class CatalogProvider
             // source that actually has content, instead of silently finding nothing installable.
             return document is { Loaders.Count: > 0 } ? document : null;
         }
-        catch
+        catch (JsonException ex)
         {
+            // Read as "malformed" by the caller, which moves to the next source; the cause is here.
+            Faults.Say("CatalogProvider.Deserialize", ex);
             return null;
         }
     }
@@ -134,9 +139,10 @@ public sealed class CatalogProvider
             Directory.CreateDirectory(_platform.UserDataDirectory);
             File.WriteAllText(CachePath, json);
         }
-        catch
+        catch (Exception ex) when (Reading.WriteFailed(ex))
         {
-            // A read-only or full disk must not break a catalog fetch that already succeeded.
+            // A read-only or full disk must not break a catalog fetch that already succeeded — said.
+            Faults.Say("CatalogProvider.TryWriteCache", ex, Sanitize.Path(CachePath));
         }
     }
 }

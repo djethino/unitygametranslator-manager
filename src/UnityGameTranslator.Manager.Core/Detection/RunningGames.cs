@@ -91,8 +91,12 @@ public sealed class RunningGames
         {
             processes = Process.GetProcesses();
         }
-        catch
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
+                                       or PlatformNotSupportedException)
         {
+            // No list of processes: no game is seen running, so writes are not refused on that
+            // ground — which makes the failure worth saying.
+            Faults.Say("RunningGames.GetProcesses", ex);
             return None;
         }
 
@@ -130,9 +134,12 @@ public sealed class RunningGames
                     if (IsInside(game.Path, file)) running.Add(game.Path);
                 }
             }
-            catch
+            catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
             {
-                // Access denied, or a process that ended between the enumeration and the question.
+                // Access denied (a process of another account, or elevated), or one that ended
+                // between the enumeration and the question. A game's name matched here, so the one
+                // left unverified is named.
+                Journal.Note("RunningGames", $"'{process.ProcessName}' matched a game's name but could not be asked where it runs from ({ex.GetType().Name})");
             }
             finally
             {
@@ -152,8 +159,10 @@ public sealed class RunningGames
 
             return Path.GetFullPath(file).StartsWith(root, StringComparison.OrdinalIgnoreCase);
         }
-        catch
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
         {
+            // A path the system will not resolve is not one a running game lives under.
+            Journal.Note("RunningGames.IsInside", $"{Sanitize.Path(file)}: not a resolvable path ({ex.GetType().Name})");
             return false;
         }
     }

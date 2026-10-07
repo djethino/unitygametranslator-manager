@@ -325,14 +325,12 @@ public sealed class ToolSettingsWindow : Window
         _accountPanel.Children.Add(new SpinningGear("Getting a sign-in code..."));
 
         var client = new DeviceFlowClient();
-        var start = await client.BeginAsync(token);
+        var (start, why) = await client.BeginAsync(token);
 
         if (start is null)
         {
             _accountPanel.Children.Clear();
-            _accountPanel.Children.Add(Note(
-                "Could not reach UGT Website. A firewall or proxy may be blocking UGT Manager.",
-                Tone.Error));
+            _accountPanel.Children.Add(Note(why ?? "UGT Website gave no sign-in code.", Tone.Error));
 
             var again = new Button { Content = "Try again", FontSize = 12 };
             again.Click += async (_, _) => await SignInAsync();

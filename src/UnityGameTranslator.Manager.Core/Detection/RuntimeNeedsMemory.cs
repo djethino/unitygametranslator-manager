@@ -70,7 +70,8 @@ public sealed class RuntimeNeedsMemory
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            // Not written: the next launch reads the games again. Nothing is wrong on screen.
+            // Not written: the next launch reads the games again. Nothing is wrong on screen — said.
+            Faults.Say("RuntimeNeedsMemory.Save", e, Sanitize.Path(_path));
         }
     }
 
@@ -85,7 +86,9 @@ public sealed class RuntimeNeedsMemory
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
         {
-            // An unreadable memory is an empty one: everything is read again, and rewritten.
+            // An unreadable memory is an empty one: everything is read again, and rewritten. A
+            // cache, not anybody's work — rebuilt, and said.
+            Faults.Say("RuntimeNeedsMemory.Load", e, Sanitize.Path(path));
             return new();
         }
     }

@@ -45,6 +45,9 @@ public static class RealPath
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
+                // A part that cannot be asked is taken as it is written: two spellings of one
+                // folder may then read as two games. Noted.
+                Journal.Note("RealPath", $"{Sanitize.Path(next)}: not resolved ({e.GetType().Name})");
                 target = null;
             }
 

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using UnityGameTranslator.Manager.Core.Diagnostics;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
 using UnityGameTranslator.Common;
@@ -39,70 +40,68 @@ public sealed class SettingsStore
 
     private InstallerSettings Load()
     {
-        try
+        // Only the reading is guarded: a file that is there and cannot be read is set aside, never
+        // overwritten by the next save (Reading.SetAside). What follows works on a file that WAS read,
+        // and a failure there is a defect of this code, not of the file.
+        InstallerSettings? loaded = null;
+        if (File.Exists(_path))
         {
-            if (File.Exists(_path))
+            try
             {
-                var loaded = JsonSerializer.Deserialize<InstallerSettings>(
-                    File.ReadAllText(_path), JsonOptions);
-
-                if (loaded is not null)
-                {
-                    // Decrypted into memory, and the stored form left alone: a file written on
-                    // another machine cannot be read here, and must come back as "no key"
-                    // rather than as a crash or as garbage sent to a provider.
-                    // ⚠ A blank here is not a choice, it is a field written before there was
-                    // anything to write. Left blank, the channel is decided by whichever source
-                    // happens to sit first in the catalogue — so reordering a JSON array would
-                    // silently move everybody to another stream. The declared default answers it.
-                    if (string.IsNullOrWhiteSpace(loaded.BepInEx6Channel))
-                        loaded.BepInEx6Channel = new InstallerSettings().BepInEx6Channel;
-
-                    loaded.AiApiKey = Secrets.Unprotect(loaded.AiApiKeyStored);
-                    loaded.ProxyPassword = Secrets.Unprotect(loaded.ProxyPasswordStored);
-                    loaded.GoogleApiKey = Secrets.Unprotect(loaded.GoogleApiKeyStored);
-                    loaded.DeeplApiKey = Secrets.Unprotect(loaded.DeeplApiKeyStored);
-                    loaded.ApiToken = Secrets.Unprotect(loaded.ApiTokenStored);
-
-                    // A token belongs to the server that issued it. If the tool now points
-                    // somewhere else, keeping it would send someone's credential to a site that
-                    // never made it — the mod guards the same way.
-                    if (loaded.ApiToken is not null
-                        && !string.IsNullOrWhiteSpace(loaded.ApiTokenServer)
-                        && !string.Equals(loaded.ApiTokenServer, BuildInfo.ApiBaseUrl, StringComparison.OrdinalIgnoreCase))
-                    {
-                        loaded.ApiToken = null;
-                        loaded.ApiTokenStored = null;
-                        loaded.ApiUser = null;
-                        loaded.ApiTokenServer = null;
-                    }
-
-                    // Applied before anything can make a request. Every HttpClient in the tool is
-                    // built from these, so a proxy configured once holds everywhere — a partial
-                    // application would produce "search works, install does not", which is close
-                    // to undiagnosable from the outside.
-                    // Settings written before the backend name was corrected say "ai" where the
-                    // mod expects "llm". Left alone, they would keep producing game configs the
-                    // mod cannot act on, silently — so they are moved on read rather than asking
-                    // the user to notice and redo it.
-                    if (loaded.TranslationBackend == "ai") loaded.TranslationBackend = "llm";
-
-                    // One spelling of this machine, same reasoning: an address typed before the
-                    // rule would otherwise be written into every game as "localhost" and show up as
-                    // a difference against a game already saying 127.0.0.1. Endpoints.Canonical.
-                    loaded.AiUrl = Endpoints.Canonical(loaded.AiUrl);
-
-                    ApplyNetworkSettings(loaded);
-                    return loaded;
-                }
+                loaded = JsonSerializer.Deserialize<InstallerSettings>(File.ReadAllText(_path), JsonOptions);
+            }
+            catch (Exception ex) when (Reading.Failed(ex))
+            {
+                Reading.SetAside(_path, ex, "SettingsStore.Load");
             }
         }
-        catch
+
+        if (loaded is null) return new InstallerSettings();
+
+        // Decrypted into memory, and the stored form left alone: a file written on another machine
+        // cannot be read here, and must come back as "no key" rather than as a crash or as garbage
+        // sent to a provider.
+        // ⚠ A blank here is not a choice, it is a field written before there was anything to write.
+        // Left blank, the channel is decided by whichever source happens to sit first in the
+        // catalogue — so reordering a JSON array would silently move everybody to another stream.
+        // The declared default answers it.
+        if (string.IsNullOrWhiteSpace(loaded.BepInEx6Channel))
+            loaded.BepInEx6Channel = new InstallerSettings().BepInEx6Channel;
+
+        loaded.AiApiKey = Secrets.Unprotect(loaded.AiApiKeyStored);
+        loaded.ProxyPassword = Secrets.Unprotect(loaded.ProxyPasswordStored);
+        loaded.GoogleApiKey = Secrets.Unprotect(loaded.GoogleApiKeyStored);
+        loaded.DeeplApiKey = Secrets.Unprotect(loaded.DeeplApiKeyStored);
+        loaded.ApiToken = Secrets.Unprotect(loaded.ApiTokenStored);
+
+        // A token belongs to the server that issued it. If the tool now points somewhere else,
+        // keeping it would send someone's credential to a site that never made it — the mod guards
+        // the same way.
+        if (loaded.ApiToken is not null
+            && !string.IsNullOrWhiteSpace(loaded.ApiTokenServer)
+            && !string.Equals(loaded.ApiTokenServer, BuildInfo.ApiBaseUrl, StringComparison.OrdinalIgnoreCase))
         {
-            // A damaged file must not stop the tool from running.
+            loaded.ApiToken = null;
+            loaded.ApiTokenStored = null;
+            loaded.ApiUser = null;
+            loaded.ApiTokenServer = null;
         }
 
-        return new InstallerSettings();
+        // Settings written before the backend name was corrected say "ai" where the mod expects
+        // "llm". Left alone, they would keep producing game configs the mod cannot act on, silently
+        // — so they are moved on read rather than asking the user to notice and redo it.
+        if (loaded.TranslationBackend == "ai") loaded.TranslationBackend = "llm";
+
+        // One spelling of this machine, same reasoning: an address typed before the rule would
+        // otherwise be written into every game as "localhost" and show up as a difference against a
+        // game already saying 127.0.0.1. Endpoints.Canonical.
+        loaded.AiUrl = Endpoints.Canonical(loaded.AiUrl);
+
+        // Applied before anything can make a request. Every HttpClient in the tool is built from
+        // these, so a proxy configured once holds everywhere — a partial application would produce
+        // "search works, install does not", which is close to undiagnosable from the outside.
+        ApplyNetworkSettings(loaded);
+        return loaded;
     }
 
     /// <summary>
@@ -152,9 +151,11 @@ public sealed class SettingsStore
             File.WriteAllText(temp, JsonSerializer.Serialize(settings, JsonOptions));
             File.Move(temp, _path, overwrite: true);
         }
-        catch
+        catch (Exception ex) when (Reading.WriteFailed(ex))
         {
-            // Failing to persist must not lose the choice for this session.
+            // Failing to persist must not lose the choice for this session — but it will be gone at
+            // the next launch, and that is said.
+            Faults.Say("SettingsStore.Save", ex, Sanitize.Path(_path));
         }
     }
 

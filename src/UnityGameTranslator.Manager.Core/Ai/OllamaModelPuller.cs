@@ -1,5 +1,6 @@
 ﻿using System.Text;
 using System.Text.Json;
+using UnityGameTranslator.Manager.Core.Diagnostics;
 using UnityGameTranslator.Manager.Core.Net;
 using UnityGameTranslator.Common;
 
@@ -64,11 +65,12 @@ public sealed class OllamaModelPuller
 
             return response.IsSuccessStatusCode;
         }
-        catch
+        catch (Exception ex) when (Reading.RequestFailed(ex, ct))
         {
             // Unreachable, refused, or something that is not Ollama. All three mean the same thing
-            // for the caller — do not offer a download — and none of them is worth a message of
-            // its own here: the server list above has already said whether anything answers.
+            // for the caller — do not offer a download — and none is a message of its own on
+            // screen: the server list above has already said whether anything answers. Noted.
+            Journal.Note("OllamaModelPuller.CanDownloadAsync", $"{Sanitize.Url(_baseUrl)}: {Connectivity.Summarize(ex)}");
             return false;
         }
     }
@@ -133,7 +135,9 @@ public sealed class OllamaModelPuller
                 }
                 catch (JsonException)
                 {
-                    // A truncated line at the end of the stream is not a failed download.
+                    // A truncated line at the end of the stream is not a failed download: the
+                    // verdict below is read from "success", not from this line. Noted.
+                    Journal.Note("OllamaModelPuller.PullAsync", "a progress line that was not JSON was skipped");
                 }
             }
 
@@ -144,12 +148,13 @@ public sealed class OllamaModelPuller
                 : "The download stopped before finishing. Run it again to resume: Ollama keeps "
                 + "what it already has.";
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             return "Cancelled. Ollama keeps what it downloaded, so starting again resumes.";
         }
-        catch (Exception ex)
+        catch (Exception ex) when (Reading.RequestFailed(ex, ct))
         {
+            Faults.Say("OllamaModelPuller.PullAsync", ex, model);
             return Http.Describe(ex, "Ollama");
         }
     }

@@ -475,7 +475,11 @@ public static class RuntimeLibraries
             if (FileIn(directories, name) is { } path)
             {
                 try { shape = AssemblyShape.Read(path); }
-                catch (Exception e) when (e is IOException or UnauthorizedAccessException or BadImageFormatException) { }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException or BadImageFormatException)
+                {
+                    // Read as absent: the library is then offered — said, since it may be there.
+                    Faults.Say("RuntimeLibraries.AssemblyShape", e, Sanitize.Path(path));
+                }
             }
 
             read[name] = shape;

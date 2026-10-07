@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using UnityGameTranslator.Manager.Core.Diagnostics;
 using UnityGameTranslator.Manager.Core.Net;
 using UnityGameTranslator.Common;
 
@@ -205,8 +206,11 @@ public sealed class AiServerProbe
                        .Select(id => id!)
                        .ToList();
         }
-        catch
+        catch (Exception ex) when (Reading.RequestFailed(ex, ct))
         {
+            // "Nothing answers" is the ordinary result of looking for a server that is not there —
+            // a recognised case, noted once per address and cause, not a fault.
+            Journal.Note("AiServerProbe.ListModelsAsync", $"{Sanitize.Url(baseUrl)}: {Connectivity.Summarize(ex)}");
             return null;
         }
     }
@@ -725,8 +729,11 @@ public sealed class AiServerProbe
             {
                 throw;
             }
-            catch
+            catch (Exception ex) when (Reading.RequestFailed(ex, ct))
             {
+                // Reported upward as "no answer"; what the server or the network actually did is
+                // kept here, where a report on a translation that never came can find it.
+                Faults.Say("AiServerProbe.Ask", ex, Sanitize.Url(baseUrl));
                 return null;
             }
         }
@@ -851,11 +858,20 @@ public sealed class AiServerProbe
 
             return null;
         }
-        catch
+        catch (Exception ex) when (Reading.RequestFailed(ex, ct))
         {
+            // /api/ps is Ollama's own: on any other server, not knowing is the expected answer.
+            NoteOllamaOnly("/api/ps", baseUrl, ex);
             return null;
         }
     }
+
+    /// <summary>
+    /// A call to one of Ollama's own endpoints that did not answer — the ordinary result on any
+    /// other server (which is why nothing depends on these calls), noted once per address and cause.
+    /// </summary>
+    private static void NoteOllamaOnly(string endpoint, string baseUrl, Exception ex) =>
+        Journal.Note("AiServerProbe " + endpoint, $"{Sanitize.Url(baseUrl)}: {Connectivity.Summarize(ex)}");
 
     /// <summary>
     /// Every placeholder present, once each, in the order they were sent.
@@ -927,8 +943,9 @@ public sealed class AiServerProbe
 
             return null;
         }
-        catch
+        catch (Exception ex) when (Reading.RequestFailed(ex, ct))
         {
+            NoteOllamaOnly("/api/ps", baseUrl, ex);
             return null;
         }
     }
@@ -951,8 +968,9 @@ public sealed class AiServerProbe
                          .Select(name => name!)
                          .ToList();
         }
-        catch
+        catch (Exception ex) when (Reading.RequestFailed(ex, ct))
         {
+            NoteOllamaOnly("/api/ps", baseUrl, ex);
             return Array.Empty<string>();
         }
     }
@@ -979,9 +997,10 @@ public sealed class AiServerProbe
             await _http.PostAsync(OllamaRoot(baseUrl) + "/api/generate", content, ct)
                        .ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex) when (Reading.RequestFailed(ex, ct))
         {
             // A server that does not know this call is a server that manages its own memory.
+            NoteOllamaOnly("/api/generate unload", baseUrl, ex);
         }
     }
 
@@ -1002,8 +1021,9 @@ public sealed class AiServerProbe
             }
             return null;
         }
-        catch
+        catch (Exception ex) when (Reading.RequestFailed(ex, ct))
         {
+            NoteOllamaOnly("/api/ps", baseUrl, ex);
             return null;
         }
     }
@@ -1025,8 +1045,11 @@ public sealed class AiServerProbe
                 ? text.GetString()?.Trim()
                 : null;
         }
-        catch
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
         {
+            // The server said yes and sent something that is not a chat answer: said, since the
+            // caller only sees "no answer".
+            Faults.Say("AiServerProbe.ReadFirstChoice", ex, body.Length > 200 ? body[..200] + "…" : body);
             return null;
         }
     }

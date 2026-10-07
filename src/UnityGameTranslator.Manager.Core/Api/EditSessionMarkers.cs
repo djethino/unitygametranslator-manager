@@ -96,10 +96,11 @@ public static class EditSessionMarkers
 
             return new EditSessionMarker(key, holder, opened);
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
             // A marker nobody can parse says nothing about anybody's session, and keeping it would
-            // block every future one over a file that is simply damaged.
+            // block every future one over a file that is simply damaged — removed, and said.
+            Faults.Say("EditSessionMarkers.Read", ex, Sanitize.Path(path));
             Clear(gamePath, descriptor);
             return null;
         }
@@ -149,10 +150,11 @@ public static class EditSessionMarkers
             var path = PathFor(gamePath, descriptor);
             if (path is not null && File.Exists(path)) File.Delete(path);
         }
-        catch
+        catch (Exception ex) when (Reading.WriteFailed(ex))
         {
             // A marker we could not delete is stale, not dangerous: the next open asks the site
-            // about it, is told the session is gone, and removes it then.
+            // about it, is told the session is gone, and removes it then. Said meanwhile.
+            Faults.Say("EditSessionMarkers.Clear", ex);
         }
     }
 

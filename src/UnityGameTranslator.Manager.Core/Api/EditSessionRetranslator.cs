@@ -124,11 +124,13 @@ public sealed class EditSessionRetranslator
             _requests.Forget(key);
             return;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             // The boundary of a background task: whatever broke, the page is told it failed —
             // that is where the person is looking — and the line is released. Left unanswered, it
             // would stay "already pending" for the rest of the session and never be asked again.
+            // The page says "failed"; what failed is here.
+            Faults.Say("EditSessionRetranslator.AnswerAsync", ex);
             result = new RetranslateResult(RetranslateOutcome.Failed, previous);
         }
 
@@ -211,10 +213,11 @@ public sealed class EditSessionRetranslator
                 };
             }
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
             // A file that cannot be read has no lines: every request is refused as not in the file,
             // which is the one safe answer. The session itself says the file is broken elsewhere.
+            Faults.Say("EditSessionRetranslator.ReadLines", ex);
         }
 
         return lines;

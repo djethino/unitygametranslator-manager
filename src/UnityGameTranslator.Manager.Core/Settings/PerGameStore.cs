@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using UnityGameTranslator.Common;
+using UnityGameTranslator.Manager.Core.Diagnostics;
 using UnityGameTranslator.Manager.Core.Platform;
 
 namespace UnityGameTranslator.Manager.Core.Settings;
@@ -89,26 +91,24 @@ public abstract class PerGameStore<T> where T : class
 
     private Dictionary<string, T> Load()
     {
+        if (!File.Exists(_path)) return new Dictionary<string, T>();
+
+        Dictionary<string, T>? loaded;
         try
         {
-            if (File.Exists(_path))
-            {
-                var loaded = JsonSerializer.Deserialize<Dictionary<string, T>>(
-                    File.ReadAllText(_path), JsonOptions);
-
-                if (loaded is not null)
-                {
-                    foreach (var entry in loaded.Values) AfterLoad(entry);
-                    return loaded;
-                }
-            }
+            loaded = JsonSerializer.Deserialize<Dictionary<string, T>>(File.ReadAllText(_path), JsonOptions);
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
-            // Losing these means asking again, which is recoverable; refusing to start is not.
+            // Losing these means asking again, which is recoverable; refusing to start is not. But
+            // the file is set aside, not overwritten by the next save: what was answered is kept.
+            Reading.SetAside(_path, ex, $"{GetType().Name}.Load");
+            return new Dictionary<string, T>();
         }
 
-        return new Dictionary<string, T>();
+        if (loaded is null) return new Dictionary<string, T>();
+        foreach (var entry in loaded.Values) AfterLoad(entry);
+        return loaded;
     }
 
     private void Save()
@@ -123,9 +123,10 @@ public abstract class PerGameStore<T> where T : class
             File.WriteAllText(temp, JsonSerializer.Serialize(Entries, JsonOptions));
             File.Move(temp, _path, overwrite: true);
         }
-        catch
+        catch (Exception ex) when (Reading.WriteFailed(ex))
         {
-            // Not persisting only costs the answer at the next launch.
+            // Not persisting only costs the answer at the next launch — said.
+            Faults.Say($"{GetType().Name}.Save", ex, Sanitize.Path(_path));
         }
     }
 }

@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using UnityGameTranslator.Common;
 using UnityGameTranslator.Manager.Core.Detection;
+using UnityGameTranslator.Manager.Core.Diagnostics;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
 
@@ -148,16 +149,21 @@ public sealed class TranslationInstaller
             //
             // Never fatal: an ancestor we failed to write costs precision later, not the
             // translation now.
+            var ancestor = Path.Combine(folder, LocalTranslationProbe.AncestorFileName);
             try
             {
-                var ancestor = Path.Combine(folder, LocalTranslationProbe.AncestorFileName);
                 var ancestorTemp = ancestor + ".tmp";
                 File.WriteAllText(ancestorTemp, json, new UTF8Encoding(false));
                 File.Move(ancestorTemp, ancestor, overwrite: true);
             }
-            catch
+            catch (Exception ancestorFailed) when (Reading.WriteFailed(ancestorFailed))
             {
-                // The translation is in place, which is what was asked for.
+                // The translation is in place, which is what was asked for. 🔴 But the ancestor
+                // left there describes the PREVIOUS translation's agreement, and the next merge
+                // would compare against it without knowing (2026-10-07: this was silent). None is
+                // better than a wrong one: dropped, and said.
+                Faults.Say("TranslationInstaller ancestor", ancestorFailed, Sanitize.Path(ancestor));
+                DropStaleAncestor(ancestor);
             }
 
             return new TranslationWriteResult(true, kept, null);
@@ -165,6 +171,23 @@ public sealed class TranslationInstaller
         catch (Exception ex)
         {
             return new TranslationWriteResult(false, false, $"{ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// An ancestor that no longer describes the translation beside it, removed: the next merge
+    /// then knows it has none, rather than comparing against an agreement about another file.
+    /// </summary>
+    private static void DropStaleAncestor(string ancestor)
+    {
+        try
+        {
+            if (File.Exists(ancestor)) File.Delete(ancestor);
+        }
+        catch (Exception ex) when (Reading.WriteFailed(ex))
+        {
+            Faults.Say("TranslationInstaller stale ancestor", ex,
+                       $"{Sanitize.Path(ancestor)} stays and describes the previous translation");
         }
     }
 
@@ -421,9 +444,11 @@ public sealed class TranslationInstaller
         {
             sentNode = JsonNode.Parse(sentJson);
         }
-        catch
+        catch (JsonException ex)
         {
-            // Unreadable: every entry is treated as new, which errs towards protecting the file.
+            // Unreadable: every entry is treated as new, which errs towards protecting the file —
+            // said, since the count shown is then every line.
+            Faults.Say("TranslationInstaller.CountChangedEntries", ex);
             return received.Count;
         }
 
@@ -571,9 +596,11 @@ public sealed class TranslationInstaller
                 ? uuid.GetString()
                 : null;
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
-            // A copy we cannot parse is still a copy somebody may want back.
+            // A copy we cannot parse is still a copy somebody may want back — it simply names no
+            // lineage, and the journal says why.
+            Faults.Say("TranslationInstaller.UuidIn", ex, Sanitize.Path(path));
             return null;
         }
     }

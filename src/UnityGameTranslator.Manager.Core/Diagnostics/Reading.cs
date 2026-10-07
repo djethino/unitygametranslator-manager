@@ -1,4 +1,5 @@
 using System.Text.Json;
+using UnityGameTranslator.Common;
 
 namespace UnityGameTranslator.Manager.Core.Diagnostics;
 
@@ -23,7 +24,46 @@ public static class Reading
         e is IOException or UnauthorizedAccessException or JsonException
             or InvalidOperationException or FormatException or ArgumentException or NotSupportedException;
 
+    /// <summary>
+    /// A request that did not get an answer it could use: the network (<see cref="HttpRequestException"/>,
+    /// a stream cut mid-read: <see cref="IOException"/>), no answer in time (a
+    /// <see cref="TaskCanceledException"/> the caller did NOT ask for), or an answer of another shape
+    /// (<see cref="JsonException"/>, <see cref="InvalidOperationException"/> from a JsonElement of
+    /// another kind, <see cref="KeyNotFoundException"/>, <see cref="FormatException"/>).
+    ///
+    /// ⚠ A cancellation the caller asked for is NOT one of them: it goes on, to the code that asked.
+    /// </summary>
+    public static bool RequestFailed(Exception e, CancellationToken asked) =>
+        e is HttpRequestException or IOException or JsonException or InvalidOperationException
+            or KeyNotFoundException or FormatException
+        || (e is TaskCanceledException && !asked.IsCancellationRequested);
+
     /// <summary>The file or folder could not be written, moved or deleted.</summary>
     public static bool WriteFailed(Exception e) =>
         e is IOException or UnauthorizedAccessException;
+
+    /// <summary>
+    /// A file of this program's own that could not be read: said, and moved aside as
+    /// <c>&lt;name&gt;.unreadable</c> before the caller starts afresh.
+    ///
+    /// 🔴 **Why aside, and not just ignored** (2026-10-07). Each store read a damaged file as empty —
+    /// and its next save wrote over it. The folders somebody added, the settings and the keys they
+    /// typed, the answers given per game: gone for good, over what may have been one bad line. The
+    /// copy set aside is what can still be repaired by hand, or attached to a report.
+    /// </summary>
+    public static void SetAside(string path, Exception cause, string place)
+    {
+        var aside = path + ".unreadable";
+        Faults.Say(place, cause, $"{Sanitize.Path(path)} could not be read; set aside as {Path.GetFileName(aside)} and started afresh");
+        try
+        {
+            File.Move(path, aside, overwrite: true);
+        }
+        catch (Exception ex) when (WriteFailed(ex))
+        {
+            // Left in place, the next save overwrites it — which is what this exists to prevent,
+            // so it is said in its own words.
+            Faults.Say(place + " set aside", ex, $"{Sanitize.Path(path)} stays in place and will be overwritten at the next save");
+        }
+    }
 }

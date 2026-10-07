@@ -53,8 +53,10 @@ public static class LocalTranslationProbe
 
             return (Named(root, "source_language"), Named(root, "target_language"));
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
+            // The game's config could not be read: no language pair is shown — said.
+            Faults.Say("LocalTranslationProbe.ReadLanguages", ex, Sanitize.Path(path));
             return (null, null);
         }
     }
@@ -128,10 +130,11 @@ public static class LocalTranslationProbe
             file = new FileInfo(path);
             if (!file.Exists) return null;
         }
-        catch (Exception)
+        catch (Exception ex) when (Reading.Failed(ex))
         {
             // An unreadable path is not a hash and not a crash: the caller reads null as "no
-            // comparison possible", which is exactly what this is.
+            // comparison possible", which is exactly what this is — and the journal says why.
+            Faults.Say("LocalTranslationProbe.ContentHashOf", ex, Sanitize.Path(path));
             return null;
         }
 
@@ -176,10 +179,11 @@ public static class LocalTranslationProbe
 
             return ContentHash.Of(lines, uuid ?? "");
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
             // A file we cannot read has no identity we can vouch for, and saying so is the point:
             // every caller treats null as "we do not know", never as "it differs".
+            Faults.Say("LocalTranslationProbe.ComputeContentHash", ex, Sanitize.Path(path));
             return null;
         }
     }
@@ -218,8 +222,9 @@ public static class LocalTranslationProbe
 
             return lines;
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
+            Faults.Say("LocalTranslationProbe.ReadLines", ex, Sanitize.Path(path));
             return null;
         }
     }
@@ -301,19 +306,6 @@ public static class LocalTranslationProbe
     }
 
     /// <summary>
-    /// The site account a game is signed in with, or null when it is signed in with none.
-    ///
-    /// ⚠ **The token is never read, and this is how that promise is kept while still answering
-    /// the question.** The mod clears api_token, api_user and api_token_server together — see
-    /// ClearApiSession, which is also what runs when the server refuses a token — so the presence
-    /// of a username IS the presence of a session, and the secret never has to be looked at.
-    ///
-    /// ⚠ Nothing here is written back, ever. This tool's own token and the mod's are deliberately
-    /// separate so that revoking one does not disconnect the other; reading a name to display it
-    /// is the whole of the interest we take in the other one.
-    /// </summary>
-    /// <returns>The account name and the server that issued it, or (null, null).</returns>
-    /// <summary>
     /// The notices the person put away in the game — `sync.dismissed_notices` of the game's own
     /// config, as the mod writes them. Empty when there is no config, or none.
     /// </summary>
@@ -333,13 +325,28 @@ public static class LocalTranslationProbe
                 if (item.ValueKind == JsonValueKind.String && item.GetString() is { Length: > 0 } key) notices.Add(key);
             return notices;
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
-            // A config we cannot parse is reported elsewhere; here it simply means nothing was put away.
+            // A config we cannot parse is reported elsewhere; here it simply means nothing was put
+            // away. Said once, in its own place.
+            Faults.Say("LocalTranslationProbe.ReadDismissedNotices", ex, Sanitize.Path(path));
             return Array.Empty<string>();
         }
     }
 
+    /// <summary>
+    /// The site account a game is signed in with, or null when it is signed in with none.
+    ///
+    /// ⚠ **The token is never read, and this is how that promise is kept while still answering
+    /// the question.** The mod clears api_token, api_user and api_token_server together — see
+    /// ClearApiSession, which is also what runs when the server refuses a token — so the presence
+    /// of a username IS the presence of a session, and the secret never has to be looked at.
+    ///
+    /// ⚠ Nothing here is written back, ever. This tool's own token and the mod's are deliberately
+    /// separate so that revoking one does not disconnect the other; reading a name to display it
+    /// is the whole of the interest we take in the other one.
+    /// </summary>
+    /// <returns>The account name and the server that issued it, or (null, null).</returns>
     public static (string? User, string? Server) ReadSiteAccount(string gamePath,
                                                                  LoaderDescriptor descriptor)
     {
@@ -365,9 +372,10 @@ public static class LocalTranslationProbe
 
             return (user, string.IsNullOrWhiteSpace(server) ? null : server);
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
             // A config we cannot parse is reported elsewhere; here it simply means we cannot say.
+            Faults.Say("LocalTranslationProbe.ReadSiteAccount", ex, Sanitize.Path(path));
             return (null, null);
         }
     }
@@ -420,9 +428,11 @@ public static class LocalTranslationProbe
             if (!translation.Exists) return null;
             ancestor = ancestorPath is null ? default : FileStamp.Of(ancestorPath);
         }
-        catch (Exception)
+        catch (Exception ex) when (Reading.Failed(ex))
         {
-            // Unreadable metadata: read afresh, remember nothing.
+            // Unreadable metadata: read afresh, remember nothing — noted, since every pass then
+            // pays the full read.
+            Journal.Note("LocalTranslationProbe.Read", $"{Sanitize.Path(path)}: no file stamp ({ex.GetType().Name}), read afresh each time");
             return ReadFresh(path, gamePath, descriptor);
         }
 
@@ -555,10 +565,12 @@ public static class LocalTranslationProbe
                 LastWrite = File.GetLastWriteTimeUtc(path),
             };
         }
-        catch
+        catch (Exception ex) when (Reading.Failed(ex))
         {
             // A translation file we cannot parse still exists, and that fact alone must reach
-            // the user: reporting "no translation" would invite overwriting it.
+            // the user: reporting "no translation" would invite overwriting it. What is wrong
+            // with it is in the journal.
+            Faults.Say("LocalTranslationProbe.ReadFresh", ex, Sanitize.Path(path));
             return new LocalTranslation
             {
                 Path = path,

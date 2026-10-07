@@ -116,6 +116,15 @@ public sealed class OllamaInstaller
         var (tag, sizes) = release.Value;
         var digests = await _assets.GetDigestsAsync(Repository, tag, ct).ConfigureAwait(false);
 
+        // Kept apart from "none published": the line above it already uses these words for the
+        // same failure, and blaming Ollama for GitHub's silence was untrue.
+        if (digests is null)
+        {
+            return new OllamaOffer(false, asset, sizes.GetValueOrDefault(asset), null,
+                "Could not reach GitHub to read the installer's checksum, so it cannot be verified. "
+                + "Install Ollama from ollama.com instead.");
+        }
+
         if (!digests.TryGetValue(asset, out var sha))
         {
             return new OllamaOffer(false, asset, sizes.GetValueOrDefault(asset), null,
@@ -222,8 +231,13 @@ public sealed class OllamaInstaller
 
             return (tag, sizes);
         }
-        catch
+        // The caller says "Could not reach GitHub"; the journal says how. A cancellation the
+        // caller asked for goes on.
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException
+                                       or KeyNotFoundException or InvalidOperationException or FormatException
+                                   || (ex is TaskCanceledException && !ct.IsCancellationRequested))
         {
+            Faults.Say("OllamaInstaller.LatestReleaseAsync", ex);
             return null;
         }
     }
@@ -237,6 +251,8 @@ public sealed class OllamaInstaller
 
     private static void TryDelete(string path)
     {
-        try { if (File.Exists(path)) File.Delete(path); } catch { /* staging cleanup is best effort */ }
+        // Staging cleanup is best effort — and an installer left behind in the temp folder is said.
+        try { if (File.Exists(path)) File.Delete(path); }
+        catch (Exception ex) when (Reading.WriteFailed(ex)) { Faults.Say("OllamaInstaller.TryDelete", ex, Sanitize.Path(path)); }
     }
 }

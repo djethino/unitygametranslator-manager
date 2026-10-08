@@ -86,6 +86,8 @@ internal static class Program
         RuntimeLibrariesChecks.WhichCopiesMayBeUsed();
         DropdownChecks.OnlyTheProgramsOwnDropdown();
         DropdownChecks.RowsAreNeverRebuiltOnRefill();
+        LoaderPickChecks.WhichLoaderIsUsed();
+        LoaderPickChecks.NoLoaderHeldByTheWindow();
         RuntimeLibrariesChecks.WhichRuntimeIsTooOld();
         RuntimeLibrariesChecks.WhatIsSaidOnce();
         RuntimeLibrariesChecks.WhichProfileServesAGame();

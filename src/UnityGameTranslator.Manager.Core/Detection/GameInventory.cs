@@ -733,8 +733,19 @@ public sealed class GameInventory
             return null;
         }
 
+        // ⚠ A loader picked on the card this session comes first — laid over the recommendation and
+        // not over EligibleLoaders, which keeps the order nobody chose: the card reads its first
+        // entry as "what is used when nothing is picked" (see LoaderPicks).
         var best = candidates[0];
-        report.RecommendedLoader = best;
+        var used = Install.LoaderPicks.Resolve(candidates, Install.LoaderPicks.LoaderFor(game.Path))!;
+        report.RecommendedLoader = used;
+
+        if (used != best)
+        {
+            report.RecommendationReason =
+                $"This game is {Describe(game.Runtime)}. {used.Display} is used, chosen instead of {best.Display}.";
+            return used;
+        }
 
         var alternatives = candidates.Skip(1).Select(l => l.Display).ToList();
         report.RecommendationReason = alternatives.Count > 0

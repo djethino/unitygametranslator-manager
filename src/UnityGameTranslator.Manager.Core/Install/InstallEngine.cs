@@ -292,8 +292,13 @@ public sealed class InstallEngine
     /// planning and doing are separate so the user can see the whole thing first.
     /// </summary>
     /// <param name="loaderOverride">
-    /// A loader the user picked instead of the recommendation. Ignored when a loader is already
-    /// installed: replacing someone's loader would break every other mod they have.
+    /// A loader the user picked instead of the recommendation — the command line's choice. Ignored
+    /// when a loader is already installed: replacing someone's loader would break every other mod
+    /// they have.
+    ///
+    /// ⚠ The window passes none: its pick is laid over <see cref="GameReport.RecommendedLoader"/> by
+    /// the inventory (<see cref="LoaderPicks"/>), so the screens that describe the install read the
+    /// same loader this method plans.
     /// </param>
     /// <param name="settings">
     /// What to write into the game's config.json once installed, or null to leave it untouched.

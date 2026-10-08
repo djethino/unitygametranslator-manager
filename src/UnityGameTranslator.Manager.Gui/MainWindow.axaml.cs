@@ -69,26 +69,6 @@ public partial class MainWindow : Window
     private GamePreferences _preferences = null!;
 
     /// <summary>
-    /// The loader the picker is currently on, for the card being shown.
-    ///
-    /// A function rather than a value: the picker can be changed after the card is drawn, and
-    /// everything that installs has to act on what it says at the moment of the click. Reset on
-    /// every render, since it closes over controls belonging to that one rendering.
-    /// </summary>
-    private Func<LoaderDescriptor?> _chosenLoader = () => null;
-
-    /// <summary>
-    /// Which build of that loader to install, read the same way and at the same moment.
-    ///
-    /// Null means "whatever the catalog pins" and is the ordinary case: resolution only happens
-    /// once somebody opens "Use another build", because asking two publishers what they currently
-    /// offer, on every card that gets drawn, would burn an unauthenticated GitHub's sixty requests
-    /// an hour on a machine with a large library — to answer a question that changes a few times
-    /// a year.
-    /// </summary>
-    private Func<LoaderBuild?> _chosenBuild = () => null;
-
-    /// <summary>
     /// Whether the one-click should also bring a translation down, for the card being shown.
     ///
     /// ⚠ Held here rather than read from the preferences on every draw, and the difference matters.
@@ -8123,8 +8103,17 @@ public partial class MainWindow : Window
     /// installing a two-year-old build because a page timed out is precisely the failure this
     /// whole change exists to end.
     /// </summary>
-    private Control BuildChooser(GameReport report, SearchPicker loaderPicker)
+    /// <param name="loader">
+    /// The loader this card would install. Fixed for the life of the rendering: picking another
+    /// loader redraws the card (LoaderSection), so this list is never about a loader the reader has
+    /// already moved away from.
+    /// </param>
+    /// <param name="changed">Called when the build held for this game changes — the words that
+    /// name the version (the loader picker, the one-click's steps) follow it.</param>
+    private Control BuildChooser(GameReport report, LoaderDescriptor loader, Action changed)
     {
+        var path = report.Game.Path;
+
         // ⚠ The builds themselves are the entries — no wrapper, because a build already knows how
         // to describe itself and the caller wants the build back, not a tag standing for one.
         var builds = new SearchPicker
@@ -8146,47 +8135,27 @@ public partial class MainWindow : Window
             FontSize = 12,
             Content = body,
             Margin = new Avalonia.Thickness(0, 2, 0, 0),
+
+            // ⚠ Open when a build is held for this game: the card is redrawn after every act, and
+            // a folded expander over a held build would hide the one choice that changes the install.
+            IsExpanded = LoaderPicks.BuildFor(path, loader.Id) is not null,
         };
 
         var loaded = false;
 
-        // 🔴 **Which run owns the list.** Two loads could overlap and BOTH filled it: the list was
-        // emptied before the await and filled after, so `Clear · Clear · +4 · +4` left every build
-        // twice, one block after the other. Reported on a BepInEx 5 card, 8 entries for 4 builds.
+        // 🔴 **One request at a time — so we ask ONCE per gesture.** Two triggers can fire for a
+        // single opening, and each one is a request to a publisher. GitHub allows sixty an hour per
+        // address, unauthenticated: sending two where one answers spends somebody's quota to draw
+        // the same lines twice — and both runs filled the list, every build shown twice.
         //
-        // ⚠ **A "already running, go away" guard would be wrong here.** Changing the loader while a
-        // request is in flight has to REPLACE it — refusing the second load would leave BepInEx's
-        // builds on screen under MelonLoader's name, which is worse than a duplicate. So the last
-        // caller wins: it takes the number, and any older run drops its answer on the way back.
-        //
-        // ⚠ The list is cleared AFTER the await, not before. Emptying first is what let two runs
-        // stack, and it also blanked the list for the length of a network call for nothing.
-        var generation = 0;
-
-        // 🔴 **Which loader is already being asked about — so we ask ONCE per gesture.**
-        //
-        // Two triggers can fire for a single opening, and each one is a request to a publisher.
-        // GitHub allows sixty an hour per address, unauthenticated: sending two where one answers
-        // spends somebody's quota to draw the same four lines twice. The list-level fix below
-        // (generation) stops the DUPLICATE; this stops the second REQUEST, which is the part that
-        // costs something outside this window.
-        //
-        // ⚠ Same loader only. A different one has to replace what is on screen — see the note on
-        // generation — so it goes through, and the older answer is dropped on its way back.
-        LoaderDescriptor? asking = null;
+        // ⚠ The list is cleared AFTER the await, not before: emptying first blanked the list for the
+        // length of a network call for nothing.
+        var asking = false;
 
         async Task LoadAsync()
         {
-            if (_chosenLoader() is not { } loader) return;
-
-            if (asking is not null
-                && string.Equals(asking.Id, loader.Id, StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-
-            var mine = ++generation;
-            asking = loader;
+            if (asking) return;
+            asking = true;
 
             builds.IsEnabled = false;
             Ui.Say(note, $"Checking {loader.Display} versions...");
@@ -8208,14 +8177,8 @@ public partial class MainWindow : Window
                 // leave it set and every later attempt would short-circuit on a load that is not
                 // running. The expander would then never fill again, with nothing on screen saying
                 // why. ResolveAsync catches its own failures today — this must not depend on that.
-                //
-                // ⚠ Only the run that still owns the generation clears it. A superseded run must
-                // not, or the newer one would be let through a second time.
-                if (mine == generation) asking = null;
+                asking = false;
             }
-
-            // Somebody asked again while this was in flight — their answer is the one to show.
-            if (mine != generation) return;
 
             builds.Items.Clear();
 
@@ -8224,7 +8187,11 @@ public partial class MainWindow : Window
                 builds.Items.Add(build);
             }
 
-            builds.Reselect(found.Count > 0 ? found[0] : null);
+            // The build held for this game when there is one, by version — the list was fetched
+            // again, so the objects are new — and the newest otherwise.
+            var held = LoaderPicks.BuildFor(path, loader.Id);
+            builds.Reselect(found.FirstOrDefault(b => b.Version == held?.Version)
+                            ?? (found.Count > 0 ? found[0] : null));
             builds.IsEnabled = found.Count > 1;
 
             // ⚠ **`loaded` only when the answer came from the publisher.** A pinned fallback means
@@ -8246,26 +8213,67 @@ public partial class MainWindow : Window
             if (!loaded) await LoadAsync();
         };
 
-        // Changing the loader invalidates the list: these are BepInEx's builds, not MelonLoader's.
-        // Reloaded in place rather than on the next open, so what is on screen is never about a
-        // loader the reader has already moved away from.
-        loaderPicker.SelectionChanged += async (_, _) =>
+        // Only what is CHOSEN here counts, and only while it differs from the newest — the build
+        // used when nobody picks one (see LoaderPicks: an answer equal to the default is not held).
+        //
+        // 🔴 Nothing held never means "use the pinned archive": that is how the tool once installed
+        // something other than what it announced — the card named the resolved build
+        // (6.0.0-be.785), this expander is folded by default, and every ordinary install fell back
+        // to the pinned 6.0.0-pre.2. BuildPlan keeps the plan's own resolved build when nothing is
+        // held.
+        builds.SelectionChanged += (_, _) =>
         {
-            loaded = false;
-            if (expander.IsExpanded) await LoadAsync();
+            if (builds.SelectedItem is not LoaderBuild picked) return;
+
+            if (builds.Items.OfType<LoaderBuild>().FirstOrDefault() is { } newest && picked.Version != newest.Version)
+                LoaderPicks.PickBuild(path, loader.Id, picked);
+            else
+                LoaderPicks.ForgetBuild(path);
+
+            changed();
         };
 
-        // Only what is CHOSEN here counts — null means "nobody picked one", NOT "use the pinned
-        // archive".
-        //
-        // 🔴 It used to mean the second, and that is how the tool installed something other than
-        // what it announced: the card names the resolved build (6.0.0-be.785) beside the loader,
-        // this expander is folded by default, so every ordinary install fell back to the pinned
-        // 6.0.0-pre.2. The receipt then said pre.2 and the binaries read be.697, while the screen
-        // had said 785. The caller now keeps the plan's own resolved build when nothing is picked.
-        _chosenBuild = () => expander.IsExpanded ? builds.SelectedItem as LoaderBuild : null;
+        // ⚠ Folding it is going back to the newest, as it always was — what is out of sight is not
+        // what gets installed.
+        expander.PropertyChanged += (_, e) =>
+        {
+            if (e.Property != Expander.IsExpandedProperty || expander.IsExpanded) return;
+            if (LoaderPicks.BuildFor(path, loader.Id) is null) return;
+
+            LoaderPicks.ForgetBuild(path);
+            builds.Reselect(builds.Items.OfType<LoaderBuild>().FirstOrDefault());
+            changed();
+        };
+
+        // Drawn open over a held build: its list is fetched now, since no opening gesture will come.
+        if (expander.IsExpanded) Dispatcher.UIThread.Post(async () => await LoadAsync());
 
         return expander;
+    }
+
+    /// <summary>
+    /// A loader as the card names it: with the version that would be installed.
+    ///
+    /// ⚠ **No version where the version depends on a channel we have not resolved.**
+    /// loader.Version is what the catalog PINS — 6.0.0-pre.2 for BepInEx 6 — and printing it beside a
+    /// game set to Bleeding Edge stated the opposite of what installing would do. So: the build held
+    /// for this game, then the resolved version when the background pass has brought it in, the
+    /// pinned one when the loader has no channel to be wrong about, and the bare name in between.
+    ///
+    /// ⚠ The same order BuildPlan follows to choose the build (held, then resolved, then pinned) —
+    /// it is what lets the picker and the one-click's steps name what the click installs.
+    /// </summary>
+    private string LoaderNamed(LoaderDescriptor loader, string gamePath)
+    {
+        var channel = loader.Id.StartsWith("bepinex6", StringComparison.OrdinalIgnoreCase)
+            ? _settings.Current.BepInEx6Channel
+            : null;
+
+        var version = LoaderPicks.BuildFor(gamePath, loader.Id)?.Version
+                      ?? LoaderBuildResolver.Known(loader, channel)?.Version
+                      ?? (loader.Sources.Count > 1 ? null : loader.Version);
+
+        return version is null ? loader.Display : $"{loader.Display} {version}";
     }
 
     private Control LoaderSection(GameReport report)
@@ -8275,15 +8283,6 @@ public partial class MainWindow : Window
 
         var running = _running.IsRunning(report.Game);
         var standing = report.LoaderStanding;
-
-        // Which loader is offered first is an ordering, not a decision made for the user: some
-        // games work with one and not another for reasons no probe can see.
-        SearchPicker? loaderPicker = null;
-
-        // ⚠ Cleared before anything can set it, and BuildChooser reinstates it below. A build
-        // picked on the previous game's card must not follow the reader here: the loaders differ,
-        // and installing "the build chosen for another game" is a fault nobody thinks to look for.
-        _chosenBuild = () => null;
 
         if (report.InstalledLoader is { } installed)
         {
@@ -8371,34 +8370,39 @@ public partial class MainWindow : Window
             // on top of the BepInEx 6 channel. The line above the control already says "we would
             // use"; the suffix was redundant and opened that door.
             //
-            // ⚠ **No version where the version depends on a channel we have not resolved.**
-            // loader.Version is what the catalog PINS — 6.0.0-pre.2 for BepInEx 6 — and printing it
-            // beside a game set to Bleeding Edge stated the opposite of what installing would do.
-            // So: the resolved version when the background pass has brought it in, the pinned one
-            // when the loader has no channel to be wrong about, and the bare name in between.
-            string Describe(LoaderDescriptor loader)
-            {
-                var channel = loader.Id.StartsWith("bepinex6", StringComparison.OrdinalIgnoreCase)
-                    ? _settings.Current.BepInEx6Channel
-                    : null;
-
-                var version = LoaderBuildResolver.Known(loader, channel)?.Version
-                              ?? (loader.Sources.Count > 1 ? null : loader.Version);
-
-                return version is null ? loader.Display : $"{loader.Display} {version}";
-            }
-
             // ⚠ The loaders themselves are the entries: the caller wants a loader back, not a tag
-            // standing for one, and the words are computed above.
-            loaderPicker = new SearchPicker
+            // standing for one, and the words are LoaderNamed's.
+            var loaderPicker = new SearchPicker
             {
                 Width = 260,
-                TextOf = item => item is LoaderDescriptor l ? Describe(l) : "",
+                TextOf = item => item is LoaderDescriptor l ? LoaderNamed(l, report.Game.Path) : "",
             };
 
             foreach (var loader in report.EligibleLoaders) loaderPicker.Items.Add(loader);
 
-            loaderPicker.Reselect(report.RecommendedLoader ?? report.EligibleLoaders[0]);
+            // The report's loader IS the pick when there is one (LoaderPicks, read by the inventory),
+            // so a redraw shows what was picked rather than falling back to the first entry.
+            var used = report.RecommendedLoader ?? report.EligibleLoaders[0];
+            loaderPicker.Reselect(used);
+
+            // 🔴 **Held for the session and laid over the report, then the card redrawn in place**
+            // (2026-10-08). The pick lived in this control and only the install read it back: the
+            // one-click announced the first loader while installing the picked one, and every
+            // redraw put the picker back on the first entry. Through the report, the steps, the
+            // confirmation, the mod's card and the plan all name the same loader.
+            //
+            // ⚠ Choosing the first entry again is not an answer to keep: it is what is used when
+            // nothing is picked (EligibleLoaders keeps that order), and holding it would light Undo
+            // over nothing.
+            loaderPicker.SelectionChanged += async (_, _) =>
+            {
+                if (loaderPicker.SelectedItem is not LoaderDescriptor picked || picked == used) return;
+
+                if (picked == report.EligibleLoaders[0]) LoaderPicks.ForgetLoader(report.Game.Path);
+                else LoaderPicks.PickLoader(report.Game.Path, picked.Id);
+
+                await ShowSelectedAsync();
+            };
 
             var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
             row.Children.Add(new TextBlock
@@ -8410,7 +8414,13 @@ public partial class MainWindow : Window
             });
             row.Children.Add(loaderPicker);
             panel.Children.Add(row);
-            panel.Children.Add(BuildChooser(report, loaderPicker));
+            // A build changes only the version named — the picker's face and the one-click's steps,
+            // both through LoaderNamed — so those two are refreshed rather than the whole card.
+            panel.Children.Add(BuildChooser(report, used, () =>
+            {
+                loaderPicker.Reselect(used);
+                ShowActionBar(report);
+            }));
         }
         else
         {
@@ -8419,11 +8429,6 @@ public partial class MainWindow : Window
             none.FontSize = 12;
             panel.Children.Add(none);
         }
-
-        // Read back by every action on this card and by the bar below it, so the loader somebody
-        // picked here is the loader that gets installed. Reset on each render, because the picker
-        // it closes over belongs to this rendering of this game.
-        _chosenLoader = () => loaderPicker?.SelectedItem as LoaderDescriptor;
 
         // ⚠ Its own verb, exactly as the section below has one. The decision was "each section
         // carries its own version and its own verb, and the one-click orchestrates both" — only
@@ -11198,7 +11203,8 @@ public partial class MainWindow : Window
         || _pendingWay.ContainsKey(report.Game.Path)
         || _pendingTranslation.ContainsKey(report.Game.Path)
         || _pendingChoices.ContainsKey(report.Game.Path)
-        || _pendingAssets.ContainsKey(report.Game.Path);
+        || _pendingAssets.ContainsKey(report.Game.Path)
+        || LoaderPicks.AnyFor(report.Game.Path);
 
     /// <summary>A copy of this game's answers as they are decided — stored, nothing held laid over.</summary>
     private GameModOverrides DecidedMod(string gamePath) =>
@@ -11234,6 +11240,7 @@ public partial class MainWindow : Window
         _pendingTranslation.Remove(report.Game.Path);
         _pendingChoices.Remove(report.Game.Path);
         _pendingAssets.Remove(report.Game.Path);
+        LoaderPicks.ForgetLoader(report.Game.Path);
     }
 
     /// <summary>
@@ -11918,8 +11925,10 @@ public partial class MainWindow : Window
         // not among them — see MaySetUp, which says why the line is drawn there.
         var mayChangeThisGame = MaySetUp(report);
 
+        // ⚠ RecommendedLoader carries the loader picked on the card (LoaderPicks), and BuildPlan
+        // installs that same one — the step reads what the click does, version included.
         if (report.InstalledLoader is null && report.RecommendedLoader is { } loader)
-            yield return new(OneClickAct.InstallLoader, $"install {loader.Display}");
+            yield return new(OneClickAct.InstallLoader, $"install {LoaderNamed(loader, report.Game.Path)}");
         else if (report.LoaderUpdateOffered)
             yield return new(OneClickAct.UpdateLoader,
                              $"update the loader to {report.LoaderStanding!.Available}");
@@ -12370,6 +12379,9 @@ public partial class MainWindow : Window
                 .ToList();
             if (plan.SettingsWeighed) ValidatePending(report, _preferences.Read(report.Game.Path));
             RememberDefaultsWereWritten(report, plan, configBefore);
+
+            // Same as RunInstallAsync: the picked loader is in place, and the installed one wins.
+            if (plan.InstallLoader) LoaderPicks.Settled(report.Game.Path);
 
             var message = outcome.Message;
             var complete = true;
@@ -13303,7 +13315,10 @@ public partial class MainWindow : Window
         }.Plan(
             report,
             resolved.Channel == "beta" ? ReleaseChannel.Beta : ReleaseChannel.Stable,
-            _chosenLoader(),
+            // 🔴 No override: the loader picked on the card is already the report's
+            // RecommendedLoader (LoaderPicks), the one the one-click's steps name. A second channel
+            // for the same answer is how the steps said BepInEx while this installed MelonLoader.
+            null,
             // 🔴 **Which set of values, and it is not always the defaults.** `Intended` reads
             // `settings.TranslationBackend`, `settings.AiModel` and the rest straight off whatever
             // it is handed — only the hotkey, the context and "start translating" ever consult the
@@ -13348,18 +13363,18 @@ public partial class MainWindow : Window
             // whichever way. See InstallPlan.SettingsWeighed.
             SettingsWeighed = settings,
 
-            // Which BUILD of that loader: the one somebody picked by hand, and otherwise the one
-            // Plan() resolved for the chosen channel — the very build this card names.
+            // Which BUILD of that loader: the one held for this game and THIS loader (LoaderPicks),
+            // and otherwise the one Plan() resolved for the chosen channel — the very order
+            // LoaderNamed follows, so the card and the steps name the build this installs.
             //
-            // ⚠ The `?? plan.Build` is the whole point. Written as `_chosenBuild()` alone, a folded
-            // "Use another build" expander — the state every ordinary install is in — erased the
-            // resolved build and fell back to the catalogue's pinned archive. The card announced
-            // one version and the installer wrote another.
+            // ⚠ The `?? plan.Build` is the whole point. Without it, nothing held — the state every
+            // ordinary install is in — erased the resolved build and fell back to the catalogue's
+            // pinned archive. The card announced one version and the installer wrote another.
             //
             // Still null when nothing was resolved at all (offline, publisher silent), and the
             // engine then uses the pinned archives — which is also what the card announces then,
             // so the two still agree.
-            Build = _chosenBuild() ?? plan.Build,
+            Build = LoaderPicks.BuildFor(report.Game.Path, plan.Loader.Id) ?? plan.Build,
         };
     }
 
@@ -14716,6 +14731,10 @@ public partial class MainWindow : Window
                 ValidatePending(report, _preferences.Read(report.Game.Path));
 
             if (outcome.Success) RememberDefaultsWereWritten(report, plan, configBefore);
+
+            // The loader picked on the card is now the one installed, which wins over any pick.
+            // Only once in place: a failed install keeps the pick for the next try.
+            if (outcome.Success && plan.InstallLoader) LoaderPicks.Settled(report.Game.Path);
 
             await MessageAsync(outcome.Success ? "Installed" : "Nothing was changed", outcome.Message);
         }

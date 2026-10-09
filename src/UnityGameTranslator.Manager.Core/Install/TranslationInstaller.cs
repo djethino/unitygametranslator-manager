@@ -457,7 +457,7 @@ public sealed class TranslationInstaller
 
         foreach (var entry in received)
         {
-            if (UnityGameTranslator.Common.ContentHash.IsMetadataKey(entry.Key)) continue;
+            if (!TranslationFileLines.IsLine(entry.Key, entry.Value)) continue;
 
             var before = sent[entry.Key];
             if (before is null)

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using UnityGameTranslator.Common;
+using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Ai;
 
 namespace UnityGameTranslator.Manager.Core.Api;
@@ -202,7 +203,7 @@ public sealed class EditSessionRetranslator
 
             foreach (var property in document.RootElement.EnumerateObject())
             {
-                if (property.Name.StartsWith('_')) continue;
+                if (!TranslationFileLines.IsLine(property.Name, property.Value)) continue;
 
                 lines[property.Name] = property.Value.ValueKind switch
                 {

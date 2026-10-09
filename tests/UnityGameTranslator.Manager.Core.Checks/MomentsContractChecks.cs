@@ -110,7 +110,7 @@ internal static class MomentsContractChecks
                     var local = JsonNode.Parse(File.ReadAllText(file))!.AsObject();
                     var merged = new JsonObject();
                     foreach (var entry in local)
-                        if (ContentHash.IsMetadataKey(entry.Key)) merged[entry.Key] = entry.Value?.DeepClone();
+                        if (!TranslationFileLines.IsLine(entry.Key, entry.Value)) merged[entry.Key] = entry.Value?.DeepClone();
                     foreach (var entry in a["merged"]!.AsObject())
                         merged[entry.Key] = entry.Value?.DeepClone();
                     var mergedJson = merged.ToJsonString(Pretty);
@@ -195,7 +195,7 @@ internal static class MomentsContractChecks
         var parsed = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
         var actual = new JsonObject();
         foreach (var p in parsed)
-            if (!p.Key.StartsWith('_')) actual[p.Key] = p.Value?.DeepClone();
+            if (TranslationFileLines.IsLine(p.Key, p.Value)) actual[p.Key] = p.Value?.DeepClone();
         if (!JsonNode.DeepEquals(actual, expected))
             failures.Add($"{fact}: expected {expected?.ToJsonString()}, got {actual.ToJsonString()}");
     }

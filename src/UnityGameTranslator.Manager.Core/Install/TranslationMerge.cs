@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using UnityGameTranslator.Common;
+using UnityGameTranslator.Manager.Core.Model;
 
 namespace UnityGameTranslator.Manager.Core.Install;
 
@@ -96,10 +97,10 @@ public sealed class TranslationMerge
     private void Decide()
     {
         var keys = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var entry in _local) if (!ContentHash.IsMetadataKey(entry.Key)) keys.Add(entry.Key);
-        foreach (var entry in _remote) if (!ContentHash.IsMetadataKey(entry.Key)) keys.Add(entry.Key);
+        foreach (var entry in _local) if (TranslationFileLines.IsLine(entry.Key, entry.Value)) keys.Add(entry.Key);
+        foreach (var entry in _remote) if (TranslationFileLines.IsLine(entry.Key, entry.Value)) keys.Add(entry.Key);
         if (_ancestor is not null)
-            foreach (var entry in _ancestor) if (!ContentHash.IsMetadataKey(entry.Key)) keys.Add(entry.Key);
+            foreach (var entry in _ancestor) if (TranslationFileLines.IsLine(entry.Key, entry.Value)) keys.Add(entry.Key);
 
         var conflicts = new List<string>();
         int fromServer = 0, kept = 0, removed = 0;
@@ -157,7 +158,7 @@ public sealed class TranslationMerge
 
         foreach (var entry in _local)
         {
-            if (ContentHash.IsMetadataKey(entry.Key)) merged[entry.Key] = entry.Value?.DeepClone();
+            if (!TranslationFileLines.IsLine(entry.Key, entry.Value)) merged[entry.Key] = entry.Value?.DeepClone();
         }
 
         foreach (var pair in _decisions)
@@ -196,7 +197,7 @@ public sealed class TranslationMerge
 
         foreach (var entry in merged)
         {
-            if (ContentHash.IsMetadataKey(entry.Key)) continue;
+            if (!TranslationFileLines.IsLine(entry.Key, entry.Value)) continue;
 
             var there = LineOf(_remote, entry.Key);
             if (there is null) { ahead++; continue; }

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using UnityGameTranslator.Manager.Core.Platform;
 using UnityGameTranslator.Common;
+using UnityGameTranslator.Manager.Core.Model;
 
 namespace UnityGameTranslator.Manager.Core.Install;
 
@@ -176,7 +177,7 @@ public sealed class ModUiLibrary
                               + $"Use the {ModUi.FileName} from a game where UGT Mod translated its interface.");
             }
 
-            var lines = root.EnumerateObject().Count(p => !p.Name.StartsWith('_'));
+            var lines = root.EnumerateObject().Count(p => TranslationFileLines.IsLine(p.Name, p.Value));
             return (new ModUiFile(language ?? "", lines, whenUtc), null);
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)

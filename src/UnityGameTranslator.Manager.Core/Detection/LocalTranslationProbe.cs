@@ -167,12 +167,9 @@ public static class LocalTranslationProbe
 
             foreach (var property in root.EnumerateObject())
             {
-                if (ContentHash.IsMetadataKey(property.Name))
-                {
-                    if (property.Name == ContentHash.UuidKey && property.Value.ValueKind == JsonValueKind.String)
-                        uuid = property.Value.GetString();
-                    continue;
-                }
+                if (property.Name == ContentHash.UuidKey && property.Value.ValueKind == JsonValueKind.String)
+                    uuid = property.Value.GetString();
+                if (!TranslationFileLines.IsLine(property.Name, property.Value)) continue;
 
                 lines.Add(new KeyValuePair<string, TranslationLine>(property.Name, LineOf(property.Value)));
             }
@@ -216,7 +213,7 @@ public static class LocalTranslationProbe
 
             foreach (var property in root.EnumerateObject())
             {
-                if (ContentHash.IsMetadataKey(property.Name)) continue;
+                if (!TranslationFileLines.IsLine(property.Name, property.Value)) continue;
                 lines[property.Name] = LineOf(property.Value);
             }
 
@@ -480,8 +477,8 @@ public static class LocalTranslationProbe
 
             foreach (var property in root.EnumerateObject())
             {
-                // Metadata keys are underscore-prefixed; everything else is a translated line.
-                if (!property.Name.StartsWith('_'))
+                // A line, by the socle's rule — an underscore at the start of a game's text included.
+                if (TranslationFileLines.IsLine(property.Name, property.Value))
                 {
                     entryCount++;
                     Count(property.Value, ref human, ref validated, ref ai, ref captured, ref skipped);

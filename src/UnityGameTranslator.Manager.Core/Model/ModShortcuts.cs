@@ -28,6 +28,8 @@ public static class ModShortcuts
             "Debug: show the game's original fonts instead of the mod's replacement fonts"),
         new ModShortcut("toggle_overlay_hotkey", "Toggle notifications",
             "Show/hide the corner notification overlay (for clean screenshots)"),
+        new ModShortcut("toggle_cursor_hotkey", "Free cursor",
+            "Show the cursor to click notifications. Press again to give it back to the game."),
         new ModShortcut("open_inspector_hotkey", "Toggle Inspector",
             "Open/close the element inspector panel"),
         new ModShortcut("open_upload_hotkey", "Toggle Upload",

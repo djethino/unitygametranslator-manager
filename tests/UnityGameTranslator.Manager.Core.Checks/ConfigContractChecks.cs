@@ -279,6 +279,44 @@ internal static class ConfigContractChecks
     }
 
     /// <summary>
+    /// Every optional shortcut of the contract is in ModShortcuts.All — the one list Mod defaults,
+    /// Set up, Apply and the one-click all read — with the mod's own words for it.
+    ///
+    /// 🔴 **A shortcut added to the mod and forgotten here is invisible in this tool**, and nothing
+    /// else would say so: every screen walks the list, so a missing entry is simply a row that is
+    /// not there, and a game's key that is never written. Asked of the contract, not of a copy.
+    /// </summary>
+    internal static void EveryShortcutOfTheContractIsListed()
+    {
+        Program.Section("the optional shortcuts against the contract");
+
+        var schemaPath = Find("common", "spec", "config", "schema.json");
+        var optionsPath = Find("common", "spec", "screens", "options.json");
+        Program.Check(schemaPath is not null && optionsPath is not null, "the config contract and the Options screen are found",
+            "the check reads the library's own files");
+        if (schemaPath is null || optionsPath is null) return;
+
+        var properties = JsonNode.Parse(File.ReadAllText(schemaPath))?["properties"]?.AsObject();
+        var contract = properties?
+            .Where(p => p.Key.EndsWith("_hotkey", StringComparison.Ordinal) && p.Key != "settings_hotkey"
+                        && (string?)p.Value?["x-writer"] == "both")
+            .Select(p => p.Key).OrderBy(k => k, StringComparer.Ordinal).ToList() ?? new List<string>();
+        var listed = ModShortcuts.All.Select(s => s.Key).OrderBy(k => k, StringComparer.Ordinal).ToList();
+
+        Program.Check(contract.Count > 0 && contract.SequenceEqual(listed),
+            "ModShortcuts lists exactly the contract's optional shortcuts",
+            $"contract {string.Join(",", contract)} | listed {string.Join(",", listed)}");
+
+        string options = File.ReadAllText(optionsPath);
+        var unworded = ModShortcuts.All
+            .Where(s => !options.Contains("\"" + s.Label + "\"", StringComparison.Ordinal)
+                        || !options.Contains("\"" + s.Hint + "\"", StringComparison.Ordinal))
+            .Select(s => s.Key).ToList();
+        Program.Check(unworded.Count == 0, "each one carries the label and hint the mod's Options shows",
+            unworded.Count == 0 ? "the same shortcut reads the same in both products" : "not in options.json: " + string.Join(",", unworded));
+    }
+
+    /// <summary>
     /// The optional shortcuts: Mod defaults FILL an empty one and keep what a game set; a game's own
     /// answer replaces; a key that does not travel is never written (analyse/manager-reglages-avances.md, part B).
     /// </summary>

@@ -46,6 +46,7 @@ internal static class Program
         ConfigContractChecks.TheTargetChosenForAGameIsTheOneWritten();
         ConfigContractChecks.TheSourceLanguageIsDeclaredNeverGuessed();
         ConfigContractChecks.TheConfirmedGameRoundTrips();
+        ConfigContractChecks.EveryShortcutOfTheContractIsListed();
         ConfigContractChecks.ShortcutsFillThenReplace();
         ConfigContractChecks.TheInterfaceFileFollowsTheAct();
         MomentsContractChecks.WhatTheFileSaysAfterEachMoment();

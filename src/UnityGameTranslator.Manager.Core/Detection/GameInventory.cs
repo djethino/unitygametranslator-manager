@@ -299,7 +299,8 @@ public sealed class GameInventory
         // goes back to being untouchable — the kind of gap nobody notices because the safe answer
         // is the one that stays.
         var preference = new Settings.GamePreferences(_platform).Read(game.Path);
-        report.LoaderAdopted = preference.AdoptLoader;
+        // The answer held on the card first (LoaderPicks), so the update it permits is offered at once.
+        report.LoaderAdopted = Install.LoaderPicks.AdoptFor(game.Path) ?? preference.AdoptLoader;
         t = ReportTimings.Add(1, t);
 
         // ⚠ The probe looks at files; only the receipt knows who put them there. Nothing was

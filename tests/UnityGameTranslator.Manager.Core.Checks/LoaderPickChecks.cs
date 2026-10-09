@@ -98,6 +98,57 @@ internal static class LoaderPickChecks
         Program.Check(plan?.Loader == melon,
             "with no override, the plan installs the report's loader",
             "the window passes none, so the loader its steps name is the one planned");
+
+        // The confirmation says when the build is the pin because the publisher did not answer.
+        var pinned = new LoaderBuild("0.5.0", null, Array.Empty<LoaderAsset>(), "catalog", IsPinnedFallback: true);
+        Program.Check(plan is not null
+                      && (plan with { Build = pinned }).Describe().Contains(LoaderBuild.UnreachableNotice(melon.Display))
+                      && !(plan with { Build = older }).Describe().Contains(LoaderBuild.UnreachableNotice(melon.Display)),
+            "an install on the pinned build says the publisher was not reached, and only then",
+            "the version shown is real but can be far behind; a resolved build carries no such warning");
+    }
+
+    /// <summary>
+    /// 🔴 A card answer is held while it differs from what is decided, and only then (2026-10-09,
+    /// `.claude/rules/manager-ui.md` §1): the adoption box wrote its preference as it was clicked, and
+    /// a source picked back to the one in force kept Undo lit over nothing.
+    /// </summary>
+    internal static void WhatACardAnswerHolds()
+    {
+        Program.Section("Card answers: held only while they differ, dropped by Undo");
+
+        var game = Path.Combine(Path.GetTempPath(), "ugt-card-answer-check");
+
+        LoaderPicks.HoldAdopt(game, adopt: true, stored: false);
+        Program.Check(LoaderPicks.AdoptFor(game) == true && LoaderPicks.AnyFor(game),
+            "ticking 'Let UGT Manager update' is held, not written",
+            "the box wrote the preference at the click; now its Apply (1) or the loader update writes it");
+
+        LoaderPicks.HoldAdopt(game, adopt: false, stored: false);
+        Program.Check(LoaderPicks.AdoptFor(game) is null && !LoaderPicks.AnyFor(game),
+            "unticking back to what is stored holds nothing",
+            "an answer equal to the decided one would light Undo over nothing");
+
+        LoaderPicks.HoldAdopt(game, adopt: false, stored: true);
+        LoaderPicks.PickLoader(game, "melonloader");
+        LoaderPicks.ForgetAll(game);
+        Program.Check(!LoaderPicks.AnyFor(game),
+            "Undo drops the loader pick and the adoption together",
+            "the bar's Undo clears every answer the card is holding");
+
+        SourcePicks.PickLibraries(game, "editor-a", decidedId: "editor-a");
+        Program.Check(SourcePicks.LibrariesFor(game) is null && !SourcePicks.AnyFor(game),
+            "a source picked back to the one in force holds nothing",
+            "same rule as every other answer on the card");
+
+        SourcePicks.PickLibraries(game, "game-b", decidedId: "editor-a");
+        SourcePicks.PickModules(game, "unity", decidedId: null);
+        Program.Check(SourcePicks.LibrariesFor(game) == "game-b" && SourcePicks.ModulesFor(game) == "unity" && SourcePicks.AnyFor(game),
+            "a different source is held, and lights Undo",
+            "Undo forgets source picks too, so it must see them");
+
+        SourcePicks.Settled(game);
+        Program.Check(!SourcePicks.AnyFor(game), "Undo (or the install) drops them", "nothing outlives the act that settles it");
     }
 
     /// <summary>

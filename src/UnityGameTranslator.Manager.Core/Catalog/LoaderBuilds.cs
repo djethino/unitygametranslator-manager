@@ -69,6 +69,13 @@ public sealed record LoaderBuild(
     public string Describe() => PublishedAt is { } when
         ? $"{Version} — {when.ToLocalTime():d MMM yyyy}"
         : Version;
+
+    /// <summary>
+    /// Said beside an install that is about to use the pinned build because the publisher could not
+    /// be reached — the version is real, but it can be far behind what the publisher offers.
+    /// </summary>
+    public static string UnreachableNotice(string loader) =>
+        $"Could not reach {loader}'s download site: the version in the loader list is used, and it may be old.";
 }
 
 /// <summary>

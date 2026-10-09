@@ -176,6 +176,9 @@ public sealed record InstallPlan(
             ? $"Install {Loader.Display} {Build?.Version ?? Loader.Version} into {Game.Name}"
             : $"Use the {Loader.Display} already installed in {Game.Name}";
 
+        if (InstallLoader && Build is { IsPinnedFallback: true })
+            yield return Catalog.LoaderBuild.UnreachableNotice(Loader.Display);
+
         // Said either way. "The mod is left as it is" is the sentence that stops somebody
         // wondering, after a loader update, whether their plugin was quietly replaced too.
         yield return InstallPlugin

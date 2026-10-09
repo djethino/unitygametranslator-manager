@@ -5,8 +5,9 @@ using UnityGameTranslator.Manager.Core.Model;
 namespace UnityGameTranslator.Manager.Core.Install;
 
 /// <summary>
-/// The loader — and the build of it — picked on a game's card and not yet installed, held for this
-/// session only. Same rule and same shape as <see cref="SourcePicks"/>.
+/// The answers of a game's loader card not yet acted on — the loader and the build of it to
+/// install, and whether UGT Manager may update a loader it did not install — held for this session
+/// only. Same rule and same shape as <see cref="SourcePicks"/>.
 ///
 /// 🔴 **Read by the inventory, so the whole card follows it** (2026-10-08). The pick lived in the
 /// picker itself, read back by the install alone: the one-click's steps and its confirmation named
@@ -23,6 +24,7 @@ public static class LoaderPicks
 {
     private static readonly ConcurrentDictionary<string, string> Loaders = new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<string, (string LoaderId, LoaderBuild Build)> Builds = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, bool> Adopts = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The loader id picked this session for this game, or null.</summary>
     public static string? LoaderFor(string gamePath) => Loaders.TryGetValue(Key(gamePath), out var id) ? id : null;
@@ -39,9 +41,37 @@ public static class LoaderPicks
             ? held.Build
             : null;
 
-    /// <summary>Whether anything is held for this game — a loader or a build.</summary>
+    /// <summary>
+    /// "Let UGT Manager update this loader in this game", answered on the card and not yet applied —
+    /// or null when nothing differs from <see cref="Settings.GamePreference.AdoptLoader"/>.
+    ///
+    /// 🔴 The box wrote the preference as it was clicked (2026-10-09, `.claude/rules/manager-ui.md`
+    /// §1): it is now held here, read by the inventory into GameReport.LoaderAdopted so the update it
+    /// permits shows at once, and written by the act that uses it — its Apply (1), or an install
+    /// that updated the loader.
+    /// </summary>
+    public static bool? AdoptFor(string gamePath) => Adopts.TryGetValue(Key(gamePath), out var held) ? held : null;
+
+    /// <summary>Holds the answer — only while it differs from <paramref name="stored"/>.</summary>
+    public static void HoldAdopt(string gamePath, bool adopt, bool stored)
+    {
+        if (adopt == stored) Adopts.TryRemove(Key(gamePath), out _);
+        else Adopts[Key(gamePath)] = adopt;
+    }
+
+    /// <summary>Forgets the held answer — once written into the game's preferences.</summary>
+    public static void AdoptSettled(string gamePath) => Adopts.TryRemove(Key(gamePath), out _);
+
+    /// <summary>Whether anything is held for this game — a loader, a build or an adoption.</summary>
     public static bool AnyFor(string gamePath) =>
-        Loaders.ContainsKey(Key(gamePath)) || Builds.ContainsKey(Key(gamePath));
+        Loaders.ContainsKey(Key(gamePath)) || Builds.ContainsKey(Key(gamePath)) || Adopts.ContainsKey(Key(gamePath));
+
+    /// <summary>Everything held for this game, dropped — Undo.</summary>
+    public static void ForgetAll(string gamePath)
+    {
+        ForgetLoader(gamePath);
+        AdoptSettled(gamePath);
+    }
 
     /// <summary>Holds a loader; the build held for another loader goes with the change.</summary>
     public static void PickLoader(string gamePath, string loaderId)

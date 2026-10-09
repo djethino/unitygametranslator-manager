@@ -26,15 +26,31 @@ public static class SourcePicks
     /// <summary>The engine modules' source picked this session for this game, or null.</summary>
     public static string? ModulesFor(string gamePath) => Modules.TryGetValue(Key(gamePath), out var id) ? id : null;
 
-    public static void PickLibraries(string gamePath, string id) => Libraries[Key(gamePath)] = id;
+    /// <summary>
+    /// Holds a .NET source — only while it differs from <paramref name="decidedId"/>, the source used
+    /// with nothing picked (2026-10-09: a pick equal to it kept Undo lit over nothing, the rule of
+    /// `.claude/rules/manager-ui.md` §1).
+    /// </summary>
+    public static void PickLibraries(string gamePath, string id, string? decidedId) => Hold(Libraries, gamePath, id, decidedId);
 
-    public static void PickModules(string gamePath, string id) => Modules[Key(gamePath)] = id;
+    /// <summary>Holds an engine modules' source, on the same terms as <see cref="PickLibraries"/>.</summary>
+    public static void PickModules(string gamePath, string id, string? decidedId) => Hold(Modules, gamePath, id, decidedId);
 
-    /// <summary>Forgets this game's picks — once an act has written them into its preferences.</summary>
+    /// <summary>Whether anything is held for this game — what lights Undo.</summary>
+    public static bool AnyFor(string gamePath) =>
+        Libraries.ContainsKey(Key(gamePath)) || Modules.ContainsKey(Key(gamePath));
+
+    /// <summary>Forgets this game's picks — once an act has written them into its preferences, or on Undo.</summary>
     public static void Settled(string gamePath)
     {
         Libraries.TryRemove(Key(gamePath), out _);
         Modules.TryRemove(Key(gamePath), out _);
+    }
+
+    private static void Hold(ConcurrentDictionary<string, string> held, string gamePath, string id, string? decidedId)
+    {
+        if (string.Equals(id, decidedId, StringComparison.Ordinal)) held.TryRemove(Key(gamePath), out _);
+        else held[Key(gamePath)] = id;
     }
 
     private static string Key(string gamePath) => Path.GetFullPath(gamePath);

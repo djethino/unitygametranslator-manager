@@ -8160,9 +8160,7 @@ public partial class MainWindow : Window
             builds.IsEnabled = false;
             Ui.Say(note, $"Checking {loader.Display} versions...");
 
-            var channel = loader.Id.StartsWith("bepinex6", StringComparison.OrdinalIgnoreCase)
-                ? _settings.Current.BepInEx6Channel
-                : null;
+            var channel = ChannelOf(loader);
 
             IReadOnlyList<LoaderBuild> found;
             try
@@ -8265,9 +8263,7 @@ public partial class MainWindow : Window
     /// </summary>
     private string LoaderNamed(LoaderDescriptor loader, string gamePath)
     {
-        var channel = loader.Id.StartsWith("bepinex6", StringComparison.OrdinalIgnoreCase)
-            ? _settings.Current.BepInEx6Channel
-            : null;
+        var channel = ChannelOf(loader);
 
         var version = LoaderPicks.BuildFor(gamePath, loader.Id)?.Version
                       ?? LoaderBuildResolver.Known(loader, channel)?.Version
@@ -8275,6 +8271,48 @@ public partial class MainWindow : Window
 
         return version is null ? loader.Display : $"{loader.Display} {version}";
     }
+
+    /// <summary>
+    /// Asks the loader's publisher which build an install would fetch, when nothing has answered yet
+    /// — called by every act that may install a loader, before anything that names it is shown.
+    ///
+    /// 🔴 **With nothing resolved, the install took the catalogue's pin** (2026-10-09): the plan
+    /// carried no build, the engine fell back to the pinned archive — 6.0.0-pre.2 for BepInEx 6, on a
+    /// game set to Bleeding Edge — while the card named no version and the confirmation named the
+    /// pin. Asked here, the card's words (LoaderNamed), the confirmation and the plan read the same
+    /// cached answer (LoaderBuildResolver.Known). A publisher that cannot be reached answers with the
+    /// pin, flagged, and the confirmation says so (LoaderBuild.UnreachableNotice).
+    /// </summary>
+    private async Task ResolveLoaderBuildAsync(LoaderDescriptor loader, string gamePath)
+    {
+        var channel = ChannelOf(loader);
+
+        if (loader.Sources.Count == 0
+            || LoaderPicks.BuildFor(gamePath, loader.Id) is not null
+            || LoaderBuildResolver.Known(loader, channel) is not null)
+        {
+            return;
+        }
+
+        Busy(true, $"Checking {loader.Display} versions...");
+        try
+        {
+            await new LoaderBuildResolver().ResolveAsync(loader, channel, count: 5).ConfigureAwait(true);
+        }
+        finally
+        {
+            Busy(false, "Ready.");
+        }
+    }
+
+    /// <summary>
+    /// Which publishing channel a loader is read from: the BepInEx 6 setting for BepInEx 6, the
+    /// loader's only source otherwise — one answer for the card, the act and the build list.
+    /// </summary>
+    private string? ChannelOf(LoaderDescriptor loader) =>
+        loader.Id.StartsWith("bepinex6", StringComparison.OrdinalIgnoreCase)
+            ? _settings.Current.BepInEx6Channel
+            : null;
 
     private Control LoaderSection(GameReport report)
     {
@@ -8317,12 +8355,17 @@ public partial class MainWindow : Window
             // until it is ticked the row and the card stay quiet about a newer version being out.
             if (!installed.InstalledByUs)
             {
-                var preference = _preferences.Read(report.Game.Path);
+                var path = report.Game.Path;
 
+                // 🔴 **Held, not written, until an act uses it** (2026-10-09, manager-ui.md §1). It
+                // wrote the preference as it was clicked. The answer now lives in LoaderPicks, which
+                // the inventory reads into report.LoaderAdopted, so the update it permits is offered
+                // at once — and it reaches the disk through its Apply (1) below, or through the
+                // install that updates the loader under it.
                 var adopt = new CheckBox
                 {
                     Content = $"Let UGT Manager update {installed.Display} in this game",
-                    IsChecked = preference.AdoptLoader,
+                    IsChecked = report.LoaderAdopted,
                     FontSize = 12,
                     Margin = new Avalonia.Thickness(0, 4, 0, 0),
                 };
@@ -8333,9 +8376,9 @@ public partial class MainWindow : Window
 
                 adopt.IsCheckedChanged += async (_, _) =>
                 {
-                    var current = _preferences.Read(report.Game.Path);
-                    current.AdoptLoader = adopt.IsChecked == true;
-                    _preferences.Set(report.Game.Path, current);
+                    if ((adopt.IsChecked == true) == report.LoaderAdopted) return;
+
+                    LoaderPicks.HoldAdopt(path, adopt.IsChecked == true, _preferences.Read(path).AdoptLoader);
 
                     // Redrawn rather than left: ticking it changes the verb on the button beside
                     // it and what the row says about this game, and a card that keeps showing the
@@ -8345,7 +8388,7 @@ public partial class MainWindow : Window
 
                 panel.Children.Add(adopt);
 
-                if (preference.AdoptLoader && report.LoaderStanding is { UpdateAvailable: true } newer)
+                if (report.LoaderAdopted && report.LoaderStanding is { UpdateAvailable: true } newer)
                 {
                     panel.Children.Add(new TextBlock
                     {
@@ -8355,6 +8398,33 @@ public partial class MainWindow : Window
                         Margin = new Avalonia.Thickness(24, 0, 0, 0),
                         Foreground = Brush("StatusInfo"),
                     });
+                }
+
+                // "Apply (N)" like every other block, present only while an answer waits: it writes
+                // the answer for this game in UGT Manager — nothing in the game, so no scope marks
+                // and no "game is running" refusal. Placed like the hotkey's, flush left under the
+                // box and its consequence.
+                if (LoaderPicks.AdoptFor(path) is { } held)
+                {
+                    var apply = new Button
+                    {
+                        Content = "Apply (1)",
+                        FontSize = 12,
+                        HorizontalAlignment = HorizontalAlignment.Left,
+                        Margin = new Avalonia.Thickness(0, 6, 0, 0),
+                    };
+
+                    ToolTip.SetTip(apply, held
+                        ? $"Saves this setting for this game. Updating {installed.Display} saves it too."
+                        : "Saves this setting for this game.");
+
+                    apply.Click += async (_, _) =>
+                    {
+                        SettleAdoption(report);
+                        await ShowSelectedAsync();
+                    };
+
+                    panel.Children.Add(apply);
                 }
             }
         }
@@ -8907,6 +8977,20 @@ public partial class MainWindow : Window
         });
 
     /// <summary>
+    /// Writes the "Let UGT Manager update this loader" answer held on the card into this game's
+    /// preferences — by its Apply (1), or by the install that updated the loader it allowed.
+    /// </summary>
+    private void SettleAdoption(GameReport report)
+    {
+        if (LoaderPicks.AdoptFor(report.Game.Path) is not { } held) return;
+
+        var preference = _preferences.Read(report.Game.Path);
+        preference.AdoptLoader = held;
+        _preferences.Set(report.Game.Path, preference);
+        LoaderPicks.AdoptSettled(report.Game.Path);
+    }
+
+    /// <summary>
     /// Once an install has been agreed to, the sources it uses become this game's preferences, and
     /// the session's picks are done with — the one place a source choice is kept across sessions.
     /// </summary>
@@ -8946,8 +9030,12 @@ public partial class MainWindow : Window
     {
         var state = report.RuntimeLibraries;
 
+        // ⚠ Against the source used with nothing picked — the stored one, or the first that serves.
+        var decided = ClassLibrarySources.Choose(state.ClassLibrarySources,
+                                                 _preferences.Read(report.Game.Path).ClassLibrarySource)?.Source.Id;
+
         return SourceChoice(report, running, "libraries", ClassLibraryOptions(state), state.ClassLibrarySource?.Source.Id,
-                            id => SourcePicks.PickLibraries(report.Game.Path, id));
+                            id => SourcePicks.PickLibraries(report.Game.Path, id, decided));
     }
 
     /// <summary>
@@ -9008,8 +9096,11 @@ public partial class MainWindow : Window
     {
         var state = report.RuntimeLibraries;
 
+        var decided = EngineModuleSources.Choose(state.ModuleSources,
+                                                 _preferences.Read(report.Game.Path).ModuleSource)?.Source.Id;
+
         return SourceChoice(report, running, "modules", ModuleOptions(state), state.ModuleSource?.Source.Id,
-                            id => SourcePicks.PickModules(report.Game.Path, id));
+                            id => SourcePicks.PickModules(report.Game.Path, id, decided));
     }
 
     /// <summary>The engine modules' sources as the card and the one-click show them — one wording for both.</summary>
@@ -11204,7 +11295,8 @@ public partial class MainWindow : Window
         || _pendingTranslation.ContainsKey(report.Game.Path)
         || _pendingChoices.ContainsKey(report.Game.Path)
         || _pendingAssets.ContainsKey(report.Game.Path)
-        || LoaderPicks.AnyFor(report.Game.Path);
+        || LoaderPicks.AnyFor(report.Game.Path)
+        || SourcePicks.AnyFor(report.Game.Path);
 
     /// <summary>A copy of this game's answers as they are decided — stored, nothing held laid over.</summary>
     private GameModOverrides DecidedMod(string gamePath) =>
@@ -11240,7 +11332,8 @@ public partial class MainWindow : Window
         _pendingTranslation.Remove(report.Game.Path);
         _pendingChoices.Remove(report.Game.Path);
         _pendingAssets.Remove(report.Game.Path);
-        LoaderPicks.ForgetLoader(report.Game.Path);
+        LoaderPicks.ForgetAll(report.Game.Path);
+        SourcePicks.Settled(report.Game.Path);
     }
 
     /// <summary>
@@ -12167,6 +12260,13 @@ public partial class MainWindow : Window
     {
         if (WhyNotReady(report) is not null) return;
 
+        // Before the steps: the loader step names the build, and the plan installs that same one.
+        if (report.RecommendedLoader is { } loaderHere
+            && (report.InstalledLoader is null || report.LoaderUpdateOffered))
+        {
+            await ResolveLoaderBuildAsync(loaderHere, report.Game.Path);
+        }
+
         var preference = _preferences.Read(report.Game.Path);
 
         // ⚠ The same reading as the list of steps and the box beside the button. It was
@@ -12226,6 +12326,16 @@ public partial class MainWindow : Window
 
             if (step.Act is OneClickAct.ApplySettings)
                 foreach (var detail in SettingsDetail(report, preference)) body.Children.Add(detail);
+
+            // The build named above is the catalogue's pin because the publisher did not answer —
+            // the same notice the separate install confirmation carries (InstallPlan.Describe).
+            if (step.Act is OneClickAct.InstallLoader or OneClickAct.UpdateLoader
+                && report.RecommendedLoader is { } named
+                && LoaderPicks.BuildFor(report.Game.Path, named.Id) is null
+                && LoaderBuildResolver.Known(named, ChannelOf(named)) is { IsPinnedFallback: true })
+            {
+                body.Children.Add(Ui.Note(LoaderBuild.UnreachableNotice(named.Display), Tone.Warning));
+            }
 
             // The held source written by this step can settle it for good — the source brick's
             // own Apply asks the same (SourceDecision): one fact, said at both doors.
@@ -12381,7 +12491,11 @@ public partial class MainWindow : Window
             RememberDefaultsWereWritten(report, plan, configBefore);
 
             // Same as RunInstallAsync: the picked loader is in place, and the installed one wins.
-            if (plan.InstallLoader) LoaderPicks.Settled(report.Game.Path);
+            if (plan.InstallLoader)
+            {
+                LoaderPicks.Settled(report.Game.Path);
+                SettleAdoption(report);
+            }
 
             var message = outcome.Message;
             var complete = true;
@@ -13728,6 +13842,9 @@ public partial class MainWindow : Window
     {
         var preference = _preferences.Read(report.Game.Path);
 
+        // The confirmation names the build, and the plan installs that same one.
+        if (report.RecommendedLoader is { } loader) await ResolveLoaderBuildAsync(loader, report.Game.Path);
+
         // force: this button was pressed by name. Without it a reinstall would do nothing.
         var plan = BuildPlan(report, preference,
             loader: true, plugin: false, settings: false, force: true);
@@ -13747,6 +13864,10 @@ public partial class MainWindow : Window
         // ⚠ On a copy, so nothing unrelated can persist them: Read hands back the stored object.
         var preference = _preferences.Read(report.Game.Path).Copy();
         ValidateInto(report, preference, save: false);
+
+        // A loader comes along when there is none — and the confirmation names its build.
+        if (report.InstalledLoader is null && report.RecommendedLoader is { } loader)
+            await ResolveLoaderBuildAsync(loader, report.Game.Path);
 
         // The loader still comes along when there is none — a plugin without one loads in no game,
         // and refusing here would mean the mod's own button could not work on a fresh game.
@@ -14733,8 +14854,14 @@ public partial class MainWindow : Window
             if (outcome.Success) RememberDefaultsWereWritten(report, plan, configBefore);
 
             // The loader picked on the card is now the one installed, which wins over any pick.
-            // Only once in place: a failed install keeps the pick for the next try.
-            if (outcome.Success && plan.InstallLoader) LoaderPicks.Settled(report.Game.Path);
+            // Only once in place: a failed install keeps the pick for the next try. An update of a
+            // loader somebody else installed is the act its "Let UGT Manager update" answer allowed,
+            // so that answer is written with it.
+            if (outcome.Success && plan.InstallLoader)
+            {
+                LoaderPicks.Settled(report.Game.Path);
+                SettleAdoption(report);
+            }
 
             await MessageAsync(outcome.Success ? "Installed" : "Nothing was changed", outcome.Message);
         }

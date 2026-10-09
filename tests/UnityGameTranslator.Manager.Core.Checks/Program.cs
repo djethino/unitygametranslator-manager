@@ -89,6 +89,7 @@ internal static class Program
         DropdownChecks.RowsAreNeverRebuiltOnRefill();
         LoaderPickChecks.WhichLoaderIsUsed();
         LoaderPickChecks.NoLoaderHeldByTheWindow();
+        LoaderPickChecks.WhatACardAnswerHolds();
         RuntimeLibrariesChecks.WhichRuntimeIsTooOld();
         RuntimeLibrariesChecks.WhatIsSaidOnce();
         RuntimeLibrariesChecks.WhichProfileServesAGame();

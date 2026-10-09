@@ -789,8 +789,9 @@ public sealed class GameReport
         InstalledPluginVersion is null || PluginStanding is { UpdateAvailable: true };
 
     /// <summary>
-    /// Set from GamePreference.AdoptLoader: this game's loader is ours to manage although we did
-    /// not put it there. Read by everything that offers to act, so the answer lives in one place.
+    /// Set from GamePreference.AdoptLoader — or the answer held on the card and not yet applied
+    /// (LoaderPicks.AdoptFor): this game's loader is ours to manage although we did not put it
+    /// there. Read by everything that offers to act, so the answer lives in one place.
     /// </summary>
     public bool LoaderAdopted { get; set; }
 

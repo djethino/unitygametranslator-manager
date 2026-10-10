@@ -395,17 +395,23 @@ public static class GameAssets
 
         var written = 0;
         var already = 0;
+        // Two different fonts of one name (other lengths, GameFonts.Distinct keeps both) in one export:
+        // the second is "Name-2", never taken for the first one "already there".
+        var namesThisExport = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         try
         {
             Directory.CreateDirectory(destination);
-            foreach (var font in fonts)
+            foreach (var font in GameFonts.Distinct(fonts))
             {
                 if (!font.HasFile) continue;
-                if (ExtractedFile(destination, font.Name) is not null) { already++; continue; }
+                var stem = font.Name;
+                if (namesThisExport.TryGetValue(font.Name, out var seen)) stem = $"{font.Name}-{seen + 1}";
+                namesThisExport[font.Name] = seen + 1;
+                if (ExtractedFile(destination, stem) is not null) { already++; continue; }
                 var bytes = GameFonts.ReadData(data, font, game.UnityVersion);
                 if (bytes is null) continue;
 
-                var target = Path.Combine(destination, GameFonts.FileNameFor(font.Name, GameFonts.ExtensionOf(bytes)));
+                var target = Path.Combine(destination, GameFonts.FileNameFor(stem, GameFonts.ExtensionOf(bytes)));
                 var temp = target + ".tmp";
                 try
                 {

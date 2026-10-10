@@ -601,7 +601,9 @@ public partial class MainWindow
             return panel;
         }
 
-        var withFile = index.Fonts.Where(f => f.HasFile).OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        // Once per font: the game can carry the same one in several of its files.
+        var withFile = UnityGameTranslator.Common.UnityFiles.GameFonts.Distinct(index.Fonts.Where(f => f.HasFile))
+            .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase).ToList();
         var path = report.Game.Path;
         if (!_gameFontSelection.TryGetValue(path, out var picked)) picked = new HashSet<string>(StringComparer.Ordinal);
 

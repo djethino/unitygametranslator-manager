@@ -670,6 +670,9 @@ public partial class MainWindow
             }
             panel.Children.Add(Bounded(list));
 
+            // Read before the button, as the pack's sharing notice is: the mod's Extract says the same.
+            panel.Children.Add(Note(UnityGameTranslator.Common.UnityFiles.GameFonts.ExportNotice, Tone.Warning));
+
             Refresh();
             panel.Children.Add(new StackPanel
             {

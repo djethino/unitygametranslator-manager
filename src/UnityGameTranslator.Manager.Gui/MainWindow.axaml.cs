@@ -3246,7 +3246,7 @@ public partial class MainWindow : Window
 
         // Same words as the Data folder card in UGT Manager settings, shorter: one folder, one fact.
         text.Children.Add(Ui.Note(
-            "UGT Manager keeps its data in this folder: settings, added folders and translation backups."));
+            "UGT Manager keeps its data in this folder: settings, added folders and choices made for each game."));
 
         text.Children.Add(new TextBlock
         {

@@ -108,8 +108,9 @@ public sealed class SelfRemoveWindow : Window
 
         layout.Children.Add(listing);
 
-        // ⚠ "data", not "settings": the folder also holds the translation backups, and ticking this
-        // deletes them. The note under it is amber for that reason — work can be lost.
+        // ⚠ "data", not "settings": the folder also holds the API keys and the choices made for each
+        // game. The note under it is amber for that reason — they would have to be entered again.
+        // The translation backups are no longer here: each game keeps its own (TranslationBackupStore).
         var settings = new CheckBox
         {
             Content = "Also delete UGT Manager's data",
@@ -119,12 +120,12 @@ public sealed class SelfRemoveWindow : Window
 
         layout.Children.Add(settings);
         layout.Children.Add(Ui.Note(
-            $"{plan.SettingsDirectory} holds your settings, API keys and translation backups. Kept "
+            $"{plan.SettingsDirectory} holds your settings and API keys. Kept "
             + "unless you tick this, so a reinstall finds everything.", Tone.Warning));
 
         layout.Children.Add(Ui.Note(
-            "Your games are not changed: UGT Mod and translations stay in them. To remove them, use "
-            + "each game's page."));
+            "Your games are not changed: UGT Mod, translations and their backups stay in them. To "
+            + "remove them, use each game's page."));
 
         var outcome = new StackPanel { Spacing = 6, IsVisible = false };
         layout.Children.Add(outcome);

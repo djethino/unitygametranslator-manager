@@ -1206,12 +1206,13 @@ public sealed class ToolSettingsWindow : Window
         var panel = new StackPanel { Spacing = 8 };
         var folder = _platform.UserDataDirectory;
 
-        // ⚠ The backups are named: deleting the folder resets the tool AND loses them, and that is
-        // the one consequence somebody about to delete it must read.
+        // ⚠ What deleting it costs is the one thing somebody about to delete it must read. The
+        // translation backups no longer live here — each game keeps its own, in the mod's data
+        // folder (TranslationBackupStore.Root) — so they are named among what is NOT touched.
         panel.Children.Add(Intro(
             "UGT Manager keeps all its data in this folder: settings, added folders, choices made "
-            + "for each game, cached lists and translation backups. Deleting it resets UGT Manager "
-            + "and deletes those backups. Your games are not changed."));
+            + "for each game, cached lists and logs. Deleting it resets UGT Manager. Your games and "
+            + "their translation backups are not changed."));
 
         panel.Children.Add(Note(folder));
 

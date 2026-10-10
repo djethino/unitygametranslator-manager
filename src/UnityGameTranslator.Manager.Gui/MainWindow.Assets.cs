@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using UnityGameTranslator.Common;
 using UnityGameTranslator.Manager.Core;
 using UnityGameTranslator.Manager.Core.Install;
@@ -70,6 +71,7 @@ public partial class MainWindow
         // What somebody comes here to do first, first. What is already there follows, then sharing.
         yield return Card(AddAssetsBlock(report));
         yield return Card(FontsBlock(state));
+        yield return Card(GameFontsBlock(report, descriptor));
         yield return Card(ImagesBlock(state));
         yield return Card(ExportBlock(report, descriptor, state));
     }
@@ -514,6 +516,229 @@ public partial class MainWindow
         if (state.Fonts.Any(f => f.Use is FontUse.InstalledInstead or FontUse.GameInstead))
             panel.Children.Add(Note("To use one of these files, choose its Custom font in UGT Mod: Translation Tools, Fonts tab.", Tone.Warning));
         return panel;
+    }
+
+    // ── The game's own fonts: Extract (common's UnityFiles.GameFonts; analyse/export-polices-jeu.md) ──
+
+    /// <summary>The reading of one game's fonts: under way (with how far), done, or failed.</summary>
+    private sealed class GameFontRead
+    {
+        public UnityGameTranslator.Common.UnityFiles.GameFonts.Reading? Index;
+        public bool Running;
+        public int Done, Total;
+        public TextBlock? Progress;   // the line the reader writes its progress into, while it is on screen
+    }
+
+    private readonly Dictionary<string, GameFontRead> _gameFontReads = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Game fonts ticked to extract, by game path → font keys. ⚠ Session only, like every choice on
+    /// the card (.claude/rules/manager-ui.md §1): Apply (N) — or the one-click — writes them.
+    /// </summary>
+    private readonly Dictionary<string, HashSet<string>> _pendingGameFonts = new(StringComparer.OrdinalIgnoreCase);
+
+    private static string GameFontKey(UnityGameTranslator.Common.UnityFiles.GameFonts.Font font) => font.Where + "#" + font.PathId;
+
+    private int PendingGameFontCount(string gamePath) =>
+        _pendingGameFonts.TryGetValue(gamePath, out var keys) ? keys.Count : 0;
+
+    /// <summary>The fonts ticked for this game, as the index has them.</summary>
+    private List<UnityGameTranslator.Common.UnityFiles.GameFonts.Font> PickedGameFonts(string gamePath) =>
+        _pendingGameFonts.TryGetValue(gamePath, out var keys) && _gameFontReads.TryGetValue(gamePath, out var read) && read.Index is { } index
+            ? index.Fonts.Where(f => keys.Contains(GameFontKey(f))).ToList()
+            : [];
+
+    /// <summary>
+    /// Reads the game's fonts in the background — the index UGT Mod keeps too, taken from there while
+    /// the game's files are unchanged — and redraws the card in place when it is done.
+    /// </summary>
+    private void StartGameFontRead(GameReport report, LoaderDescriptor descriptor)
+    {
+        var path = report.Game.Path;
+        if (_gameFontReads.TryGetValue(path, out var known) && (known.Running || known.Index is not null)) return;
+        var read = new GameFontRead { Running = true };
+        _gameFontReads[path] = read;
+        bool mayWrite = WriteRefusal(report) is null;   // the index is kept in the game only where this account may write
+        _ = Task.Run(() =>
+        {
+            var index = GameAssets.ReadGameFonts(report.Game, descriptor, mayWrite, (done, total) =>
+            {
+                read.Done = done;
+                read.Total = total;
+                Dispatcher.UIThread.Post(() => { if (read.Progress is { } line) line.Text = ReadingText(read); });
+            });
+            Dispatcher.UIThread.Post(async () =>
+            {
+                read.Index = index;
+                read.Running = false;
+                if (_selected?.Path is { } shown && string.Equals(shown, path, StringComparison.OrdinalIgnoreCase))
+                    await ShowSelectedAsync();
+            });
+        });
+    }
+
+    private static string ReadingText(GameFontRead read) =>
+        read.Total > 0 ? $"Reading the game's fonts... {read.Done} / {read.Total} files" : "Reading the game's fonts...";
+
+    private Control GameFontsBlock(GameReport report, LoaderDescriptor descriptor)
+    {
+        var panel = new StackPanel { Spacing = 8 };
+        panel.Children.Add(SectionTitle("Fonts in the game"));
+        panel.Children.Add(Intro("Fonts the game carries as a file. Extract puts a copy in this game's fonts folder: it becomes a Custom font in UGT Mod."));
+
+        StartGameFontRead(report, descriptor);
+        var read = _gameFontReads[report.Game.Path];
+        if (read.Running)
+        {
+            var line = new TextBlock { Text = ReadingText(read), FontSize = 12, Foreground = Brush("TextSecondary") };
+            read.Progress = line;
+            panel.Children.Add(line);
+            return panel;
+        }
+        read.Progress = null;
+
+        if (read.Index is not { } index)
+        {
+            panel.Children.Add(Note("The game's fonts could not be read. See the journal.", Tone.Warning));
+            return panel;
+        }
+
+        var withFile = index.Fonts.Where(f => f.HasFile).OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        var fontsFolder = GameAssets.FontsFolderOf(report.Game, descriptor);
+        var refusal = WriteRefusal(report);
+        var path = report.Game.Path;
+        if (!_pendingGameFonts.TryGetValue(path, out var picked)) picked = new HashSet<string>(StringComparer.Ordinal);
+
+        if (withFile.Count == 0)
+        {
+            panel.Children.Add(Note("This game carries no font as a file."));
+        }
+        else
+        {
+            var extractable = withFile.Where(f => fontsFolder is null || GameAssets.ExtractedFile(fontsFolder, f.Name) is null).ToList();
+
+            var apply = ScopeMark.Marked(EditSide.Local, "Apply", enabled: false);
+            apply.Classes.Add("primary");
+            var undo = new Button { Content = "Undo", IsVisible = picked.Count > 0 };
+            ToolTip.SetTip(undo, "Clears the fonts ticked here. Nothing in the game is changed.");
+            var boxes = new List<(CheckBox Box, string Key)>();
+
+            void Refresh()
+            {
+                var count = picked.Count;
+                ScopeMark.SetLabel(apply, count > 0 ? $"Apply ({count})" : "Apply");
+                ToolTip.SetTip(apply, count > 0
+                    ? $"Writes {Composition.Amount(count, "font", "fonts")} into this game's fonts folder."
+                    : "Tick Extract on the fonts to take.");
+                apply.IsEnabled = count > 0 && refusal is null;
+                if (refusal is not null) ToolTip.SetTip(apply, refusal);
+                undo.IsVisible = count > 0;
+            }
+
+            void Pick(string key, bool on)
+            {
+                if (on) picked.Add(key); else picked.Remove(key);
+                if (picked.Count > 0) _pendingGameFonts[path] = picked; else _pendingGameFonts.Remove(path);
+                Refresh();
+                // The bar at the bottom counts these too, and its one-click carries them out.
+                ShowActionBar(report);
+            }
+
+            apply.Click += async (_, _) => await ExtractPickedGameFontsAsync(report);
+            undo.Click += async (_, _) =>
+            {
+                _pendingGameFonts.Remove(path);
+                await ShowSelectedAsync();
+            };
+
+            var head = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+            if (extractable.Count > 1)
+            {
+                var all = new CheckBox
+                {
+                    Content = $"Extract all ({extractable.Count})",
+                    FontSize = 12,
+                    IsEnabled = refusal is null,
+                    IsChecked = extractable.All(f => picked.Contains(GameFontKey(f))),
+                };
+                all.IsCheckedChanged += (_, _) =>
+                {
+                    var on = all.IsChecked == true;
+                    foreach (var (box, _) in boxes) box.IsChecked = on;
+                };
+                head.Children.Add(all);
+            }
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { undo, apply } };
+            Grid.SetColumn(buttons, 1);
+            head.Children.Add(buttons);
+            panel.Children.Add(head);
+
+            var list = new StackPanel { Spacing = 4 };
+            foreach (var font in withFile)
+            {
+                var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+                row.Children.Add(new TextBlock
+                {
+                    Text = font.Name + " · " + SizeOf(font.DataLength),
+                    FontSize = 12,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    Foreground = Brush("TextPrimary"),
+                });
+
+                Control state;
+                if (!extractable.Contains(font))
+                {
+                    state = new TextBlock { Text = "In the fonts folder", FontSize = 11, Foreground = Brush("TextMuted") };
+                }
+                else
+                {
+                    var key = GameFontKey(font);
+                    var box = new CheckBox { Content = "Extract", FontSize = 11, IsChecked = picked.Contains(key), IsEnabled = refusal is null };
+                    box.IsCheckedChanged += (_, _) => Pick(key, box.IsChecked == true);
+                    boxes.Add((box, key));
+                    state = box;
+                }
+                state.VerticalAlignment = VerticalAlignment.Center;
+                Grid.SetColumn(state, 1);
+                row.Children.Add(state);
+                list.Children.Add(row);
+            }
+            panel.Children.Add(Bounded(list));
+            if (refusal is not null) panel.Children.Add(Note(refusal, Tone.Warning));
+            Refresh();
+        }
+
+        // What this card cannot do, and where it is done.
+        panel.Children.Add(Note("A font the game keeps as an atlas only has no file here. Extract it from UGT Mod: Translation Tools, Fonts tab."));
+        return panel;
+    }
+
+    private async Task ExtractPickedGameFontsAsync(GameReport report)
+    {
+        var descriptor = InstalledDescriptor(report);
+        var fonts = PickedGameFonts(report.Game.Path);
+        if (descriptor is null || fonts.Count == 0) return;
+
+        AssetWriteResult result;
+        Working("Extracting the game's fonts...");
+        try
+        {
+            result = await Task.Run(() => GameAssets.ExtractGameFonts(_platform, report.Game, descriptor, fonts));
+        }
+        finally
+        {
+            WorkEnded();
+        }
+
+        if (!result.Done)
+        {
+            await MessageAsync("Nothing was extracted", result.Failure ?? "The fonts could not be written.");
+            return;
+        }
+
+        _pendingGameFonts.Remove(report.Game.Path);
+        Status($"Extracted {Composition.Amount(result.Written, "font", "fonts")} into {report.Game.Name}'s fonts folder.");
+        await ShowSelectedAsync();
     }
 
     private static Control ImagesBlock(GameAssetsState state)

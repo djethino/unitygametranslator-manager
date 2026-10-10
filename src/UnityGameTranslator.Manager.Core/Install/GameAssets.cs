@@ -3,7 +3,9 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using UnityGameTranslator.Common;
+using UnityGameTranslator.Common.UnityFiles;
 using UnityGameTranslator.Manager.Core.Detection;
+using UnityGameTranslator.Manager.Core.Diagnostics;
 using UnityGameTranslator.Manager.Core.Model;
 using UnityGameTranslator.Manager.Core.Platform;
 
@@ -347,6 +349,97 @@ public static class GameAssets
             return new(false, 0, $"{e.GetType().Name}: {e.Message}");
         }
     }
+
+    // ── The game's own fonts (common's UnityFiles.GameFonts) ────────────────────────────────
+
+    /// <summary>
+    /// The fonts the game carries in its data files, each with or without its file — the index UGT
+    /// Mod keeps too (fonts/.ugt-game-fonts/index.txt): taken from there while the game's files have
+    /// not changed, read from the game otherwise and, when <paramref name="mayWrite"/>, kept there for
+    /// both. Null when the game has no data folder this can read. Slow on a large game: off the UI thread.
+    /// </summary>
+    public static GameFonts.Reading? ReadGameFonts(GameInstall game, LoaderDescriptor descriptor, bool mayWrite, Action<int, int>? progress = null)
+    {
+        var data = UnityGameProbe.FindDataDirectory(game.Path);
+        var folder = UserDataInventory.DataFolder(game.Path, descriptor);
+        if (data is null) return null;
+        var saved = folder is null ? null : Path.Combine(folder, AssetPacks.FontsFolder, GameFonts.CacheFolder, GameFonts.IndexFile);
+
+        try
+        {
+            string stamp = GameFonts.Stamp(data);
+            if (saved is not null && GameFonts.LoadIndex(saved) is { } known && known.Stamp == stamp) return known;
+            var index = GameFonts.FromDataFolder(data, game.UnityVersion, withData: false, progress: progress);
+            if (mayWrite && saved is not null) GameFonts.SaveIndex(index, saved);
+            return index;
+        }
+        catch (Exception e) when (Reading.Failed(e))
+        {
+            Journal.Note("GameAssets.ReadGameFonts", $"{Sanitize.Path(game.Path)}: {e.GetType().Name}: {e.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Writes the files of these game fonts into the mod's fonts/ folder, where they become Custom
+    /// fonts — the name the mod's Extract gives the same file (GameFonts.FileNameFor). A font already
+    /// there is left as it is.
+    /// </summary>
+    public static AssetWriteResult ExtractGameFonts(IPlatform? platform, GameInstall game, LoaderDescriptor descriptor,
+                                                    IReadOnlyList<GameFonts.Font> fonts)
+    {
+        if (GameWrites.WhyNotNow(platform, game) is { } refusal) return new(false, 0, refusal);
+        var folder = UserDataInventory.DataFolder(game.Path, descriptor);
+        if (folder is null) return new(false, 0, UserDataInventory.OutsideGameRefusal);
+        var data = UnityGameProbe.FindDataDirectory(game.Path);
+        if (data is null) return new(false, 0, "This game's data folder cannot be found.");
+
+        var fontsFolder = Path.Combine(folder, AssetPacks.FontsFolder);
+        var written = 0;
+        try
+        {
+            Directory.CreateDirectory(fontsFolder);
+            foreach (var font in fonts)
+            {
+                if (!font.HasFile || ExtractedFile(fontsFolder, font.Name) is not null) continue;
+                var bytes = GameFonts.ReadData(data, font, game.UnityVersion);
+                if (bytes is null) continue;
+
+                var target = Path.Combine(fontsFolder, GameFonts.FileNameFor(font.Name, GameFonts.ExtensionOf(bytes)));
+                var temp = target + ".tmp";
+                try
+                {
+                    File.WriteAllBytes(temp, bytes);
+                    File.Move(temp, target, overwrite: false);
+                }
+                finally
+                {
+                    if (File.Exists(temp)) File.Delete(temp);
+                }
+                written++;
+            }
+            return new(true, written, null);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or UnityGameTranslator.Common.UnityFiles.UnityFileFormatException)
+        {
+            return new(false, written, $"{e.GetType().Name}: {e.Message}");
+        }
+    }
+
+    /// <summary>The file a game font was already extracted to in fonts/, or null — by the shared name, any extension.</summary>
+    public static string? ExtractedFile(string fontsFolder, string fontName)
+    {
+        foreach (var extension in new[] { ".ttf", ".otf", ".ttc" })
+        {
+            var path = Path.Combine(fontsFolder, GameFonts.FileNameFor(fontName, extension));
+            if (File.Exists(path)) return path;
+        }
+        return null;
+    }
+
+    /// <summary>The mod's fonts/ folder of this game, or null.</summary>
+    public static string? FontsFolderOf(GameInstall game, LoaderDescriptor descriptor) =>
+        UserDataInventory.DataFolder(game.Path, descriptor) is { } folder ? Path.Combine(folder, AssetPacks.FontsFolder) : null;
 
     /// <summary>Free bytes on the drive holding this folder — null when the system cannot say.</summary>
     private static long? FreeSpace(string folder)

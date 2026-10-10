@@ -11295,6 +11295,7 @@ public partial class MainWindow : Window
         || _pendingTranslation.ContainsKey(report.Game.Path)
         || _pendingChoices.ContainsKey(report.Game.Path)
         || _pendingAssets.ContainsKey(report.Game.Path)
+        || _pendingGameFonts.ContainsKey(report.Game.Path)
         || LoaderPicks.AnyFor(report.Game.Path)
         || SourcePicks.AnyFor(report.Game.Path);
 
@@ -11332,6 +11333,7 @@ public partial class MainWindow : Window
         _pendingTranslation.Remove(report.Game.Path);
         _pendingChoices.Remove(report.Game.Path);
         _pendingAssets.Remove(report.Game.Path);
+        _pendingGameFonts.Remove(report.Game.Path);
         LoaderPicks.ForgetAll(report.Game.Path);
         SourcePicks.Settled(report.Game.Path);
     }
@@ -12000,7 +12002,7 @@ public partial class MainWindow : Window
     private enum OneClickAct
     {
         InstallLoader, UpdateLoader, InstallMod, UpdateMod, AddRuntimeLibraries,
-        ApplySettings, ApplyChoices, AddAssets, TakeTranslation, UpdateTranslation, ReplaceTranslation,
+        ApplySettings, ApplyChoices, AddAssets, ExtractGameFonts, TakeTranslation, UpdateTranslation, ReplaceTranslation,
     }
 
     /// <summary>One act, and the sentence shown for it.</summary>
@@ -12100,6 +12102,13 @@ public partial class MainWindow : Window
         {
             yield return new(OneClickAct.AddAssets,
                 "add " + Composition.Amount(assets, "font or image", "fonts and images"));
+        }
+
+        // The game's own fonts ticked on the Assets tab, extracted into its fonts folder.
+        if (mayChangeThisGame && PendingGameFontCount(report.Game.Path) is > 0 and var gameFonts)
+        {
+            yield return new(OneClickAct.ExtractGameFonts,
+                "extract " + Composition.Amount(gameFonts, "game font", "game fonts"));
         }
 
         // 🔴 **The one-click writes the translation file too, so it obeys the account rule.**
@@ -12549,6 +12558,20 @@ public partial class MainWindow : Window
                     complete = false;
                     message += Environment.NewLine + Environment.NewLine
                                + $"The fonts and images could not be added ({added.Failure}).";
+                }
+            }
+
+            // The game's own fonts ticked on the Assets tab: written into its fonts folder, nothing else.
+            if (steps.Any(s => s.Act is OneClickAct.ExtractGameFonts) && PickedGameFonts(report.Game.Path) is { Count: > 0 } gameFonts)
+            {
+                Work.Begin(StepOf(OneClickAct.ExtractGameFonts));
+                var extracted = await Task.Run(() => GameAssets.ExtractGameFonts(_platform, report.Game, plan.Loader, gameFonts));
+                if (extracted.Done) _pendingGameFonts.Remove(report.Game.Path);
+                else
+                {
+                    complete = false;
+                    message += Environment.NewLine + Environment.NewLine
+                               + $"The game's fonts could not be extracted ({extracted.Failure}).";
                 }
             }
 

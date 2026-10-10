@@ -29,6 +29,10 @@ can: **whether the community has already translated this game**.
 - Writes your settings into each game's own configuration, so the mod asks nothing on first run
 - Installs the loader and the matching plugin build, keeping your settings and translations
 - Uninstalls exactly what it installed, and nothing else
+- Lists the fonts inside a game's own files and exports them to a folder you choose, to adapt one
+  for your own use (game fonts have their own licences)
+- Keeps a log of each launch in its data folder (`manager.log`, `manager-cli.log`), on your machine
+  only
 
 ## What it does not do
 
@@ -191,6 +195,7 @@ Five repositories, one product — [see it live][live].
 
 - **[Avalonia](https://github.com/AvaloniaUI/Avalonia)** — cross-platform .NET UI framework
 - **[Inter](https://github.com/rsms/inter)** by Rasmus Andersson — the font the window renders with
+- **[AssetRipper/Tpk](https://github.com/AssetRipper/Tpk)** and the **[LZMA SDK](https://www.7-zip.org/sdk.html)** by Igor Pavlov — Unity's class layouts and the decompression a game's own fonts are read with
 - **[BepInEx](https://github.com/BepInEx/BepInEx)** and **[MelonLoader](https://github.com/LavaGang/MelonLoader)** by LavaGang — the mod loaders this tool installs, downloaded from their own release pages and never redistributed here
 - **[Ollama](https://github.com/ollama/ollama)** — the local model server this tool offers to install, the same way and on the same terms. It is what makes translating for free on your own machine a real option
 

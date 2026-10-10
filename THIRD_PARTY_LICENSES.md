@@ -48,6 +48,17 @@ The font the window renders with, shipped inside the executable through the
 every machine, and so it reads at all on a system carrying no suitable font of its own. It covers
 Latin, Greek and Cyrillic; anything outside that is drawn by the system's own fonts.
 
+### AssetRipper/Tpk (Unity type trees) and the LZMA SDK
+
+How the Fonts in the game card reads a game's fonts from its data files, through `common`
+(`UnityFiles/`).
+
+- **AssetRipper/Tpk** — https://github.com/AssetRipper/Tpk — **License:** MIT. Its dump of Unity's
+  class layouts is the source of the generated table `UnityFiles/FontLayouts.Tables.g.cs`. No code
+  of theirs is shipped.
+- **LZMA SDK** — https://www.7-zip.org/sdk.html — Igor Pavlov, **public domain**. The decoder in
+  `UnityFiles/LzmaDecoder.cs` is written after its reference decoder (`LzmaSpec.cpp`).
+
 ## Downloaded, never redistributed
 
 The tool downloads these from their official release pages, at the user's request, and verifies

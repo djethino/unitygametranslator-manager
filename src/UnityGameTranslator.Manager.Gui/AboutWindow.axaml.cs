@@ -72,8 +72,13 @@ public sealed class AboutWindow : Window
     {
         new("Avalonia", "The interface you are looking at.", "MIT", "https://avaloniaui.net"),
         new(".NET", "The runtime, shipped inside this executable.", "MIT", "https://dotnet.microsoft.com"),
+        new("Inter", "The font this window is written in.", "OFL-1.1", "https://github.com/rsms/inter"),
         new("UniverseLib", "Used by UGT Mod for its in-game interface.", "LGPL-2.1",
             "https://github.com/sinai-dev/UniverseLib"),
+        new("AssetRipper Tpk", "Unity's class layouts, to read a game's fonts from its files.", "MIT",
+            "https://github.com/AssetRipper/Tpk"),
+        new("LZMA SDK", "How a game's compressed files are opened.", "Public domain",
+            "https://www.7-zip.org/sdk.html"),
     };
 
     public AboutWindow()

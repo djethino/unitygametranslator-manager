@@ -71,9 +71,11 @@ public partial class MainWindow
         // What somebody comes here to do first, first. What is already there follows, then sharing.
         yield return Card(AddAssetsBlock(report));
         yield return Card(FontsBlock(state));
-        yield return Card(GameFontsBlock(report, descriptor));
         yield return Card(ImagesBlock(state));
         yield return Card(ExportBlock(report, descriptor, state));
+        // Last: a small extra beside the tab's purpose (adding fonts and images, sharing them as a
+        // pack), never in the way of it (user, 2026-10-10).
+        yield return Card(GameFontsBlock(report, descriptor));
     }
 
     private Control AddAssetsBlock(GameReport report)

@@ -380,32 +380,32 @@ public static class GameAssets
         }
     }
 
-    /// <summary>
-    /// Writes the files of these game fonts into the mod's fonts/ folder, where they become Custom
-    /// fonts — the name the mod's Extract gives the same file (GameFonts.FileNameFor). A font already
-    /// there is left as it is.
-    /// </summary>
-    public static AssetWriteResult ExtractGameFonts(IPlatform? platform, GameInstall game, LoaderDescriptor descriptor,
-                                                    IReadOnlyList<GameFonts.Font> fonts)
-    {
-        if (GameWrites.WhyNotNow(platform, game) is { } refusal) return new(false, 0, refusal);
-        var folder = UserDataInventory.DataFolder(game.Path, descriptor);
-        if (folder is null) return new(false, 0, UserDataInventory.OutsideGameRefusal);
-        var data = UnityGameProbe.FindDataDirectory(game.Path);
-        if (data is null) return new(false, 0, "This game's data folder cannot be found.");
+    /// <summary>What an export of game fonts did: files written, files of that name already there (left as they are), or why it stopped.</summary>
+    public sealed record GameFontExport(bool Done, int Written, int AlreadyThere, string? Failure);
 
-        var fontsFolder = Path.Combine(folder, AssetPacks.FontsFolder);
+    /// <summary>
+    /// Saves the files of these game fonts into a folder somebody chose — read from the game, nothing
+    /// written into it (user, 2026-10-10: an export, out of the game). Named as the mod's Extract names
+    /// the same file (GameFonts.FileNameFor); a file of that name already in the folder is left as it is.
+    /// </summary>
+    public static GameFontExport ExportGameFonts(GameInstall game, IReadOnlyList<GameFonts.Font> fonts, string destination)
+    {
+        var data = UnityGameProbe.FindDataDirectory(game.Path);
+        if (data is null) return new(false, 0, 0, "This game's data folder cannot be found.");
+
         var written = 0;
+        var already = 0;
         try
         {
-            Directory.CreateDirectory(fontsFolder);
+            Directory.CreateDirectory(destination);
             foreach (var font in fonts)
             {
-                if (!font.HasFile || ExtractedFile(fontsFolder, font.Name) is not null) continue;
+                if (!font.HasFile) continue;
+                if (ExtractedFile(destination, font.Name) is not null) { already++; continue; }
                 var bytes = GameFonts.ReadData(data, font, game.UnityVersion);
                 if (bytes is null) continue;
 
-                var target = Path.Combine(fontsFolder, GameFonts.FileNameFor(font.Name, GameFonts.ExtensionOf(bytes)));
+                var target = Path.Combine(destination, GameFonts.FileNameFor(font.Name, GameFonts.ExtensionOf(bytes)));
                 var temp = target + ".tmp";
                 try
                 {
@@ -418,28 +418,24 @@ public static class GameAssets
                 }
                 written++;
             }
-            return new(true, written, null);
+            return new(true, written, already, null);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or UnityGameTranslator.Common.UnityFiles.UnityFileFormatException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or UnityFileFormatException)
         {
-            return new(false, written, $"{e.GetType().Name}: {e.Message}");
+            return new(false, written, already, $"{e.GetType().Name}: {e.Message}");
         }
     }
 
-    /// <summary>The file a game font was already extracted to in fonts/, or null — by the shared name, any extension.</summary>
-    public static string? ExtractedFile(string fontsFolder, string fontName)
+    /// <summary>The file of a game font already in a folder, or null — by the shared name, any extension.</summary>
+    private static string? ExtractedFile(string folder, string fontName)
     {
         foreach (var extension in new[] { ".ttf", ".otf", ".ttc" })
         {
-            var path = Path.Combine(fontsFolder, GameFonts.FileNameFor(fontName, extension));
+            var path = Path.Combine(folder, GameFonts.FileNameFor(fontName, extension));
             if (File.Exists(path)) return path;
         }
         return null;
     }
-
-    /// <summary>The mod's fonts/ folder of this game, or null.</summary>
-    public static string? FontsFolderOf(GameInstall game, LoaderDescriptor descriptor) =>
-        UserDataInventory.DataFolder(game.Path, descriptor) is { } folder ? Path.Combine(folder, AssetPacks.FontsFolder) : null;
 
     /// <summary>Free bytes on the drive holding this folder — null when the system cannot say.</summary>
     private static long? FreeSpace(string folder)

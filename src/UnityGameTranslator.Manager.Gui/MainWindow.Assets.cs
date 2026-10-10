@@ -532,19 +532,17 @@ public partial class MainWindow
     private readonly Dictionary<string, GameFontRead> _gameFontReads = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Game fonts ticked to extract, by game path → font keys. ⚠ Session only, like every choice on
-    /// the card (.claude/rules/manager-ui.md §1): Apply (N) — or the one-click — writes them.
+    /// Game fonts ticked to export, by game path → font keys. A selection for the session, not an
+    /// answer waiting on the card: exporting writes nothing into the game, so it is no part of Set up,
+    /// the action bar nor the one-click (user, 2026-10-10).
     /// </summary>
-    private readonly Dictionary<string, HashSet<string>> _pendingGameFonts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, HashSet<string>> _gameFontSelection = new(StringComparer.OrdinalIgnoreCase);
 
     private static string GameFontKey(UnityGameTranslator.Common.UnityFiles.GameFonts.Font font) => font.Where + "#" + font.PathId;
 
-    private int PendingGameFontCount(string gamePath) =>
-        _pendingGameFonts.TryGetValue(gamePath, out var keys) ? keys.Count : 0;
-
     /// <summary>The fonts ticked for this game, as the index has them.</summary>
-    private List<UnityGameTranslator.Common.UnityFiles.GameFonts.Font> PickedGameFonts(string gamePath) =>
-        _pendingGameFonts.TryGetValue(gamePath, out var keys) && _gameFontReads.TryGetValue(gamePath, out var read) && read.Index is { } index
+    private List<UnityGameTranslator.Common.UnityFiles.GameFonts.Font> SelectedGameFonts(string gamePath) =>
+        _gameFontSelection.TryGetValue(gamePath, out var keys) && _gameFontReads.TryGetValue(gamePath, out var read) && read.Index is { } index
             ? index.Fonts.Where(f => keys.Contains(GameFontKey(f))).ToList()
             : [];
 
@@ -584,7 +582,7 @@ public partial class MainWindow
     {
         var panel = new StackPanel { Spacing = 8 };
         panel.Children.Add(SectionTitle("Fonts in the game"));
-        panel.Children.Add(Intro("Fonts the game carries as a file. Extract puts a copy in this game's fonts folder: it becomes a Custom font in UGT Mod."));
+        panel.Children.Add(Intro("Fonts the game carries as a file. Export saves a copy of the ones ticked into a folder you choose."));
 
         StartGameFontRead(report, descriptor);
         var read = _gameFontReads[report.Game.Path];
@@ -604,10 +602,8 @@ public partial class MainWindow
         }
 
         var withFile = index.Fonts.Where(f => f.HasFile).OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase).ToList();
-        var fontsFolder = GameAssets.FontsFolderOf(report.Game, descriptor);
-        var refusal = WriteRefusal(report);
         var path = report.Game.Path;
-        if (!_pendingGameFonts.TryGetValue(path, out var picked)) picked = new HashSet<string>(StringComparer.Ordinal);
+        if (!_gameFontSelection.TryGetValue(path, out var picked)) picked = new HashSet<string>(StringComparer.Ordinal);
 
         if (withFile.Count == 0)
         {
@@ -615,97 +611,68 @@ public partial class MainWindow
         }
         else
         {
-            var extractable = withFile.Where(f => fontsFolder is null || GameAssets.ExtractedFile(fontsFolder, f.Name) is null).ToList();
-
-            var apply = ScopeMark.Marked(EditSide.Local, "Apply", enabled: false);
-            apply.Classes.Add("primary");
-            var undo = new Button { Content = "Undo", IsVisible = picked.Count > 0 };
-            ToolTip.SetTip(undo, "Clears the fonts ticked here. Nothing in the game is changed.");
-            var boxes = new List<(CheckBox Box, string Key)>();
+            // The list, then what it is chosen for — the Export card's order: the option, its
+            // subject, then the act (user, 2026-10-10: the button below the list).
+            var export = new Button { Content = "Export...", HorizontalAlignment = HorizontalAlignment.Left };
+            var summary = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Foreground = Brush("TextSecondary") };
+            var boxes = new List<CheckBox>();
 
             void Refresh()
             {
                 var count = picked.Count;
-                ScopeMark.SetLabel(apply, count > 0 ? $"Apply ({count})" : "Apply");
-                ToolTip.SetTip(apply, count > 0
-                    ? $"Writes {Composition.Amount(count, "font", "fonts")} into this game's fonts folder."
-                    : "Tick Extract on the fonts to take.");
-                apply.IsEnabled = count > 0 && refusal is null;
-                if (refusal is not null) ToolTip.SetTip(apply, refusal);
-                undo.IsVisible = count > 0;
+                summary.Text = count > 0 ? Composition.Amount(count, "font", "fonts") + " ticked" : "Tick the fonts to export";
+                export.IsEnabled = count > 0;
+                ToolTip.SetTip(export, count > 0 ? "Saves a copy of the fonts ticked into a folder you choose. Nothing in the game is changed." : null);
             }
 
             void Pick(string key, bool on)
             {
                 if (on) picked.Add(key); else picked.Remove(key);
-                if (picked.Count > 0) _pendingGameFonts[path] = picked; else _pendingGameFonts.Remove(path);
+                if (picked.Count > 0) _gameFontSelection[path] = picked; else _gameFontSelection.Remove(path);
                 Refresh();
-                // The bar at the bottom counts these too, and its one-click carries them out.
-                ShowActionBar(report);
             }
 
-            apply.Click += async (_, _) => await ExtractPickedGameFontsAsync(report);
-            undo.Click += async (_, _) =>
-            {
-                _pendingGameFonts.Remove(path);
-                await ShowSelectedAsync();
-            };
+            export.Click += async (_, _) => await ExportSelectedGameFontsAsync(report);
 
-            var head = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-            if (extractable.Count > 1)
+            if (withFile.Count > 1)
             {
                 var all = new CheckBox
                 {
-                    Content = $"Extract all ({extractable.Count})",
+                    Content = $"Select all ({withFile.Count})",
                     FontSize = 12,
-                    IsEnabled = refusal is null,
-                    IsChecked = extractable.All(f => picked.Contains(GameFontKey(f))),
+                    IsChecked = withFile.All(f => picked.Contains(GameFontKey(f))),
                 };
                 all.IsCheckedChanged += (_, _) =>
                 {
                     var on = all.IsChecked == true;
-                    foreach (var (box, _) in boxes) box.IsChecked = on;
+                    foreach (var box in boxes) box.IsChecked = on;
                 };
-                head.Children.Add(all);
+                panel.Children.Add(all);
             }
-            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { undo, apply } };
-            Grid.SetColumn(buttons, 1);
-            head.Children.Add(buttons);
-            panel.Children.Add(head);
 
             var list = new StackPanel { Spacing = 4 };
             foreach (var font in withFile)
             {
-                var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-                row.Children.Add(new TextBlock
+                var key = GameFontKey(font);
+                var box = new CheckBox
                 {
-                    Text = font.Name + " · " + SizeOf(font.DataLength),
+                    Content = font.Name + " · " + SizeOf(font.DataLength),
                     FontSize = 12,
-                    TextTrimming = TextTrimming.CharacterEllipsis,
-                    Foreground = Brush("TextPrimary"),
-                });
-
-                Control state;
-                if (!extractable.Contains(font))
-                {
-                    state = new TextBlock { Text = "In the fonts folder", FontSize = 11, Foreground = Brush("TextMuted") };
-                }
-                else
-                {
-                    var key = GameFontKey(font);
-                    var box = new CheckBox { Content = "Extract", FontSize = 11, IsChecked = picked.Contains(key), IsEnabled = refusal is null };
-                    box.IsCheckedChanged += (_, _) => Pick(key, box.IsChecked == true);
-                    boxes.Add((box, key));
-                    state = box;
-                }
-                state.VerticalAlignment = VerticalAlignment.Center;
-                Grid.SetColumn(state, 1);
-                row.Children.Add(state);
-                list.Children.Add(row);
+                    IsChecked = picked.Contains(key),
+                };
+                box.IsCheckedChanged += (_, _) => Pick(key, box.IsChecked == true);
+                boxes.Add(box);
+                list.Children.Add(box);
             }
             panel.Children.Add(Bounded(list));
-            if (refusal is not null) panel.Children.Add(Note(refusal, Tone.Warning));
+
             Refresh();
+            panel.Children.Add(new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 10,
+                Children = { export, summary },
+            });
         }
 
         // What this card cannot do, and where it is done.
@@ -713,17 +680,23 @@ public partial class MainWindow
         return panel;
     }
 
-    private async Task ExtractPickedGameFontsAsync(GameReport report)
+    private async Task ExportSelectedGameFontsAsync(GameReport report)
     {
-        var descriptor = InstalledDescriptor(report);
-        var fonts = PickedGameFonts(report.Game.Path);
-        if (descriptor is null || fonts.Count == 0) return;
+        var fonts = SelectedGameFonts(report.Game.Path);
+        if (fonts.Count == 0) return;
 
-        AssetWriteResult result;
-        Working("Extracting the game's fonts...");
+        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "Export the game's fonts",
+            AllowMultiple = false,
+        });
+        if (folders.Count == 0 || folders[0].TryGetLocalPath() is not { } destination) return;
+
+        GameAssets.GameFontExport result;
+        Working("Exporting the game's fonts...");
         try
         {
-            result = await Task.Run(() => GameAssets.ExtractGameFonts(_platform, report.Game, descriptor, fonts));
+            result = await Task.Run(() => GameAssets.ExportGameFonts(report.Game, fonts, destination));
         }
         finally
         {
@@ -732,13 +705,12 @@ public partial class MainWindow
 
         if (!result.Done)
         {
-            await MessageAsync("Nothing was extracted", result.Failure ?? "The fonts could not be written.");
+            await MessageAsync("Nothing was exported", result.Failure ?? "The fonts could not be written.");
             return;
         }
 
-        _pendingGameFonts.Remove(report.Game.Path);
-        Status($"Extracted {Composition.Amount(result.Written, "font", "fonts")} into {report.Game.Name}'s fonts folder.");
-        await ShowSelectedAsync();
+        var already = result.AlreadyThere > 0 ? $" {Composition.Amount(result.AlreadyThere, "font was", "fonts were")} already there and left as it was." : "";
+        Status($"Exported {Composition.Amount(result.Written, "font", "fonts")} to {System.IO.Path.GetFileName(destination.TrimEnd('\\', '/'))}.{already}");
     }
 
     private static Control ImagesBlock(GameAssetsState state)

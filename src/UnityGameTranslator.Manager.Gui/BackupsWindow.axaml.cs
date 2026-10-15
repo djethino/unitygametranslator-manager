@@ -527,17 +527,17 @@ public sealed class BackupsWindow : Window
     /// lines and sometimes a name; adding "English → French" in words turns a list of ten into a
     /// wall of text, when the question is only "which one of mine is this".
     ///
-    /// ⚠ A source detected rather than chosen ("auto") reads « Auto », as the mod's card and row
-    /// write it (Backups.IsAutoLanguage, 2026-10-15); a side with nothing at all is left out, and
-    /// the arrow with it.
+    /// ⚠ A source detected rather than chosen reads « Auto », as the mod's card and row write it
+    /// (Backups.SourceOf, 2026-10-15); nothing known of the source is left out, and the arrow with it.
     ///
     /// ⚠ Identical to the mod's row, deliberately — this is one list of one folder shown in two
     /// windows, and whether "auto" counts as a language is answered once, in the socle.
     /// </summary>
     private static Control? Languages(BackupEntry entry)
     {
-        bool source = Backups.IsSettledLanguage(entry.SourceLanguage);
-        bool sourceAuto = Backups.IsAutoLanguage(entry.SourceLanguage);
+        var side = Backups.SourceOf(entry.SourceLanguage, entry.TargetLanguage);
+        bool source = side == Backups.SourceSide.Language;
+        bool sourceAuto = side == Backups.SourceSide.Auto;
         bool target = Backups.IsSettledLanguage(entry.TargetLanguage);
 
         if (!source && !sourceAuto && !target) return null;

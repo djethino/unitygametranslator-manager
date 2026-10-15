@@ -527,9 +527,9 @@ public sealed class BackupsWindow : Window
     /// lines and sometimes a name; adding "English → French" in words turns a list of ten into a
     /// wall of text, when the question is only "which one of mine is this".
     ///
-    /// ⚠ A source that was never settled gets the arrow with nothing before it, because that IS
-    /// the fact: the copy was taken before anybody said what it translates from. Writing "Auto"
-    /// there would dress an absence up as an answer.
+    /// ⚠ A source detected rather than chosen ("auto") reads « Auto », as the mod's card and row
+    /// write it (Backups.IsAutoLanguage, 2026-10-15); a side with nothing at all is left out, and
+    /// the arrow with it.
     ///
     /// ⚠ Identical to the mod's row, deliberately — this is one list of one folder shown in two
     /// windows, and whether "auto" counts as a language is answered once, in the socle.
@@ -537,9 +537,10 @@ public sealed class BackupsWindow : Window
     private static Control? Languages(BackupEntry entry)
     {
         bool source = Backups.IsSettledLanguage(entry.SourceLanguage);
+        bool sourceAuto = Backups.IsAutoLanguage(entry.SourceLanguage);
         bool target = Backups.IsSettledLanguage(entry.TargetLanguage);
 
-        if (!source && !target) return null;
+        if (!source && !sourceAuto && !target) return null;
 
         var row = new StackPanel
         {
@@ -548,15 +549,28 @@ public sealed class BackupsWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
         };
 
-        if (source && LanguageMark.For(entry.SourceLanguage) is { } from) row.Children.Add(from);
-
-        row.Children.Add(new TextBlock
+        bool before = false;
+        if (source && LanguageMark.For(entry.SourceLanguage) is { } from) { row.Children.Add(from); before = true; }
+        else if (sourceAuto)
         {
-            Text = "→",
-            FontSize = 11,
-            VerticalAlignment = VerticalAlignment.Center,
-            Foreground = Brush("TextMuted"),
-        });
+            row.Children.Add(new TextBlock
+            {
+                Text = TranslationLanguages.AutoWord,
+                FontSize = 11,
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+            before = true;
+        }
+
+        // The arrow joins two sides: drawn only when there is something on each.
+        if (before && target)
+            row.Children.Add(new TextBlock
+            {
+                Text = "→",
+                FontSize = 11,
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = Brush("TextMuted"),
+            });
 
         if (target && LanguageMark.For(entry.TargetLanguage) is { } into) row.Children.Add(into);
 

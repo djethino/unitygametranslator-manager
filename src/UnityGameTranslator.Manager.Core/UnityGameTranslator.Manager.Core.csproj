@@ -45,7 +45,7 @@
   <ItemGroup>
     <!-- Authenticode verification of Unity's engine modules before one is copied into a game
          (Install/UnitySignature.cs). Microsoft's own, MIT; not part of the shared framework. -->
-    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="8.0.1" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="8.0.2" />
   </ItemGroup>
 
   <ItemGroup>

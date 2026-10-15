@@ -592,7 +592,7 @@ public sealed class BackupsWindow : Window
         //
         // ⚠ The grammar of the row does not change, only what fills each slot. Kept identical to
         // the mod's, deliberately: this is one list of one folder shown in two windows.
-        string named = !string.IsNullOrEmpty(entry.Label) ? entry.Label : null;
+        string? named = !string.IsNullOrEmpty(entry.Label) ? entry.Label : null;
         var facts = $"{entry.At:dd MMM HH:mm}   {entry.Lines} lines";
 
         var details = new List<string>();

@@ -4,6 +4,10 @@ Finds the Unity games on your machine, tells you what each one needs, and sets u
 [UnityGameTranslator](https://github.com/djethino/unitygametranslator) on it — mod loader
 included — without touching anything that was already there.
 
+<p align="center">
+  <img src="docs/screenshots/game-card.webp" alt="UGT Manager: the list of Unity games found, and one game's card with its translation and its setup" width="720">
+</p>
+
 > **Status: beta**, like the rest of the project. It finds games, installs and removes the mod
 > and its loader, writes your settings into each game and fetches community translations — all of
 > it against real games, not fixtures. What it has not had is wear: this is its first public
